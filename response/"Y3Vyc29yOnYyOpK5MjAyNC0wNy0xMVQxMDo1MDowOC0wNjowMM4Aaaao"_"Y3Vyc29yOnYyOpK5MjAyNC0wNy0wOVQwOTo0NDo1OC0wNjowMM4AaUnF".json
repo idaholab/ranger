@@ -1,0 +1,1100 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNy0wOVQwOTo0NDo1OC0wNjowMM4AaUnF"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Can Smeared Cracking be Coupled with Production (Single Phase flow, Permeability Changes)",
+          "author": {
+            "login": "miraboreasumr"
+          },
+          "bodyText": "I want to know, what features that MOOSE does't support while I am using smeared cracking (continuum damage mode) coupled with flow in porous media to simulate hydraulic fracturing propagation and then productions (flow in to the location of damage factor = 1).\nI think I need to change the permeability at the grids with damage factor = 1, after this, I need to run another flow in porous media, or it can they be coupled? In-stitu stress needs to be considered.\nCan you also see some convergence issue for coupling these two methods?",
+          "url": "https://github.com/idaholab/moose/discussions/27894",
+          "updatedAt": "2024-07-11T15:59:57Z",
+          "publishedAt": "2024-06-13T14:35:17Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cpgr @rpodgorney",
+                  "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9765012",
+                  "updatedAt": "2024-06-13T15:31:15Z",
+                  "publishedAt": "2024-06-13T15:31:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "rpodgorney"
+                  },
+                  "bodyText": "Adding @lynnmunday , he has been doing smeared cracking runs in Falcon",
+                  "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9765057",
+                  "updatedAt": "2024-06-13T15:53:40Z",
+                  "publishedAt": "2024-06-13T15:35:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lynnmunday"
+                  },
+                  "bodyText": "I used PorousFlowFullySaturated with coupling_type = HYDROMECHANICAL which will set up the kernels for coupling porous flow and mechanics i.e. PorousFlowEffectiveStressCoupling and PorousFlowVolumetricStrain and the mechanics kernel.  However, unlike the Physics/SolidMechanics action, this does not create a strain calculator material i.e. ComputeIncrementalSmallStrain, so you need to include that like I have below.\nI have this auxvar for the smeared cracking strain that I use in the below to modify the permeability.\n[AuxVariables]\n  [./crack_max_strain1]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n[AuxKernels]\n  [./crack_strain1]\n    type = MaterialRealVectorValueAux\n    property = crack_max_strain\n    variable = crack_max_strain1\n    component = 0\n  [../]\n[]\n\nThis is the auxkernel to modify the permeability.  I also tried to compute the aperture but it was 2 order magnitude too large.  That is why I'm using a made up relationship between permeability and smeared cracking strain instead of a^2/12.  The crack_perm function needs work, maybe it should look like the maybe_better_perm auxkernel but that gives too large of a crack.  A better measure of the element length normal to the crack face would give a better strain measure.\n[AuxKernels]\n[crack_perm]\n  type = ParsedAux\n  variable = crack_perm\n  coupled_variables = 'permeability crack_max_strain1'\n  expression = 'permeability *(1 + ${three_s_over_a0} * max(0, crack_max_strain1))'\n  execute_on = NONLINEAR\n[]\n[maybe_better_perm]\n  type = ParsedAux\n  variable = crack_perm_not_used\n  coupled_variables = 'permeability crack_max_strain1 elem_length_min'\n  expression = 'a:=(crack_max_strain1*elem_length_min); permeability + (a)^2/12'\n  execute_on = TIMESTEP_END\n[]\n[aperture]\n  type = ParsedAux\n  variable = aperture\n  coupled_variables = 'crack_max_strain1 elem_length_min'\n  expression = '(crack_max_strain1*elem_length_min)'\n  execute_on = TIMESTEP_END\n[]\n[]\n\nThis is my porous flow and smeared cracking materials :\n[Materials]\n  [porosity]\n    type = PorousFlowPorosityConst\n    porosity = porosity \n  []\n  [permeability]\n    type = PorousFlowPermeabilityConstFromVar\n    perm_xx = crack_perm\n    perm_yy = crack_perm\n    perm_zz = crack_perm\n  []\n  [elasticity_fracture]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = ${rock_young}\n    poissons_ratio = ${rock_poisson}\n  []\n  [strain]\n    type = ComputeIncrementalSmallStrain\n    displacements = 'disp_x disp_y disp_z'\n  []\n  [elastic_stress]\n    type = ComputeSmearedCrackingStress\n    cracking_stress = 1.2e7\n    softening_models = abrupt_softening\n    max_stress_correction = 0.  #using zero lags damage by a timestep\n    shear_retention_factor = 0.1\n    cracked_elasticity_type = FULL\n    output_properties = true\n    perform_finite_strain_rotations=false\n  []\n  [abrupt_softening]\n    type = AbruptSoftening\n    residual_stress = 0.05\n  []\n  [undrained_density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = ${rock_gravitational_density}\n  []\n[]\n\nTo make this work, you need to define some kind of weakened field for the smeared cracking model to fracture along or a some distribution of initial damage.  Other wise you will get isotropic damage around the highest pressure point.  You can also use a spatially varying permeability to spread out damage",
+                  "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9768892",
+                  "updatedAt": "2024-06-14T00:42:07Z",
+                  "publishedAt": "2024-06-14T00:42:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "Let me know if you get something working with the aperture.",
+                          "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9768896",
+                          "updatedAt": "2024-06-14T00:43:16Z",
+                          "publishedAt": "2024-06-14T00:42:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "miraboreasumr"
+                          },
+                          "bodyText": "I used PorousFlowFullySaturated with coupling_type = HYDROMECHANICAL which will set up the kernels for coupling porous flow and mechanics i.e. PorousFlowEffectiveStressCoupling and PorousFlowVolumetricStrain and the mechanics kernel. However, unlike the Physics/SolidMechanics action, this does not create a strain calculator material i.e. ComputeIncrementalSmallStrain, so you need to include that like I have below.\nI have this auxvar for the smeared cracking strain that I use in the below to modify the permeability.\n[AuxVariables]\n  [./crack_max_strain1]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n[AuxKernels]\n  [./crack_strain1]\n    type = MaterialRealVectorValueAux\n    property = crack_max_strain\n    variable = crack_max_strain1\n    component = 0\n  [../]\n[]\n\nThis is the auxkernel to modify the permeability. I also tried to compute the aperture but it was 2 order magnitude too large. That is why I'm using a made up relationship between permeability and smeared cracking strain instead of a^2/12. The crack_perm function needs work, maybe it should look like the maybe_better_perm auxkernel but that gives too large of a crack. A better measure of the element length normal to the crack face would give a better strain measure.\n[AuxKernels]\n[crack_perm]\n  type = ParsedAux\n  variable = crack_perm\n  coupled_variables = 'permeability crack_max_strain1'\n  expression = 'permeability *(1 + ${three_s_over_a0} * max(0, crack_max_strain1))'\n  execute_on = NONLINEAR\n[]\n[maybe_better_perm]\n  type = ParsedAux\n  variable = crack_perm_not_used\n  coupled_variables = 'permeability crack_max_strain1 elem_length_min'\n  expression = 'a:=(crack_max_strain1*elem_length_min); permeability + (a)^2/12'\n  execute_on = TIMESTEP_END\n[]\n[aperture]\n  type = ParsedAux\n  variable = aperture\n  coupled_variables = 'crack_max_strain1 elem_length_min'\n  expression = '(crack_max_strain1*elem_length_min)'\n  execute_on = TIMESTEP_END\n[]\n[]\n\nThis is my porous flow and smeared cracking materials :\n[Materials]\n  [porosity]\n    type = PorousFlowPorosityConst\n    porosity = porosity \n  []\n  [permeability]\n    type = PorousFlowPermeabilityConstFromVar\n    perm_xx = crack_perm\n    perm_yy = crack_perm\n    perm_zz = crack_perm\n  []\n  [elasticity_fracture]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = ${rock_young}\n    poissons_ratio = ${rock_poisson}\n  []\n  [strain]\n    type = ComputeIncrementalSmallStrain\n    displacements = 'disp_x disp_y disp_z'\n  []\n  [elastic_stress]\n    type = ComputeSmearedCrackingStress\n    cracking_stress = 1.2e7\n    softening_models = abrupt_softening\n    max_stress_correction = 0.  #using zero lags damage by a timestep\n    shear_retention_factor = 0.1\n    cracked_elasticity_type = FULL\n    output_properties = true\n    perform_finite_strain_rotations=false\n  []\n  [abrupt_softening]\n    type = AbruptSoftening\n    residual_stress = 0.05\n  []\n  [undrained_density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = ${rock_gravitational_density}\n  []\n[]\n\nTo make this work, you need to define some kind of weakened field for the smeared cracking model to fracture along or a some distribution of initial damage. Other wise you will get isotropic damage around the highest pressure point. You can also use a spatially varying permeability to spread out damage\n\nHi, by any chance, is there an example that you can share with me so that I can understand the structure and make changes to make it work?",
+                          "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9774979",
+                          "updatedAt": "2024-06-14T13:39:51Z",
+                          "publishedAt": "2024-06-14T13:39:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "I'll post it. I just need to clean it up first.",
+                          "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9798444",
+                          "updatedAt": "2024-06-17T19:42:06Z",
+                          "publishedAt": "2024-06-17T19:42:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "miraboreasumr"
+                          },
+                          "bodyText": "I'll post it. I just need to clean it up first.\n\nHi Dr, do you have the chance to clean it?",
+                          "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-10021152",
+                          "updatedAt": "2024-07-11T13:13:41Z",
+                          "publishedAt": "2024-07-11T13:13:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "rpodgorney"
+                  },
+                  "bodyText": "Low priority\n\n\n\n\nRobert Podgorney, Ph.D.\nDirectorate Fellow, Energy and Environment\nIdaho National Laboratory   |   1955 Fremont Ave.   |   Idaho Falls, ID   |   83415\n***@***.******@***.***>   |   208-526-1524\n\u2026\n_______________________________\n\n[signature_4227069542]\n\nStatement of Confidentiality\nThe contents of this e-mail message and any attachments are confidential and are intended solely for addressee. The information may also be legally privileged. This transmission is sent in trust, for the sole purpose of delivery to the intended recipient. If you have received this transmission in error, any use, reproduction or dissemination of this transmission is strictly prohibited. If you are not the intended recipient, please immediately notify the sender by reply e-mail or phone and delete this message and its attachments, if any.\n\n\nFrom: Lynn Munday ***@***.***>\nDate: Monday, June 17, 2024 at 13:42\nTo: idaholab/moose ***@***.***>\nCc: Robert K. Podgorney ***@***.***>, Mention ***@***.***>\nSubject: [EXTERNAL] Re: [idaholab/moose] Can Smeared Cracking be Coupled with Production (Single Phase flow, Permeability Changes) (Discussion #27894)\n\nI'll post it. I just need to clean it up first.\n\n\u2014\nReply to this email directly, view it on GitHub<#27894 (reply in thread)>, or unsubscribe<https://github.com/notifications/unsubscribe-auth/ACWGDT6FKZQDWKUZTKKO3YTZH432HAVCNFSM6AAAAABJIRNPWWVHI2DSMVQWIX3LMV43SRDJONRXK43TNFXW4Q3PNVWWK3TUHM4TOOJYGQ2DI>.\nYou are receiving this because you were mentioned.Message ID: ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-9798463",
+                  "updatedAt": "2024-06-17T19:44:13Z",
+                  "publishedAt": "2024-06-17T19:44:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "I haven't yet. I\"ll get this done probably next week.",
+                          "url": "https://github.com/idaholab/moose/discussions/27894#discussioncomment-10022930",
+                          "updatedAt": "2024-07-11T15:59:58Z",
+                          "publishedAt": "2024-07-11T15:59:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Physics/SolidMechanics/QuasiStatic",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "How do I solve the error below in my input script?\nNo SolidMechanics/QuasiStatic action can be block unrestricted if more than one SolidMechanics/QuasiStatic action is specified.\n\n[Physics/SolidMechanics/QuasiStatic]\n  strain = FINITE\n  add_variables = true\n  displacements = 'disp_x disp_y'\n  [eta0_dt]\n    type = TimeDerivative\n    variable = eta0\n  []\n  [eta1_dt]\n    type = TimeDerivative\n    variable = eta1\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/28107",
+          "updatedAt": "2024-07-11T15:23:17Z",
+          "publishedAt": "2024-07-11T15:21:20Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI think you mean to use this syntax\n[Physics/SolidMechanics/QuasiStatic]\n  strain = FINITE\n  add_variables = true\n  displacements = 'disp_x disp_y'\n[]\n\n\n[Kernels]\n  [eta0_dt]\n    type = TimeDerivative\n    variable = eta0\n  []\n  [eta1_dt]\n    type = TimeDerivative\n    variable = eta1\n  []\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/28107#discussioncomment-10022579",
+                  "updatedAt": "2024-07-11T15:23:17Z",
+                  "publishedAt": "2024-07-11T15:23:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Warning in SolidMechanics",
+          "author": {
+            "login": "jin0123456"
+          },
+          "bodyText": "Hello\nI met a warning,\n*** Warning ***\nMissing coupled variables {temp} (add them to coupled_variables parameter of TM_fuel0)\n\nThis warning occurs in Physics/SolidMechanics/QuasiStatic, but my MOOSE version is not the latest so it occurs in Modules/TensorMechanics/Master.\nThe solution is I need to add temperature = temp. But the convergence is poor when i did it.\nSince it's just warning the simulation can continue, should I necessarily add temperature = temp? And what's this setting about, would it make a big difference to the result?",
+          "url": "https://github.com/idaholab/moose/discussions/28076",
+          "updatedAt": "2024-07-11T14:42:16Z",
+          "publishedAt": "2024-07-08T06:15:25Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nDo you want to model thermal expansion or not? This is what it controls.\nIf convergence is poor with it, maybe the parameters for the thermal expansion are not set right. For example the reference temperature for the thermal eigenstrain.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28076#discussioncomment-9987861",
+                  "updatedAt": "2024-07-08T13:50:03Z",
+                  "publishedAt": "2024-07-08T13:50:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jin0123456"
+                          },
+                          "bodyText": "1.If i don't set temperature = temp, it still models thermal expansion. So whats the difference?\n2.Besides, i set stress_free_temperature = 300, which 300 is the initial condition of temperature.\nIs that wrong?",
+                          "url": "https://github.com/idaholab/moose/discussions/28076#discussioncomment-10018626",
+                          "updatedAt": "2024-07-11T08:46:41Z",
+                          "publishedAt": "2024-07-11T08:46:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "1.If i don't set temperature = temp, it still models thermal expansion. So whats the difference?\n\nnot sure but if you are getting a warning without then you should address it\nWhat about the thermal expansion coefficient?",
+                          "url": "https://github.com/idaholab/moose/discussions/28076#discussioncomment-10022152",
+                          "updatedAt": "2024-07-11T14:42:16Z",
+                          "publishedAt": "2024-07-11T14:42:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Dynamics - Explicit/CentralDifference] - mesh/elements deform with just gravity load when use TET but HEX works fine",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi guys, this is a very simple input file\njust a mesh with ramp up ONLY gravity, when I used elem_type = HEX8 or elem_type = HEX20\nit worked fine, got results as expected\n\nHowever, when I set elem_type = TET4 or TET10 the mesh deforms quite drastically!\n\n\nnot sure, why is this the case.\nbelow is my input file, we want to stick with explicit CentralDifference\nwe dont mind changing other parameters, maybe something inside DynamicSolidMechanics isnt right for TET?\nThank you guys!\nTraiwit\n[Mesh]\n[gen]\n  type = GeneratedMeshGenerator\n  dim = 3 # Dimension of the mesh\n  nx = 10 # Number of elements in the x direction\n  ny = 10 # Number of elements in the y direction\n  nz = 30 # Number of elements in the z direction\n  xmin = 0.0\n  xmax = 1000\n  ymin = 0.0\n  ymax = 1000\n  zmin = 0.0\n  zmax = 1000\n  # allow_renumbering = false # So NodalVariableValue can index by id\n  show_info = true\n  elem_type = HEX8\n  # elem_type = TET4\n[]\n[]\n  \n  [Variables]\n    [./disp_x]\n    [../]\n    [./disp_y]\n    [../]\n    [./disp_z]\n    [../]\n  []\n  \n  [AuxVariables]\n    [./vel_x]\n    [../]\n    [./accel_x]\n    [../]\n    [./vel_y]\n    [../]\n    [./accel_y]\n    [../]\n    [./vel_z]\n    [../]\n    [./accel_z]\n    [../]\n  []\n  \n  [AuxKernels]\n    [./accel_x]\n      type = TestNewmarkTI\n      variable = accel_x\n      displacement = disp_x\n      first = false\n    [../]\n    [./vel_x]\n      type = TestNewmarkTI\n      variable = vel_x\n      displacement = disp_x\n      first = false\n    [../]\n\n    [./accel_y]\n      type = TestNewmarkTI\n      variable = accel_y\n      displacement = disp_y\n      first = false\n    [../]\n    [./vel_y]\n      type = TestNewmarkTI\n      variable = vel_y\n      displacement = disp_y\n      first = false\n    [../]\n\n    [./accel_z]\n      type = TestNewmarkTI\n      variable = accel_z\n      displacement = disp_z\n      first = false\n    [../]\n    [./vel_z]\n      type = TestNewmarkTI\n      variable = vel_z\n      displacement = disp_z\n      first = false\n    [../]\n  []\n\n    [Kernels]\n\n    [./DynamicSolidMechanics] # zeta*K*vel + K * disp\n      displacements = 'disp_x disp_y disp_z'\n      stiffness_damping_coefficient = 0.000025\n      # mass_damping_coefficient = 0.001\n      # eigenstrain_names = ini_stress\n      strain = SMALL\n      incremental = true\n    [../]\n\n    [./inertia_x]\n      type = InertialForce\n      variable = disp_x\n    [../]\n    [./inertia_y]\n      type = InertialForce\n      variable = disp_y\n    [../]\n    [./inertia_z]\n      type = InertialForce\n      variable = disp_z\n    [../]\n\n    [./gravity]\n        type = Gravity\n        variable = disp_z\n        function = '-9.81*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n        value = 1\n    [../]\n  []\n\n\n  \n  [BCs]\n\n    [./no_x_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_x\n      boundary = 'back'\n      value = 0.0\n    [../]\n    [./no_y_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_y\n      boundary = 'back'\n      value = 0.0\n    [../]\n    [./no_z_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_z\n      boundary = 'back'\n      value = 0.0\n    [../]\n\n   # fixed x left\n    [./no_x_left]\n      type = DirichletBC\n          preset = false\n      variable = disp_x\n      boundary = 'left'\n      value = 0.0\n    [../]\n    [./no_y_left]\n      type = DirichletBC\n          preset = false\n      variable = disp_y\n      boundary = 'left'\n      value = 0.0\n    [../]\n      \n\n    # fixed x right\n     [./no_x_right]\n       type = DirichletBC\n          preset = false\n       variable = disp_x\n       boundary = 'right'\n       value = 0.0\n     [../]\n     [./no_y_right]\n       type = DirichletBC\n          preset = false\n       variable = disp_y\n       boundary = 'right'\n       value = 0.0\n     [../]\n\n     # fixed y top\n      [./no_x_top]\n        type = DirichletBC\n          preset = false\n        variable = disp_x\n        boundary = 'top'\n        value = 0.0\n      [../]\n      [./no_y_top]\n        type = DirichletBC\n          preset = false\n        variable = disp_y\n        boundary = 'top'\n        value = 0.0\n      [../]\n\n      # fixed y bottom\n       [./no_x_bottom]\n         type = DirichletBC\n          preset = false\n         variable = disp_x\n         boundary = 'bottom'\n         value = 0.0\n       [../]\n       [./no_y_bottom]\n         type = DirichletBC\n          preset = false\n         variable = disp_y\n         boundary = 'bottom'\n         value = 0.0\n       [../]\n  []\n\n  \n   # * if(t=0, 0, if(t>=(target_time), 1, (t) / (target_time) ))\n  [Functions]\n    [./ini_xx]\n        type = ParsedFunction\n        expression = '-2.5*9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 305))'\n      [../]\n      [./ini_yy]\n        type = ParsedFunction\n        expression = '-2.5*9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n      [../]\n      [./ini_zz]\n        type = ParsedFunction\n        expression = '-9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n      [../]\n  []\n  \n  [Materials]\n    [./elasticity_tensor]\n      youngs_modulus = 30e9 #Pa\n      poissons_ratio = 0.3\n      type = ComputeIsotropicElasticityTensor\n    [../]\n    [./strain]\n    #   type = ComputeFiniteStrain\n      type = ComputeIncrementalStrain\n      # eigenstrain_names = ini_stress\n      displacements = 'disp_x disp_y disp_z'\n      implicit = false\n    [../]\n    [./stress]\n      type = ComputeFiniteStrainElasticStress\n    #   type = ComputeLinearElasticStress\n    [../]\n    [./density]\n      type = GenericConstantMaterial\n      prop_names = density\n      prop_values = 2700 #kg/m3\n    [../]\n    [./ini_stress]\n      type = ComputeEigenstrainFromInitialStress\n      eigenstrain_name = ini_stress\n      # initial_stress = 'ini_xx 0 0 0 ini_yy 0 0 0 ini_zz'\n      initial_stress = '0 0 0 0 0 0 0 0 0'\n    [../]\n  []\n\n\n  \n  [Executioner]\n    type = Transient\n    start_time = 0\n    end_time = 30\n    dt = 0.005\n    timestep_tolerance = 1e-6\n    [./TimeIntegrator]\n      type = CentralDifference\n      solve_type = lumped\n    [../]\n  []\n  \n  [Postprocessors]\n    [./accelz_avg]\n      type = ElementAverageValue\n      variable = accel_z\n    [../]\n    [./velz_avg]\n      type = ElementAverageValue\n      variable = vel_z\n    [../]\n    [./disp_z_avg]\n      type = ElementAverageValue\n      variable = disp_z\n    [../]\n  []\n  \n  [Outputs]\n    exodus = true\n  []",
+          "url": "https://github.com/idaholab/moose/discussions/28012",
+          "updatedAt": "2024-07-11T14:18:26Z",
+          "publishedAt": "2024-06-28T06:23:20Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "okay, i think my DT is too big\nwhen i use\n    [TimeStepper]\n      type = PostprocessorDT\n      postprocessor = time_step\n    []\n    \n     [time_step]\n      type = CriticalTimeStep\n      factor = 1\n      density = density\n      # density_scaling = density_scaling\n      execute_on = 'INITIAL TIMESTEP_END'\n    []\n\nit suggested smaller dt than 0.005 (like 0.3ish in this particular case) BUT for real cases, it will take forever for my simulation to finish\nI attempted to use density_scaling (aka mass scaling)\n    [density_scaling]\n      type = DensityScaling\n      density = density\n      desired_time_step = 0.005\n      output_properties = density_scaling\n      # outputs = 'exodus'\n      factor = 0.8\n    []\n\nbut it doesn't seem to work, sure the dt from DensityScaling is not 0.005 BUT it still not stable\ncan someone please guide me on how to properly use DensityScaling.\nthank you!\nTraiwit",
+                  "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9905095",
+                  "updatedAt": "2024-06-28T13:27:10Z",
+                  "publishedAt": "2024-06-28T13:27:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@recuero if could please help on Density scaling\n@cbolisetti has a lot of experience with our Dynamics iirc\ndo we have a page or a reference for advice on using hex vs tet meshes for Dynamics?",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9906429",
+                          "updatedAt": "2024-06-28T15:33:34Z",
+                          "publishedAt": "2024-06-28T15:33:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "So it makes sense that you need a small dt for central difference. However, I have never used density scaling before and wasn't aware it existed. Are we sure it was developed for these applications and developed with tets in mind? Was it @recuero who developed it?",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9906693",
+                          "updatedAt": "2024-06-28T15:58:22Z",
+                          "publishedAt": "2024-06-28T15:58:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "Also, I doubt we have a page for tet vs hex for explicit dynamics, unless it was developed recently.",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9906700",
+                          "updatedAt": "2024-06-28T15:59:17Z",
+                          "publishedAt": "2024-06-28T15:59:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "This was not developed with tets in mind. I am not even sure if the critical time step object considers that particular case. I don't even believe there are decent tets for mechanics in the code.\nThe logic for doing mass scaling is very easy. @Traiwit can probably look into that.",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9906739",
+                          "updatedAt": "2024-06-28T16:03:32Z",
+                          "publishedAt": "2024-06-28T16:03:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "@recuero is correct about critical time step. We did not consider tets when developing that. Just hex elements and beams I think.",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9906752",
+                          "updatedAt": "2024-06-28T16:05:33Z",
+                          "publishedAt": "2024-06-28T16:05:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Thank you for your replies @recuero @cbolisetti\nin this case, how do I make sure CriticalTimeStep works with TET?\nAlso from this equation provided here: https://mooseframework.inl.gov/modules/solid_mechanics/CriticalTimeStepMath.html\n\nhow does it come down to this in\nhttps://github.com/idaholab/moose/blob/next/modules/solid_mechanics/src/postprocessors/CriticalTimeStep.C\nvoid\nCriticalTimeStep::execute()\n{\n  const Real dens = _material_density[0];\n  const Real dens_scaling = _density_scaling ? (*_density_scaling)[0] : 0.0;\n\n  // In the above line, density is inferred only at the first quadrature point\n  // of each element. Since critical time step is computed across all elements and\n  // a minimum is then taken, this is okay.\n  _critical_time = std::min(_factor * _current_elem->hmin() * std::sqrt(dens + dens_scaling) /\n                                (_effective_stiffness[0]),\n                            _critical_time);\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9914601",
+                          "updatedAt": "2024-06-30T06:20:46Z",
+                          "publishedAt": "2024-06-30T02:46:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "You can make sure that _effective_stiffness has the correct value (IIRC it's a material property that needs to be actively populated in each object). I assume the minimum element size must be correct since that comes from libMesh. Then, you can test, without mass scaling, that the critical time step prediction gives you a stable simulation.\nIf all makes sense, then double check that that the density/mass is getting added properly to increase the stable time step size.",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9918219",
+                          "updatedAt": "2024-06-30T17:45:27Z",
+                          "publishedAt": "2024-06-30T17:45:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "I would also make sure that hmin is appropriate for tets.",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9918535",
+                          "updatedAt": "2024-06-30T18:57:55Z",
+                          "publishedAt": "2024-06-30T18:57:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @recuero and @cbolisetti\ni just did some tests, few things I can confirm:\nCriticalTimeStep alone works fine with TET elements, HOWEVER the dt it gives is really small (our mine-scale model would take months to solve).\nHence, I want to use density scaling (mass scaling), I checked, it calculated density_scaling correctly according to _desired_time_step given\nvoid\nCriticalTimeStep::execute()\n{\n  const Real dens = _material_density[0];\n  const Real dens_scaling = _density_scaling ? (*_density_scaling)[0] : 0.0;\n\n  // In the above line, density is inferred only at the first quadrature point\n  // of each element. Since critical time step is computed across all elements and\n  // a minimum is then taken, this is okay.\n\n  _critical_time = std::min(_factor * _current_elem->hmin() * std::sqrt(dens + dens_scaling) /\n                                (_effective_stiffness[0]),\n                            _critical_time);\n\n  Real computed_value = _factor * _current_elem->hmin() * std::sqrt(dens + dens_scaling) / (_effective_stiffness[0]);\n  Real computed_value_nodenscaling = _factor * _current_elem->hmin() * std::sqrt(dens) / (_effective_stiffness[0]);\n\n  // Print the critical time step and dens_scaling for debugging\n  std::cout << \"Critical Time Step: \" << _critical_time << std::endl;\n  std::cout << \"Density : \" << dens << std::endl;\n  std::cout << \"Density Scaling: \" << dens_scaling << std::endl;\n  std::cout << \"computed_value : \" << computed_value << std::endl;\n  std::cout << \"computed_value_nodenscaling : \" << computed_value_nodenscaling << std::endl;\n}\n\nfor example, this simple case, the desired dt is 0.005\noriginal density is 2700\nsome node needs density scaling value of 6675 so dt can be 0.005\nwithout density_scaling dt would be 0.00268 (tested with this, it was very stable)\nso now the dt of the system after density_scaling becomes 0.005 and the system isnt stable at all (Uz, Az, Velz are exploding)\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 0\ncomputed_value : 0.033541\ncomputed_value_nodenscaling : 0.033541\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 0\ncomputed_value : 0.00536656\ncomputed_value_nodenscaling : 0.00536656\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 0\ncomputed_value : 0.033541\ncomputed_value_nodenscaling : 0.033541\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 0\ncomputed_value : 0.00536656\ncomputed_value_nodenscaling : 0.00536656\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 6675\ncomputed_value : 0.005\ncomputed_value_nodenscaling : 0.00268328\nCritical Time Step: 0.005\nDensity : 2700\nDensity Scaling: 6675\ncomputed_value : 0.005\ncomputed_value_nodenscaling : 0.00268328\n\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+\n| time           | accelz_avg     | disp_z_avg     | time_step      | velz_avg       |\n+----------------+----------------+----------------+----------------+----------------+\n:                :                :                :                :                :\n|   1.800000e-01 |  -3.739382e+07 |  -3.806278e+05 |   5.000000e-03 |  -3.739382e+07 |\n|   1.850000e-01 |   2.819791e+08 |   2.870256e+06 |   5.000000e-03 |   2.819791e+08 |\n|   1.900000e-01 |  -2.125949e+09 |  -2.164012e+07 |   5.000000e-03 |  -2.125949e+09 |\n|   1.950000e-01 |   1.602551e+10 |   1.631253e+08 |   5.000000e-03 |   1.602551e+10 |\n|   2.000000e-01 |  -1.207807e+11 |  -1.229448e+09 |   5.000000e-03 |  -1.207807e+11 |\n|   2.050000e-01 |   9.101535e+11 |   9.264660e+09 |   5.000000e-03 |   9.101535e+11 |\n|   2.100000e-01 |  -6.857508e+12 |  -6.980452e+10 |   5.000000e-03 |  -6.857508e+12 |\n|   2.150000e-01 |   5.166023e+13 |   5.258670e+11 |   5.000000e-03 |   5.166023e+13 |\n|   2.200000e-01 |  -3.891243e+14 |  -3.961047e+12 |   5.000000e-03 |  -3.891243e+14 |\n|   2.250000e-01 |   2.930661e+15 |   2.983247e+13 |   5.000000e-03 |   2.930661e+15 |\n|   2.300000e-01 |  -2.206944e+16 |  -2.246554e+14 |   5.000000e-03 |  -2.206944e+16 |\n|   2.350000e-01 |   1.661760e+17 |   1.691593e+15 |   5.000000e-03 |   1.661760e+17 |\n|   2.400000e-01 |  -1.251123e+18 |  -1.273588e+16 |   5.000000e-03 |  -1.251123e+18 |\n|   2.450000e-01 |   9.418648e+18 |   9.587808e+16 |   5.000000e-03 |   9.418648e+18 |\n|   2.500000e-01 |  -7.089849e+19 |  -7.217208e+17 |   5.000000e-03 |  -7.089849e+19 |\n+----------------+----------------+----------------+----------------+----------------+\n\n\n\nfrom here I would thought density_scaling should go into the system too, not just in CriticalTimeStep calculation\nI found that InertialForce [Kernels] also take density_scaling (I checked via print, it's taken), but it still doesn't help with stability.\nnow I wonder if I missed something important? or the way i setup Kernels accidentally ignore density_scaling input?\n\n  [Variables]\n    [./disp_x]\n    [../]\n    [./disp_y]\n    [../]\n    [./disp_z]\n    [../]\n  []\n  \n  [AuxVariables]\n    [./vel_x]\n    [../]\n    [./accel_x]\n    [../]\n    [./vel_y]\n    [../]\n    [./accel_y]\n    [../]\n    [./vel_z]\n    [../]\n    [./accel_z]\n    [../]\n  []\n  \n  [AuxKernels]\n    [./accel_x]\n      type = TestNewmarkTI\n      variable = accel_x\n      displacement = disp_x\n      first = true\n    [../]\n    [./vel_x]\n      type = TestNewmarkTI\n      variable = vel_x\n      displacement = disp_x\n      first = true\n    [../]\n\n    [./accel_y]\n      type = TestNewmarkTI\n      variable = accel_y\n      displacement = disp_y\n      first = true\n    [../]\n    [./vel_y]\n      type = TestNewmarkTI\n      variable = vel_y\n      displacement = disp_y\n      first = true\n    [../]\n\n    [./accel_z]\n      type = TestNewmarkTI\n      variable = accel_z\n      displacement = disp_z\n      first = true\n    [../]\n    [./vel_z]\n      type = TestNewmarkTI\n      variable = vel_z\n      displacement = disp_z\n      first = true\n    [../]\n  []\n\n    [Kernels]\n\n    [./DynamicSolidMechanics] # zeta*K*vel + K * disp\n      displacements = 'disp_x disp_y disp_z'\n      use_displaced_mesh=false\n      stiffness_damping_coefficient = 0.000025\n      # mass_damping_coefficient = 0.001\n      eigenstrain_names = ini_stress\n      strain = SMALL\n      incremental = true\n      newmark_beta = 0\n      newmark_gamma = 0.5\n      # decomposition_method = HughesWinget\n    [../]\n\n    [./inertia_x]\n      type = InertialForce\n      use_displaced_mesh=false\n      variable = disp_x\n      density_scaling = density_scaling\n    [../]\n    [./inertia_y]\n      use_displaced_mesh=false\n      type = InertialForce\n      variable = disp_y\n      density_scaling = density_scaling\n    [../]\n    [./inertia_z]\n      use_displaced_mesh=false\n      type = InertialForce\n      variable = disp_z\n      density_scaling = density_scaling\n    [../]\n\n    [./gravity]\n        type = Gravity\n        use_displaced_mesh=false\n        variable = disp_z\n        function = '-9.81*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n        value = 1\n        \n    [../]\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9921273",
+                          "updatedAt": "2024-07-01T05:11:17Z",
+                          "publishedAt": "2024-07-01T05:11:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "I can confirm that\ndensity_scaling also doesn't work for HEX\nbelow i used density scaling with desired time of 0.007 but criticaltimestep suggested 0.0053 (this is with HEX8), Uz_avg also exploded\n# Test for the central difference time integrator in 3D.\n\n[Mesh]\n[gen]\n  type = GeneratedMeshGenerator\n  dim = 3 # Dimension of the mesh\n  nx = 4 # Number of elements in the x direction\n  ny = 4 # Number of elements in the y direction\n  nz = 50 # Number of elements in the z direction\n  xmin = 0.0\n  xmax = 1000\n  ymin = 0.0\n  ymax = 1000\n  zmin = 0.0\n  zmax = 1000\n  # allow_renumbering = false # So NodalVariableValue can index by id\n  show_info = true\n  elem_type = HEX8\n  # elem_type = TET10\n\n[]\n[]\n  \n  [Variables]\n    [./disp_x]\n    [../]\n    [./disp_y]\n    [../]\n    [./disp_z]\n    [../]\n  []\n  \n  [AuxVariables]\n    [./vel_x]\n    [../]\n    [./accel_x]\n    [../]\n    [./vel_y]\n    [../]\n    [./accel_y]\n    [../]\n    [./vel_z]\n    [../]\n    [./accel_z]\n    [../]\n  []\n  \n  [AuxKernels]\n    [./accel_x]\n      type = TestNewmarkTI\n      variable = accel_x\n      displacement = disp_x\n      first = true\n    [../]\n    [./vel_x]\n      type = TestNewmarkTI\n      variable = vel_x\n      displacement = disp_x\n      first = true\n    [../]\n\n    [./accel_y]\n      type = TestNewmarkTI\n      variable = accel_y\n      displacement = disp_y\n      first = true\n    [../]\n    [./vel_y]\n      type = TestNewmarkTI\n      variable = vel_y\n      displacement = disp_y\n      first = true\n    [../]\n\n    [./accel_z]\n      type = TestNewmarkTI\n      variable = accel_z\n      displacement = disp_z\n      first = true\n    [../]\n    [./vel_z]\n      type = TestNewmarkTI\n      variable = vel_z\n      displacement = disp_z\n      first = true\n    [../]\n  []\n\n    [Kernels]\n    [./DynamicSolidMechanics] # zeta*K*vel + K * disp\n      displacements = 'disp_x disp_y disp_z'\n      use_displaced_mesh=false\n      # stiffness_damping_coefficient = 0.000025\n      # mass_damping_coefficient = 0.001\n      eigenstrain_names = ini_stress\n      strain = SMALL\n      incremental = true\n      decomposition_method = HughesWinget\n    [../]\n\n    [./inertia_x]\n      type = InertialForce\n      use_displaced_mesh=false\n      variable = disp_x\n      density_scaling = density_scaling\n    [../]\n    [./inertia_y]\n      type = InertialForce\n      use_displaced_mesh=false\n      variable = disp_y\n      density_scaling = density_scaling\n    [../]\n    [./inertia_z]\n      type = InertialForce\n      use_displaced_mesh=false\n      variable = disp_z\n      density_scaling = density_scaling\n    [../]\n\n    [./gravity]\n        type = Gravity\n        use_displaced_mesh=false\n        variable = disp_z\n        function = '-9.81*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n        value = 1\n    [../]\n  []\n\n\n  \n  [BCs]\n\n    [./no_x_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_x\n      boundary = 'back'\n      value = 0.0\n    [../]\n    [./no_y_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_y\n      boundary = 'back'\n      value = 0.0\n    [../]\n    [./no_z_back]\n      type = DirichletBC\n          preset = false\n      variable = disp_z\n      boundary = 'back'\n      value = 0.0\n    [../]\n\n   # fixed x left\n    [./no_x_left]\n      type = DirichletBC\n          preset = false\n      variable = disp_x\n      boundary = 'left'\n      value = 0.0\n    [../]\n    [./no_y_left]\n      type = DirichletBC\n          preset = false\n      variable = disp_y\n      boundary = 'left'\n      value = 0.0\n    [../]\n      \n\n    # fixed x right\n     [./no_x_right]\n       type = DirichletBC\n          preset = false\n       variable = disp_x\n       boundary = 'right'\n       value = 0.0\n     [../]\n     [./no_y_right]\n       type = DirichletBC\n          preset = false\n       variable = disp_y\n       boundary = 'right'\n       value = 0.0\n     [../]\n\n     # fixed y top\n      [./no_x_top]\n        type = DirichletBC\n          preset = false\n        variable = disp_x\n        boundary = 'top'\n        value = 0.0\n      [../]\n      [./no_y_top]\n        type = DirichletBC\n          preset = false\n        variable = disp_y\n        boundary = 'top'\n        value = 0.0\n      [../]\n\n      # fixed y bottom\n       [./no_x_bottom]\n         type = DirichletBC\n          preset = false\n         variable = disp_x\n         boundary = 'bottom'\n         value = 0.0\n       [../]\n       [./no_y_bottom]\n         type = DirichletBC\n          preset = false\n         variable = disp_y\n         boundary = 'bottom'\n         value = 0.0\n       [../]\n  []\n\n  \n   # * if(t=0, 0, if(t>=(target_time), 1, (t) / (target_time) ))\n  [Functions]\n    [./ini_xx]\n        type = ParsedFunction\n        expression = '-2.5*9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 305))'\n      [../]\n      [./ini_yy]\n        type = ParsedFunction\n        expression = '-2.5*9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n      [../]\n      [./ini_zz]\n        type = ParsedFunction\n        expression = '-9.81*2700*(1000-z)*if(t=0, 0, if(t>=30, 1, (t) / 30))'\n      [../]\n  []\n  \n  [Materials]\n    [./elasticity_tensor]\n      youngs_modulus = 20e9 #Pa\n      poissons_ratio = 0.25\n      type = ComputeIsotropicElasticityTensor\n    [../]\n    [./strain]\n    #   type = ComputeFiniteStrain\n      type = ComputeIncrementalStrain\n      eigenstrain_names = ini_stress\n      displacements = 'disp_x disp_y disp_z'\n      # implicit = false\n    [../]\n    [./stress]\n      type = ComputeFiniteStrainElasticStress\n    #   type = ComputeLinearElasticStress\n    [../]\n    [./density]\n      type = GenericConstantMaterial\n      prop_names = density\n      prop_values = 2700 #kg/m3\n    [../]\n    [./ini_stress]\n      type = ComputeEigenstrainFromInitialStress\n      eigenstrain_name = ini_stress\n      initial_stress = 'ini_xx 0 0 0 ini_yy 0 0 0 ini_zz'\n    [../]\n    [density_scaling]\n      type = DensityScaling\n      density = density\n      desired_time_step = 0.007  #suggested dt is 0.0053\n      output_properties = density_scaling\n      outputs = 'exodus'\n      factor = 0.8\n    []\n  []\n\n\n  \n  [Executioner]\n    type = Transient\n    start_time = 0\n    end_time = 30\n    num_steps = 100\n    # dt = 0.005\n    # timestep_tolerance = 1e-6\n    [./TimeIntegrator]\n      type = CentralDifference\n      use_constant_mass = false\n      solve_type = lumped\n    [../]\n    [TimeStepper]\n      type = PostprocessorDT\n      postprocessor = time_step\n    []\n  []\n  \n  [Postprocessors]\n    [time_step]\n      type = CriticalTimeStep\n      factor = 0.8\n      density = density\n      density_scaling = density_scaling\n      execute_on = 'INITIAL TIMESTEP_BEGIN TIMESTEP_END'\n    []\n    [./accelz_avg]\n      type = ElementAverageValue\n      variable = accel_z\n    [../]\n    [./velz_avg]\n      type = ElementAverageValue\n      variable = vel_z\n    [../]\n    [./disp_z_avg]\n      type = ElementAverageValue\n      variable = disp_z\n    [../]\n  []\n  \n  [Outputs]\n    exodus = true\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/28012#discussioncomment-9921877",
+                          "updatedAt": "2024-07-01T08:09:55Z",
+                          "publishedAt": "2024-07-01T06:34:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Why the result of cylinder heat conduction simulated from MOOSE is very different from the theory resolution?",
+          "author": {
+            "login": "Wang-Yihu"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nThe theory resolution for heat conduction problem in a cylinder with inner heat source:\n\nImagine a heat conduction problem in a cylinder with inner heat source:\nq = 2240000, T_w = 300, R=0.5, k=200, L = 10. In heat conduction theory, the temperature distribution will be \ud835\udc47 = \u2212(q/4\ud835\udc58)\ud835\udc5f^2 + T_w + (q\ud835\udc45^2)/(4\ud835\udc58). The maximum temperature is certainly in the middle, when r = 0, T will be 1000.\nSo I edit 2DCylindricalTube.i:\n[Mesh]\n [gmg]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 5\n    ny = 10\n    xmin = 0.0\n    xmax = 0.5\n    ymin = 0.0\n    ymax = 10.0\n  []\n  coord_type = RZ\n  rz_coord_axis = Y\n[]\n\n[Variables]\n  [temp]\n    family = LAGRANGE\n    initial_condition = 300.0\n  []\n[]\n\n[Kernels]\n  [heat_1]\n    type = HeatConduction\n    variable = temp\n  []\n  [heat_2]\n    type = HeatSource\n    variable = temp\n    function = 2240000.0\n  []\n[]\n\n[Materials]\n  [daore_steel]\n    type = HeatConductionMaterial\n    temp = temp\n    thermal_conductivity = 200.0\n  []\n[]\n\n[Problem]\n  type = FEProblem\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = PJFNK\n[]\n\n[Postprocessors]\n  [output_heat]\n    type = SideDiffusiveFluxIntegral\n    variable = temp\n    boundary = right\n    diffusivity = thermal_conductivity\n  []\n  [output_Tmax]\n    type = NodalMaxValue\n    variable = temp\n  []\n[]\n\n[BCs]\n  [rightbc]\n    type = DirichletBC\n    variable = temp\n    boundary = right\n    value = 300.0\n  []\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nHowever, the result is\n\nTmax does not equal to 1000.\nSo I also edit 3DCylindricalTube.i:\n[Mesh]\n  [accg]\n    type = AdvancedConcentricCircleGenerator\n    ring_radii = '0.5'\n    ring_intervals = '5'\n    ring_block_ids = '15 20'\n    ring_block_names = 'inner_tri inner'\n    external_boundary_id = 100\n    external_boundary_name = 'right'\n    num_sectors = 40\n    preserve_volumes = False\n  []\n  \n  [extrude1]\n    type = AdvancedExtruderGenerator\n    input = accg\n    heights = 10.0\n    num_layers = 10\n    direction = '0 0 1'\n  []\n[]\n\n[Variables]\n  [temp]\n    family = LAGRANGE\n    initial_condition = 300.0\n  []\n[]\n\n[Kernels]\n  [heat_1]\n    type = HeatConduction\n    variable = temp\n  []\n  [heat_2]\n    type = HeatSource\n    variable = temp\n    function = 2240000.0\n  []\n[]\n\n[Materials]\n  [daore_steel]\n    type = HeatConductionMaterial\n    temp = temp\n    thermal_conductivity = 200.0\n  []\n[]\n\n[Problem]\n  type = FEProblem\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = NEWTON\n[]\n\n[Postprocessors]\n  [output_heat]\n    type = SideDiffusiveFluxIntegral\n    variable = temp\n    boundary = right\n    diffusivity = thermal_conductivity\n  []\n  [output_Tmax]\n    type = NodalMaxValue\n    variable = temp\n  []\n  [volume]\n    type = VolumePostprocessor\n    block = '15 20'\n  []\n[]\n\n[BCs]\n  [rightbc]\n    type = DirichletBC\n    variable = temp\n    boundary = right\n    value = 300.0\n  []\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nThe result is\n\nTmax does not equal to 1000.\nWhy both of these result is quite different from the theory resolution? The error departures from the theory resolution is too high I think. Do I need to change something in [Steady] part? I try set l_tol or nl_rel_tol to fix this, but it seems useless, it only iterates more times and send me the same result......",
+          "url": "https://github.com/idaholab/moose/discussions/28093",
+          "updatedAt": "2024-07-11T04:08:00Z",
+          "publishedAt": "2024-07-10T13:14:48Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe can look at that in further depth once you've investigated this fully. For now\n    ring_intervals = '5'\n    num_sectors = 40\n\nthis is a lot of sectors which do not help to model the radial variation, and not a lot of radial discretization. The sectors help capture the true volume of the cylinder, which is important for the correct definition of the power density variable. How far off is the cylinder volume from the analytical cylinder?\nPlease up this radial discretization so that the polynomial (quadratic) true shape of the solution is captured better\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28093#discussioncomment-10011875",
+                  "updatedAt": "2024-07-10T16:22:29Z",
+                  "publishedAt": "2024-07-10T15:49:02Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wang-Yihu"
+                          },
+                          "bodyText": "Thanks! I refined the 3D mesh and 2D mesh. After enhancing the radial discretization, the result calculated is near the theory resolution. I think you are right!\nFor 3D mesh, I give my result:\n\nAnd for 2D mesh, I give my result:",
+                          "url": "https://github.com/idaholab/moose/discussions/28093#discussioncomment-10016532",
+                          "updatedAt": "2024-07-11T04:08:01Z",
+                          "publishedAt": "2024-07-11T04:08:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Source term calculation",
+          "author": {
+            "login": "styyokuda"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nAll,\nIn my model, I solve diffusion and heat equations. For the diffusion equations, I need to calculate the source/sink terms which are dependent on variables and parameters and it needs more than the \"functions\" with \"ParsedFunction\" type calculations. Please let me know if I should use the \"Material system computing\" or something else?\nPlease help. S. Thomas",
+          "url": "https://github.com/idaholab/moose/discussions/27721",
+          "updatedAt": "2024-07-10T17:10:54Z",
+          "publishedAt": "2024-05-28T16:09:42Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf the reaction / source / sink terms are simple linear functions of a variable then you can use CoupledForce to add that term to an equation\nIf it s any more complicated then I would recommend using ADMatCoupledForce with an ADParsedMaterial to describe the term\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9587551",
+                  "updatedAt": "2024-05-29T02:24:17Z",
+                  "publishedAt": "2024-05-29T02:24:16Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "All,\nI would like to use the sink value I calculate in \"Material System\" and input into \"BodyForce\" in \"Kernels System\" via \"Functions System.\"  In the attached function object \"SinkMat\", \"_value_mat[_qp]\" is the sink value I calculate in \"Material System.\"  I got an error message for \"_value_mat(getMaterialProperty(\"value_mat\")).\"  Is this approach not work?  Please help.  S. Thoms\nSinkMat.pdf\nSinkMat.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9951439",
+                          "updatedAt": "2024-07-03T18:33:12Z",
+                          "publishedAt": "2024-07-03T18:33:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "All,\nI would like to make sure that I put the correct files in the previous post.\nPlease help, S. Thomas\nSinkMat_C.pdf\nSinkMat_h.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9951478",
+                          "updatedAt": "2024-07-03T18:39:10Z",
+                          "publishedAt": "2024-07-03T18:39:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "All,\nI also tried to modify the BodyForce\" object (please see Attached).  It is not still working.\nPease help, S. Thomas\nBodyForceMat_C.pdf\nBodyForceMat_h.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9952399",
+                          "updatedAt": "2024-07-03T20:49:58Z",
+                          "publishedAt": "2024-07-03T20:49:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I calculate in \"Material System\" and input into \"BodyForce\" in \"Kernels System\" via \"Functions System.\"\n\nyou cant use Materials in Functors.\nYou need to find a different kernel. Or create a new one\nFor example CoupledForce can use a variable, which can bring material properties through the ParsedAux auxkernel",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9952620",
+                          "updatedAt": "2024-07-03T21:32:28Z",
+                          "publishedAt": "2024-07-03T21:32:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "for your first comment, I think the error is that you are missing the parameter in the validParams\nyou should have\n InputParameters params = Function::validParams();\n params.addClassDescription(\"Provide the sink value\");\n  params.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n return params;",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9954738",
+                          "updatedAt": "2024-07-04T05:24:20Z",
+                          "publishedAt": "2024-07-04T05:24:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Thank very much for the suggestion. I still have errors as below which I don't understand.\nPease help, S. Thomas\nCompiling C++ (in opt mode) /Users/768/projects/run/build/unity_src/functions_Unity.C...\nIn file included from /Users/768/projects/run/build/unity_src/functions_Unity.C:2:\n/Users/768/projects/run/src/functions/SinkMat.C:19:54: error: expected expression\n  params.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n                                                     ^\n/Users/768/projects/run/src/functions/SinkMat.C:19:55: error: use of undeclared identifier 'a'\n  params.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n                                                      ^\n/Users/768/projects/run/src/functions/SinkMat.C:19:84: error: expected expression\n  params.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n                                                                                   ^\n/Users/768/projects/run/src/functions/SinkMat.C:25:16: error: use of undeclared identifier 'getMaterialProperty'\n    _value_mat(getMaterialProperty<Real>(\"value_mat\"))\n               ^\n/Users/768/projects/run/src/functions/SinkMat.C:32:21: error: use of undeclared identifier '_qp'\n  return _value_mat[_qp];",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9981211",
+                          "updatedAt": "2024-07-07T21:03:57Z",
+                          "publishedAt": "2024-07-07T21:03:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nwhen we <...> in code it's meant for you to fill in, you can't copy paste it in it wont work without filling it",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9981721",
+                          "updatedAt": "2024-07-07T23:51:24Z",
+                          "publishedAt": "2024-07-07T23:51:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Sorry ... I will type then.  The errors are:\n.../functions_Unity.C:2:: ... /functions/SinkMat.C:19:54: error: expected expression.\nparams.addParam<MaterialPropertyName>(\"value_mat\",<a default if it makes sense, if not then none>, \"description\");\n... /functions/SinkMat.C:19:55: error: use of undeclared identifier 'a'\nparams.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n... /functions/SinkMat.C:25:16: error: use of undeclared identifier 'getMaterialProperty'\n_value_mat(getMaterialProperty('value_mat\")",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9989369",
+                          "updatedAt": "2024-07-08T16:07:52Z",
+                          "publishedAt": "2024-07-08T16:07:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "params.addParam<MaterialPropertyName>(\"value_mat\", <a default if it makes sense, if not then none>, \"description\");\n\nReplace <a default if it makes sense, if not then none> with a a default\nIf you dont understand what I mean, replace with this, which gives a 0 default\nparams.addParam<MaterialPropertyName>(\"value_mat\", \"0\",  \"description\");",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9989418",
+                          "updatedAt": "2024-07-08T16:13:15Z",
+                          "publishedAt": "2024-07-08T16:13:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "I still receive an error of\n... /functions/SinkMat.C:25:16: error: use of undeclared identifier 'getMaterialProperty'\n_value_mat(getMaterialProperty('value_mat\")\n\nUsing the ParsedAux auxkernel as you suggested before may be a good idea.\nS. Thomas",
+                          "url": "https://github.com/idaholab/moose/discussions/27721#discussioncomment-9990193",
+                          "updatedAt": "2024-07-08T17:41:09Z",
+                          "publishedAt": "2024-07-08T17:37:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Build CUDA aware MOOSE - Issues to buils PETSc - SUPERLU_DIST",
+          "author": {
+            "login": "DanoLV"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A Getting Started is the most appropriate category for my question (trouble installing, beginner user, ...)\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (avoid screenshots if possible, triple back quotes before/after pasted text, etc)\n\nIssue or question about MOOSE\nHello.\nI have been trying to build MOOSE with CUDA aware OpenMPI an PETSc, but my efforts have been unsuccessful until now.\nOpenMPI is CUDa aware in my build, but when I try to build PETSc it fails to make SUPERLU_DIST.\n\nConfigure_petsc.sh is been called wth the options:\npython3 ./configure --with-64-bit-indices \n--with-cxx-dialect=C++17 \n--with-debugging=no \n--with-fortran-bindings=0 \n--with-mpi=1 \n--with-openmp=1 \n--with-cuda=1 \n--with-shared-libraries=1 \n--with-sowing=0 \n--download-fblaslapack=1 \n--download-hypre=1 \n--download-metis=1 \n--download-mumps=1 \n--download-ptscotch=1 \n--download-parmetis=1 \n--download-scalapack=1 \n--download-slepc=1 \n--download-strumpack=1 \n--download-superlu_dist=1 \n$HDF5_STR \n$MUMPS_ARM_STR \n$MAKE_NP_STR \n\"$@\"\nI atach the PETSc config.log.\nconfigure.log\nThank in advance.\nDiagnostics for MOOSE installation issues\n[Optional] Output of the diagnostics scripts. To run the script: cd ~/projects/moose/scripts; ./diagnostics.sh",
+          "url": "https://github.com/idaholab/moose/discussions/27694",
+          "updatedAt": "2024-07-10T14:43:54Z",
+          "publishedAt": "2024-05-22T21:29:33Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou could remove superlu-dist by manually editing the update and rebuild petsc script\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9528169",
+                  "updatedAt": "2024-05-23T00:06:58Z",
+                  "publishedAt": "2024-05-23T00:06:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@balay I don't know too much about this, but looking in the configure.log, I see\n/home/dano/discos/datos/proyects/moose/petsc/arch-moose/externalpackages/git.superlu_dist/SRC/pdgstrs_lsum_cuda.cu(1746): error: no instance of overloaded function \"atomicAdd\" matches the argument list\n\nMy top google hit for this was this stack overflow post which suggests this error might be fixable with flags. Have you run into this before?",
+                  "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9535709",
+                  "updatedAt": "2024-05-23T14:21:01Z",
+                  "publishedAt": "2024-05-23T14:21:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jczhang07"
+                          },
+                          "bodyText": "From configure.log\n/home/dano/discos/datos/proyects/moose/petsc/arch-moose/externalpackages/git.superlu_dist/SRC/pdgstrs_lsum_cuda.cu(1281): error: no instance of overloaded function \"atomicAdd\" matches the argument list\n            argument types are: (double *, double)\n         temp=atomicAdd(&lsum[il+irow + j*iknsupc],-temp1);\n\nFrom a code comment in PETSc\n  The 64-bit floating-point version of atomicAdd() is only supported by devices of compute capability 6.x and higher.\nFrom configure.log, I found petsc failed to detect the cuda arch of the system\nChecking for program /usr/local/cuda/extras/demo_suite/deviceQuery...not found\n    Checking for program /home/dano/discos/datos/proyects/moose/petsc/lib/petsc/bin/win32fe/deviceQuery...not found\n  Unable to find programs: ['deviceQuery'] in listing of the specific search path: ['/usr/local/cuda/extras/demo_suite']\n      Warning accessing /usr/local/cuda/extras/demo_suite gives errors: [Errno 2] No such file or directory: '/usr/local/cuda/extras/demo_suite'\nExecuting: nvcc -c -o /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest.o -I/tmp/petsc-n5_n6b3o/config.setCompilers -I/tmp/petsc-n5_n6b3o/config.types -I/tmp/petsc-n5_n6b3o/config.packages.cuda  -ccbin mpicxx -std=c++20 -Xcompiler -fPIC -Xcompiler -fvisibility=hidden -O3  /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest.cu \nSuccessful compile:\nSource:\n#include \"confdefs.h\"\n#include \"conffix.h\"\n#include <stdio.h>\n                    #include <cuda_runtime.h>\n                    #include <cuda_runtime_api.h>\n                    #include <cuda_device_runtime_api.h>\n\nint main(void) {\nint cerr;\n                cudaDeviceProp dp;\n                cerr = cudaGetDeviceProperties(&dp, 0);\n                if (cerr) printf(\"Error calling cudaGetDeviceProperties\\n\");\n                else printf(\"%d\\n\",10*dp.major+dp.minor);\n                return(cerr);\n  return 0;\n}\n\nExecuting: nvcc  -o /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest   -ccbin mpicxx -std=c++20 -Xcompiler -fPIC -Xcompiler -fvisibility=hidden -O3 /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest.o \nTesting executable /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest to see if it can be run\nExecuting: /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest\nRunning Executable with threads to time it out at 60\nExecuting: /tmp/petsc-n5_n6b3o/config.packages.cuda/conftest\nstdout: Error calling cudaGetDeviceProperties\nERROR while running executable: Could not execute \"['/tmp/petsc-n5_n6b3o/config.packages.cuda/conftest']\":\nError calling cudaGetDeviceProperties\n\nI don't know the exact reason why the checking failed.  Perhaps @DanoLV should double check if the GPU is new enough to support cuda arch 60,  or explicitly set that in petsc configure options,  e.g., --with-cuda-arch=70?",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9551586",
+                          "updatedAt": "2024-05-24T21:00:48Z",
+                          "publishedAt": "2024-05-24T21:00:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jczhang07"
+                          },
+                          "bodyText": "@DanoLV I added https://gitlab.com/petsc/petsc/-/merge_requests/7572 off petsc/release to get more info on the failure of detecting cuda arch.  You might want to have a try.",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9551900",
+                          "updatedAt": "2024-05-24T22:06:57Z",
+                          "publishedAt": "2024-05-24T22:06:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "DanoLV"
+                          },
+                          "bodyText": "Thaks you all for the comments.\nAll this stuff is pretty new for my, so I do not really get all the details.\nWhat I can tell is that I'm using a GeForce GTX 1080, which has compute capability 6.1. So it meets the requirements.\nFinally, I did manage to get a complete build of MOOSE that works!\nTo make it work, I installed CUDA 12.5, HDF5 1.14.4, UCX 1.16.0,  and  OpenMPI 5.0.3 first. Then, downloaded MOOSE and changed the PETSc vesion. When the script update_and_rebuild_petsc.sh gets PETSc from github, it downloads version 3.20. I replaced it with version 3.21.1 and commented the lines from the script to avoid it beening replaced again. Afted that I did not get another errors in the build proccess.\nI set the scrip configure_petsc.sh to run with these options:\npython3 ./configure --with-64-bit-indices \n--with-cxx-dialect=C++17 \n--with-debugging=no \n--with-fortran-bindings=0 \n--with-mpi=1 \n--with-openmp=1 \n--with-cuda=1 --with-cuda-dialect=cxx17 -CUDAOPTFLAGS=\"\" -Wno-deprecated-gpu-targets --download-kokkos --download-kokkos-kernels\n--with-shared-libraries=1 \n--with-sowing=0 \n--download-fblaslapack=1 \n--download-hypre=1 \n--download-metis=1 \n--download-mumps=1 \n--download-ptscotch=1 \n--download-parmetis=1 \n--download-scalapack=1 \n--download-strumpack=1 --download-slate\n--download-slepc=1 \n--download-superlu_dist=1 \n$HDF5_STR \n$MUMPS_ARM_STR \n$MAKE_NP_STR \n\"$@\"\nAfter that, I continued with the steps explained in https://mooseframework.inl.gov/getting_started/installation/hpc_install_moose.html#!\nThe run_tests execution gives several error, but it seems to be due to the lack of definition of -vec_type -mat_type in the tests definitions. I have to do more checks on this matter.",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9558060",
+                          "updatedAt": "2024-05-25T20:40:56Z",
+                          "publishedAt": "2024-05-25T20:40:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Thank you for posting. I've been working on getting a Cuda variant Conda package set made available to the masses, and your input helps.\nWith older PETSc versions I was being stopped by several PETSc contribs. But your configure line indicates these contribs are now working properly.",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9580425",
+                          "updatedAt": "2024-05-28T12:18:33Z",
+                          "publishedAt": "2024-05-28T12:18:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I think that any tests using boomeramg will likely fail since boomeramg always assumes the vec and mat will be on the device but by default we just create those on the host",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-9581369",
+                          "updatedAt": "2024-05-28T13:45:48Z",
+                          "publishedAt": "2024-05-28T13:45:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @DanoLV\ncould you please share your update_and_rebuild_petsc.sh and configure_petsc.sh? i'm having hard time running update_and_rebuild_petsc.sh as well\nalso did you install CUDA 12.5, HDF5 1.14.4, UCX 1.16.0, and OpenMPI 5.0.3 to your linux or conda environment?\nI'm super new to this compile PETSC and GPU stuff, I kept running into error after error, could you please guide me?\nThank you for you help!\nKind regards,\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-10009664",
+                          "updatedAt": "2024-07-10T12:33:34Z",
+                          "publishedAt": "2024-07-10T12:33:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "They gave a pretty detailed configure line. Browsing it, I believe the additional arguments you would pass to scripts/update_and_rebuild_petsc.sh if you want to mimic their configuration are:\nscripts/update_and_rebuild_petsc.sh --with-cxx-dialect=C++17 --with-cuda=1 --with-cuda-dialect=cxx17 -CUDAOPTFLAGS=\"\" -Wno-deprecated-gpu-targets --download-kokkos --download-kokkos-kernels",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-10010828",
+                          "updatedAt": "2024-07-10T14:19:51Z",
+                          "publishedAt": "2024-07-10T14:19:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "make sure that you've configured openmpi with --with-cuda",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-10010994",
+                          "updatedAt": "2024-07-10T14:35:25Z",
+                          "publishedAt": "2024-07-10T14:35:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "balay"
+                          },
+                          "bodyText": "/home/dano/discos/datos/proyects/moose/petsc/arch-moose/externalpackages/git.superlu_dist/SRC/pdgstrs_lsum_cuda.cu(1746): error: no instance of overloaded function \"atomicAdd\" matches the argument list\n\nThis issue was fixed by https://gitlab.com/petsc/petsc/-/merge_requests/7288/diffs?commit_id=cdfa477dea3fec089d157123d8a6f983b5ff4346\nbut yeah - generall - best to use latest version for GPU usage",
+                          "url": "https://github.com/idaholab/moose/discussions/27694#discussioncomment-10011126",
+                          "updatedAt": "2024-07-10T14:43:55Z",
+                          "publishedAt": "2024-07-10T14:43:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to install peacock",
+          "author": {
+            "login": "yuegrit"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n I have consulted the Posting Guidelines.\n I have searched the Discussions Forum and MOOSE Framework Troubleshooting and have not found what I was looking for\n Q&A Getting Started is the most appropriate category for my question (trouble installing, beginner user, ...)\n\nIssue or question about MOOSE\nHello, everyone. I was confronted with a problem when I installed Peacock into Ubantu according to this instruction https://mooseframework.inl.gov/python/peacock.html. After I inputted command \"conda create -n peacock moose-peacock\", a error happened like this:\n(base) yue@yue-laptop:~$ conda create -n peacock moose-peacock\nCollecting package metadata (current_repodata.json): done\nSolving environment: failed with repodata from current_repodata.json, will retry with next repodata source.\nCollecting package metadata (repodata.json): done\nSolving environment: \\ Killed\nIs there anyone that could help me with this error ? Thank you very much.\n(Optional) code in question / simulation log / errors\nNo response\nEncountering Errors? Please include diagnostic output\n(base) yue@yue-laptop:~$ conda create -n peacock moose-peacock\nCollecting package metadata (current_repodata.json): done\nSolving environment: failed with repodata from current_repodata.json, will retry with next repodata source.\nCollecting package metadata (repodata.json): done\nSolving environment: \\ Killed",
+          "url": "https://github.com/idaholab/moose/discussions/28074",
+          "updatedAt": "2024-07-10T12:20:29Z",
+          "publishedAt": "2024-07-06T08:14:33Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nKilled likely means you ran out of memory, unless you killed the process yourself with ctrl C\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28074#discussioncomment-9975788",
+                  "updatedAt": "2024-07-06T17:27:19Z",
+                  "publishedAt": "2024-07-06T17:27:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yuegrit"
+                          },
+                          "bodyText": "Thank you very much. This time, I used a linux-based computer with a memory of 32 Gb according to your suggestion. However, a new problem appear like this:\n[cloudam@master ~]$ conda create -n peacock moose-peacock\nChannels:\n\nhttps://conda.software.inl.gov/public\nanaconda\nintel\ndefaults\nPlatform: linux-64\nCollecting package metadata (repodata.json): done\nSolving environment: failed\n\nLibMambaUnsatisfiableError: Encountered problems while solving:\n\nnothing provides _sysroot_linux-64_curr_repodata_hack 3 h69a702a_13 needed by moose-mpich-4.0.2-build_15\n\nCould not solve for environment specs\nThe following packages are incompatible\n\u2514\u2500 moose-peacock is not installable because there are no viable options\n\u251c\u2500 moose-peacock 2022.10.04 would require\n\u2502  \u2514\u2500 ca-certificates 2022.9.24 ha878542_0, which does not exist (perhaps a missing channel);\n\u251c\u2500 moose-peacock 2022.12.05 would require\n\u2502  \u2514\u2500 ca-certificates 2022.12.7 ha878542_0, which does not exist (perhaps a missing channel);\n\u251c\u2500 moose-peacock 2023.04.11 would require\n\u2502  \u2514\u2500 moose-mpich 4.0.2 build_16, which requires\n\u2502     \u2514\u2500 _sysroot_linux-64_curr_repodata_hack 3 h69a702a_14, which does not exist (perhaps a missing channel);\n\u251c\u2500 moose-peacock [2023.08.17|2023.08.31|...|2023.11.10] would require\n\u2502  \u2514\u2500 paraview, which does not exist (perhaps a missing channel);\n\u2514\u2500 moose-peacock 2023.11.29 would require\n\u2514\u2500 moose-mpich 4.0.2 build_15, which requires\n\u2514\u2500 _sysroot_linux-64_curr_repodata_hack 3 h69a702a_13, which does not exist (perhaps a missing channel).\nCould you please help with this problem?",
+                          "url": "https://github.com/idaholab/moose/discussions/28074#discussioncomment-10005211",
+                          "updatedAt": "2024-07-10T05:08:59Z",
+                          "publishedAt": "2024-07-10T05:08:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@milljm may know what problem we are having with package dependencies here",
+                          "url": "https://github.com/idaholab/moose/discussions/28074#discussioncomment-10005381",
+                          "updatedAt": "2024-07-10T05:41:56Z",
+                          "publishedAt": "2024-07-10T05:41:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Our packages require the conda-forge channel to be made available. And to be strictly used with other packages coming from conda-forge (no mix-and-matching).\nThis installation looks to be of a miniconda variant (denoting the Anaconda channel there). You can try the following, but it might be necessary to install Miniforge which makes direct use of the 'conda-forge' channel.\nconda config --add channels conda-forge\nconda config --set channel_priority strict\nconda create -n peacock moose-peacock",
+                          "url": "https://github.com/idaholab/moose/discussions/28074#discussioncomment-10009487",
+                          "updatedAt": "2024-07-10T12:16:17Z",
+                          "publishedAt": "2024-07-10T12:16:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Also, miniconda is going to be nefariously slow at solving dependencies. This right here:\nSolving environment: \n\nPrepare for this to take some times 40 minutes. It is not broken!\nThis is why we primarily moved to Miniforge instead (their solver is parallel/threaded, solving dependency chains in a fraction of the time).",
+                          "url": "https://github.com/idaholab/moose/discussions/28074#discussioncomment-10009530",
+                          "updatedAt": "2024-07-10T12:20:34Z",
+                          "publishedAt": "2024-07-10T12:20:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Material for learning implementing in-situ stress and absorbing boundary",
+          "author": {
+            "login": "miraboreasumr"
+          },
+          "bodyText": "Are there materials (couldn't find in the documents) about how MOOSE implements the in-situ stress and absorbing boundary (Lysmer et al. I guess?) Like how the in-situ stress affects the initial condition and the solving process, etc\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/27930",
+          "updatedAt": "2024-07-10T04:11:04Z",
+          "publishedAt": "2024-06-18T18:40:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhich source file in particular? So I can find who implemented it",
+                  "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-9809765",
+                  "updatedAt": "2024-06-18T18:50:54Z",
+                  "publishedAt": "2024-06-18T18:50:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "miraboreasumr"
+                          },
+                          "bodyText": "Hello\nWhich source file in particular? So I can find who implemented it\n\nI am not into the source file yet, I assume there are these features in MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-9809941",
+                          "updatedAt": "2024-06-18T19:10:55Z",
+                          "publishedAt": "2024-06-18T19:10:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@dschwen",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-9810149",
+                          "updatedAt": "2024-06-18T19:35:33Z",
+                          "publishedAt": "2024-06-18T19:35:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "miraboreasumr"
+                          },
+                          "bodyText": "Hello\nWhich source file in particular? So I can find who implemented it\n\nAnyone would give me some lectures about the in-situ stress in MOOSE?",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-10004673",
+                          "updatedAt": "2024-07-10T03:23:40Z",
+                          "publishedAt": "2024-07-10T03:23:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is this in a porous-flow geomechanics context or a solid mechanics context?",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-10004887",
+                          "updatedAt": "2024-07-10T04:00:28Z",
+                          "publishedAt": "2024-07-10T04:00:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "miraboreasumr"
+                          },
+                          "bodyText": "Is this in a porous-flow geomechanics context or a solid mechanics context?\n\nah, I would say more of porous-flow geomechancis.",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-10004897",
+                          "updatedAt": "2024-07-10T04:02:35Z",
+                          "publishedAt": "2024-07-10T04:02:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@1runer @cpgr do you know which doc page would fit best?",
+                          "url": "https://github.com/idaholab/moose/discussions/27930#discussioncomment-10004935",
+                          "updatedAt": "2024-07-10T04:11:04Z",
+                          "publishedAt": "2024-07-10T04:11:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Attempting to set parameter  <Use a descriptive title here>",
+          "author": {
+            "login": "Rahim-Habibi"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi,\nI have a moose-based app in which I have added a function in a material property as followimg:\nin header file:\nconst Function * Tn;\nin source file:\n params.addParam<FunctionName>(\"mass_function\", \"The mass flow rate as a \");\n\nfollowed by a simple calcualtion in the code.\nin input file:\nTn = 'function name'\nit compiles successfully but when i am running, i shows following error and stops the run.\n*** ERROR ***\nAttempting to set parameter \"Tn_o\" with type (FunctionName)\nbut the parameter already exists as type (double)\n\nThanks in advance for any help",
+          "url": "https://github.com/idaholab/moose/discussions/28068",
+          "updatedAt": "2024-07-09T15:44:58Z",
+          "publishedAt": "2024-07-05T08:30:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Bearunner"
+                  },
+                  "bodyText": "",
+                  "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9967186",
+                  "updatedAt": "2024-07-05T14:05:05Z",
+                  "publishedAt": "2024-07-05T10:41:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Rahim-Habibi"
+                          },
+                          "bodyText": "I have got the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9968482",
+                          "updatedAt": "2024-07-05T13:14:54Z",
+                          "publishedAt": "2024-07-05T13:14:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDo you happen to have\n params.addParam<Real>(\"mass_function\", \"The mass flow rate as a \");\n\nin the validParams as well as the FunctionName version?\nAnd if not, what does your class derive from? and does any of the parent have this parameter?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9969900",
+                  "updatedAt": "2024-07-05T15:57:21Z",
+                  "publishedAt": "2024-07-05T15:57:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Rahim-Habibi"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nNo i do not have Real version, only have FunctionName version.\nit is derived from \"CZMComputeLocalTractionTotalBaseRSF3D\" and the parant does not have the parameter.",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9974148",
+                          "updatedAt": "2024-07-08T07:44:30Z",
+                          "publishedAt": "2024-07-06T10:39:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "Hi @GiudGiud\nI have edited the header and source like the following:\nin header file:\npublic:\n  const FunctionName functionName() const;    //returns The function name\n\nprotected:\n  const Function & _Tn_o;                                   //Function to evaluate \n\n\nin  source file:\n params.addParam<FunctionName>(\"mass_function\", \"The mass flow rate as a \");\n.\n.\n.\nclassname::classname(const InputParameters & parameters)\n  : CZMComputeLocalTractionTotalBaseRSF3D(parameters),\n   _Tn_o(getFunction(\"Tn_o\")),\n.\n.\n.\nconst FunctionName\nclassname::functionName() const\n{\n  return _Tn_o.name();\n}\n\nBut, i got the same error again.\nThanks for your help",
+                  "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9991479",
+                  "updatedAt": "2024-07-08T21:36:28Z",
+                  "publishedAt": "2024-07-08T20:25:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this should be\n   _Tn_o(getFunction(\"mass_function\")),\n\nsince it uses the name of the parameter",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9991927",
+                          "updatedAt": "2024-07-08T21:37:29Z",
+                          "publishedAt": "2024-07-08T21:37:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Rahim-Habibi"
+                          },
+                          "bodyText": "Thanks @GiudGiud\nI have followed this ticket #25688 and the issue is resolved.\nin next step, I want to check the magnitude of the function after run in paraview and i call it in input file: output_properties = 'Tn_o',\nbut \"Tn_o\" does not show up in paraview. It is not added for automatic output at all.\nSetting Up\nSetting Mesh\nReading Mesh..                                                                       [ 16.43 s] [  388 MB]\nFinished Setting Mesh                                                                  [ 18.57 s] [  390 MB]\nThe following total 1 aux variable:\ntraction_normal\nis added for automatic output by MaterialOutputAction.\nInitializing",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9998828",
+                          "updatedAt": "2024-07-17T07:28:35Z",
+                          "publishedAt": "2024-07-09T13:46:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThere is no Automated function output\nEither use a GenericFunctionMaterial to output the function as a material property using the material property output\nOr use a FunctionAux to output it as an auxiliary variable",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-9999056",
+                          "updatedAt": "2024-07-09T14:04:55Z",
+                          "publishedAt": "2024-07-09T14:04:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Rahim-Habibi"
+                          },
+                          "bodyText": "Thnaks @GiudGiud\nI already tried in those way and data shows up as an auxvariable.\nBut waht i mean is that \"Tn_o\" used like stress in material block, so since i can output stress in exodus file i can output \"Tn_o\" as well, right?\nActually \"Tn_o\" is used for initialization of the model, so i want to check if initilazation is done properly? because this app is part of a serial coupling and i need to prove that the results of the app A is transferred to app B properly.",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-10000231",
+                          "updatedAt": "2024-07-09T15:42:25Z",
+                          "publishedAt": "2024-07-09T15:42:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so since i can output stress in exodus file i can output \"Tn_o\" as well, right?\n\nIf Tn_0 is a function then no you can't.\n\nso i want to check if initilazation is done properly\n\nYou can use an auxvariable and execute the FunctionAux on INITIAL",
+                          "url": "https://github.com/idaholab/moose/discussions/28068#discussioncomment-10000267",
+                          "updatedAt": "2024-07-09T15:44:58Z",
+                          "publishedAt": "2024-07-09T15:44:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

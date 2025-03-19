@@ -1,0 +1,1509 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMi0xM1QwODoxNDozNy0wNzowMM4AWWZp"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "mortar interface for accounting for stress discontinuity around a fault.",
+          "author": {
+            "login": "Thomas-Ulrich"
+          },
+          "bodyText": "Hi everyone,\nWe are working on coupling THM models of geothermal systems with earthquake models.\nIn the THM application (application Tiger https://github.com/Domino2022/Tiger, based on the moose framework), we are modeling fluid injection within a 3D reservoir including faults, which are lower-dimensional features defined in the mesh (e.g. allowing to model the enhance fluid diffusivity at the fault). The mesh is built with gmsh.\nWhen the conditions for an earthquake are reached, we pass the stress state to the external earthquake modeling software (a discontinuous Galerkin code, https://github.com/SeisSol/SeisSol) and model the earthquake. Fault slip during the earthquake leads to a displacement discontinuity across the fault and comes in pairs with a stress change within the volume, also discontinuous across the fault.\nCurrently, when porting back the stress change to the THM model through a SolutionUserObject, we get a smooth version of the discontinuity. Specifically, the tractions on the fault are wrong, because based on interpolated stress instead of calculated from the stress on the 2 sides.\nTo solve this problem, I would duplicate the fault nodes and triangles, to create \"split nodes\", and then glue them with a mortar element in the THM model. Do you think this would work?\nIs there an automated way to generate a duplicated internal surface with gmsh for mortar application?\nWould a EqualValueConstraint be sufficient to capture the discontinuity of the stress at the fault interface when retstarting moose?",
+          "url": "https://github.com/idaholab/moose/discussions/26574",
+          "updatedAt": "2024-02-15T16:39:33Z",
+          "publishedAt": "2024-01-17T14:58:08Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "You could create sidesets for each side of the interface, and then you could use a LowerDBlockFromSidesetGenerator to create the lower-dimensional blocks associated with the sidesets which mortar needs. What variable(s) would you be appying the EqualValueConstraint to?",
+                  "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8158620",
+                  "updatedAt": "2024-01-17T15:50:53Z",
+                  "publishedAt": "2024-01-17T15:50:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "To break the two sides apart, you can also use this mesh generator\nhttps://mooseframework.inl.gov/source/meshgenerators/BreakMeshByBlockGenerator.html\nif the sideset is in between two blocks. If it is not, then I would recommend first trying to create the two blocks on both sides of the sideset.\nIf that is impossible, then I would look at creating a new object: BreakMeshOnSidesetGenerator",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8162151",
+                          "updatedAt": "2024-01-17T21:45:26Z",
+                          "publishedAt": "2024-01-17T21:45:25Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Thomas-Ulrich"
+                          },
+                          "bodyText": "Thank you! That's very useful.\nWell I think I will first use EqualValueConstraint on all variables, and see how much it differs from the current setup.",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8172085",
+                          "updatedAt": "2024-01-18T17:17:28Z",
+                          "publishedAt": "2024-01-18T17:17:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "This input demonstrates that mortar can be used even when the higher-dimensional face is shared by the secondary and primary sides, e.g. without breaking the mesh connectivity\n[Mesh]\n  [file]\n    type = GeneratedMeshGenerator\n    xmax = 2\n    nx = 20\n    ny = 10\n    dim = 2\n  []\n  [right_block]\n    input = file\n    type = SubdomainBoundingBoxGenerator\n    bottom_left = '1 0 0'\n    top_right = '2 1 0'\n    block_id = '1'\n    block_name = 'right'\n  []\n  [left_sideset]\n    type = SideSetsBetweenSubdomainsGenerator\n    primary_block = '0'\n    paired_block = 'right'\n    input = right_block\n    new_boundary = 'interface_left'\n  []\n  [right_sideset]\n    type = SideSetsBetweenSubdomainsGenerator\n    primary_block = 'right'\n    paired_block = '0'\n    input = left_sideset\n    new_boundary = 'interface_right'\n  []\n  [left_lowerd_block]\n    input = right_sideset\n    type = LowerDBlockFromSidesetGenerator\n    sidesets = 'interface_left'\n    new_block_name = 'left_lower'\n  []\n  [right_lowerd_block]\n    input = left_lowerd_block\n    type = LowerDBlockFromSidesetGenerator\n    sidesets = 'interface_right'\n    new_block_name = 'right_lower'\n  []\n  second_order = true\n[]\n\n[Variables]\n  [u]\n    order = SECOND\n    family = LAGRANGE\n    block = '0'\n  []\n  [v]\n    order = SECOND\n    family = LAGRANGE\n    block = 'right'\n  []\n\n  [lm]\n    order = FIRST\n    family = LAGRANGE\n    block = 'left_lower'\n  []\n[]\n\n[Kernels]\n  [diff]\n    type = Diffusion\n    variable = u\n  []\n  [diff_v]\n    type = Diffusion\n    variable = v\n  []\n[]\n\n[Constraints]\n  [ced]\n    type = EqualValueConstraint\n    variable = lm\n    secondary_variable = u\n    primary_variable = v\n    primary_boundary = interface_right\n    primary_subdomain = right_lower\n    secondary_boundary = interface_left\n    secondary_subdomain = left_lower\n  []\n[]\n\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = u\n    boundary = 'left'\n    value = 0\n  []\n  [right]\n    type = DirichletBC\n    variable = v\n    boundary = 'right'\n    value = 1\n  []\n[]\n\n\n[Executioner]\n  solve_type = NEWTON\n  type = Steady\n  nl_rel_tol = 1e-11\n  petsc_options_iname = '-pc_type -pc_factor_shift_type'\n  petsc_options_value = 'lu       NONZERO'\n[]\n\n[Outputs]\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8185430",
+                          "updatedAt": "2024-01-19T19:53:51Z",
+                          "publishedAt": "2024-01-19T19:53:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "This input demonstrates that mortar can be used even when the higher-dimensional face is shared by the secondary and primary sides, e.g. without breaking the mesh connectivity\n[Mesh]\n  [file]\n    type = GeneratedMeshGenerator\n    xmax = 2\n    nx = 20\n    ny = 10\n    dim = 2\n  []\n  [right_block]\n    input = file\n    type = SubdomainBoundingBoxGenerator\n    bottom_left = '1 0 0'\n    top_right = '2 1 0'\n    block_id = '1'\n    block_name = 'right'\n  []\n  [left_sideset]\n    type = SideSetsBetweenSubdomainsGenerator\n    primary_block = '0'\n    paired_block = 'right'\n    input = right_block\n    new_boundary = 'interface_left'\n  []\n  [right_sideset]\n    type = SideSetsBetweenSubdomainsGenerator\n    primary_block = 'right'\n    paired_block = '0'\n    input = left_sideset\n    new_boundary = 'interface_right'\n  []\n  [left_lowerd_block]\n    input = right_sideset\n    type = LowerDBlockFromSidesetGenerator\n    sidesets = 'interface_left'\n    new_block_name = 'left_lower'\n  []\n  [right_lowerd_block]\n    input = left_lowerd_block\n    type = LowerDBlockFromSidesetGenerator\n    sidesets = 'interface_right'\n    new_block_name = 'right_lower'\n  []\n  second_order = true\n[]\n\n[Variables]\n  [u]\n    order = SECOND\n    family = LAGRANGE\n    block = '0'\n  []\n  [v]\n    order = SECOND\n    family = LAGRANGE\n    block = 'right'\n  []\n\n  [lm]\n    order = FIRST\n    family = LAGRANGE\n    block = 'left_lower'\n  []\n[]\n\n[Kernels]\n  [diff]\n    type = Diffusion\n    variable = u\n  []\n  [diff_v]\n    type = Diffusion\n    variable = v\n  []\n[]\n\n[Constraints]\n  [ced]\n    type = EqualValueConstraint\n    variable = lm\n    secondary_variable = u\n    primary_variable = v\n    primary_boundary = interface_right\n    primary_subdomain = right_lower\n    secondary_boundary = interface_left\n    secondary_subdomain = left_lower\n  []\n[]\n\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = u\n    boundary = 'left'\n    value = 0\n  []\n  [right]\n    type = DirichletBC\n    variable = v\n    boundary = 'right'\n    value = 1\n  []\n[]\n\n\n[Executioner]\n  solve_type = NEWTON\n  type = Steady\n  nl_rel_tol = 1e-11\n  petsc_options_iname = '-pc_type -pc_factor_shift_type'\n  petsc_options_value = 'lu       NONZERO'\n[]\n\n[Outputs]\n  exodus = true\n[]\n\n\nDear @lindsayad,\nin this example, you applied the constraint on main variables.\nI have looked at the example here, all of them operate on main variable. Also, according to . C file, it operates on \"_u_primary and _u_secondary\".\nSo, I was wondering to know is it possible to apply it on axuvariable, e.g. stress?",
+                  "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8417550",
+                  "updatedAt": "2024-02-09T10:49:19Z",
+                  "publishedAt": "2024-02-09T10:49:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Stress is tensor mechanics is actually a material property.\nAre you trying to constrain stresses to match on both sides of a boundary? Why not strain / displacements?",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8420135",
+                          "updatedAt": "2024-02-09T15:10:29Z",
+                          "publishedAt": "2024-02-09T15:10:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "Thanks @GiudGiud\nActually we have a surface with 2D element mesh (fault in this case) between two subdomain . So, we want to force the stress continiuty from sidessets of the subdomains to the surface.\nI have already tried with displacement, it works. But based on this issue #24897, lower dimensional block should be removed from \"module\" and \"kernel\" blocks (i.e. it has to be called only in \"Constraint\" block. So. my understanding is that the stress belong to lower dimensional can not be called in module and kernel meaning that it only forces displacement continuity, right?\nthat is why I asked is there a way to have stress continuty on the lower dimensional block using constraint.\nThanks\nRahim",
+                  "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8420339",
+                  "updatedAt": "2024-02-09T15:34:58Z",
+                  "publishedAt": "2024-02-09T15:30:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "stress continuty on the lower dimensional block\n\nwhat do you mean by that? continuous from the volumes (both sides) onto the lower dimensional block?\nOr continuous across the sideset (between the two volumes)",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8424368",
+                          "updatedAt": "2024-02-10T00:23:35Z",
+                          "publishedAt": "2024-02-10T00:23:35Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "stress continuty on the lower dimensional block\n\nwhat do you mean by that? continuous from the volumes (both sides) onto the lower dimensional block? Or continuous across the sideset (between the two volumes)\n\n@GiudGiud\nAccording to #24897, it is mentioned that lower dimensional block has to be removeed from \"tensor mechanics module\" and \"kernel\" blocks (meaning that stress is not going to be compted on lower dimensional block).\nI followed the example there and successfully i got the displacement contitiuty as expected but stress tended to zero on lower dimensional block since based on the example, stress on lower dimensional block is not called in \"tensor mechanics module\" and \"kernel\" blocks (so it makes sense not to have stress on lower dimensional block). But I want to have stress continuty in my simulation that is why I am wondering to know how to have stress continuty on a lower dimensional block surrounded by two subdomains.\nSo, here my mesh and constraints blocks to have displacement continuty which works well:\n[Mesh]\n  [./file]\n    type = FileMeshGenerator\n    file = tpv104-inbox-fault.msh\n  [../]\n  [./sidesetmid1]\n    type = SideSetsBetweenSubdomainsGenerator\n    input = 'file'\n    primary_block = 'SDMidBack'                  # subdomain\n    paired_block = 'SDMidFront'                   # subdomain\n    new_boundary = 'primary1_interface'     # sideset\n  [../]\n  [./sidesetmid2]\n    type = SideSetsBetweenSubdomainsGenerator\n    input = 'sidesetmid1'\n    primary_block = 'SDMidFront'                # subdomain\n    paired_block = 'SDMidBack'                   # subdomain\n    new_boundary = 'primary2_interface'    # sideset\n  [../]\n  [interfacemid]\n    type = LowerDBlockFromSidesetGenerator\n    input = sidesetmid2\n    sidesets = 'primary2_interface'               # sideset\n    new_block_id = '10000'\n    new_block_name = 'interfacemid'          # lower dimensional block\n    []\n    []\n##########\n[Modules]\n  [./TensorMechanics]\n    [./Master]\n      [./all]\n      add_variables = true\n      strain = SMALL\n      incremental = true\n      #temperature = temperature\n      #use_displaced_mesh = true\n      eigenstrain_names = 'reduced_eigenstrain'\n      volumetric_locking_correction = true\n      additional_generate_output = 'stress_xx stress_xy stress_xz stress_yx stress_yy stress_yz stress_zx stress_zy stress_zz'\n      block = 'box SDRightBack SDRightFront SDLeftBack SDLeftFront SDBottomBack SDBottomFront SDMidBack SDMidFront '  # lower dimensional should be removed from here if you want use Constraint on lower dimensional block\n      [../]\n    [../]\n  [../]\n []\n###############\n[Constraints]\n  [./mortarz]\n    type = EqualValueConstraint  \n    primary_boundary = SDMidBack\n    secondary_boundary = SDMidFront\n    primary_subdomain = primary1_interface\n    secondary_subdomain = primary2_interface\n    secondary_variable = disp_z\n    primary_variable = disp_z\n    variable = disp_z\n  [../]\n[]\n\nBUT, when I change the constraint to work on \"stress_zz\" for example, \n[Constraints]\n  [./mortarz]\n    type = EqualValueConstraint  \n    primary_boundary = SDMidBack\n    secondary_boundary = SDMidFront\n    primary_subdomain = primary1_interface\n    secondary_subdomain = primary2_interface\n    secondary_variable = stress_zz\n    primary_variable = stress_zz\n    variable = stress_zz\n  [../]\n[]\n\nI got the following error, at two scenarios with/without calling stress_zz in module block:\n*** ERROR ***\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nNo nonlinear variable named stress_zz found. Did you specify an auxiliary variable when you meant to specify a nonlinear variable?",
+                  "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8439520",
+                  "updatedAt": "2024-02-12T15:22:08Z",
+                  "publishedAt": "2024-02-12T10:05:22Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nstress_zz is a material property, that's why it wont let you specify it in a parameter that expects a variable in the EqualValueConstraint.\nI dont see anything obvious that does what you want in the existing constraints:\nhttps://mooseframework.inl.gov/syntax/Constraints/index.html\nbut maybe take another look\nI think at this point you want to write your own constraint that sets a material property to be continuous, more precisely a component of a tensor material property.\nI would use automatic differentiation. You write the contribution to the residual just like any other constraint, and AD will do the Jacobian. Jacobian would be tricky otherwise because you'd need to write the derivatives of the stress with regards to the displacement (your nonlinear variable).\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8443109",
+                          "updatedAt": "2024-02-12T15:26:44Z",
+                          "publishedAt": "2024-02-12T15:26:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Continuity of stress is conceptually similar to continuity of heat flux which is implemented in the mortar constraints in the heat_transfer module. The nice thing about these conditions is that they do not introduce saddle points like EqualValueConstraint",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8444504",
+                          "updatedAt": "2024-02-12T17:17:44Z",
+                          "publishedAt": "2024-02-12T17:17:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "Thanks for your reply @GiudGiud  and @lindsayad\n\nHello\nstress_zz is a material property, that's why it wont let you specify it in a parameter that expects a variable in the EqualValueConstraint. I dont see anything obvious that does what you want in the existing constraints: https://mooseframework.inl.gov/syntax/Constraints/index.html but maybe take another look\nI think at this point you want to write your own constraint that sets a material property to be continuous, more precisely a component of a tensor material property. I would use automatic differentiation. You write the contribution to the residual just like any other constraint, and AD will do the Jacobian. Jacobian would be tricky otherwise because you'd need to write the derivatives of the stress with regards to the displacement (your nonlinear variable).\nGuillaume\n\nThanks for your reply @GiudGiud  and @lindsayad\nI have changed the method, instead of using constraints I decided to use interface kernels. From \"InterfaceKernels\", I have tried InterfaceDiffusion and got reasonable results. I have disp and stress continuty on the lower dimensioanl block.\nit seems it is easy to work with w.r.t constraints.",
+                  "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8452322",
+                  "updatedAt": "2024-02-13T10:54:04Z",
+                  "publishedAt": "2024-02-13T10:54:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "yes if you have a conforming mesh at your interface, interface kernels are absolutely the way to go",
+                          "url": "https://github.com/idaholab/moose/discussions/26574#discussioncomment-8482634",
+                          "updatedAt": "2024-02-15T16:39:34Z",
+                          "publishedAt": "2024-02-15T16:39:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How does one extract the reaction forces over time at a set of restricted nodal points?",
+          "author": {
+            "login": "Yaode-Yin"
+          },
+          "bodyText": "Hallo, I am trying to plot the displacement-deflection curve of a structure (2D plane problem). To achieve that, I need to extract the reaction forces at the fixed nodes. Please help me to do that.",
+          "url": "https://github.com/idaholab/moose/discussions/26807",
+          "updatedAt": "2024-02-15T13:52:12Z",
+          "publishedAt": "2024-02-14T13:22:48Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou will want to make a postprocessor that samples the material property of interest (stress?) on the nodes of interest.\nDo you want one value per node? Or an integral over a group a nodes?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8467205",
+                  "updatedAt": "2024-02-14T15:17:13Z",
+                  "publishedAt": "2024-02-14T15:17:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "I try to get the reaction force (or the nodal force) at one node with Dirichlet BC, i.e. dis_x = 0 and dis_y = 0.",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8467380",
+                          "updatedAt": "2024-02-14T15:28:28Z",
+                          "publishedAt": "2024-02-14T15:28:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@hugary1995",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8467516",
+                          "updatedAt": "2024-02-14T15:39:36Z",
+                          "publishedAt": "2024-02-14T15:39:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "The 2D problem is similar as shown in the figure. The structure is fixed at one point A. Force F is loaded at the structure. The problem can be solved by Moose, and the stress and the displacement fileds can be obtained. But how can I extract the reaction force (or the nodal force) at the point A?",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8467698",
+                          "updatedAt": "2024-02-14T15:54:31Z",
+                          "publishedAt": "2024-02-14T15:54:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8467760",
+                          "updatedAt": "2024-02-14T15:58:36Z",
+                          "publishedAt": "2024-02-14T15:58:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "We really need a \"how to extract reaction forces\" Q&A page...\nCan you search for the answer in this forum? I feel like it's been answered many times. I can get back with more details later today.",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8468527",
+                          "updatedAt": "2024-02-14T16:48:33Z",
+                          "publishedAt": "2024-02-14T16:48:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "Thank you. I searched a lot before, but the problem is still unsolved. I am solving a phase field fracture problem. And the input file is as follow:\n[Mesh] \n    file = cmodthree.inp\n    boundary_id = ' 2 3 0 1'\n    boundary_name = 'uybc uxybc cmodl cmodr'\n    construct_side_list_from_node_list=true\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n[AuxVariables]\n  [./resid_x]\n  [../]\n  [./resid_y]\n  [../]\n  [./bounds_dummy]\n    order = FIRST\n    family = LAGRANGE\n  [../]\n[]\n\n[Modules]\n  [./PhaseField]\n    [./Nonconserved]\n      [./c]\n        free_energy = F\n        kappa = kappa_op\n        mobility = L\n      [../]\n    [../]\n  [../]\n  [./TensorMechanics]\n    [./Master]\n      [./mech]\n        add_variables = true\n        strain = SMALL\n      [../]\n    [../]\n  [../]\n[]\n\n[ICs]\n  [./c_ic]\n    type = FunctionIC\n    function = ic\n    variable = c\n  [../]\n[]\n\n[Functions]\n  [./ic]\n    type = ParsedFunction\n    expression = 0\n  [../]\n[]\n\n\n[Kernels]\n  [./solid_x]\n    type = PhaseFieldFractureMechanicsOffDiag\n    variable = disp_x\n    component = 0\n    c = c\n  [../]\n  [./solid_y]\n    type = PhaseFieldFractureMechanicsOffDiag\n    variable = disp_y\n    component = 1\n    c = c\n  [../]\n  [./res_y]\n    type = StressDivergenceTensors\n    component = 1\n    variable =disp_y\n    save_in = 'resid_y'\n  [../]\n  [./res_x]\n    type = StressDivergenceTensors\n    component =0\n    variable =disp_x\n    save_in = 'resid_x'\n  [../]\n[]\n\n[BCs]\n  [./x1disp]\n    type = FunctionDirichletBC\n    variable = disp_x\n    boundary = 'cmodl'\n    function = '-t'\n  [../]\n    [./x2disp]\n    type = FunctionDirichletBC\n    variable = disp_x\n    boundary = 'cmodr'\n    function = 't'\n  [../]\n  [./yfix]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'uybc uxybc'\n    value = 0\n  [../]\n[]\n\n[Materials]\n  [./pfbulkmat]\n    type = GenericConstantMaterial\n    prop_names = 'gc_prop l visco'\n    prop_values = '0.1 0.5 1e-4'\n  [../]\n  [./define_mobility]\n    type = ParsedMaterial\n    material_property_names = 'gc_prop visco'\n    property_name = L\n    expression = '1.0/(gc_prop * visco)'\n  [../]\n  [./define_kappa]\n    type = ParsedMaterial\n    material_property_names = 'gc_prop l'\n    property_name = kappa_op\n    expression = 'gc_prop * l'\n  [../]\n  [./elasticity_tensor]\n    type = ComputeElasticityTensor\n    C_ijkl = '1.1441e4 0.6435e4'\n    fill_method = symmetric_isotropic\n  [../]\n  [./damage_stress]\n    type = ComputeLinearElasticPFFractureStress\n    c = c\n    E_name = 'elastic_energy'\n    D_name = 'degradation'\n    F_name = 'local_fracture_energy'\n    decomposition_type = strain_vol_dev\n    use_snes_vi_solver = true\n  [../]\n  [./degradation]\n    type = DerivativeParsedMaterial\n    property_name = degradation\n    coupled_variables = 'c'\n    expression = '(1.0-c)^2+eta'\n    constant_names       = 'eta'\n    constant_expressions = '0.0'\n    derivative_order = 2\n  [../]\n  [./local_fracture_energy]\n    type = DerivativeParsedMaterial\n    property_name = local_fracture_energy\n    coupled_variables = 'c'\n    material_property_names = 'gc_prop l'\n    expression = 'c^2 * gc_prop / 2 / l'\n    derivative_order = 2\n  [../]\n  [./fracture_driving_energy]\n    type = DerivativeSumMaterial\n    coupled_variables = c\n    sum_materials = 'elastic_energy local_fracture_energy'\n    derivative_order = 2\n    property_name = F\n  [../]\n[]\n\n[Postprocessors]\n  [./resid_y]\n    type = NodalSum\n    variable = resid_y\n    boundary = 'uybc uxybc'\n  [../]\n  [./resid_x]\n    type = NodalSum\n    variable = resid_x\n    boundary = 'uybc uxybc'\n  [../]\n[]\n\n[Preconditioning]\n  [./smp]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Bounds]\n  [./c_upper_bound]\n    type = ConstantBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = upper\n    bound_value = 1.0\n  [../]\n  [./c_lower_bound]\n    type = VariableOldValueBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = lower\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = PJFNK\n  petsc_options_iname = '-pc_type  -snes_type'\n  petsc_options_value = 'lu vinewtonrsls'\n\n  nl_rel_tol = 1e-8\n  l_max_its = 10\n  nl_max_its = 50\n\n  dt = 1e-4\n  dtmin = 1e-4\n  num_steps = 100\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nI try to save the reaction forces in resid_x and resid_y. And open the .e file in Paraview. But it seems to fail.",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8469113",
+                          "updatedAt": "2024-02-14T17:14:42Z",
+                          "publishedAt": "2024-02-14T17:14:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "resid_x and _y should have the correct reaction forces. Can you elaborate what you mean by \"seems to fail\"?",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8470796",
+                          "updatedAt": "2024-02-14T19:20:55Z",
+                          "publishedAt": "2024-02-14T19:20:55Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "emm.... If the resid_x and _y have the correct reaction forces, there must be something wrong at other places. I'll check it. Thank you so much.",
+                          "url": "https://github.com/idaholab/moose/discussions/26807#discussioncomment-8480053",
+                          "updatedAt": "2024-02-15T13:52:10Z",
+                          "publishedAt": "2024-02-15T13:52:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "offJacobian of coupled aux variable v in PorousFlowHeatMassTransfer.C",
+          "author": {
+            "login": "Bearunner"
+          },
+          "bodyText": "Dear all,\nI find that the offJacobian of aux variable '_v(coupledValue(\"v\")),' needs to be defined in PorousFlowHeatMassTransfer.C see bold in below.\nReal\nPorousFlowHeatMassTransfer::computeQpResidual()\n{\nreturn _coef_var[_qp] * (_u[_qp] - _v[_qp]) * _test[_i][_qp];\n}\nReal\nPorousFlowHeatMassTransfer::jac(unsigned int jvar) const\n{\nif (jvar == _var.number())\nreturn _coef_var[_qp] * _phi[_j][_qp] * _test[_i][_qp];\nelse if (jvar == _v_var)\nreturn -_coef_var[_qp] * _phi[_j][_qp] * _test[_i][_qp];\nreturn 0.0;\n}\nSo now if I set v as an aux variable and equals to a constant value in the input file. Do I still need the OffJacobian calculation with respect to v as shown above? And why?\nThanks for your help.\nB",
+          "url": "https://github.com/idaholab/moose/discussions/26810",
+          "updatedAt": "2024-02-15T18:11:48Z",
+          "publishedAt": "2024-02-14T16:34:38Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Bearunner"
+                  },
+                  "bodyText": "hello, @GiudGiud , could you please help me with this? Thanks",
+                  "url": "https://github.com/idaholab/moose/discussions/26810#discussioncomment-8470194",
+                  "updatedAt": "2024-02-14T18:26:19Z",
+                  "publishedAt": "2024-02-14T18:26:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What are v and u here?\nThe kernel is for the equation that is associated with the degrees of the variable parameter\nIf v is coupled to that variable but it is not a nonlinear variable, then there is no off diagonal",
+                          "url": "https://github.com/idaholab/moose/discussions/26810#discussioncomment-8475035",
+                          "updatedAt": "2024-02-15T05:02:15Z",
+                          "publishedAt": "2024-02-15T05:02:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Bearunner"
+                          },
+                          "bodyText": "Hi Guillaume, thanks for your tips.\n\n1.What are v and u here?\n\nu is the nonlinear and main variable of this kernel. v is the coupled aux variable.\n\n\nIf v is coupled to that variable but it is not a nonlinear variable, then there is no off diagonal\n\n\nIf the coupled aux variable v is from another app by the [MultiAppShapeEvaluationTransfer] or [MultiAppNearestNodeTransfer]. The v is updated at (every picard interation) and time-step.\nDo we need the off-diagonal of coupled aux variable v in the kernel of nonlinear and main variable u?\nThanks again,\nB",
+                          "url": "https://github.com/idaholab/moose/discussions/26810#discussioncomment-8476463",
+                          "updatedAt": "2024-02-15T08:26:09Z",
+                          "publishedAt": "2024-02-15T08:24:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If v comes from another application, it is not being solved for in the nonlinear system by Petsc. So there's no row/column corresponding to DoFs for v and we do not need to add entries in the Jacobian for that coupling",
+                          "url": "https://github.com/idaholab/moose/discussions/26810#discussioncomment-8478561",
+                          "updatedAt": "2024-02-15T11:31:59Z",
+                          "publishedAt": "2024-02-15T11:31:59Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Struggles to converge on new MOOSE app",
+          "author": {
+            "login": "AdrienWehrle"
+          },
+          "bodyText": "Hi all,\nFirst and foremost, thank you a lot for your precious support and help in the past!\nI'm currently working on a MOOSE app for ice viscous deformation. After many trials in different setups with different solvers and initial conditions I just can't get my solution to converge.\nHere is the main input file I'm currently using. The mesh is here and the two main Material objects are IceMaterial_u2 (with ice viscosity based on Glen's flow law relating the rate of deformation) and SedimentMaterial_u2 (constant viscosity for a start).\nI'm wondering if for instance the executioner used here is not appropriate to the situation and should be changed?\nThe setup consists in a glacier in contact with the ocean on its downstream boundary, sliding over a sediment layer and having a\nDirichlet boundary condition at the upstream boundary to account for the influx of ice further up glacier (1000 m.y-1 in the input file shared above). For such cases, we usually work with MPa a so that stresses are of the order of 1 MPa. I think my dimension analysis should be correct but maybe the convergence issue comes from this and I just can't find it out...!\nI'm using MOOSE through another fork that is up to date (and all tests pass):\nFramework Information:\nMOOSE Version:           git commit cee3f610f9 on 2024-01-25\nLibMesh Version:         \nPETSc Version:           3.20.1\nSLEPc Version:           3.20.0\n\nHere an example of run that never converges:\nTime Step 0, time = 0\n\nTime Step 1, time = 0.001, dt = 0.001\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 9.856816e+08\nCurrently Executing    Finished Computing Jacobian                                                          [  1.95 s] [  557 MB]\n      0 Linear |R| = 9.856816e+08\n      1 Linear |R| = 3.098366e+03\n 1 Nonlinear |R| = 9.856815e+08\n      0 Linear |R| = 9.856815e+08\n      1 Linear |R| = 3.704444e+02\n 2 Nonlinear |R| = 9.852308e+08\n\nThanks a lot in advance for your help!",
+          "url": "https://github.com/idaholab/moose/discussions/26651",
+          "updatedAt": "2024-02-15T11:26:03Z",
+          "publishedAt": "2024-01-26T14:46:52Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nLooks like you definitely have to be careful with the units here. I see year and MPa in that post.\nCould you try a separate input file in s, m, Pa, ... (you can scale the mesh to go to meters) and make sure you get exactly the same results?\nIf that does not help, then can you please report on a few of the troubleshooting solves steps?\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html\ncondition number for a tiny problem would be nice. Mesh diagnostics is sometimes helpful\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8262686",
+                  "updatedAt": "2024-01-27T00:31:24Z",
+                  "publishedAt": "2024-01-27T00:31:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Hi Guillaume,\nthanks a lot for your help!\nUnfortunately both cases in Pa.s and MPa.a don't converge at the moment so I can't even compare them to make sure they're similar...\nFollowing the advice on failed solves I've been working on a simple gold case of an ice slab flowing on a sloped surface with null Dirichlet BC at the base and on the sides, and periodic BCs on the upstream and downstream faces of the ice slab. I realized I still couldn't reach convergence even on this very simple case. It hence looks like it's the convergence of the ice rheology itself (the physics behind has been proof-checked several times) that I'm struggling with more than the different setups I'm using.\nFrom there, I've been trying to:\n\nset ICs closer to the solution (no significant improvement on convergence)\nadd a strong diffusion term at the beginning of the simulation (converges well at the beginning, slowly increasing velocity in the ice slab, then converging harder and harder as the diffusion term fades, until it wouldn't converge anymore)\nadd mesh adaptivity in case the simple mesh needed refinement to converge (eg close to the base; but no significant improvement either)\nset a higher initial tolerance (both nl_rel_tol and nl_abs_tol are set to 1e-4 as you can see on the input file shared through the hyperlink above; but that didn't help either)\n\nWhat I find interesting is that when I set an initial ice viscosity of 0.3 MPa.a all over the ice slab (which could be a value we expect) then velocity and pressure are solved very easily. Once I turn off the viscosity dependence on strain rate (at the second time step), no convergence can be reached anymore...\nThank you a lot for your precious help on this!",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8433127",
+                          "updatedAt": "2024-02-11T14:10:01Z",
+                          "publishedAt": "2024-02-11T14:09:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Thank you for investigating all this. I'll take a look next week unless @lindsayad or @grmnptr get to it first on this FE flow problem",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8448501",
+                          "updatedAt": "2024-02-13T01:45:08Z",
+                          "publishedAt": "2024-02-13T01:45:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Thank you a lot, @GiudGiud !\nThe past days I've been restarting the development of the app from the Navier Stokes velocity inlet BC input file used in moose for testing, simulating flow through a channel with incompressible Navier Stokes.\nI've been scaling up the geometry from the ~1m scale to a 10*2*0.5 km channel with constant viscosity to start with. As I'm dealing with ice, I have a viscosity of the order of 10^12 Pa.s, motivating the switch to MPa.a, which I did again in this input file (see here together with the 1e-6 factor on gravity). Here already, convergence was a bit hard to get to, but using a pretty high viscosity, I eventually managed.\nUnfortunately, as soon as I incorporate the viscosity dependency on strain rate (Glen's flow law for ice) through an IceMaterial, I can't reach convergence in any case anymore...\nHere is my final input file where the solve starts to fail, which is simpler to reproduce than the file I shared above as e.g. I use the mesh generator.\nThank you a lot for your precious help on this!",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8451205",
+                          "updatedAt": "2024-02-13T09:10:35Z",
+                          "publishedAt": "2024-02-13T09:10:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont see any derivatives in this IceMaterial. Do the equations not involve any drho/dT(P) or dmu/dT(P) in the Jacobian?\nCould you try an AD version of this IceMaterial ? (replace Real by ADReal everywhere in the material, and also in the places where you use those material properties)",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8454566",
+                          "updatedAt": "2024-02-13T14:34:55Z",
+                          "publishedAt": "2024-02-13T14:34:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "I dont see any derivatives in this IceMaterial. Do the equations not involve any drho/dT(P) or dmu/dT(P) in the Jacobian?\n\nThe density is constant, and the viscosity I implemented is based on Equation 6 here.\n\nCould you try an AD version of this IceMaterial ?\n\nI'll try this right now!",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8454613",
+                          "updatedAt": "2024-02-14T12:00:19Z",
+                          "publishedAt": "2024-02-13T14:38:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Could you try an AD version of this IceMaterial ?\n\nConverting all Real on my material source and header to ADReal, I get the following error\n*** ERROR ***\nThe following error occurred in the object \"mass\", of type \"INSMass\".\n\nThe requested non-AD material property 'mu' of type 'double'\nis already retrieved or declared as a non-AD property of type 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, unsigned long, MetaPhysicL::NWrapper<64ul>>, true>'.\n\ndoes that mean I should make some changes in INSMass? I always feel like when I ask myself this question the answer is rather that something needs to change in my material or input file, but in this case I can't find the issue...!",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8454794",
+                          "updatedAt": "2024-02-13T14:50:03Z",
+                          "publishedAt": "2024-02-13T14:50:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so rho is incompressible. No derivatives there is normal,\nThe only other material property is then mu.\nmu does not depend on pressure, so you dont get an extra term in the Jacobian from that. But it depends on velocities, so when forming the Jacobian for the momentum equation I would expect something to show up.\nUsing AD is the easiest way to get that working.\nThe only thing to be careful about is not losing the derivatives anywhere in the computaiton by using 'Real' instead of 'ADReal'",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8454873",
+                          "updatedAt": "2024-02-13T14:55:23Z",
+                          "publishedAt": "2024-02-13T14:55:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "INSMass retrieves mu? That's weird. Anyhow, yes unfortunately the kernels also have to be updated to use AD.\nI would make a new input file that uses INSAD instead of INS.\nIf you wanted to take into account the derivatives of viscosity wrt velocity you would need to modify the INSMomentum kernel too (add work in computeQpJacobian)",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8454914",
+                          "updatedAt": "2024-02-13T14:57:38Z",
+                          "publishedAt": "2024-02-13T14:57:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Thanks a lot for all these important points. So I think I understand I need to modify INSMomentum to work with AD if I want to use it with INSAD, is that correct?",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8455308",
+                          "updatedAt": "2024-02-13T15:26:30Z",
+                          "publishedAt": "2024-02-13T15:26:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So I think I understand I need to modify INSMomentum to work with AD if I want to use it with INSAD, is that correct?\n\nno if you want to work with AD, starting from INSAD is easier. Maybe look at example inputs for INSAD though, there's some differences\nModifying INS is going to be trickier",
+                          "url": "https://github.com/idaholab/moose/discussions/26651#discussioncomment-8455493",
+                          "updatedAt": "2024-02-13T15:40:24Z",
+                          "publishedAt": "2024-02-13T15:39:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Build documentation on MOOSE-based App",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi all, we would like to create and document our dynamic rupture code in our MOOSE-based app, similar as RACOON, I have a question regarding the documentation system after I run ./moosedocs.py generate farmsquakeworxApp, I encounter the following error:\nTraceback (most recent call last):\n  File \"/Users/andyz/projects/farmsquakeworx/doc/./moosedocs.py\", line 29, in <module>\n    sys.exit(main.run())\n  File \"/Users/andyz/projects/moose/python/MooseDocs/main.py\", line 63, in run\n    errno = generate.main(options)\n  File \"/Users/andyz/projects/moose/python/MooseDocs/commands/generate.py\", line 47, in main\n    _, _, app_reports = moosesqa.get_sqa_reports(opt.config, app_report=True, doc_report=False, req_report=False)\n  File \"/Users/andyz/projects/moose/python/moosesqa/get_sqa_reports.py\", line 40, in get_sqa_reports\n    config = mooseutils.yaml_load(config_file) if isinstance(config_file, str) else config_file\n  File \"/Users/andyz/projects/moose/python/mooseutils/yaml_load.py\", line 112, in yaml_load\n    with open(filename, 'r') as fid:\nFileNotFoundError: [Errno 2] No such file or directory: 'sqa_reports.yml'\n\nI wonder how to resolve the issue, thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/26814",
+          "updatedAt": "2024-02-14T21:00:03Z",
+          "publishedAt": "2024-02-14T20:05:28Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "It sounds like a config file is trying to include another config file that isn't present in your situation. Try to find it, and remove that include line:\ncd ~/projects/farmsquakeworx\ngit grep \"sqa_reports.yml\"\nshould return a few places where this file is attempting to be included during the doco build process...\nNot 100% sure if this is the right answer or not (like, if you want to include SQA stuff). @cticenhour  would know more about this than I...",
+                  "url": "https://github.com/idaholab/moose/discussions/26814#discussioncomment-8472004",
+                  "updatedAt": "2024-02-14T20:42:47Z",
+                  "publishedAt": "2024-02-14T20:42:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Hi @milljm, thanks for your reply. I manually add a \"sqa_reports.yml\" in the ~/projects/farmsquakeworx/doc folder, now it seems to build fine\nApplications:\n    farmsquakeworx:\n        exe_directory:     ${ROOT_DIR}\n        exe_name:          farmsquakeworx\n        app_types:\n            - farmsquakeworx\n        content_directory: doc/content",
+                          "url": "https://github.com/idaholab/moose/discussions/26814#discussioncomment-8472340",
+                          "updatedAt": "2024-02-14T21:00:28Z",
+                          "publishedAt": "2024-02-14T21:00:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Porous media twophase.i",
+          "author": {
+            "login": "POLonge"
+          },
+          "bodyText": "Hi,\nI'm having this error with my codes and MSG back. What does this mean?\n*** ERROR ***\nA 'PorousFlowDictator' is not a registered object.\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\n@GiudGiud @cpgr",
+          "url": "https://github.com/idaholab/moose/discussions/26652",
+          "updatedAt": "2024-02-14T15:53:29Z",
+          "publishedAt": "2024-01-26T18:13:41Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "Did you compile your own application with the PorousFlow module activated in the Makefile?\nYou should have an entry like this:\nPOROUS_FLOW                 := yes",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8260518",
+                  "updatedAt": "2024-01-26T18:30:13Z",
+                  "publishedAt": "2024-01-26T18:30:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Yeah, I did that on the Makefile\n################################## MODULES ####################################\nALL_MODULES                 := no\nCHEMICAL_REACTIONS          := no\nCONTACT                     := no\nELECTROMAGNETICS            := no\nEXTERNAL_PETSC_SOLVER       := no\nFLUID_PROPERTIES            := no\nFSI                         := no\nFUNCTIONAL_EXPANSION_TOOLS  := no\nGEOCHEMISTRY                := no\nHEAT_TRANSFER               := no\nLEVEL_SET                   := no\nMISC                        := no\nNAVIER_STOKES               := yes\nOPTIMIZATION                := no\nPERIDYNAMICS                := no\nPHASE_FIELD                 := no\nPOROUS_FLOW                 := yes\nRAY_TRACING                 := no\nREACTOR                     := no\nRDG                         := no\nRICHARDS                    := no\nSTOCHASTIC_TOOLS            := no\nTHERMAL_HYDRAULICS          := no\nTENSOR_MECHANICS            := no\nXFEM                        := no",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8260584",
+                          "updatedAt": "2024-01-26T18:39:00Z",
+                          "publishedAt": "2024-01-26T18:38:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "The message tells you that your app doesn't find the PorousFlowDictator which should be an object in the input-file of your simulation\nE.g. like in this exemplary file\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'pgas zi'\n    number_fluid_phases = 2\n    number_fluid_components = 2\n  []\n[]\n\nDo the example or test files run?",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8260649",
+                  "updatedAt": "2024-01-26T18:46:06Z",
+                  "publishedAt": "2024-01-26T18:46:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "This is what I have in my code\n[UserObjects]\n      [./dictator]\n            type = PorousFlowDictator\n            porous_flow_vars = 'pwater pgas T disp_x disp_y'\n            number_fluid_phases = 2\n            number_fluid_components = 2\n          [../]\n          [./pc]\n            type = PorousFlowCapillaryPressureVG\n            alpha = 2.66E-6\n            m = 0.6\n  [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8261020",
+                          "updatedAt": "2024-01-29T17:03:59Z",
+                          "publishedAt": "2024-01-26T19:36:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Once you enable the module in the makefile you should make clean then recompile.\nThe new executable created will have access to that object",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8261097",
+                          "updatedAt": "2024-01-26T19:45:12Z",
+                          "publishedAt": "2024-01-26T19:45:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi @GiudGiud @1runer\nI'm having similar error with the BC\n*** ERROR ***\nA 'PresetBC' is not a registered object.\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8286861",
+                  "updatedAt": "2024-01-29T17:03:24Z",
+                  "publishedAt": "2024-01-29T17:03:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nwhere did you find this name for this BC? It's not offered in MOOSE\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8286918",
+                          "updatedAt": "2024-01-29T17:09:04Z",
+                          "publishedAt": "2024-01-29T17:09:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Yeah I got that from an old existing code. This is resolved.",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8287753",
+                          "updatedAt": "2024-01-29T17:47:57Z",
+                          "publishedAt": "2024-01-29T17:47:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi @GiudGiud @1runer\nI'm having this error, how do i fix it. Code is below\n*** ERROR ***\n/home/p815l321/projects/sim/problems/twophase.i:548.1: syntax error, unexpected end of file\n\n\n# Test of 2Phase Flow\n[Mesh]\n [./annular]\n   type = AnnularMeshGenerator\n   dim = 2\n   nr = 25\n   rmin = 1\n   rmax = 10\n   nt = 25\n   tmin =0\n   tmax =3.12\n   growth_r = 1.3\n  [../]\n\n  [./res]\n    type = SubdomainBoundingBoxGenerator\n    input = annular\n    block_id = 0\n    \n  [./vfrac1]\n    type = SubdomainBoundingBoxGenerator\n    input = annular\n    block_id = 1\n    bottom_left = '5 3 -5'\n    top_right = '5.5 3.5 5'\n    \n  [../]\n\n\n  [./vfrac2]\n   type = SubdomainBoundingBoxGenerator\n   input = annular\n   block_id = 2\n   bottom_left = '-5.5 3 -5'\n   top_right = '-5 3.5 5'\n  [../]\n\n\n  [./vug1]\n   type = SubdomainBoundingBoxGenerator\n   input = annular\n   block_id = 3\n   bottom_left = '1 1 -1'\n   top_right = '1.5 1.5 0'\n  [../]\n\n  [./vug2]\n   type = SubdomainBoundingBoxGenerator\n   input = annular\n   block_id = 4\n   bottom_left = '-3.5 0 -1'\n   top_right = '-3 1 0'\n   \n  [../]\n\n  [./vug3]\n   type = SubdomainBoundingBoxGenerator\n   input = annular\n   block_id = 5\n   bottom_left = '0 4 0'\n   top_right = '0.5 4.5 .5'\n   \n  [../]\n\n  [./rename]\n    type = RenameBlockGenerator\n    input = annular\n    old_block_id = '0 1 2 3 4 5'\n    new_block_name = 'res vfrac1 vfrac2 vug1 vug2 vug3'\n  [../]\n[]\n\n[UserObjects]\n  [./dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'pwater pgas T disp_x disp_y'\n    number_fluid_phases = 2\n    number_fluid_components = 2\n  [../]\n  [./pc]\n    type = PorousFlowCapillaryPressureVG\n    alpha = 2.66E-6\n    m = 0.6\n  [../]\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  gravity = '0 0 0'\n  biot_coefficient = 1\n  PorousFlowDictator = dictator\n[]\n\n[Variables]\n  [./pwater]\n    initial_condition = 20E6\n  [../]\n  [./pgas]\n    initial_condition = 20.5E6\n  [../]\n  [./T]\n    initial_condition = 330\n    scaling = 1E-5\n  [../]\n  [./disp_x]\n    scaling = 1E-5\n  [../]\n  [./disp_y]\n    scaling = 1E-5\n  [../]\n[]\n\n[Kernels]\n  [./mass_water_dot]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = pwater\n  [../]\n  [./flux_water]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = pwater\n  [../]\n  [./vol_strain_rate_water]\n    type = PorousFlowMassVolumetricExpansion\n    fluid_component = 0\n    variable = pwater\n  [../]\n  [./mass_co2_dot]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 1\n    variable = pgas\n  [../]\n  [./flux_co2]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 1\n    variable = pgas\n  [../]\n  [./vol_strain_rate_co2]\n    type = PorousFlowMassVolumetricExpansion\n    fluid_component = 1\n    variable = pgas\n  [../]\n  [./energy_dot]\n    type = PorousFlowEnergyTimeDerivative\n    variable = T\n  [../]\n  [./advection]\n    type = PorousFlowHeatAdvection\n    variable = T\n  [../]\n  [./conduction]\n    type = PorousFlowHeatConduction\n    variable = T\n  [../]\n  [./vol_strain_rate_heat]\n    type = PorousFlowHeatVolumetricExpansion\n    variable = T\n  [../]\n  [./grad_stress_x]\n    type = StressDivergenceTensors\n    temperature = T\n    variable = disp_x\n    thermal_eigenstrain_name = thermal_contribution\n    component = 0\n  [../]\n  [./poro_x]\n    type = PorousFlowEffectiveStressCoupling\n    variable = disp_x\n    component = 0\n  [../]\n  [./grad_stress_y]\n    type = StressDivergenceTensors\n    temperature = T\n    variable = disp_y\n    thermal_eigenstrain_name = thermal_contribution\n    component = 1\n  [../]\n  [./poro_y]\n    type = PorousFlowEffectiveStressCoupling\n    variable = disp_y\n    component = 1\n  [../]\n[]\n\n[AuxVariables]\n  [./disp_z]\n  [../]\n  [./effective_fluid_pressure]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./mass_frac_phase0_species0]\n    initial_condition = 1 # all water in phase=0\n  [../]\n  [./mass_frac_phase1_species0]\n    initial_condition = 0 # no water in phase=1\n  [../]\n  [./sgas]\n    family = MONOMIAL\n    order = CONSTANT\n    initial_condition = 0.7\n  [../]\n  [./swater]\n    family = MONOMIAL\n    order = CONSTANT\n    initial_condition = 0.3\n  [../]\n  [./stress_rr]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./stress_tt]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./stress_zz]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./porosity]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n[]\n\n[AuxKernels]\n  [./effective_fluid_pressure]\n    type = ParsedAux\n    args = 'pwater pgas swater sgas'\n    function = 'pwater * swater + pgas * sgas'\n    variable = effective_fluid_pressure\n  [../]\n  \n  [./swater]\n    type = PorousFlowPropertyAux\n    variable = swater\n    property = saturation\n    phase = 0\n    execute_on = timestep_end\n  [../]\n  \n  [./sgas]\n    type = PorousFlowPropertyAux\n    variable = sgas\n    property = saturation\n    phase = 1\n    execute_on = timestep_end\n  [../]\n  \n  [./stress_rr]\n    type = RankTwoScalarAux\n    variable = stress_rr\n    rank_two_tensor = stress\n    scalar_type = RadialStress\n    point1 = '0 0 0'\n    point2 = '0 0 1'\n    execute_on = timestep_end\n  [../]\n  \n  [./stress_tt]\n    type = RankTwoScalarAux\n    variable = stress_tt\n    rank_two_tensor = stress\n    scalar_type = HoopStress\n    point1 = '0 0 0'\n    point2 = '0 0 1'\n    execute_on = timestep_end\n  [../]\n  \n  [./stress_zz]\n    type = RankTwoAux\n    variable = stress_zz\n    rank_two_tensor = stress\n    index_i = 2\n    index_j = 2\n    execute_on = timestep_end\n  [../]\n  \n  [./porosity]\n    type = MaterialRealAux\n    variable = porosity\n    property = PorousFlow_porosity_qp\n    execute_on = timestep_end\n  [../]\n[]\n\n\n[BCs]\n  [./roller_tmax]\n    type = FunctionDirichletBC\n    variable = disp_x\n    value = 0\n    boundary = top\n  [../]\n\n  [./roller_tmin]\n    type = FunctionDirichletBC\n    variable = disp_y\n    value = 0\n    boundary = bottom\n  [../]\n\n  [./pinned_top_bottom_x]\n    type = FunctionDirichletBC\n    variable = disp_x\n    value = 0\n    boundary = 'top bottom'\n  [../]\n\n  [./pinned_top_bottom_y]\n    type = FunctionDirichletBC\n    variable = disp_y\n    value = 0\n    boundary = 'top bottom'\n  [../]\n  \n  [./cavity_pressure_x]\n    type = Pressure\n    boundary = top\n    variable = disp_x\n    component = 0\n    postprocessor = constrained_effective_fluid_pressure_at_wellbore \n  [../]\n  \n  [./cavity_pressure_y]\n    type = Pressure\n    boundary = top\n    variable = disp_y\n    component = 1\n    postprocessor = constrained_effective_fluid_pressure_at_wellbore\n  [../]\n\n  [./cold_co2]\n    type = FunctionDirichletBC\n    boundary = 'rmin'\n    variable = T\n    value = 290  # injection temperature\n  [../]\n\n  [./constant_co2_inj]\n    type = PorousFlowSink\n    boundary = rmin\n    variable = pgas\n    fluid_phase = 1\n    flux_function = -5E-4\n  [../]\n\n[]\n\n[Modules]\n  [./FluidProperties]\n    [./true_water]\n      type = Water97FluidProperties\n    [../]\n    \n    [./tabulated_water]\n      type = TabulatedBicubicFluidProperties\n      fp = true_water\n      temperature_min = 275\n      pressure_max = 1E8\n      interpolated_properties = 'density viscosity enthalpy internal_energy'\n      fluid_property_file = water97_tabulated_11.csv\n    [../]\n    \n    [./true_co2]\n      type = CO2FluidProperties\n    [../]\n    \n    [./tabulated_co2]\n      type = TabulatedBicubicFluidProperties\n      fp = true_co2\n      temperature_min = 275\n      pressure_max = 1E8\n      interpolated_properties = 'density viscosity enthalpy internal_energy'\n      fluid_property_file = co2_tabulated_11.csv\n    [../]\n    \n  [../]\n[]\n\n[Materials]\n  [./temperature]\n    type = PorousFlowTemperature\n    temperature = T\n  [../]\n  \n  [./saturation_calculator]\n    type = PorousFlow2PhasePP\n    phase0_porepressure = pwater\n    phase1_porepressure = pgas\n    capillary_pressure = pc\n  [../]\n  \n  [./massfrac]\n    type = PorousFlowMassFraction\n    mass_fraction_vars = 'mass_frac_phase0_species0 mass_frac_phase1_species0'\n  [../]\n  \n  [./water]\n    type = PorousFlowSingleComponentFluid\n    fp = tabulated_water\n    phase = 0\n  [../]\n  \n  [./co2]\n    type = PorousFlowSingleComponentFluid\n    fp = tabulated_co2\n    phase = 1\n  [../]\n  \n  [./relperm_water]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 4\n    s_res = 0.1\n    sum_s_res = 0.2\n    phase = 0\n  [../]\n  \n  [./relperm_co2]\n    type = PorousFlowRelativePermeabilityBC\n    nw_phase = true\n    lambda = 2\n    s_res = 0.1\n    sum_s_res = 0.2\n    phase = 1\n [../]\n\n  [./porosity]\n    type = PorousFlowPorosity\n    fluid = true\n    mechanical = true\n    thermal = true\n    porosity_zero = 0.1\n    reference_temperature = 330\n    reference_porepressure = 20E6\n    thermal_expansion_coeff = 15E-6 # volumetric\n    solid_bulk = 8E9 # unimportant since biot = 1\n    block = res\n  [../]\n\n  [./porosityopen]\n   type = PorousFlowPorosity\n   porosity_zero = 0.9999\n   block = 'vfrac1 vfrac2 vug1 vug2 vug3'\n  [../]\n\n\n  [./permeability_open]\n    type = PorousFlowPermeabilityKozenyCarman\n    block = 'vfrac1 vfrac2 vug1 vug2 vug3'\n    poroperm_function = kozeny_carman_phi0\n    phi0 = 0.9999\n    n = 2\n    m = 2\n    k0 = 1E-15\n  [../]\n\n  [./permeability_res]\n    type = PorousFlowPermeabilityConst\n    block = res\n    permeability = '1E-15 0 0  0 1E-15 0  0 0 1E-16'\n  [../]\n\n  [./rock_thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '2 0 0  0 2 0  0 0 2'\n  [../]\n  \n  [./rock_internal_energy]\n    type = PorousFlowMatrixInternalEnergy\n    specific_heat_capacity = 1100\n    density = 2300\n  [../]\n\n  [./elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 66E9\n    poissons_ratio = 0.18\n  [../]\n  \n  [./strain]\n    type = ComputeSmallStrain\n    eigenstrain_names = 'thermal_contribution initial_stress'\n  [../]\n  \n  [./thermal_contribution]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = T\n    thermal_expansion_coeff = 5E-6 # this is the linear thermal expansion coefficient\n    eigenstrain_name = thermal_contribution\n    stress_free_temperature = 330\n  [../]\n  \n  [./initial_strain]\n    type = ComputeEigenstrainFromInitialStress\n    initial_stress = '20E6 0 0  0 20E6 0  0 0 20E6'\n    eigenstrain_name = initial_stress\n  [../]\n  \n  [./stress]\n    type = ComputeLinearElasticStress\n  [../]\n\n  [./effective_fluid_pressure]\n    type = PorousFlowEffectiveFluidPressure\n  [../]\n  \n  [./volumetric_strain]\n    type = PorousFlowVolumetricStrain\n  [../]\n  \n[]\n\n[Postprocessors]\n  [./effective_fluid_pressure_at_wellbore]\n    type = PointValue\n    variable = effective_fluid_pressure\n    point = '1 0 0'\n    execute_on = timestep_begin\n    use_displaced_mesh = false\n  [../]\n  \n  [./constrained_effective_fluid_pressure_at_wellbore]\n    type = FunctionValuePostprocessor\n    function = constrain_effective_fluid_pressure\n    execute_on = timestep_begin\n  [../]\n[]\n\n[Functions]\n  [./constrain_effective_fluid_pressure]\n    type = ParsedFunction\n    vars = effective_fluid_pressure_at_wellbore\n    vals = effective_fluid_pressure_at_wellbore\n    value = 'max(effective_fluid_pressure_at_wellbore, 20E6)'\n  [../]\n[]\n\n[Preconditioning]\n  active = basic\n  [./basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  [../]\n  [./preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  end_time = 2.6E6\n  dt = 250\n  nl_abs_tol = 1E-10\n  nl_max_its = 10\n  l_max_its = 25\n[]\n\n[Outputs]\n exodus = true\n file_base = twophaseresults\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8290762",
+                  "updatedAt": "2024-01-29T22:00:02Z",
+                  "publishedAt": "2024-01-29T20:56:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "1runer"
+                          },
+                          "bodyText": "The error message is pretty simple.\n*** ERROR *** /home/p815l321/projects/sim/problems/twophase.i:548.1: syntax error, unexpected end of file\nIt tells you that you have syntax error in line 548 of your original input file. So there is something MOOSE doesn't recognize as MOOSE language.\nBtw. if this file is pretty old (it looks like 2020 or older), there are good chances that you have to modify much more of your syntax to be consistent with recent MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8291143",
+                          "updatedAt": "2024-01-29T21:23:50Z",
+                          "publishedAt": "2024-01-29T21:21:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Hi @GiudGiud @1runer\nThanks so much for previous clarification.\nThis time, I'm stuck with error like these when trying to create fractures and cavity in my mesh, with this codes\n[vfrac1]\ntype = SubdomainBoundingBox\nblock_id = 4\ntop_right = '6.5 6.5 9'\nbottom_left = '6 6 1'\n[]\n[nodevfrac1]\ntype = BoundingBoxNodeSet\nnew_boundary = 'nodesvfrac1'\nbottom_left = '6 6 1'\ntop_right = '6.5 6.5 9'\n[]\n[vfrac2]\ntype = SubdomainBoundingBox\nblock_id = 5\ntop_right = '2.5 2.5 6 '\nbottom_left = '2 2 1'\n[]\n[nodevfrac2]\ntype = BoundingBoxNodeSet\nnew_boundary = 'nodesvfrac2'\nbottom_left = '2 2 1'\ntop_right = '2.5 2.5 6'\n[]\n[vug1]\ntype = SubdomainBoundingBox\nblock_id = 6\ntop_right = '1.5 1.5 1.8'\nbottom_left = '1.2 1.2 1.5'\n[]\n[nodevug1]\ntype = BoundingBoxNodeSet\nnew_boundary = 'nodesvug1'\nbottom_left = '1.2 1.2 1.5'\ntop_right = '1.5 1.5 1.8'\n[]\n[vug2]\ntype = SubdomainBoundingBox\nblock_id = 7\ntop_right = '8.5 8.5 8.8'\nbottom_left = '8.2 8.2 8.5'\n[]\n[nodevug2]\ntype = BoundingBoxNodeSet\nnew_boundary = 'nodesvug2'\nbottom_left = '8.2 8.2 8.5'\ntop_right = '8.5 8.5 8.8'\n[]\n*** ERROR ***\n/home/p815l321/projects/sim/problems/newtest6.i:55.3: section '[MeshModifiers/vfrac1]' does not have an associated \"Action\".\nCommon causes:\n\nyou misspelled the Action/section name\nthe app you are running does not support this Action/syntax\n/home/p815l321/projects/sim/problems/newtest6.i:61.3: section '[MeshModifiers/nodevfrac1]' does not have an associated \"Action\".\nCommon causes:\nyou misspelled the Action/section name\nthe app you are running does not support this Action/syntax\n/home/p815l321/projects/sim/problems/newtest6.i:67.3: section '[MeshModifiers/vfrac2]' does not have an associated \"Action\".\nCommon causes:\nyou misspelled the Action/section name\nthe app you are running does not support this Action/syntax\n/home/p815l321/projects/sim/problems/newtest6.i:73.3: section '[MeshModifiers/nodevfrac2]' does not have an associated \"Action\".\nCommon causes:\nyou misspelled the Action/section name\nthe app you are running does not support this Action/syntax\n/home/p815l321/projects/sim/problems/newtest6.i:79.3: section '[MeshModifiers/vug1]' does not have an associated \"Action\".\nCommon causes:\nyou misspelled the Action/section name\nthe app you are running does not support this Action/syntax",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8311313",
+                          "updatedAt": "2024-01-30T21:03:12Z",
+                          "publishedAt": "2024-01-30T21:02:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "MeshModifiers dont exist anymore.\nUse meshgenerators instead\nhttps://mooseframework.inl.gov/syntax/Mesh/index.html",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8311384",
+                          "updatedAt": "2024-01-30T21:10:37Z",
+                          "publishedAt": "2024-01-30T21:10:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi @GiudGiud @1runer\nWhat does this mean? The simulation was aborted at first time step\nTime Step 0, time = 0\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | mineral_bh     | p_bh           |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+----------------+\nTime Step 1, time = 1, dt = 1\n0 Nonlinear |R| = 8.193941e+12\nmunmap_chunk(): invalid pointer\nAborted (core dumped)",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8337789",
+                  "updatedAt": "2024-02-01T17:32:59Z",
+                  "publishedAt": "2024-02-01T17:32:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "that's a bug. You can run it in the debugger to find where\nhttps://mooseframework.inl.gov/application_development/debugging.html\nis this a recent version MOOSE? what does it say in the header of the simulation log?",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8337829",
+                          "updatedAt": "2024-02-01T17:37:22Z",
+                          "publishedAt": "2024-02-01T17:37:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi @GiudGiud @1runer\nI am trying to make an input to simulate flow in fractured vuggy rock. Let assume I have 2D or 3D mesh  how can I add a fractures/cavities or vugs into it.",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8350777",
+                  "updatedAt": "2024-02-02T20:56:41Z",
+                  "publishedAt": "2024-02-02T20:56:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "1runer"
+                          },
+                          "bodyText": "@POLonge\nPlease see THIS LINK. It explains how to implement fractures as lower-dimensional elements (e.g. 2D planes in a 3D) and same-dimensional elements (3D thin fracture in matrix) and how you have to scale porosity and permeability according to the fracture aperture in order to be consistent with the fluid mass flowing therein.\nThe corresponding example inputs for PorousFlow are located HERE",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8350847",
+                          "updatedAt": "2024-02-02T21:08:16Z",
+                          "publishedAt": "2024-02-02T21:07:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi @GiudGiud @1runer\n*** ERROR ***\nThe following error occurred in the object \"Mesh\", of type \"SetupMeshAction\".\nNumber of displacements must be greater than or equal to the dimension of the mesh!\nWhat does this error mean?",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8372843",
+                  "updatedAt": "2024-02-05T16:52:08Z",
+                  "publishedAt": "2024-02-05T16:52:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThis means you set a displacements parameter but with less components than the dimension of the mesh\nwhat dimension is your mesh again? Looks like 3D to me",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8372894",
+                          "updatedAt": "2024-02-05T16:56:06Z",
+                          "publishedAt": "2024-02-05T16:56:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so displacements should be displacements = 'disp_x disp_y disp_z'",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8372902",
+                          "updatedAt": "2024-02-05T16:56:33Z",
+                          "publishedAt": "2024-02-05T16:56:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Yes, it's 3D",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8373058",
+                          "updatedAt": "2024-02-05T17:12:20Z",
+                          "publishedAt": "2024-02-05T17:12:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So is there any place the displacements are set to 2 variables instead?\nand which object is throwing this error? This should be shown around the error message",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8375378",
+                          "updatedAt": "2024-02-05T21:18:07Z",
+                          "publishedAt": "2024-02-05T21:18:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "That did work.\nThanks for all the help and quick responses @GiudGiud @1runer.\nNext steps. I want to write kernel based on darcy-brinksman model to simulates fluid flow in porous and free-flow region using single continuum. The free-flow which has mainly of vugs/cavity follows navier-stoke law and fractures while the porous media which consist of just matrix follows darcy's law.\nI have the PDE's but with my low level C++ knowledge, I need assistance to go about writing:\n\nvarious kernels,\nuserobject for BC at the interface between free flow and darcy flow region\nadding them to moose.",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8376790",
+                          "updatedAt": "2024-02-06T00:53:30Z",
+                          "publishedAt": "2024-02-06T00:50:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You ll definitely want to go over the moose tutorial once again and the application development tutorial to get more comfortable at writing kernels and C++. There s also a porous flow tutorial if you havent checked it out",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8376850",
+                          "updatedAt": "2024-02-06T00:59:24Z",
+                          "publishedAt": "2024-02-06T00:59:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi,\n@GiudGiud @1runer.\nPlease why this error?\nTime Step 1, time = 100, dt = 100\nComputing Initial Residual\n  Finished Computing Residual                                                        [  6.48 s] [ 1268 MB]\nFinished Computing Initial Residual                                                  [  6.48 s] [ 1268 MB]\nFinished Computing Residual                                                          [  6.38 s] [ 1268 MB]\n\n0 Nonlinear |R| = 1.841703e+03\nComputing Jacobian...free(): invalid size\nAborted (core dumped)",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8410375",
+                  "updatedAt": "2024-02-08T17:33:26Z",
+                  "publishedAt": "2024-02-08T17:30:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "are you running out of memory?",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8410550",
+                          "updatedAt": "2024-02-08T17:43:10Z",
+                          "publishedAt": "2024-02-08T17:43:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Hi,\n@GiudGiud @1runer.\nBelow is my computer spec.\nOperating System: Kubuntu 22.04\nKDE Plasma Version: 5.24.7\nKDE Frameworks Version: 5.92.0\nQt Version: 5.15.3\nKernel Version: 5.15.0-91-generic (64-bit)\nGraphics Platform: X11\nProcessors: 8 \u00d7 Intel\u00ae Core\u2122 i7-9700K CPU @ 3.60GHz\nMemory: 15.4 GiB of RAM\nGraphics Processor: NV137\nHow can divide the computations on different CPUs (parallel computing), to avoid this error.",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8444212",
+                          "updatedAt": "2024-02-12T16:50:15Z",
+                          "publishedAt": "2024-02-12T16:50:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "POLonge"
+                  },
+                  "bodyText": "Hi,\n@GiudGiud @1runer.\nBelow is my computer spec.\nOperating System: Kubuntu 22.04\nKDE Plasma Version: 5.24.7\nKDE Frameworks Version: 5.92.0\nQt Version: 5.15.3\nKernel Version: 5.15.0-91-generic (64-bit)\nGraphics Platform: X11\nProcessors: 8 \u00d7 Intel\u00ae Core\u2122 i7-9700K CPU @ 3.60GHz\nMemory: 15.4 GiB of RAM\nGraphics Processor: NV137\nHow can divide the computations on different CPUs (parallel computing), to avoid this error.",
+                  "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8446272",
+                  "updatedAt": "2024-02-12T19:55:52Z",
+                  "publishedAt": "2024-02-12T19:55:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "are you using 1 process or multiple? If you are using mpirun, you need to use less ranks to consume less memory",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8446857",
+                          "updatedAt": "2024-02-12T21:00:18Z",
+                          "publishedAt": "2024-02-12T21:00:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "POLonge"
+                          },
+                          "bodyText": "Could elaborate more. I didn't this",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8457192",
+                          "updatedAt": "2024-02-13T18:09:27Z",
+                          "publishedAt": "2024-02-13T18:09:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok how big is your mesh?\nHow many degrees of freedom does it report needing in the header of the simulation?",
+                          "url": "https://github.com/idaholab/moose/discussions/26652#discussioncomment-8467691",
+                          "updatedAt": "2024-02-14T15:53:30Z",
+                          "publishedAt": "2024-02-14T15:53:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Obtaining a SCALAR AuxVariable from surface integral (no postprocessor)",
+          "author": {
+            "login": "nlosacco"
+          },
+          "bodyText": "Hi all,\nI need to obtain the total flow through a surface in a Diffusion or PorousFlow analysis.\nI know, for instance, I can store the flux vectors with the save_in option of NeumannBC and then obtain the integral (total flux through a boundary) with a NodalSum postprocessor. But I need to use that value as an AuxVariable, since I want to set some initial conditions for it. I tried with the SumAux AuxKernel, but it yields a MONOMIAL variable rather then a SCALAR. Is there a way to achieve this?",
+          "url": "https://github.com/idaholab/moose/discussions/26735",
+          "updatedAt": "2024-02-14T15:51:34Z",
+          "publishedAt": "2024-02-05T10:46:42Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "You want to initialize the flux?\nThe flux is a byproduct of the simulation, computed from the nonlinear variables. Initializing it will simply get it overwritten next time it is computed with no effect on the simulation imo.\nYou could initialize the nonlinear variables to get the desired initial flux though.\nFor visualizing the flux, I would look in the tagging interface to try to save the flux to a tagged vector. Then a tagged vector aux should be able to output it to a nodal variable. I haven't used it that way before",
+                  "url": "https://github.com/idaholab/moose/discussions/26735#discussioncomment-8371000",
+                  "updatedAt": "2024-02-05T14:32:33Z",
+                  "publishedAt": "2024-02-05T14:32:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "I need the flux at a boundary as the coupling term between a diffusion and a ODE. If I simply use a postprocessor, the flux at t=0 will be zero, hence the results will be inaccurate at the beginning of the simulation, when the process occurs more quickly.\nI kind of solved by copying the postprocessor to a scalar variable, which is first initialised with the flux at t=0 (known in the simple case I'm simulating) and adopting the proper execute_on flags.",
+                          "url": "https://github.com/idaholab/moose/discussions/26735#discussioncomment-8374544",
+                          "updatedAt": "2024-02-05T19:35:09Z",
+                          "publishedAt": "2024-02-05T19:35:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok that makes sense.\nThere are certain objects you can execute on INITIAL that would be able to initialize a variable.\nA postprocessor could be executed on INITIAL, and the variable could have an initialization value using either an IC (for a nonlinear variable, so not the flux I think?) or an auxkernel executed on INITIAL for an auxiliary variable",
+                          "url": "https://github.com/idaholab/moose/discussions/26735#discussioncomment-8376025",
+                          "updatedAt": "2024-02-05T22:37:05Z",
+                          "publishedAt": "2024-02-05T22:37:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "Actually, while for very simple problems the initial flux is known a priori, and the relevant AuxVariables can be duly initialised, for more complex problems the initial flux cannot be easily worked out. Then, I'm thinking of a workaround.\nI could obtain the initial flux as as postprocessor at the end of the first timestep, then repeat the analysis from the beginning initialising the flux AuxVariable with that initial flux. Is there a way to do this automatically? I mean, run a single timestep and then rerun the whole analysis from the beginning (hence resetting everything to the initial state) but setting one auxvariable to the value of the post processor obtained in the former analysis? Or do I need to do it manually?",
+                          "url": "https://github.com/idaholab/moose/discussions/26735#discussioncomment-8459169",
+                          "updatedAt": "2024-02-13T22:07:57Z",
+                          "publishedAt": "2024-02-13T22:07:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThe cleanest way to do this is to use a MultiApp.\nYou run this initialization step in a separate simulation in a FullSolveMultiapp that is executed on INITIAL.\nUnless you use command line arguments for the multiapp to turn off the MultiApp's MultiApp block, it will mean having two input files: one for initialization and one for the main simulation. But they will be run one after each other when running the main simulation",
+                          "url": "https://github.com/idaholab/moose/discussions/26735#discussioncomment-8467670",
+                          "updatedAt": "2024-02-14T15:52:47Z",
+                          "publishedAt": "2024-02-14T15:51:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Job submission",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "I am trying to submit a job and this is the feedback I get\npython-stack) [emmanuel324@tinkercliffs1 pencil]$ sbatch submit.pbs\nbash: sbatch: command not found...\nSimilar command is: 'batch'",
+          "url": "https://github.com/idaholab/moose/discussions/26808",
+          "updatedAt": "2024-02-14T15:13:41Z",
+          "publishedAt": "2024-02-14T15:09:47Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "You need to speak with your HPC Cluster admins on how to use your cluster.",
+                  "url": "https://github.com/idaholab/moose/discussions/26808#discussioncomment-8467166",
+                  "updatedAt": "2024-02-14T15:13:36Z",
+                  "publishedAt": "2024-02-14T15:13:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is a question for your cluster administrator / cluster user support.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26808#discussioncomment-8467169",
+                  "updatedAt": "2024-02-14T15:13:43Z",
+                  "publishedAt": "2024-02-14T15:13:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Reference to ACGBPoly",
+          "author": {
+            "login": "ashishdhole"
+          },
+          "bodyText": "Hello,\nCan you please provide some references for a kernel 'ACGBPoly' the way it is formulated here on MOOSE?\nThank you",
+          "url": "https://github.com/idaholab/moose/discussions/26783",
+          "updatedAt": "2024-02-14T06:04:39Z",
+          "publishedAt": "2024-02-09T22:12:55Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "should be from the references listed here\nhttps://mooseframework.inl.gov/modules/phase_field/Grain_Growth_Model.html",
+                  "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8423907",
+                  "updatedAt": "2024-02-09T22:35:55Z",
+                  "publishedAt": "2024-02-09T22:35:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "actually for grain boundaries might be those\nhttps://mooseframework.inl.gov/modules/phase_field/Grain_Boundary_Anisotropy.html",
+                          "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8423915",
+                          "updatedAt": "2024-02-09T22:36:49Z",
+                          "publishedAt": "2024-02-09T22:36:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Thank you Guillaume,\nI understand the kernel is based on particle pinning model explained by Moelans et al. 2005 (https://doi.org/10.1016/j.actamat.2004.12.026), But in the kernel, the equation is modified a bit by adding a few terms, which was not explained in the paper mentioned above. I just want to have a little more insight on how the kernel is derived. If you can please provide the papers it would be highly appreciated.",
+                          "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8423985",
+                          "updatedAt": "2024-02-09T22:49:07Z",
+                          "publishedAt": "2024-02-09T22:49:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I would not know. Maybe @laagesen",
+                          "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8423996",
+                          "updatedAt": "2024-02-09T22:51:29Z",
+                          "publishedAt": "2024-02-09T22:51:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Hi @ashishdhole, the best reference to understand where that kernel comes from is\nhttps://iopscience.iop.org/article/10.1088/0965-0393/23/4/045009\nIt may have been based on the Moelans paper you mentioned and it is cited but I think Moelans paper uses a slightly different from that Tonks et al used. The ACGBPoly kernel implements the variational derivative of the last term in Equation (4) of that paper, which is mu* a_s * sum_i (c^2 * eta_i^2) (the mu comes from equation 3). For a particular Order parameter, say eta_1, the variational derivative of that term wrt eta_1 is 2 * mu * a_s * c^2 * eta_1. So that will be computed in the function computeDFDOP in the switch statement with case Residual. You will see c * c there for c^2 and _u[_qp] for eta_1 (the member variable _u represents the nonlinear variable for this kernel, which should be eta_1). The prefactor mult is computed as 2 * mu * a_s at the beginning of that function. The notation gamma is a bit confusing here because in the paper, it is used for interfacial energy, whereas in the code gamma is the prefactor for the eta_I^2 * eta_j^2 term (called a_GB in the paper).",
+                          "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8447568",
+                          "updatedAt": "2024-02-12T22:46:11Z",
+                          "publishedAt": "2024-02-12T22:46:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Thank you @laagesen  for the clarification and the reference.",
+                          "url": "https://github.com/idaholab/moose/discussions/26783#discussioncomment-8461701",
+                          "updatedAt": "2024-02-14T06:04:40Z",
+                          "publishedAt": "2024-02-14T06:04:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "simple 2D reservoir",
+          "author": {
+            "login": "mortezaep"
+          },
+          "bodyText": "Hi\nIs there any example of modeling a simple doublet system using the PorousFlow module, like a 2D reservoir with one injection and one production well? I have already checked the PorousFlowPeacemanBorehole example, but it doesn't meet my expectations. I want to set the flow rate and temperature at the injection point and replicate a similar flow rate at the production point, then compute the extraction temperature using a postprocessor.\nIf such an example is not available, could you provide me (and other MOOSE users) with this standard example? I believe this example can be the first step to start reservoir simulation.\nBest",
+          "url": "https://github.com/idaholab/moose/discussions/26082",
+          "updatedAt": "2024-02-13T15:14:37Z",
+          "publishedAt": "2023-11-16T16:44:58Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI think the porous flow tutorial has both production and injection.\nI dont know if it s quite what you want though, I m no expert on this\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7590341",
+                  "updatedAt": "2023-11-16T16:50:08Z",
+                  "publishedAt": "2023-11-16T16:50:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "The porous flow tutorial doesn't include any example for injection-production. If you mean here, as I mentioned before, PorousFlowPeacemanBorehole doesn't allow for setting flow rate.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7590421",
+                          "updatedAt": "2023-11-16T16:57:41Z",
+                          "publishedAt": "2023-11-16T16:57:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@cpgr",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7590515",
+                          "updatedAt": "2023-11-16T17:05:12Z",
+                          "publishedAt": "2023-11-16T17:05:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I think modules/porous_flow/test/tests/dirackernels/injection_production.i is similar to what you want if you swap the Peaceman boreholes with PorousFlowPolyLineSinks where you can specify flow rate.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7592734",
+                          "updatedAt": "2023-11-16T21:30:27Z",
+                          "publishedAt": "2023-11-16T21:30:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "burritotukituki"
+                          },
+                          "bodyText": "Hi,\nfor some reason injection and remove of enthalpic flux with polyline wont work... (see #25500 (comment))\nIn the example suggested by @cpgr, the heat source is modeled as Dirichlet BC which may lead to unrealistic results as you cannot control the energy flux that is injected. My suggestion is to divide the flux in the number of nodes and use\nPorousFlowPointEnthalpySourceFromPostprocessor\nwith\nPorousFlowPointSourceFromPostprocessor\nI tested this and works well. However, if you have many nodes close at the injection zone, you may end up with a very long input file. I use a python script to write the input file.\nI hope that the MOOSE experts find the time to fix this issue.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7597410",
+                          "updatedAt": "2023-11-17T09:47:11Z",
+                          "publishedAt": "2023-11-17T09:47:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "Hi @cpgr  and @burritotukituki\nI followed your suggestion using PorousFlowPolyLineSinks and Peaceman injection-production parameters, skipping the action system to control material and kernel components manually. Unfortunately, I'm facing problems\u2014negative pressure, higher production temperature than reservoir temperature, and an increasing trend over time.\nAfter 20 time steps:\n\nEven switching from DirichletBC to PorousFlowPointEnthalpySourceFromPostprocessor didn't change anything. Could you please help me with this? This is my input file (it is attached, too)\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 200\n    ny = 100\n    xmin = -100\n    xmax = 100\n    ymin = -50\n    ymax = 50\n  []\n  [injection_node]\n    input = gen\n    type = ExtraNodesetGenerator\n    new_boundary = injection_node\n    coord = '-50 0 0'\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  gravity = '0 0 0'\n[]\n\n[Variables]\n  [porepressure]\n    initial_condition = 20E6\n  []\n  [temperature]\n    initial_condition = 400\n    scaling = 1E-6 # fluid enthalpy is roughly 1E6\n  []\n[]\n\n# [BCs]\n#   [injection_temperature]\n#     type = DirichletBC\n#     variable = temperature\n#     value = 320\n#     boundary = injection_node\n#   []\n# []\n\n[Functions]\n  [mass_flux_in_func]\n    type = ParsedFunction\n    expression = '1'\n  []\n  [mass_flux_out_func]\n    type = ParsedFunction\n    expression = '-1'\n  []\n  [T_in_func]\n    type = ParsedFunction\n    expression = '320'\n  []\n[]\n\n[DiracKernels]\n  [inject_mass]\n    type = PorousFlowPolyLineSink\n    SumQuantityUO = injected_mass\n    fluxes = -1\n    p_or_t_vals = 0.0\n    line_length = 1.0\n    point_file = injection.bh\n    variable = porepressure\n  []\n  [inject_heat]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-50 0 0'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [produce_mass]\n    type = PorousFlowPolyLineSink\n    SumQuantityUO = produced_mass\n    fluxes = 1\n    p_or_t_vals = 0.0\n    line_length = 1.0\n    point_file = production.bh\n    variable = porepressure\n  []\n  [produce_heat]\n    type = PorousFlowPolyLineSink\n    SumQuantityUO = produced_heat\n    fluxes = 1\n    p_or_t_vals = 0.0\n    line_length = 1.0\n    use_enthalpy = true\n    point_file = production.bh\n    variable = temperature\n  []\n[]\n\n[Kernels]\n  [mass_dot]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = porepressure\n  []\n  [mass_flux]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = porepressure\n  []\n  [energy_dot]\n    type = PorousFlowEnergyTimeDerivative\n    variable = temperature\n  []\n  [heat_advection]\n    type = PorousFlowHeatAdvection\n    variable = temperature\n  []\n  [heat_conduction]\n    type = PorousFlowHeatConduction\n    variable = temperature\n  []\n[]\n\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'temperature porepressure'  \n    number_fluid_phases = 1\n    number_fluid_components = 1\n  []\n  [pc]\n    type = PorousFlowCapillaryPressureConst\n  []\n\t[injected_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_heat]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Postprocessors]\n  [mass_flux_in]\n    type = FunctionValuePostprocessor\n    function = mass_flux_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [mass_flux_out]\n    type = FunctionValuePostprocessor\n    function = mass_flux_out_func\n    execute_on = 'initial timestep_begin'\n  []\n  [T_in]\n    type = FunctionValuePostprocessor\n    function = T_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [./temp_pro]\n    type = PointValue\n    point = '50 0 0'\n    variable = 'temperature'\n  [../]\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    thermal_expansion = 2E-4\n    bulk_modulus = 2E9\n    viscosity = 1E-3\n    density0 = 1000\n    cv = 4000.0\n    cp = 4000.0\n  []\n[]\n\n[Materials]\n  [temperature]\n    type = PorousFlowTemperature\n    temperature = temperature\n  []\n  [phase]\n    type = PorousFlow1PhaseP \n    porepressure = porepressure\n    capillary_pressure = pc\n  []\n  [massfrac]\n    type = PorousFlowMassFraction\n  []\n  [water]\n    type = PorousFlowSingleComponentFluid\n    fp = the_simple_fluid\n    phase = 0\n  []\n  [porosity]\n    type=PorousFlowPorosityConst\n    porosity = 0.1  \n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '5e-15 0 0  0 5e-15 0  0 0 5e-15' \n  []\n  [relperm]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 0\n    phase = 0\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '2.5 0 0  0 2.5 0  0 0 2.5' \n  []\n  [internal_energy]\n    type = PorousFlowMatrixInternalEnergy\n    specific_heat_capacity = 920 \n    density = 2600 \n  []\n  [undrained_density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = 2400 \n  [] \n[]\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  []\n  [preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  end_time = 2E6\n  # dt = 2E5\n  dt = 2000\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nBest\nfiles.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7606530",
+                          "updatedAt": "2023-11-18T13:47:08Z",
+                          "publishedAt": "2023-11-18T13:41:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "burritotukituki"
+                          },
+                          "bodyText": "you need to use\n'PorousFlowPointSourceFromPostprocessor'\ninstead of a polyline for injection",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7611938",
+                          "updatedAt": "2023-11-19T16:11:05Z",
+                          "publishedAt": "2023-11-19T16:11:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mortezaep"
+                  },
+                  "bodyText": "I changed my input file to:\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 200\n    ny = 100\n    xmin = -100\n    xmax = 100\n    ymin = -50\n    ymax = 50\n  []\n  [injection_node]\n    input = gen\n    type = ExtraNodesetGenerator\n    new_boundary = injection_node\n    coord = '-50 0 0'\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  gravity = '0 0 0'\n[]\n\n[Variables]\n  [porepressure]\n    initial_condition = 20E6\n  []\n  [temperature]\n    initial_condition = 400\n    scaling = 1E-6 # fluid enthalpy is roughly 1E6\n  []\n[]\n\n# [BCs]\n#   [injection_temperature]\n#     type = DirichletBC\n#     variable = temperature\n#     value = 320\n#     boundary = injection_node\n#   []\n# []\n\n[Functions]\n  [mass_flux_in_func]\n    type = ParsedFunction\n    expression = '1'\n  []\n  [mass_flux_out_func]\n    type = ParsedFunction\n    expression = '-1'\n  []\n  [T_in_func]\n    type = ParsedFunction\n    expression = '320'\n  []\n[]\n\n[DiracKernels]\n  [inject_mass]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-50 0 0'\n  []\n  [inject_heat]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-50 0 0'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [produce_mass]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_out\n    point = '50 0 0'\n  []\n  [produce_heat]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_out\n    point = '50 0 0'\n    T_in = temp_pro\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n[]\n\n[Kernels]\n  [mass_dot]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = porepressure\n  []\n  [mass_flux]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = porepressure\n  []\n  [energy_dot]\n    type = PorousFlowEnergyTimeDerivative\n    variable = temperature\n  []\n  [heat_advection]\n    type = PorousFlowHeatAdvection\n    variable = temperature\n  []\n  [heat_conduction]\n    type = PorousFlowHeatConduction\n    variable = temperature\n  []\n[]\n\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'temperature porepressure'  \n    number_fluid_phases = 1\n    number_fluid_components = 1\n  []\n  [pc]\n    type = PorousFlowCapillaryPressureConst\n  []\n\t[injected_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_heat]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Postprocessors]\n  [mass_flux_in]\n    type = FunctionValuePostprocessor\n    function = mass_flux_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [mass_flux_out]\n    type = FunctionValuePostprocessor\n    function = mass_flux_out_func\n    execute_on = 'initial timestep_begin'\n  []\n  [T_in]\n    type = FunctionValuePostprocessor\n    function = T_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [./temp_pro]\n    type = PointValue\n    point = '50 0 0'\n    variable = 'temperature'\n  [../]\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    thermal_expansion = 2E-4\n    bulk_modulus = 2E9\n    viscosity = 1E-3\n    density0 = 1000\n    cv = 4000.0\n    cp = 4000.0\n  []\n[]\n\n[Materials]\n  [temperature]\n    type = PorousFlowTemperature\n    temperature = temperature\n  []\n  [phase]\n    type = PorousFlow1PhaseP \n    porepressure = porepressure\n    capillary_pressure = pc\n  []\n  [massfrac]\n    type = PorousFlowMassFraction\n  []\n  [water]\n    type = PorousFlowSingleComponentFluid\n    fp = the_simple_fluid\n    phase = 0\n  []\n  [porosity]\n    type=PorousFlowPorosityConst\n    porosity = 0.1  \n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '5e-15 0 0  0 5e-15 0  0 0 5e-15' \n  []\n  [relperm]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 0\n    phase = 0\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '2.5 0 0  0 2.5 0  0 0 2.5' \n  []\n  [internal_energy]\n    type = PorousFlowMatrixInternalEnergy\n    specific_heat_capacity = 920 \n    density = 2600 \n  []\n  [undrained_density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = 2400 \n  [] \n[]\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  []\n  [preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  end_time = 2E6\n  # dt = 2E5\n  dt = 2000\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nIt is now even worse! Dear @cpgr , I appreciate it if you could help me with that.\nBest",
+                  "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7619192",
+                  "updatedAt": "2023-11-20T12:52:14Z",
+                  "publishedAt": "2023-11-20T12:52:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "josebastiase"
+                          },
+                          "bodyText": "@burritotukituki is right.\nTry this ;)",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7632977",
+                          "updatedAt": "2023-11-21T16:45:41Z",
+                          "publishedAt": "2023-11-21T16:45:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "I do appreciate your help, @josebastiase. It was really challenging. How did you come up with this solution? Is it generally correct that for injection we should use point source from post processor and for extraction polyline sink?\nThanks again",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7644346",
+                          "updatedAt": "2023-11-22T16:27:26Z",
+                          "publishedAt": "2023-11-22T16:27:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "josebastiase"
+                          },
+                          "bodyText": "Daniel Birdsell has a phd on this\nhttps://github.com/danielbi-ETHZ/Heat_injection_test",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7644787",
+                          "updatedAt": "2023-11-22T17:19:32Z",
+                          "publishedAt": "2023-11-22T17:19:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Thanks guys! I'll see if I can work out why the poly line sink approach isn't working properly.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-7647383",
+                          "updatedAt": "2023-11-23T00:34:25Z",
+                          "publishedAt": "2023-11-23T00:34:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "Dear @josebastiase and @cpgr\nI'm writing to follow up on our previous discussion. I have attempted to simulate different cases using your suggested approach, and the input file along with the results are attached. Unfortunately, the outcomes of these simulations are not aligning with my expectations. Even with a significant increase in injection pressure, it is not possible to reduce the permeability to low values like e\u221214 (even e\u221213 with higher flow rates like 50 L/s).\nThere is a clear discrepancy between the results of this input file and those obtained with other numerical tools. I hope you don't mind taking a look at them again. My main goal is to work with higher flow rates, ranging between 70-100 L/s, while maintaining permeability within the range of e\u221214 to e\u221213.\nArchive.zip\nKind regards\nMorteza",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8395729",
+                          "updatedAt": "2024-02-07T14:17:43Z",
+                          "publishedAt": "2024-02-07T14:17:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "burritotukituki"
+                          },
+                          "bodyText": "Hi, are you sure your input file is correct? Looks like you are setting pressure with a BC and injecting fluid and enthalpy with a source in the same node. Is this what you want?",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8405473",
+                          "updatedAt": "2024-02-08T09:46:04Z",
+                          "publishedAt": "2024-02-08T09:46:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "Thank you so much for your response. I want to set pressure, temperature, and flow rate at the injection point. I have followed @josebastiase suggestion with the difference that I also set the injection pressure using Dirichlet BC.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8405528",
+                          "updatedAt": "2024-02-08T09:51:35Z",
+                          "publishedAt": "2024-02-08T09:51:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "josebastiase"
+                          },
+                          "bodyText": "Hi,\nyeah I am not sure fixing pressure and flux is something that makes sense... I never seen that before, maybe someone more experienced can help you",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8406060",
+                          "updatedAt": "2024-02-08T10:42:03Z",
+                          "publishedAt": "2024-02-08T10:42:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mortezaep"
+                          },
+                          "bodyText": "Thank you. Even if I don't set the pressure, it is not possible to go for low permeabilities like 1e-14. you can decrease the flow rate to very low values like 1-2 L/s. But, it doesn't work as the pressure becomes negative. This result is not consistent with other numerical tools.",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8406172",
+                          "updatedAt": "2024-02-08T10:55:21Z",
+                          "publishedAt": "2024-02-08T10:55:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "josebastiase"
+                          },
+                          "bodyText": "Are you also observing different results with high permeabilities between MOOSE and the other code?\nFluxes of 50 kg/s may be too high for your 2D model in a single node.\nIf you are getting negative pressures, it is likely due to desaturation of your porous medium. This is expected when you lower the permeability. Your injection/extraction flux is significantly higher than your Darcy velocity, which can lead to convergence problems. Does that make sense?",
+                          "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8411321",
+                          "updatedAt": "2024-02-08T19:03:18Z",
+                          "publishedAt": "2024-02-08T19:03:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "josebastiase"
+                  },
+                  "bodyText": "Hi\nThe temperature is not reaching the set point because you are injecting enthalpy, and cold and hot water mixes, preventing you from reaching the set temperature. If you want to set the temperature you can use a Dirichlet BC at that node, look at  modules/porous_flow/test/tests/dirackernels/injection_production.i\nThe 3D model also doesn't make any changes because you need to distribute the extracted/injected flux through your well (nodes) with the .bh file. Otherwise, the result is the same as a single point node sink/sources.\nI suggest you take a step back, remove the thermal physics and line sinks, and only work with point node sink/sources. Once you are convinced your results make sense, you can add more complex physics",
+                  "url": "https://github.com/idaholab/moose/discussions/26082#discussioncomment-8455149",
+                  "updatedAt": "2024-02-13T15:14:38Z",
+                  "publishedAt": "2024-02-13T15:14:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

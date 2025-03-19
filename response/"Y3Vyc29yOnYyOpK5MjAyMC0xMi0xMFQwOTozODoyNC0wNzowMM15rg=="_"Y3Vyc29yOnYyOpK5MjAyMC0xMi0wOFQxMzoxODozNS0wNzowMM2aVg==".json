@@ -1,0 +1,757 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMC0xMi0wOFQxMzoxODozNS0wNzowMM2aVg=="
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Applying nodal forcing function",
+          "author": {
+            "login": "nathan-miller-LANL"
+          },
+          "bodyText": "Hi All,\nI have a forcing function that I know at the nodes but not at the quadrature points. I've tried to apply this function by using a NodalKernal but it appears that the value I've set gets added for as many elements are associated with any given node. Are there any examples of adding values directly to the residual at a given node without this duplication?\nThanks,\nNathan",
+          "url": "https://github.com/idaholab/moose/discussions/16227",
+          "updatedAt": "2022-09-20T14:01:02Z",
+          "publishedAt": "2020-11-17T18:38:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@lindsayad Can you help with this?",
+                  "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-132830",
+                  "updatedAt": "2022-09-20T14:01:03Z",
+                  "publishedAt": "2020-11-18T16:44:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nathan-miller-LANL"
+                          },
+                          "bodyText": "I really need some help on this one since the inability to apply forces (this is in the concept of a solid mechanics simulation) to nodes is a showstopper.",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-133071",
+                          "updatedAt": "2022-09-20T14:01:03Z",
+                          "publishedAt": "2020-11-18T20:36:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "the value I've set gets added for as many elements are associated with any given node\n\nthis would definitely be unexpected behavior. Your residual from your NodalKernel should just sum straight into the residual for the Lagrange DOF at the node (presuming you're using a Lagrange basis). See this code:\nvoid\nNodalKernel::computeResidual()\n{\n  if (_var.isNodalDefined())\n  {\n    const dof_id_type & dof_idx = _var.nodalDofIndex();\n    _qp = 0;\n    Real res = computeQpResidual();\n    res *= _var.scalingFactor();\n    _assembly.cacheResidual(dof_idx, res, _vector_tags);\nNo association with element connectivity there. If you can show us a minimal working example with this buggy behavior, then we would definitely fix it.",
+                  "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-133184",
+                  "updatedAt": "2022-09-20T14:01:12Z",
+                  "publishedAt": "2020-11-18T23:25:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nathan-miller-LANL"
+                          },
+                          "bodyText": "I'm trying to figure out the process for me to send out a minimum example (the rules here can be a bit arcane) but I have found what I believe to be two bugs in MOOSE.\n\nWhen I use a simple NodalKernel on a mesh that MOOSE generates there is no problem but when I use an Exodus mesh that has several different blocks defined and then apply the NodalKernel over the entire domain the NodalKernel values are duplicated on nodes that are shared between the different blocks.\nI have a 3D stress-strain problem. When I use a NodalKernel in the 3 (Z) direction and also define a preset DirichletBC to be zero on some of the faces (to define a uniaxial stress problem) the residuals reported on the X and Y faces don't go to zero even though the problem converges and the non-DirichletBC faces do go to zero as expected. I've noticed this both with TensorMechanics and with my own kernels in Tardigrade.",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-134829",
+                          "updatedAt": "2022-09-20T14:01:39Z",
+                          "publishedAt": "2020-11-20T16:20:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "These more specific issues I could definitely believe. We have limited money allocated for general user support, unfortunately, so if you can send those inputs that would be fantastic. I could definitely draw up an input myself for testing 1. but that'll take some of that allotment.",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-134877",
+                          "updatedAt": "2022-09-20T14:01:38Z",
+                          "publishedAt": "2020-11-20T17:14:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Oh wow ok it took me under 30 seconds to see that we would duplicate NodalKernel computation on nodes shared between multiple subdomains:\n  const std::set<SubdomainID> & block_ids = _aux_sys.mesh().getNodeBlockIds(*node);\n  for (const auto & block : block_ids)\n    if (_nkernel_warehouse->hasActiveBlockObjects(block, _tid))\n    {\n      std::set<TagID> needed_fe_var_vector_tags;\n      _nkernel_warehouse->updateBlockFEVariableCoupledVectorTagDependency(\n          block, needed_fe_var_vector_tags, _tid);\n      _fe_problem.setActiveFEVariableCoupleableVectorTags(needed_fe_var_vector_tags, _tid);\n\n      const auto & objects = _nkernel_warehouse->getActiveBlockObjects(block, _tid);\n      for (const auto & nodal_kernel : objects)\n        nodal_kernel->computeResidual();\n    }\nOk you don't have to worry about sending an input for 1. I'll draw up a test and fix that one today",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-134884",
+                          "updatedAt": "2022-09-20T14:01:39Z",
+                          "publishedAt": "2020-11-20T17:17:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Issue opened here: #16265",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-134891",
+                          "updatedAt": "2022-09-20T14:01:45Z",
+                          "publishedAt": "2020-11-20T17:22:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nathan-miller-LANL"
+                          },
+                          "bodyText": "@lindsayad Great! I'll try to get the second minimal example out as soon as I can.",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-134913",
+                          "updatedAt": "2022-09-20T14:01:45Z",
+                          "publishedAt": "2020-11-20T17:46:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "hopefully closed by #16269",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-135073",
+                          "updatedAt": "2022-09-20T14:01:45Z",
+                          "publishedAt": "2020-11-20T20:50:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nathan-miller-LANL"
+                          },
+                          "bodyText": "Just so this doesn't fall off the table, I'm working to get approval to send out the example for the second bug. I hope to have that early next week due to the holiday.\n@lindsayad Do you have an idea for when the fix for the first issue will be incorporated into MOOSE?",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-138660",
+                          "updatedAt": "2022-09-20T14:01:46Z",
+                          "publishedAt": "2020-11-25T14:54:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Potentially today",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-138777",
+                          "updatedAt": "2022-09-20T14:01:46Z",
+                          "publishedAt": "2020-11-25T16:56:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Ok yea #16269 just got merged",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-139250",
+                          "updatedAt": "2022-09-20T14:01:46Z",
+                          "publishedAt": "2020-11-26T08:37:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nathan-miller-LANL"
+                          },
+                          "bodyText": "@lindsayad Okay, I've attached the files which replicate the second error on my system. For the record, I updated libmesh and MOOSE this morning and I'm running on master. I did notice that the duplicate problem seems to be gone (thanks for that) but I still notice the error in residual calculation for the nodes which have a preset DirichletBC when a forcing function is being applied to the residual.\nI'm using a uniaxial stress example only so that I can be sure of what the answer should be. I don't think this is a problem with tensor mechanics since I have observed this behavior with my own kernels in similar situations. The errors can be observed for any node on the x, y, or z=0 face. I expect to see the value of zero for the applied force (AppliedForce) in the x and y directions (FInternal_1 and FInternal_2) on every node and equal to the negative force in the z direction (FInternal_3) but this is not the case for the BC nodes. It seems like the residual is not updating for nodes on the boundaries?\nMinimumExample.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-148036",
+                          "updatedAt": "2022-09-20T14:01:18Z",
+                          "publishedAt": "2020-12-05T23:12:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Going to consider #16269 to be the answer here",
+                  "url": "https://github.com/idaholab/moose/discussions/16227#discussioncomment-187223",
+                  "updatedAt": "2022-09-20T14:01:55Z",
+                  "publishedAt": "2020-12-10T16:26:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "XFEM Paraview Plugin installation",
+          "author": {
+            "login": "rksin8"
+          },
+          "bodyText": "Hi,\nDo we still need to install the \"XFEM Paraview Plugin\" manually along with Paraview source code? As per discussion here, it seems the plugin is now part of ParaView.\nThanks,\nRegards,\nRanjeet",
+          "url": "https://github.com/idaholab/moose/discussions/16426",
+          "updatedAt": "2023-11-09T09:31:12Z",
+          "publishedAt": "2020-12-08T22:54:34Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "Yes, you are correct. The plugin is part of Paraview, but you need to Load MooseXfemClip plugin in the Plugin Manager.",
+                  "url": "https://github.com/idaholab/moose/discussions/16426#discussioncomment-179967",
+                  "updatedAt": "2023-11-09T09:31:12Z",
+                  "publishedAt": "2020-12-09T16:25:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rksin8"
+                          },
+                          "bodyText": "Thank you for your reply!  Successfully loaded MooseXfemClip plugin.",
+                          "url": "https://github.com/idaholab/moose/discussions/16426#discussioncomment-186530",
+                          "updatedAt": "2023-11-09T09:31:12Z",
+                          "publishedAt": "2020-12-10T14:42:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Syntax of the input files",
+          "author": {
+            "login": "EtienneSwerim"
+          },
+          "bodyText": "Hi!\nSorry for this (almost embarrassing) beginner question: in the input files, why are sometimes variables (and kernels) simply -like in the workshop- declared as:\n[Variables]\n[myVar]\n[]\nand sometimes as:\n[Variables]\n[./myVar]\n[../]\n[]\nThanks!\nEtienne",
+          "url": "https://github.com/idaholab/moose/discussions/16451",
+          "updatedAt": "2020-12-10T15:17:07Z",
+          "publishedAt": "2020-12-10T10:25:06Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Hi Etienne, and welcome to MOOSE.   Good question.  Either way is fine.  The first way the modern syntax, while the second way is old-fashioned.\nandy",
+                  "url": "https://github.com/idaholab/moose/discussions/16451#discussioncomment-185019",
+                  "updatedAt": "2020-12-10T10:36:41Z",
+                  "publishedAt": "2020-12-10T10:36:26Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "EtienneSwerim"
+                  },
+                  "bodyText": "Hi Andy,\nThank you! OK, so the two ways are completely identical. I thought there was something about under-directories that I had missed, but no. Good to know!\nEtienne",
+                  "url": "https://github.com/idaholab/moose/discussions/16451#discussioncomment-185361",
+                  "updatedAt": "2020-12-10T11:40:29Z",
+                  "publishedAt": "2020-12-10T11:40:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Remote Access Firefox SOCKS proxy",
+          "author": {
+            "login": "aprilnovak"
+          },
+          "bodyText": "Hi all,\nI'm trying to get my remote access set up on my new computer (macOS 10.15.7), but am running into some difficulties actually accessing hpcgitlab.hpc.inl.gov. I can successfully ssh to hpclogin.inl.gov, but the remote access instructions on the MOOSE website don't work for me - I cannot get to hpclogin.hpc.inl.gov through Firefox 83.0. I also tried Safari 14.0 and had no luck.\nThe strange thing is that I have this proxy set up just fine on another computer (macOS 10.14.6), and I'm just straight copying what I did in Firefox's network settings to my new computer. I tried adding no proxy for google.com, and I can get through to it just fine - so it seems that something about hpclogin.hpc.inl.gov doesn't work for me.\nThis may be an issue with Firefox or Mac, but I just wanted to ask the question here in case any other Mac users have this problem? Am I missing a factor of hpc somewhere (I vaguely remember something in the past having to do with different website URLs for external vs. internal users)? Is there some permissions I need to change in macOS 10.15.7 that I didn't need before?\nThanks,\n-April",
+          "url": "https://github.com/idaholab/moose/discussions/16445",
+          "updatedAt": "2020-12-10T00:28:05Z",
+          "publishedAt": "2020-12-09T23:46:03Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "Crazy timing! I'm actually changing some of this right now. Take a look at #16446.\nIf you have the current SSH config listed within the instructions, and have a blanket proxy (all traffic to the SOCKS proxy)... it should work. Can you give the new setup a try?\nAdd the file here https://github.com/idaholab/moose/blob/4e88a478314032399feec8592e6837f7a6009f93/scripts/hpc_proxy.pac anywhere on your filesystem and add it as the \"automatic proxy configuration url\" in Firefox (file://some/path/to/hpc_proxy.pac).",
+                  "url": "https://github.com/idaholab/moose/discussions/16445#discussioncomment-182695",
+                  "updatedAt": "2020-12-10T00:01:15Z",
+                  "publishedAt": "2020-12-10T00:01:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "Oh, I think I missed what you read some. You can't get to any resources within a browser. On first read, I took that as you could get to some resources but not all.\nThis leads me to believe that it's an issue with the SOCKS proxy as a whole, not how you're forwarding to it.",
+                          "url": "https://github.com/idaholab/moose/discussions/16445#discussioncomment-182702",
+                          "updatedAt": "2020-12-10T00:06:00Z",
+                          "publishedAt": "2020-12-10T00:06:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aprilnovak"
+                          },
+                          "bodyText": "It is crazy timing!\nIf I did everything correctly, then unfortunately the new approach also doesn't work for me. The only apparent difference is that now Firefox hangs indefinitely on hpcgitlab.hpc.inl.gov, instead of just giving up right away :/",
+                          "url": "https://github.com/idaholab/moose/discussions/16445#discussioncomment-182715",
+                          "updatedAt": "2020-12-10T00:18:29Z",
+                          "publishedAt": "2020-12-10T00:18:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "The only apparent difference is that now Firefox hangs indefinitely on hpcgitlab.hpc.inl.gov, instead of just giving up right away :/\n\nYeah, that's because with the new config if the proxy fails it'll try a direct connection (for people on INL VPN). Which means... something is definitely borked with the SOCKS proxy.\nAre you connecting to hpclogin with\nssh hpclogin\n\n?\nIf you're connecting using the FQDN (hpclogin.inl.gov), it won't setup the proxy.",
+                          "url": "https://github.com/idaholab/moose/discussions/16445#discussioncomment-182722",
+                          "updatedAt": "2020-12-10T00:22:25Z",
+                          "publishedAt": "2020-12-10T00:22:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aprilnovak"
+                          },
+                          "bodyText": "That fixed it! I had copied over my bash script with a few aliases to make that ssh process shorter, so I didn't notice that what I was doing before (ssh novaapri@hpclogin.inl.gov) didn't gel with the current MOOSE access instructions. I guess I didn't expect that part to change.\nThanks, Logan!",
+                          "url": "https://github.com/idaholab/moose/discussions/16445#discussioncomment-182728",
+                          "updatedAt": "2020-12-10T00:27:51Z",
+                          "publishedAt": "2020-12-10T00:27:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Unable to compile PETSc with Mumps",
+          "author": {
+            "login": "r-williams-2"
+          },
+          "bodyText": "Reposting this.\nI was recently updating PETSc using the update_and_rebuild_petsc.sh script. However, this failed at Mumps with the below error:\n\nIn addition, please find attached the configure.log file. It appears that the directory path for Mumps has not been created although I am not sure the reason for this. It should be noted that if I exclude mumps, PETSc compiles fine.\nThanks for your help.\nKind regards,\nRoss.",
+          "url": "https://github.com/idaholab/moose/discussions/16441",
+          "updatedAt": "2022-11-01T13:52:33Z",
+          "publishedAt": "2020-12-09T22:00:59Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@fdkong",
+                  "url": "https://github.com/idaholab/moose/discussions/16441#discussioncomment-182309",
+                  "updatedAt": "2022-11-01T13:52:47Z",
+                  "publishedAt": "2020-12-09T22:31:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "fdkong"
+                  },
+                  "bodyText": "New complied MUMPS conflict with Conda carried MUMPS. There are two options for you:\n\nuse conda to get all latest packages including PETSc and libMesh via   conda update --all\n\nor\n\ncreate a new environment without PETSc and libMesh in it. For example, conda create --name newmoose moose-mpich moose-tools. In this new environment, you can then use update_and_rebuild_petsc.sh . After you build PETSc, and you need to build libMesh.\n\nFor conda users, we suggest taking option 1.",
+                  "url": "https://github.com/idaholab/moose/discussions/16441#discussioncomment-182626",
+                  "updatedAt": "2022-11-01T13:52:47Z",
+                  "publishedAt": "2020-12-09T23:40:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "r-williams-2"
+                          },
+                          "bodyText": "So anaconda automatically manages PETSc as well? I wasn't aware of that. Thanks for clarifying that.",
+                          "url": "https://github.com/idaholab/moose/discussions/16441#discussioncomment-182664",
+                          "updatedAt": "2022-11-01T13:52:49Z",
+                          "publishedAt": "2020-12-09T23:51:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "Yes, conda manages PETSc and libMesh and other dependent packages.",
+                          "url": "https://github.com/idaholab/moose/discussions/16441#discussioncomment-182685",
+                          "updatedAt": "2022-11-01T13:52:54Z",
+                          "publishedAt": "2020-12-09T23:55:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "RealTensorValue in RotationMatrix",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "For a RealTensorValue type, do you fill in values moving left to right across rows (how arrays are usually done), or do you fill down each column?\nI ask because I'm looking at the rotation matrix from euler angles computed here. It looks like it is following the Z1X2Z3 convention as expected, but for instance the 2nd entry (row 1 column 2) isn't going in the 2nd entry for the variable, it's going in the 4th (index 3), which is where would expect column 1 row 2, unless it really does need to be filled in top to bottom. Or perhaps the function is just doing the transpose?",
+          "url": "https://github.com/idaholab/moose/discussions/16140",
+          "updatedAt": "2022-08-15T09:02:01Z",
+          "publishedAt": "2020-11-10T15:01:09Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@dschwen Do you know the answer to this?",
+                  "url": "https://github.com/idaholab/moose/discussions/16140#discussioncomment-128459",
+                  "updatedAt": "2022-08-15T09:02:01Z",
+                  "publishedAt": "2020-11-13T04:25:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "@SudiptaBiswas worked with Euler angle rotations in her sintering work.",
+                          "url": "https://github.com/idaholab/moose/discussions/16140#discussioncomment-128756",
+                          "updatedAt": "2022-08-15T09:02:13Z",
+                          "publishedAt": "2020-11-13T14:50:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "@SudiptaBiswas Just curious if you know the answer to this. It looks like the rotation matrix being built in https://github.com/idaholab/moose/blob/next/modules/tensor_mechanics/src/utils/RotationTensor.C is the transpose of what you would expect based on the vector indices being stored, assuming you enter in the values row-wise (index 0 is R11, index 1 is R12, etc). Depending on the application, the transpose may be what you want, but I just want to be clear what's going on. The Euler angles for a rotation matrix and its transpose will be different.",
+                          "url": "https://github.com/idaholab/moose/discussions/16140#discussioncomment-138898",
+                          "updatedAt": "2022-08-15T09:02:13Z",
+                          "publishedAt": "2020-11-25T19:30:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "In case anybody finds this, I think the answer is clear and I just wasn't seeing it. As the documentation clearly stated, the Bunge convention is used for the Euler angles, meaning the angles are used to build the passive (sample-to-crystal) rotation matrix, so yes, the transpose of the matrix is computed and applied when using Euler angles.\nThe documentation has been updated a bit. See also #16341. I added some functionality such that one can apply a rotation matrix directly to the elasticity tensor.",
+                  "url": "https://github.com/idaholab/moose/discussions/16140#discussioncomment-179132",
+                  "updatedAt": "2022-08-15T09:02:19Z",
+                  "publishedAt": "2020-12-09T14:57:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Compiling error - isysroot - pyhit",
+          "author": {
+            "login": "favinom"
+          },
+          "bodyText": "I am installing the latest moose, using manual install and I got\nBuilding and linking /Users/favinom/projects/moose/framework/../python/pyhit/hit.so...\ng++: error: unrecognized command line option '-iwithsysroot'; did you mean '-isysroot'?\ng++: error: unrecognized command line option '-iwithsysroot'; did you mean '-isysroot'?\nmake: *** [/Users/favinom/projects/moose/framework/../python/pyhit/hit.so] Error 1\nDoes anyone know how to fix this?",
+          "url": "https://github.com/idaholab/moose/discussions/16415",
+          "updatedAt": "2022-07-20T15:26:36Z",
+          "publishedAt": "2020-12-08T09:27:22Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "I have also got problem with pyhit during installation on cluster.\nI had to install pyhit manually to fix it.\nAt which point of the installation procedure you get this error?\nWhat is your operating system?\nDid you install yourself compiler and mpich?",
+                  "url": "https://github.com/idaholab/moose/discussions/16415#discussioncomment-163146",
+                  "updatedAt": "2022-07-20T15:26:36Z",
+                  "publishedAt": "2020-12-08T12:50:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "favinom"
+                          },
+                          "bodyText": "Ciao,\nI am getting this problem when I am in the test folder and try to compile.\nI am on osx, using gcc from hpc.sourceforge, mpich compiled myself",
+                          "url": "https://github.com/idaholab/moose/discussions/16415#discussioncomment-163948",
+                          "updatedAt": "2022-07-20T15:26:42Z",
+                          "publishedAt": "2020-12-08T17:02:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Did this resolve the issue?",
+                          "url": "https://github.com/idaholab/moose/discussions/16415#discussioncomment-172867",
+                          "updatedAt": "2022-07-20T15:26:42Z",
+                          "publishedAt": "2020-12-09T03:42:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "favinom"
+                          },
+                          "bodyText": "EDITED\nFIXED: read below\nThe error appears when the compiler does\ncd \"[]/moose/framework/contrib/hit\"\nand then\nmpicxx -std=c++11 -w -fPIC -lstdc++ -shared \n/Users/favinom/projects/real/moose/framework/contrib/hit/hit.cpp \n/Users/favinom/projects/real/moose/framework/contrib/hit/lex.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/parse.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/braceexpr.cc \n-L/System/Library/Frameworks/Python.framework/Versions/2.7/lib \n-iwithsysroot /System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7 \n-iwithsysroot /System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7 \n-undefined dynamic_lookup \n-o []/moose/framework/../python/pyhit/hit.so\nIt seems that -iwithsysroot is not an option of my mpicxx.\nActually, the only option that I see running \"mpicxx --help\" is\n--sysroot=\nbut if I try to run\nmpicxx -std=c++11 -w -fPIC -lstdc++ -shared \n/Users/favinom/projects/real/moose/framework/contrib/hit/hit.cpp \n/Users/favinom/projects/real/moose/framework/contrib/hit/lex.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/parse.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/braceexpr.cc \n-L/System/Library/Frameworks/Python.framework/Versions/2.7/lib \n--sysroot='/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7' \n-undefined dynamic_lookup \n-o []/moose/framework/../python/pyhit/hit.so\nsome inclusions fail. So I tried\nmpicxx -std=c++11 -w -fPIC -lstdc++ -shared \n/Users/favinom/projects/real/moose/framework/contrib/hit/hit.cpp \n/Users/favinom/projects/real/moose/framework/contrib/hit/lex.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/parse.cc \n/Users/favinom/projects/real/moose/framework/contrib/hit/braceexpr.cc \n-L/System/Library/Frameworks/Python.framework/Versions/2.7/lib \n-I/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7 \n-undefined dynamic_lookup \n-o []/moose/framework/../python/pyhit/hit.so\nand it compiled the library. I went back to the 'test' folder and proceeded to compile the rest.\nreplace [] with the correct folder in your system.",
+                          "url": "https://github.com/idaholab/moose/discussions/16415#discussioncomment-174931",
+                          "updatedAt": "2022-07-20T15:26:43Z",
+                          "publishedAt": "2020-12-09T06:57:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Scaling issues",
+          "author": {
+            "login": "LiuPengPeter"
+          },
+          "bodyText": "Hello everyone,\nIn my phase field module, the value of material parameters are in different orders of magnitude. I try to scale variables and material parameters.\nI have some questions about scaling. For example:\n[Variables]\n  [./**eta**]\n    order = FIRST\n    family = LAGRANGE\n    **scaling= 1.0e5**\n  [../]\n\nDoes it means that the variable eta becomes \"eta*1.0e5\" in all of the process of simulation and return \"eta\" without \"1.0e5\"\nin the final result?\nThank you a lot!",
+          "url": "https://github.com/idaholab/moose/discussions/16365",
+          "updatedAt": "2022-10-25T02:25:32Z",
+          "publishedAt": "2020-12-02T08:24:39Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "mangerij"
+                  },
+                  "bodyText": "It means the residual corresponding to eta is scaled by 1e5\n\nOn Dec 2, 2020 9:25 AM, LiuPengPeter <notifications@github.com> wrote:\n\n*Message sent from a system outside of UConn.*\n\n\nHello everyone,\n\nIn my phase field module, the value of material parameters are in different orders of magnitude. I try to scale variables and material parameters.\n\nI have some questions about scaling. For example:\n\n[Variables]\n  [./**eta**]\n    order = FIRST\n    family = LAGRANGE\n    **scaling= 1.0e5**\n  [../]\n\n\nDoes it means that the variable eta becomes \"eta*1.0e5\" in all of the process of simulation and return \"eta\" without \"1.0e5\"\nin the final result?\n\nThank you a lot!\n\n\u2014\nYou are receiving this because you are subscribed to this thread.\nReply to this email directly, view it on GitHub<https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fgithub.com%2Fidaholab%2Fmoose%2Fdiscussions%2F16365&data=04%7C01%7Cjohn.mangeri%40uconn.edu%7C6da9e03f3e5a4d0d383108d8969bc1de%7C17f1a87e2a254eaab9df9d439034b080%7C0%7C0%7C637424943015567475%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C1000&sdata=%2BIsZe37pe3AU8Ob4cvE6w0R%2FI1yxAETzdoG4AO%2F4PJs%3D&reserved=0>, or unsubscribe<https://nam10.safelinks.protection.outlook.com/?url=https%3A%2F%2Fgithub.com%2Fnotifications%2Funsubscribe-auth%2FABZ65FCGRJLXIJ2TMQEXO3TSSX2VVANCNFSM4UKEUDWA&data=04%7C01%7Cjohn.mangeri%40uconn.edu%7C6da9e03f3e5a4d0d383108d8969bc1de%7C17f1a87e2a254eaab9df9d439034b080%7C0%7C0%7C637424943015567475%7CUnknown%7CTWFpbGZsb3d8eyJWIjoiMC4wLjAwMDAiLCJQIjoiV2luMzIiLCJBTiI6Ik1haWwiLCJXVCI6Mn0%3D%7C1000&sdata=QhAwSxIRu%2FgEMHvFgPMBibBOBq5RlEuZLS7Liuo8kUE%3D&reserved=0>.",
+                  "url": "https://github.com/idaholab/moose/discussions/16365#discussioncomment-144614",
+                  "updatedAt": "2022-10-25T02:25:56Z",
+                  "publishedAt": "2020-12-02T08:46:25Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LiuPengPeter"
+                          },
+                          "bodyText": "Thanks for your help. Could you explain more details?\nIf there are R1, R2 and R3 whose variable is \"V\", and \"eta\" is just the coupled variable.\nR1 = V + eta^2 + eta\nR2 = partdiff{eta}{x}\nR3 = partdiff{V}{eta}\nI think that should be:\nR1*(1.0e5)^2 + R21.0e5 +R3(1/1.0e5).\nRight?",
+                          "url": "https://github.com/idaholab/moose/discussions/16365#discussioncomment-144679",
+                          "updatedAt": "2022-10-25T02:26:08Z",
+                          "publishedAt": "2020-12-02T10:10:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mangerij"
+                          },
+                          "bodyText": "If you use\n[Debug]\n  show_var_residual_norms = true\n[]\n\nin your input file, you will see the influence of using scaling for the residuals. Remember the residual is the total sum of all the kernel contributions for that variable. So if you have only two variables, you should have only two residuals (one each).",
+                          "url": "https://github.com/idaholab/moose/discussions/16365#discussioncomment-144701",
+                          "updatedAt": "2022-10-25T02:26:08Z",
+                          "publishedAt": "2020-12-02T10:38:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LiuPengPeter"
+                          },
+                          "bodyText": "I just want to take an example. What I care is that how the scaling factor influence the residual of the kernel. Could you tell me about the detail of scaling factor?",
+                          "url": "https://github.com/idaholab/moose/discussions/16365#discussioncomment-144708",
+                          "updatedAt": "2022-10-25T02:26:10Z",
+                          "publishedAt": "2020-12-02T10:48:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We work with the residual of the variable. A single kernel does not (usually) define the whole PDE that rules the variable.\nThe scaling factor is applied on the residual of the variable.\nSome kernels' residual may be scaled, for particular use cases, but that's not what you are doing here.",
+                          "url": "https://github.com/idaholab/moose/discussions/16365#discussioncomment-172938",
+                          "updatedAt": "2022-10-25T02:26:15Z",
+                          "publishedAt": "2020-12-09T03:48:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Suddenly my SAM and MOOSE system does not work",
+          "author": {
+            "login": "Terryxixi2014"
+          },
+          "bodyText": "I got an error: error while loading shared libraries: libmoose-opt.so.0: cannot open shared object file: no such file or directory\nsuddenly, I cannot start any new calculations. The above error is there. Any idea?",
+          "url": "https://github.com/idaholab/moose/discussions/16435",
+          "updatedAt": "2022-12-13T14:15:33Z",
+          "publishedAt": "2020-12-09T02:39:29Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Terry,\nDid you update SAM before this?\nAre you loading the moose environment? (if you are using the conda moose install)\nI would try re-building moose.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/16435#discussioncomment-172854",
+                  "updatedAt": "2022-12-13T14:15:34Z",
+                  "publishedAt": "2020-12-09T03:41:00Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Convergence Issues with New Parameters",
+          "author": {
+            "login": "alanchavez86"
+          },
+          "bodyText": "Hi all!\nI currently have an input file (FeCrCo.i) used for the phase field simulation of the decomposition of FeCrCo alloy. The input file works correctly using parameters from Koyama 2004. When switching my parameters to those in Lv. 2010, I'm running into convergence issues where my data doesn't go past 1 second. I changed my temperature to a global parameter and now I'm looking into my executioner block to see if that's where my issue is.\nAny help is appreciated. Thank you!\nFeCrCo.zip\nKoyama_2004.pdf\nLv_2010_PF of FeCrCo.pdf",
+          "url": "https://github.com/idaholab/moose/discussions/16384",
+          "updatedAt": "2023-05-10T23:34:18Z",
+          "publishedAt": "2020-12-04T00:24:15Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Here are a couple suggestions to troubleshoot this:\n-Make sure that you are using the same units when you change to the new set of parameters\n-Check each parameter that you are changing and make sure that it is the same order of magnitude as the original parameter. Historically the guidance has always been that the solvers will work best when units are chosen such that all parameters are of order unity. That is why I mentioned making sure the units are the same between the parameters in the two papers.\n-A recently added option is automatic variable scaling, which will apply a scaling factor to each residual equation to try to make sure that the contribute approximately the same to the residual. This option can be turned on by setting the parameter automatic_scaling = true in the Executioner block.",
+                  "url": "https://github.com/idaholab/moose/discussions/16384#discussioncomment-166871",
+                  "updatedAt": "2023-05-10T23:34:20Z",
+                  "publishedAt": "2020-12-08T20:18:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1219 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0xMS0wMVQwNzozMjozNC0wNjowMM4ARQK7"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Cohesive Zone Model : Obtain AuxVariable Neighbor Information",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi all, we try to implement custom CZM material kernel which needs reactions as variable and calculate the difference of each interface node pair from the plus and minus side. After digging into the discussion, I realize there is an easy way to save the reactions as auxvariable by using \"save_in_master\" and \"save_in_slave\" , the input file looks something like:\n[AuxVariables]\n   [./resid_primary_x]\n      order = FIRST\n      family = LAGRANGE\n    [../]\n    [./resid_primary_y]\n      order = FIRST\n      family = LAGRANGE\n    [../]\n    [./resid_secondary_x]\n      order = FIRST\n      family = LAGRANGE\n    [../]\n    [./resid_secondary_y]\n      order = FIRST\n      family = LAGRANGE\n    [../]\n[]\n\n[Modules/TensorMechanics/CohesiveZoneMaster]\n    [./czm_ik]\n      boundary = 'Block0_Block1'\n      strain = SMALL\n      generate_output='traction_x traction_y jump_x jump_y normal_traction tangent_traction normal_jump tangent_jump'\n      save_in_master = 'resid_primary_x resid_primary_y'\n      save_in_slave  = 'resid_secondary_x  resid_secondary_y' \n    [../]\n []\n\nThen I feed residuals into the material kernel and inside computeInterfaceTractionAndDerivatives, I would like to compute something like:\nresid_primary_x[_qp] - residuals_secondary_x[_qp_neighbour]\n\nWhich means I should somehow know the neighboring points of the current point and extract information within the same calculation. I know for calculating displacement jump we have coupledNeighborValue, but this may not be the case here since the information is stored in separate variables. I'll be appreciated for any workaround suggestions. Thanks in advance!",
+          "url": "https://github.com/idaholab/moose/discussions/22599",
+          "updatedAt": "2022-11-15T20:03:17Z",
+          "publishedAt": "2022-11-04T05:05:04Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "You should be able to couple neighbor reaction forces using coupledNeighborValue without any issue. You can use _qp to index both the current side and its neighbor side.\nBTW, it's probably better to rename master/slave to primary/secondary here...",
+                  "url": "https://github.com/idaholab/moose/discussions/22599#discussioncomment-4056522",
+                  "updatedAt": "2022-11-04T12:43:45Z",
+                  "publishedAt": "2022-11-04T12:43:45Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks for your reply. I think the following code does the things (correct me if I'm wrong), In the constructor:\n_reaction_x(coupledValue(\"resid_primary_x\")),\n_reaction_neighbor_x(coupledNeighborValue(\"resid_secondary_x\")),\n_reaction_y(coupledValue(\"resid_primary_y\")),\n_reaction_neighbor_y(coupledNeighborValue(\"resid_secondary_y\"))\n\nIn the coupledNeighborValue, I do the following the compute the difference\n_reaction_x[_qp] - _reaction_neighbor_x[_qp]\n\nAnd in the input file pass the corresponding auxvariable names. I once thought coupledNeighborValue should be acted on resid_primary_x in order to get its neighbor (resid_secondary_x) values, but that returns zero value, which is a bit confusing. Could you elaborate the logic here, or did I do something wrong?",
+                          "url": "https://github.com/idaholab/moose/discussions/22599#discussioncomment-4059609",
+                          "updatedAt": "2022-11-04T18:14:30Z",
+                          "publishedAt": "2022-11-04T18:14:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "This seems correct to me.",
+                          "url": "https://github.com/idaholab/moose/discussions/22599#discussioncomment-4065850",
+                          "updatedAt": "2022-11-05T21:41:22Z",
+                          "publishedAt": "2022-11-05T21:41:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Simple Dynamics Problem",
+          "author": {
+            "login": "maxnezdyur"
+          },
+          "bodyText": "Let me know if I am missing something very simple! For the input file below, I have a cube that I apply a velocity BC on the bottom. The cube has a small density and is stiff. So I expect the entire cube to move at the velocity prescribed (1/100). I use the [Modules/TensorMechanics/DynamicMaster] action and finite strain. When looking at the velocity in ParaView, even on the boundary, I see it oscillate from 0 to 2/100 every time step. I also use the ADTimeDerivativeAux to see if there is a difference, but the oscillations still occur.  But when I run with BDF2, I still get oscillations in the velocity variable created by the action, but the velocity variable created by  ADTimeDerivativeAux now shows the correct velocity of 1/100. I have an application that needs the correct velocity for a multiapp simulation, but I want to be able to run NewmarkBeta for the time integrator. Let me know if there is any fix, thank you!\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    ny = 4\n    nx = 4\n  []\n[]\n\n[Variables]\n  [disp_x]\n    order = FIRST\n  []\n  [disp_y]\n    order = FIRST\n  []\n[]\n\n[Modules/TensorMechanics/DynamicMaster]\n  [all]\n    strain = FINITE\n    # use_automatic_differentiation = true\n    add_variables = true\n  []\n[]\n\n[AuxVariables]\n  [vel_new]\n    family = MONOMIAL\n    order = CONSTANT\n    [AuxKernel]\n      type = ADTimeDerivativeAux\n      variable = vel_new\n      functor = disp_y\n    []\n  []\n[]\n\n[Materials]\n  [elastic_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 40000000 #Youngs modulus in CGS = 10 * SI\n    poissons_ratio = 0.30\n  []\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n  [density]\n    type = GenericConstantMaterial\n    prop_names = 'density'\n    prop_values = '1e-5'\n  []\n[]\n\n[BCs]\n  [move_up]\n    type = PresetVelocity\n    boundary = ' bottom'\n    function = '1/100'\n    variable = disp_y\n  []\n  [hold_x]\n    type = FunctionDirichletBC\n    boundary = bottom\n    function = 0\n    variable = disp_x\n  []\n  # [move_up]\n  #   type = PresetDisplacement\n  #   velocity = vel_y\n  #   boundary = ' bottom'\n  #   function = 't/100'\n  #   variable = disp_y\n  #   acceleration = accel_y\n  #   beta = ${beta}\n  # []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n  end_time = 100\n  dt = 1e-0\n  solve_type = 'NEWTON'\n  petsc_options = '-snes_converged_reason -ksp_converged_reason -snes_ksp_ew '\n\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type -pc_factor_shift_type -pc_factor_shift_amount -mat_mffd_err'\n  petsc_options_value = 'lu       superlu_dist                  NONZERO 1e-15    1e-5'\n  nl_max_its = 50\n  l_max_its = 500\n  nl_abs_tol = 1e-5\n  nl_rel_tol = 1e-6\n  line_search = bt\n  automatic_scaling = true\n   [TimeIntegrator]\n     type = NewmarkBeta\n     beta = 0.25\n    gamma = 0.5\n  []\n  #[TimeIntegrator]\n  #  type = BDF2\n  #[]\n[]\n\n[Outputs]\n  [exo]\n    type = Exodus\n  []\n  file_base = \"test_vel/cube\"\n  print_linear_residuals = false\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/22574",
+          "updatedAt": "2022-11-04T10:50:21Z",
+          "publishedAt": "2022-11-02T19:51:00Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "maxnezdyur"
+                  },
+                  "bodyText": "To further illustrate the point. Here is a graph of a node on the bottom BC. The displacement, velocity, and acceleration in the y direction are plotted.",
+                  "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4046938",
+                  "updatedAt": "2022-11-03T13:11:58Z",
+                  "publishedAt": "2022-11-03T13:11:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero @arovinelli",
+                  "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4047722",
+                  "updatedAt": "2022-11-03T14:25:37Z",
+                  "publishedAt": "2022-11-03T14:25:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "The following input file works. See equation 22 of Prof. Gavin's note. https://people.duke.edu/~hpgavin/StructuralDynamics/NumericalIntegration.pdf\nThe acceleration is computed as a function of the old acceleration, the old velocity, and the displacement increment.\nThe issue here arises from the fact that you have a non-zero initial velocity by virtue of applying a preset velocity. So you'll need to set the initial condition for the velocity aux variable to match the preset velocity. Otherwise the time integration in acceleration will diverge.\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    ny = 4\n    nx = 4\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    add_variables = true\n  []\n[]\n\n[Kernels]\n  [inertia_x]\n    type = InertialForce\n    variable = disp_x\n    use_displaced_mesh = false\n  []\n  [inertia_y]\n    type = InertialForce\n    variable = disp_y\n    use_displaced_mesh = false\n  []\n[]\n\n[AuxVariables]\n  [accel_y]\n    [AuxKernel]\n      type = NewmarkAccelAux\n      beta = 0.25\n      displacement = disp_y\n      velocity = vel_y\n      execute_on = 'TIMESTEP_END'\n    []\n  []\n  [vel_y]\n    initial_condition = 0.01\n    [AuxKernel]\n      type = NewmarkVelAux\n      gamma = 0.5\n      acceleration = accel_y\n      execute_on = 'TIMESTEP_END'\n    []\n  []\n[]\n\n[Materials]\n  [elastic_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 40000000 #Youngs modulus in CGS = 10 * SI\n    poissons_ratio = 0.30\n  []\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n  [density]\n    type = GenericConstantMaterial\n    prop_names = 'density'\n    prop_values = '1e-5'\n  []\n[]\n\n[BCs]\n  [move_up]\n    type = PresetVelocity\n    boundary = 'bottom'\n    function = '1/100'\n    variable = disp_y\n  []\n  [hold_x]\n    type = FunctionDirichletBC\n    boundary = bottom\n    function = 0\n    variable = disp_x\n  []\n[]\n\n[Executioner]\n  type = Transient\n  end_time = 100\n  dt = 1e-0\n  solve_type = 'NEWTON'\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type -pc_factor_shift_type -pc_factor_shift_amount -mat_mffd_err'\n  petsc_options_value = 'lu       superlu_dist                  NONZERO 1e-15    1e-5'\n  nl_max_its = 50\n  l_max_its = 500\n  nl_abs_tol = 1e-5\n  nl_rel_tol = 1e-6\n  line_search = bt\n  automatic_scaling = true\n\n  [TimeIntegrator]\n    type = NewmarkBeta\n  []\n[]\n\n[Outputs]\n  [exo]\n    type = Exodus\n  []\n  file_base = \"test_vel/cube\"\n  print_linear_residuals = false\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4049651",
+                  "updatedAt": "2022-11-03T17:23:59Z",
+                  "publishedAt": "2022-11-03T17:23:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "nice question btw.",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4049658",
+                          "updatedAt": "2022-11-03T17:25:03Z",
+                          "publishedAt": "2022-11-03T17:25:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Thank you for the reply. One more question stems from this.  If I need to know the \"mesh velocity\", do I then need to create a different Auxkernel because the velocity calculated for a node is not guaranteed to be the \"physical\" velocity? Hard to explain, but I need to know how fast the mesh is moving.",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4049775",
+                          "updatedAt": "2022-11-03T17:40:18Z",
+                          "publishedAt": "2022-11-03T17:40:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Do you know the displacement of the mesh? If the mesh displacement is a nodal variable, the NemarkVelAux and NewmarkAccelAux should work out-of-the-box, even for ALE.",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4049898",
+                          "updatedAt": "2022-11-03T17:52:58Z",
+                          "publishedAt": "2022-11-03T17:52:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "The input file below, describes a cube not moving, held on the top, and pressure applied to the bottom. The timestep is 1, so the displacement and velocity should be equal. Looking on ParaView, this is not the case. Instead the velocity is twice that of the displacement. Which is what is expected when looking at the notes you linked.\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    ny = 4\n    nx = 4\n  []\n[]\n\n[Variables]\n  [disp_x]\n    order = FIRST\n  []\n  [disp_y]\n    order = FIRST\n  []\n[]\n\n[Modules/TensorMechanics/DynamicMaster]\n  [all]\n    strain = FINITE\n    use_automatic_differentiation = true\n    add_variables = true\n  []\n[]\n\n[AuxVariables]\n  [vel_new]\n    family = MONOMIAL\n    order = CONSTANT\n    [AuxKernel]\n      type = ADTimeDerivativeAux\n      variable = vel_new\n      functor = disp_y\n    []\n  []\n  [vel_x]\n    initial_condition = 0\n  []\n  [vel_y]\n    initial_condition = 0.0\n  []\n[]\n\n[Materials]\n  [elastic_tensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = 40000000 #Youngs modulus in CGS = 10 * SI\n    poissons_ratio = 0.30\n  []\n  [stress]\n    type = ADComputeFiniteStrainElasticStress\n  []\n  [density]\n    type = ADGenericConstantMaterial\n    prop_names = 'density'\n    prop_values = '1e5'\n  []\n[]\n\n[BCs]\n  [Pressure]\n    [push_down]\n      boundary = bottom\n      function = 10000000\n      use_automatic_differentiation = true\n      use_displaced_mesh = true\n    []\n  []\n  [hold_x]\n    type = FunctionDirichletBC\n    boundary = 'top left right bottom'\n    function = 0\n    variable = disp_x\n  []\n  [hold_y]\n    type = FunctionDirichletBC\n    boundary = top\n    function = 0\n    variable = disp_y\n  []\n\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n  end_time = 1\n  dt = 1\n  solve_type = 'NEWTON'\n  petsc_options = '-snes_converged_reason -ksp_converged_reason -snes_ksp_ew '\n\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type -pc_factor_shift_type -pc_factor_shift_amount -mat_mffd_err'\n  petsc_options_value = 'lu       superlu_dist                  NONZERO 1e-15    1e-5'\n  nl_max_its = 50\n  l_max_its = 500\n  nl_abs_tol = 1e-8\n  nl_rel_tol = 1e-8\n  line_search = bt\n\n  [TimeIntegrator]\n    type = NewmarkBeta\n    beta = 0.25\n    gamma = 0.5\n  []\n[]\n\n[Outputs]\n  [exo]\n    type = Exodus\n  []\n  file_base = \"test_vel/cube\"\n  print_linear_residuals = false\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4049991",
+                          "updatedAt": "2022-11-03T18:04:02Z",
+                          "publishedAt": "2022-11-03T18:04:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I don't think this is a well posed dynamics problem. You probably want to ramp up the pressure from zero. Then the result will either be exact at the first step, or it will converge as dt -> 0.",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4052999",
+                          "updatedAt": "2022-11-04T02:58:33Z",
+                          "publishedAt": "2022-11-04T02:58:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Thanks for all the help!",
+                          "url": "https://github.com/idaholab/moose/discussions/22574#discussioncomment-4055724",
+                          "updatedAt": "2022-11-04T10:50:16Z",
+                          "publishedAt": "2022-11-04T10:50:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Ternary alloy KKS model (2-phase) + tensor mechanics + nucleation",
+          "author": {
+            "login": "gka80"
+          },
+          "bodyText": "Hello!\nI am in the process of constructing a KKS model for studying the evolution of a two-phase (\u237a/\u03b2) ternary system (Ti-Al-V). The simulation assumes that the orientation of the \u03b2-phase (BCC) is fixed relative to a reference (global) coordinate system and the \u237a-phase (HCP) can precipitate as 12 variants relative to this orientation. The tensor mechanics module is used to account for each of the variant eigenstrains during formation and their contribution to the global free energy. A similar implementation is found here: https://doi.org/10.1088/2053-1591/ab875a\nI have tested this implementation with a few simple test cases and it appears to be working as I would expect (for the most part).\nQuestions:\n\nI am now trying to implement nucleation and am wondering if the Discrete Nucleation System can handle the model described above?\nI track the Al-V concentration of the \u03b2-phase and each \u237a-variant and roll that up into an auxiliary variable (i.e., xAl = xAlBeta + xAlAlpha1 + xAlAlpha2 +...) so I am not quite sure what I should do for the \"DiscreteNucleation\" material and the \"op_names\" input: Should it be 'eta1 xAlAlpha1 xVAlpha1'? And have one DiscreteNucleation material for each \u237a-variant?\nSince the \"KKSMulti...\" kernels include inputs for the phase free energies (i.e., fBeta, fAlpha1, fAlpha2,...), would I then add the DiscreteNucleation materials for each \u237a-variant to the corresponding phase free energy material and include 'eta1' (or whatever variant) in the 'args'?\n\nHopefully all of that made sense. If anyone needs any clarification, please let me know.\nThank you!\n-Garrett",
+          "url": "https://github.com/idaholab/moose/discussions/22474",
+          "updatedAt": "2022-11-03T18:24:42Z",
+          "publishedAt": "2022-10-24T00:08:47Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@SudiptaBiswas @gambka",
+                  "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-3946193",
+                  "updatedAt": "2022-10-24T00:10:43Z",
+                  "publishedAt": "2022-10-24T00:10:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lloyd-5731"
+                          },
+                          "bodyText": "Has there been any update on this?",
+                          "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-4026149",
+                          "updatedAt": "2022-11-01T10:18:43Z",
+                          "publishedAt": "2022-11-01T10:18:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lloyd-5731"
+                  },
+                  "bodyText": "Following",
+                  "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-3968053",
+                  "updatedAt": "2022-10-26T09:09:11Z",
+                  "publishedAt": "2022-10-26T09:09:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@laagesen @dschwen",
+                  "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-4027560",
+                  "updatedAt": "2022-11-01T13:26:33Z",
+                  "publishedAt": "2022-11-01T13:26:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi Garrett - the idea behind the discrete nucleation based approach is to add an energy penalty to the system that will force the concentration in the nucleus to the correct values for the nucleus phase, so in this case you are trying to get the Al and V concentration to their values in the alpha phase, then the order parameter values would follow once the concentration is high enough to get a stable nucleus to form. So you will want the DiscreteNucleation material with op_names set to the concentration variables for Al and V, and op_values to the equilibrium values of Al and V in the alpha phase. Then for #3 you are right on that you would add the DiscreteNucleation material to the phase free energy for each phase.",
+                  "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-4030582",
+                  "updatedAt": "2022-11-01T20:06:57Z",
+                  "publishedAt": "2022-11-01T20:06:55Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gka80"
+                          },
+                          "bodyText": "Hi Larry-\nPerfect! Thank you for the quick response. If I have any other questions, I will reach out.\nThanks again.",
+                          "url": "https://github.com/idaholab/moose/discussions/22474#discussioncomment-4050151",
+                          "updatedAt": "2022-11-03T18:24:38Z",
+                          "publishedAt": "2022-11-03T18:24:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "potential bug in ComputeStVenantKirchhoffStress & NeoHookeanStress?",
+          "author": {
+            "login": "rcontinuum"
+          },
+          "bodyText": "Hello,\nin the new Lagrangian Kernel/Materials there may be a bug for the case large_kinematics = false. E.g., look at\nvoid\nComputeStVenantKirchhoffStress::computeQpPK2Stress()\n{\n  ...\n  if (_large_kinematics) // Large deformations = Green-Lagrange strain\n    strain = _E[_qp];\n  else // Small deformations = linear strain\n    strain = 0.5 * (_F[_qp] + _F[_qp].transpose());      // <=====???=========================  \n\n  // The stress update is linear with the correct strains/frame\n  _S[_qp] = _C[_qp] * strain;\n}\n\nTo my understanding the marked linearized strain computation should be replaced by something like\nconst RankTwoTensor I = RankTwoTensor::Identity();\nRankTwoTensor H = _F[_qp] - I;   // displacement gradient\nRankTwoTensor strain  = 0.5 * (H + H.transpose()); \n\nor put it in one line.\nYou can check that by setting large_kinematics = false (also in the [Materials] section)  in, e.g., the file\nmoose/modules/tensor_mechanics/test/tests/lagrangian//materials/correctness/stvenantkirchhoff.i\nand set exodus = true. Then one observe in paraview a much too large deformation in comparison to the case large_kinematics = true.\nThe same problem applies to void ComputeNeoHookeanStress::computeQpPK2Stress()\nCheers",
+          "url": "https://github.com/idaholab/moose/discussions/22581",
+          "updatedAt": "2022-11-03T18:11:18Z",
+          "publishedAt": "2022-11-03T10:13:04Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@reverendbedford",
+                  "url": "https://github.com/idaholab/moose/discussions/22581#discussioncomment-4049207",
+                  "updatedAt": "2022-11-03T16:33:51Z",
+                  "publishedAt": "2022-11-03T16:33:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "reverendbedford"
+                  },
+                  "bodyText": "Yes, this is a bug.  I opened issue #22588 and will fix it.",
+                  "url": "https://github.com/idaholab/moose/discussions/22581#discussioncomment-4049575",
+                  "updatedAt": "2022-11-03T17:15:03Z",
+                  "publishedAt": "2022-11-03T17:15:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/22581#discussioncomment-4050046",
+                          "updatedAt": "2022-11-03T18:11:14Z",
+                          "publishedAt": "2022-11-03T18:11:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Configuring Petsc to use local installation of HDF5",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Dear all,\nI am trying to configure petsc to work with a particular version (1.12.0) of HDF5 installed in the module environment of my HPC. I will need to do this to match up with the HDF version that i use while installing \"libmoab\". I gave the following line of command while configuring and building petsc.\n./scripts/update_and_rebuild_petsc.sh --with-hdf5-dir=\"/usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib\" --download-hdf5=0\nIdea here is to suppress downloading of external HDF components and use the one in my module environment. It looks like --with-hdf5-dir is not understood by the configure script and my building ended pre-maturely.\n/home/ir-bala2/moose_dev/moose/scripts\nINFO: Checking for HDF5...\nINFO: HDF5 library not detected, opting to download via PETSc...\n=============================================================================================\n                      Configuring PETSc to compile on your system\n=============================================================================================\n=============================================================================================                                       ***** WARNING: CC (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpv       use ./configure CC=$CC if you really want to use that value ******                                                     =============================================================================================                                 =============================================================================================                                       ***** WARNING: CXX (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarp       use ./configure CXX=$CXX if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: FC (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpv       use ./configure FC=$FC if you really want to use that value ******                                                     =============================================================================================                                 =============================================================================================                                       ***** WARNING: F77 (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarp       use ./configure F77=$F77 if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: F90 (set to mpif90) found in environment variables - ignoring                                                   use ./configure F90=$F90 if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: CXXFLAGS (set to -D_GLIBCXX_USE_CXX11_ABI=0) found in environment variables - ignoring                          use ./configure CXXFLAGS=$CXXFLAGS if you really want to use that value ******                                         =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default optimization C flags -g -O3                                                                      You might consider manually setting optimal optimization flags for your system with                                            COPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                          =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default Cxx optimization flags -g -O3                                                                    You might consider manually setting optimal optimization flags for your system with                                            CXXOPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                        =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default FORTRAN optimization flags -g -O3                                                                You might consider manually setting optimal optimization flags for your system with                                            FOPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                          =============================================================================================                                 =============================================================================================                                       ***** WARNING: You have a version of GNU make older than 4.0. It will work,                                                   but may not support all the parallel testing options. You can install the                                                     latest GNU make with your package manager, such as brew or macports, or use                                                   the --download-make option to get the latest GNU make *****                                                             =============================================================================================                                 =============================================================================================                                       Trying to download git://https://bitbucket.org/petsc/pkg-metis.git for METIS                                            =============================================================================================                                 =============================================================================================                                       Configuring METIS with cmake; this may take several minutes                                                             =============================================================================================                                 =============================================================================================                                       Compiling and installing METIS; this may take several minutes                                                           =============================================================================================                                 =============================================================================================                                       Trying to download git://https://bitbucket.org/petsc/pkg-parmetis.git for PARMETIS                                      =============================================================================================                                 =============================================================================================                                       Configuring PARMETIS with cmake; this may take several minutes                                                          =============================================================================================                                 =============================================================================================                                       Compiling and installing PARMETIS; this may take several minutes                                                        =============================================================================================                                 TESTING: configureLibrary from config.packages.hdf5(config/BuildSystem/config/packages/hdf5.py:88)                            *******************************************************************************\n         UNABLE to CONFIGURE with GIVEN OPTIONS    (see configure.log for details):\n-------------------------------------------------------------------------------\n--with-hdf5-dir=/usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib did not work\n*******************************************************************************\n\nCan somebody advise me whether i am using the right configure option for HDF5 reference - any workaround here will be highly appreciated.\nKind regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/22517",
+          "updatedAt": "2023-01-03T23:12:55Z",
+          "publishedAt": "2022-10-27T17:53:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou should set the HDF5 related environment variables to the location of the modules. We check many of them\nFor example  HDF5_ROOT\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3984666",
+                  "updatedAt": "2022-10-27T17:56:51Z",
+                  "publishedAt": "2022-10-27T17:56:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Set the HDF5 installation path to HDF5_ROOT. It still says that --with-hdf5-dir did not work.  Here is the error log.\n[ir-bala2@login-e-10 moose]$ ./scripts/update_and_rebuild_petsc.sh\n/home/ir-bala2/moose_dev/moose/scripts\nINFO: Checking for HDF5...\nINFO: HDF5 installation location was set using HDF5_ROOT=/usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib\n=============================================================================================\n                      Configuring PETSc to compile on your system\n=============================================================================================\n=============================================================================================                                       ***** WARNING: CC (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpv       use ./configure CC=$CC if you really want to use that value ******                                                     =============================================================================================                                 =============================================================================================                                       ***** WARNING: CXX (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarp       use ./configure CXX=$CXX if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: FC (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpv       use ./configure FC=$FC if you really want to use that value ******                                                     =============================================================================================                                 =============================================================================================                                       ***** WARNING: F77 (set to /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarp       use ./configure F77=$F77 if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: F90 (set to mpif90) found in environment variables - ignoring                                                   use ./configure F90=$F90 if you really want to use that value ******                                                   =============================================================================================                                 =============================================================================================                                       ***** WARNING: CXXFLAGS (set to -D_GLIBCXX_USE_CXX11_ABI=0) found in environment variables - ignoring                          use ./configure CXXFLAGS=$CXXFLAGS if you really want to use that value ******                                         =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default optimization C flags -g -O3                                                                      You might consider manually setting optimal optimization flags for your system with                                            COPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                          =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default Cxx optimization flags -g -O3                                                                    You might consider manually setting optimal optimization flags for your system with                                            CXXOPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                        =============================================================================================                                 =============================================================================================                                       ***** WARNING: Using default FORTRAN optimization flags -g -O3                                                                You might consider manually setting optimal optimization flags for your system with                                            FOPTFLAGS=\"optimization flags\" see config/examples/arch-*-opt.py for examples                                          =============================================================================================                                 =============================================================================================                                       ***** WARNING: You have a version of GNU make older than 4.0. It will work,                                                   but may not support all the parallel testing options. You can install the                                                     latest GNU make with your package manager, such as brew or macports, or use                                                   the --download-make option to get the latest GNU make *****                                                             =============================================================================================                                 =============================================================================================                                       Trying to download git://https://bitbucket.org/petsc/pkg-metis.git for METIS                                            =============================================================================================                                 =============================================================================================                                       Configuring METIS with cmake; this may take several minutes                                                             =============================================================================================                                 =============================================================================================                                       Compiling and installing METIS; this may take several minutes                                                           =============================================================================================                                 =============================================================================================                                       Trying to download git://https://bitbucket.org/petsc/pkg-parmetis.git for PARMETIS                                      =============================================================================================                                 =============================================================================================                                       Configuring PARMETIS with cmake; this may take several minutes                                                          =============================================================================================                                 =============================================================================================                                       Compiling and installing PARMETIS; this may take several minutes                                                        =============================================================================================                                 TESTING: configureLibrary from config.packages.hdf5(config/BuildSystem/config/packages/hdf5.py:88)                            *******************************************************************************\n         UNABLE to CONFIGURE with GIVEN OPTIONS    (see configure.log for details):\n-------------------------------------------------------------------------------\n--with-hdf5-dir=/usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib did not work\n*******************************************************************************\n\nThere was an error. Exiting...\n\nThis might need setting some other environment variables i suppose.\nKind regards,\nArun",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3985303",
+                          "updatedAt": "2022-10-27T19:17:50Z",
+                          "publishedAt": "2022-10-27T19:17:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "--with-hdf5-dir is not needed if you set HDF5_ROOT",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3986018",
+                          "updatedAt": "2022-10-27T20:49:53Z",
+                          "publishedAt": "2022-10-27T20:49:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "No, i did not intend to set --with-hdf5-dir as you can see from the rebuild command. Its just that when you set HDF5_ROOT it internally understands that --with-hdf5-dir is provided and does not proceed further",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3990514",
+                          "updatedAt": "2022-10-28T08:37:12Z",
+                          "publishedAt": "2022-10-28T08:37:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "can you please attach the configure.log",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3992719",
+                          "updatedAt": "2022-10-28T13:01:50Z",
+                          "publishedAt": "2022-10-28T13:01:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abarun22"
+                  },
+                  "bodyText": "Here is the config log for your reference\nconfigure.txt",
+                  "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3994688",
+                  "updatedAt": "2022-10-28T16:09:38Z",
+                  "publishedAt": "2022-10-28T16:09:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Looks like you are trying to use a different MPI than what was used to create HDF5 to begin with\nstderr:\nld: warning: libmpi.so.40, needed by /usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib/libhdf5_hl.so, may conflict with libmpi.so.12\nld: warning: libmpi.so.40, needed by /usr/local/Cluster-Apps/hdf5/openmpi/gcc/9.3/1.12.0/lib/libhdf5_hl.so, may conflict with libmpi.so.12\n\nYour current MPI wrapper seems to be this one:\n<snippet from your PATH variable>\n/usr/local/Cluster-Apps/intel/2017.4/compilers_and_libraries_2017.4.196/linux/mpi/intel64/bin\n\nBasically, I see multiple MPI's being made available simultaneously. Is there a way you can disable Intel's? Perhaps not loading all of these modules:\nLOADEDMODULES=gcc/9:openmpi/gcc/9.3/4.0.4:python/3.7:dot:slurm:turbovnc/2.0.1:vgl/2.5.1/64:singularity/current:rhel7/global:intel/compilers/2017.4:intel/mkl/2017.4:intel/impi/2017.4/intel:intel/libs/idb/2017.4:intel/libs/tbb/2017.4:intel/libs/ipp/2017.4:intel/libs/daal/2017.4:intel/bundles/complib/2017.4:cmake/latest:rhel7/default-peta4:cmake-3.19.4-gcc-5-a7pimaa:hdf5/openmpi/gcc/9.3/openmpi-4.0.4/1.12.0",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-3994782",
+                          "updatedAt": "2022-10-28T16:20:59Z",
+                          "publishedAt": "2022-10-28T16:18:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "The configure issue has now been fixed with the removal of multiple MPI components within the environment. It however fails at petsc checking stage as none of the tests passed. The log following here might explain you better.\n[ir-bala2@login-e-14 petsc]$ make PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc PETSC_ARCH=arch-moose check\nRunning check examples to verify correct installation\nUsing PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc and PETSC_ARCH=arch-moose\nPossible error running C/C++ src/snes/tutorials/ex19 with 1 MPI process\nSee http://www.mcs.anl.gov/petsc/documentation/faq.html\n--------------------------------------------------------------------------\nBy default, for Open MPI 4.0 and later, infiniband ports on a device\nare not used by default.  The intent is to use UCX for these devices.\nYou can override this policy by setting the btl_openib_allow_ib MCA parameter\nto true.\n\n  Local host:              login-e-14\n  Local adapter:           hfi1_0\n  Local port:              1\n\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nWARNING: There was an error initializing an OpenFabrics device.\n\n  Local host:   login-e-14\n  Local device: hfi1_0\n--------------------------------------------------------------------------\nlid velocity = 0.0016, prandtl # = 1., grashof # = 1.\nNumber of SNES iterations = 2\nPossible error running C/C++ src/snes/tutorials/ex19 with 2 MPI processes\nSee http://www.mcs.anl.gov/petsc/documentation/faq.html\n--------------------------------------------------------------------------\nBy default, for Open MPI 4.0 and later, infiniband ports on a device\nare not used by default.  The intent is to use UCX for these devices.\nYou can override this policy by setting the btl_openib_allow_ib MCA parameter\nto true.\n\n  Local host:              login-e-14\n  Local adapter:           hfi1_0\n  Local port:              1\n\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nWARNING: There was an error initializing an OpenFabrics device.\n\n  Local host:   login-e-14\n  Local device: hfi1_0\n--------------------------------------------------------------------------\nlid velocity = 0.0016, prandtl # = 1., grashof # = 1.\nNumber of SNES iterations = 2\n[login-e-14:09012] 1 more process has sent help message help-mpi-btl-openib.txt / ib port not selected\n[login-e-14:09012] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\n[login-e-14:09012] 1 more process has sent help message help-mpi-btl-openib.txt / error in device init\n0a1,17\n> --------------------------------------------------------------------------\n> By default, for Open MPI 4.0 and later, infiniband ports on a device\n> are not used by default.  The intent is to use UCX for these devices.\n> You can override this policy by setting the btl_openib_allow_ib MCA parameter\n> to true.\n>\n>   Local host:              login-e-14\n>   Local adapter:           hfi1_0\n>   Local port:              1\n>\n> --------------------------------------------------------------------------\n> --------------------------------------------------------------------------\n> WARNING: There was an error initializing an OpenFabrics device.\n>\n>   Local host:   login-e-14\n>   Local device: hfi1_0\n> --------------------------------------------------------------------------\n3,4c20,21\n<   1 SNES Function norm 4.12227e-06\n<   2 SNES Function norm 6.098e-11\n---\n>   1 SNES Function norm 3.32882e-06\n>   2 SNES Function norm < 1.e-11\n5a23,25\n> [login-e-14:09045] 1 more process has sent help message help-mpi-btl-openib.txt / ib port not selected\n> [login-e-14:09045] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\n> [login-e-14:09045] 1 more process has sent help message help-mpi-btl-openib.txt / error in device init\n/home/ir-bala2/moose_dev/moose/petsc/src/snes/tutorials\nPossible problem with ex19 running with hypre, diffs above\n=========================================\n0a1,17\n> --------------------------------------------------------------------------\n> By default, for Open MPI 4.0 and later, infiniband ports on a device\n> are not used by default.  The intent is to use UCX for these devices.\n> You can override this policy by setting the btl_openib_allow_ib MCA parameter\n> to true.\n>\n>   Local host:              login-e-14\n>   Local adapter:           hfi1_0\n>   Local port:              1\n>\n> --------------------------------------------------------------------------\n> --------------------------------------------------------------------------\n> WARNING: There was an error initializing an OpenFabrics device.\n>\n>   Local host:   login-e-14\n>   Local device: hfi1_0\n> --------------------------------------------------------------------------\n9a27,29\n> [login-e-14:09100] 1 more process has sent help message help-mpi-btl-openib.txt / ib port not selected\n> [login-e-14:09100] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\n> [login-e-14:09100] 1 more process has sent help message help-mpi-btl-openib.txt / error in device init\n/home/ir-bala2/moose_dev/moose/petsc/src/snes/tutorials\nPossible problem with ex19 running with mumps, diffs above\n=========================================\n0a1,12\n> ./ex47: error while loading shared libraries: libstrumpack.so: cannot open shared object file: No such file or directory\n> --------------------------------------------------------------------------\n> Primary job  terminated normally, but 1 process returned\n> a non-zero exit code. Per user-direction, the job has been aborted.\n> --------------------------------------------------------------------------\n> --------------------------------------------------------------------------\n> mpiexec detected that one or more processes exited with non-zero status, thus causing\n> the job to be terminated. The first process to do so was:\n>\n>   Process name: [[36290,1],0]\n>   Exit code:    127\n> --------------------------------------------------------------------------\n/home/ir-bala2/moose_dev/moose/petsc/src/vec/vec/tests\nPossible problem with ex47 running with hdf5, diffs above\n=========================================\n\nI welcome any suggestions here. May be a version of MPI with UCX support would solve the problem.\nKind regards,\nArun",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4029959",
+                          "updatedAt": "2022-11-01T18:36:47Z",
+                          "publishedAt": "2022-11-01T18:30:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nI think the last time we saw this it was tied to a version of OpenMPI.\nDo you see anything more when testing and building libmesh and moose?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4030013",
+                          "updatedAt": "2022-11-01T18:41:37Z",
+                          "publishedAt": "2022-11-01T18:41:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Yes that was indeed a toss up between libmpi.so.40 and libmpi.so.12. But the issue mainly stems from the inclusion of a certain module in my environment that leads to a corruption. Removal of that module cures that problem. We might need to check the reason for the tests failing due to OpenMPI - UCX issue. If you allow the configure script to use the external version of HDF, the check passes. Probably the HDF from our module environment is not a compatible version. I did not proceed towards building libmesh and moose as that will be the done in the next stage as soon as the checking is OK.",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4030286",
+                          "updatedAt": "2022-11-01T19:24:43Z",
+                          "publishedAt": "2022-11-01T19:24:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I think the point was; some errors from PETSc tests can be ignored. As a matter of fact, we may even get more useful information upon building (and perhaps failing to build) libMesh.\nIf/When you do build libmesh using the moose/scripts/update_and_rebuild_libmesh.sh script, a diagnostics log will be generated in the same directory: libmesh_diagnostics.log. That log would be super helpful to include!",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4030757",
+                          "updatedAt": "2022-11-01T20:33:37Z",
+                          "publishedAt": "2022-11-01T20:33:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abarun22"
+                  },
+                  "bodyText": "Libmesh builds OK. Encountered the following errors while building MOOSE. Also attached the libmesh diagnostic for your reference.\nmake: *** [/home/ir-bala2/moose_dev/moose/modules/module_loader/src/ModulesApp_with_tm.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....\nmake: *** [/rds/project/iris_vol2/rds-ukaea-ap001/arunpb/mooseApp/src/main.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** [/rds/project/iris_vol2/rds-ukaea-ap001/arunpb/mooseApp/src/base/hardening_model_appApp.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** [/rds/project/iris_vol2/rds-ukaea-ap001/arunpb/mooseApp/test/src/base/hardening_model_appTestApp.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** [/home/ir-bala2/moose_dev/moose/modules/tensor_mechanics/src/base/TensorMechanicsApp.x86_64-pc-linux-gnu.opt.lo] Error 1\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:11:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h: In function 'bool MooseUtils::isZero(const T&, libMesh::Real)':\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:58: error: expected primary-expression before '>' token\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/char_traits.h:39,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/string:40,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseEnumBase.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:11:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:58: error: expected primary-expression before '>' token\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/char_traits.h:39,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/string:40,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseEnumBase.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:11:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:58: error: expected primary-expression before '>' token\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/char_traits.h:39,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/string:40,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseEnumBase.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/InputParameters.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h: In function 'bool MooseUtils::isZero(const T&, libMesh::Real)':\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:58: error: expected primary-expression before '>' token\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/FileRangeBuilder.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/InputParameters.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:58: error: expected primary-expression before '>' token\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/FileRangeBuilder.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/InputParameters.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:58: error: expected primary-expression before '>' token\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/FileRangeBuilder.h:13,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h: In function 'bool MooseUtils::isZero(const T&, libMesh::Real)':\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:58: error: expected primary-expression before '>' token\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:588:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  588 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 0)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseTypes.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/BicubicInterpolation.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:58: error: expected primary-expression before '>' token\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:590:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  590 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 1)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseTypes.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/BicubicInterpolation.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nIn file included from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:13:\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:44: error: 'TensorTraits' is not a member of 'libMesh::TensorTools'\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                            ^~~~~~~~~~~~\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:58: error: expected primary-expression before '>' token\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                          ^\n/home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseUtils.h:598:61: error: '::rank' has not been declared; did you mean 'std::rank'?\n  598 |   else if constexpr (libMesh::TensorTools::TensorTraits<T>::rank == 2)\n      |                                                             ^~~~\n      |                                                             std::rank\nIn file included from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/move.h:55,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_pair.h:59,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/stl_algobase.h:64,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/bits/specfun.h:45,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/cmath:1927,\n                 from /usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/complex:44,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/include/libmesh/perf_log.h:25,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/Moose.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/MooseTypes.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/build/header_symlinks/BicubicInterpolation.h:12,\n                 from /home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.C:10:\n/usr/local/software/archive/linux-scientific7-x86_64/gcc-9/gcc-9.3.0-qszxcci5frtw4aul3m44oarpvxzyrgpp/include/c++/9.3.0/type_traits:1257:12: note: 'std::rank' declared here\n 1257 |     struct rank\n      |            ^~~~\nmake: *** [/home/ir-bala2/moose_dev/moose/framework/src/utils/MooseEnumBase.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** [/home/ir-bala2/moose_dev/moose/framework/src/utils/BicubicInterpolation.x86_64-pc-linux-gnu.opt.lo] Error 1\nmake: *** [/home/ir-bala2/moose_dev/moose/framework/src/utils/FileRangeBuilder.x86_64-pc-linux-gnu.opt.lo] Error 1\n\nKind regards,\nArun\nlibmesh_diagnostic.log",
+                  "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4040575",
+                  "updatedAt": "2022-11-02T17:59:32Z",
+                  "publishedAt": "2022-11-02T17:59:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You need to update libmesh",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4040645",
+                          "updatedAt": "2022-11-02T18:06:06Z",
+                          "publishedAt": "2022-11-02T18:06:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Yes i did this ./scripts/update_and_rebuild_libmesh.sh already",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4040699",
+                          "updatedAt": "2022-11-02T18:12:50Z",
+                          "publishedAt": "2022-11-02T18:12:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Can you clean the repo then do that?\nIt s likely that did not work\nThe error messages I m seeing are from APIs that were added to libmesh recently, that are used in a recent MOOSE, and that are not present in your version of libmesh",
+                          "url": "https://github.com/idaholab/moose/discussions/22517#discussioncomment-4041477",
+                          "updatedAt": "2022-11-02T20:13:27Z",
+                          "publishedAt": "2022-11-02T20:13:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "action calling PressureAction",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "(Re-routing this discussion from Slack since @permcody is busy)\nI'm developing a MOOSE App that has an action that calls PressureAction from TensorMechanics (see my code here). When I run an input file containing a block for the action, the action runs from what I can tell (cout statements), but doesn't actually apply the BC that I'm ultimately trying to do. I'm new to writing actions, so it's probably something simple. I'm just copying what I see elsewhere in the framework.",
+          "url": "https://github.com/idaholab/moose/discussions/22567",
+          "updatedAt": "2022-11-03T01:19:27Z",
+          "publishedAt": "2022-11-02T15:02:25Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe \"action\" runs, do you mean the meta_action adding the Pressure one or do you mean the PressureAction?\nDo you have an input with this?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039767",
+                  "updatedAt": "2022-11-02T16:27:54Z",
+                  "publishedAt": "2022-11-02T16:27:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "My action runs - I can tell because I have a bunch of print statements that I see in the output. Can't say for sure if the PressureAction is being run. My app has an input file here. There's another in the same directory where I use PressureAction instead of my action to get the expected outcome.",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039802",
+                          "updatedAt": "2022-11-02T16:30:55Z",
+                          "publishedAt": "2022-11-02T16:30:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok looked into the code but have not run it yet\nCould you please try this:\nYou did not set the displacement parameter. In the pressure action, the pressure BC are only added if there are displacements\n  // Create pressure BCs\n  for (unsigned int i = 0; i < displacements.size(); ++i)\n  {",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039842",
+                          "updatedAt": "2022-11-02T16:35:45Z",
+                          "publishedAt": "2022-11-02T16:35:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I ll make a PR to make displacements required. @dschwen agreed",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039867",
+                          "updatedAt": "2022-11-02T16:38:34Z",
+                          "publishedAt": "2022-11-02T16:38:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "But I have those in GlobalParams",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039878",
+                          "updatedAt": "2022-11-02T16:39:34Z",
+                          "publishedAt": "2022-11-02T16:39:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yeah I dont know how this pans out. I can try to run it",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4039937",
+                          "updatedAt": "2022-11-02T16:47:12Z",
+                          "publishedAt": "2022-11-02T16:47:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I just added these to the parameters in your action and got the expected behavior.\nLet s keep track of this, it seems global params did not get applied to the action, even though set-global_params ran after your custom action",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4040064",
+                          "updatedAt": "2022-11-02T17:01:22Z",
+                          "publishedAt": "2022-11-02T17:01:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Oh, I see, I need to have my action take in \"displacements\" parameter and pass it on to PressureAction. That does it!",
+                          "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4040146",
+                          "updatedAt": "2022-11-02T17:07:41Z",
+                          "publishedAt": "2022-11-02T17:07:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Here's the updated code",
+                  "url": "https://github.com/idaholab/moose/discussions/22567#discussioncomment-4040223",
+                  "updatedAt": "2022-11-02T17:16:26Z",
+                  "publishedAt": "2022-11-02T17:16:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to get the block ID of the current calculating element?",
+          "author": {
+            "login": "RECHOA"
+          },
+          "bodyText": "Hi all,\nI want to get the block id of the current calculating element in an Auxkernel   type or a Material  type , and then use the block id as an index of a vector.\nFor example, a type restricted by blocks as following:\n  [./test]\n    type = testType\n    block = ' 18 23 28 33 38 43 '\n  [../]\n\nI tried _current_elem->subdomain_id() but it's incorrect.",
+          "url": "https://github.com/idaholab/moose/discussions/22543",
+          "updatedAt": "2023-01-03T23:51:40Z",
+          "publishedAt": "2022-10-31T12:52:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhy do you say it's incorrect?\nIt should be that\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018542",
+                  "updatedAt": "2022-10-31T13:08:05Z",
+                  "publishedAt": "2022-10-31T13:08:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "in the source file, I writed\nelem_subdomain_id = _current_elem->subdomain_id();\nmooseError(elem_subdomain_id);\n\nand test the type object  restricted by block = ' 18 23 28 33 38 43 ' as mentioned before, but it outputs '46'.",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018594",
+                          "updatedAt": "2022-10-31T13:15:33Z",
+                          "publishedAt": "2022-10-31T13:15:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "can you please paste your input file and which object you block restricted",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018617",
+                          "updatedAt": "2022-10-31T13:17:23Z",
+                          "publishedAt": "2022-10-31T13:17:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "the mesh and block id were generated by cubit not MOOSE, would it be the cause of the problem?",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018672",
+                          "updatedAt": "2022-10-31T13:22:20Z",
+                          "publishedAt": "2022-10-31T13:22:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "that's unlikely to be the problem",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018677",
+                          "updatedAt": "2022-10-31T13:23:02Z",
+                          "publishedAt": "2022-10-31T13:23:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "ok I will check it again. If the problem wouldn't be solve, I'll  try to reproduce it in a simple way.",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4018734",
+                          "updatedAt": "2022-10-31T13:28:09Z",
+                          "publishedAt": "2022-10-31T13:28:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "I notice that the mesh of these blocks (block = ' 18 23 28 33 38 43 ') are merged with block 46, which means they share a suface with block 46. so maybe when the calculting occurs in the shared suface, the element would be considered in block 46?",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4019386",
+                          "updatedAt": "2022-10-31T14:39:03Z",
+                          "publishedAt": "2022-10-31T14:39:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is this a material property or an auxkernel?\nComputing the neighbor material property might use the neighbor subdomain, I would have to check though",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4019408",
+                          "updatedAt": "2022-10-31T14:41:06Z",
+                          "publishedAt": "2022-10-31T14:41:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "this is an auxkernel.",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4019423",
+                          "updatedAt": "2022-10-31T14:42:13Z",
+                          "publishedAt": "2022-10-31T14:42:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Then no it shouldnt happen.\nSomething is wrong with the block assignment or the block restriction.",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4019432",
+                          "updatedAt": "2022-10-31T14:43:48Z",
+                          "publishedAt": "2022-10-31T14:43:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RECHOA"
+                          },
+                          "bodyText": "I put a small case in https://github.com/RECHOA/Cases/tree/main/testblockID\nIn this case, the mesh of block 3 and block 8 was generated and merged together by using cubit,\n\nin the input file, the calculation is restricted in block 3 :\n[AuxKernels]\n  [./testid]\n    type = MooseErrorSubdomainID\n    variable = for_testid\n    block = '3 '\n  [../]\n[]\n\nand in the MooseErrorSubdomainID.C :\n  elem_subdomain_id = _current_elem->subdomain_id();\n\n  mooseWarning(\"here elem_subdomain_id \", elem_subdomain_id,\" .\");\n\nbut the result shows\nhere elem_subdomain_id 8 .",
+                          "url": "https://github.com/idaholab/moose/discussions/22543#discussioncomment-4020075",
+                          "updatedAt": "2022-10-31T15:45:00Z",
+                          "publishedAt": "2022-10-31T15:45:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "compiling with PETSc 3.18",
+          "author": {
+            "login": "garciapintado"
+          },
+          "bodyText": "Hello,\nI'm trying to compile moose in a HPC cluster [single user] following:\nhttps://mooseframework.inl.gov/getting_started/installation/hpc_install_moose.html\nAnd I'm finding an error message with the indication:\n\nERROR***********\nError during compile, check arch-moose/lib/petsc/conf/make.log\nSend it and arch-moose/lib/petsc/conf/configure.log to\npetsc-maint@mcs.anl.gov\n\n\nWith this, the reponse I've got from a PETSc developer is:\n--\nDear Javier,\nThis has been fixed in later releases of PETSc.\nThe latest to date is version 3.18.1, could you try that instead?\nThanks,\nPierre\nBut on the other hand, I understand that MOOSE is sort of fixed to a specific PETSc version (3.16). Is this so? If not, please could you guide on how compile MOOSE with a more recent PETSc version?\nBest\nJavier\n...",
+          "url": "https://github.com/idaholab/moose/discussions/22565",
+          "updatedAt": "2022-11-15T19:32:13Z",
+          "publishedAt": "2022-11-02T11:28:17Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "I would take a look at the script we use to configure PETSc: moose/scripts/configure_petsc.sh. This is the script that is called by another script, the script we tell everyone to run: update_and_rebuild_petsc.sh. Who's purpose is to obtain the PETSc source at a version we support. But I like the journey you're on, so lets continue!\nOf course I can't promise all of the same arguments will work with 3.18, but they probably will. Also, some tests my fail at this version. And in-turn may incorrectly solve problems. Which is why it's best to stick with an older stable (supported) version.\nThe gist of what you need to do:\n\nobtain PETSc 3.18 source\nExtract it (un-tar it)\nEnter the directory and run\npython ./configure --download-hypre=1 \\\n    --with-shared-libraries=1 \\\n    --download-hdf5=1 \\\n    --download-hdf5-fortran-bindings=0 \\\n    --with-make-np=6 \\\n    --with-debugging=no \\\n    --download-fblaslapack=1 \\\n    --download-metis=1 \\\n    --download-ptscotch=1 \\\n    --download-parmetis=1 \\\n    --download-superlu_dist=1 \\\n    --download-mumps=1 \\\n    --download-strumpack=1 \\\n    --download-scalapack=1 \\\n    --download-slepc=1 \\\n    --with-mpi=1 \\\n    --with-openmp=1 \\\n    --with-cxx-dialect=C++11 \\\n    --with-fortran-bindings=0 \\\n    --with-sowing=0 \\\n    --with-64-bit-indices \\\n    --prefix=/SOME/PATH/WHERE/YOU/WANT/TO/INSTALL\n\n\nObviously change that last bit, to where you plan on installing this version of PETSc. Whatever this path is, you will need to set export PETSC_DIR=<the path you used>, before attempting to build libMesh.\nI hope this works for you! You're exploring new territory \ud83d\ude03  Please let us know how it goes either way!",
+                  "url": "https://github.com/idaholab/moose/discussions/22565#discussioncomment-4036605",
+                  "updatedAt": "2022-11-02T12:52:47Z",
+                  "publishedAt": "2022-11-02T12:49:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "I believe #22562 should satisfy this issue. While it says PETSc 3.8, I believe this update is for PETSc 3.18 compatibility.",
+                  "url": "https://github.com/idaholab/moose/discussions/22565#discussioncomment-4037126",
+                  "updatedAt": "2022-11-02T13:41:07Z",
+                  "publishedAt": "2022-11-02T13:41:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Ah! I see. Then it seems sensible for me to wait until #22562 is solved...",
+                          "url": "https://github.com/idaholab/moose/discussions/22565#discussioncomment-4039943",
+                          "updatedAt": "2022-11-02T16:48:04Z",
+                          "publishedAt": "2022-11-02T16:48:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Questions about SideSetsFromNodeSetsGenerator",
+          "author": {
+            "login": "mcacace"
+          },
+          "bodyText": "Dear all,\nI am facing some issues with the SideSetsFromNodeSetsGenerator. We are trying to generate a sideset along a boundary of a model from some given input nodes. The model is 3D and contains also lower dimensional elements that are connected to the same boundary from which we are constructing the sides. The problem in itself is that the generated sideset also contains the elements from the lower dimensional material that we would like to exclude. Is there a way we can somehow blockwise the call of the meshgenerator to only specific blocks? Hope all makes sense, but in case I can replicate a simple model showing the issue we are facing.\nThanks for any feedback,\nmauro",
+          "url": "https://github.com/idaholab/moose/discussions/22553",
+          "updatedAt": "2022-11-01T14:25:16Z",
+          "publishedAt": "2022-11-01T11:08:38Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nNo there is no block restriction (or even nodeset restriction) currently implemented in SideSetsFromNodeSetsGenerator.\nI'd recommend to use:\nBreakBoundaryAlongBlocks\nhttps://mooseframework.inl.gov/source/meshgenerators/BreakBoundaryOnSubdomainGenerator.html\nor parsed expressions\nhttps://mooseframework.inl.gov/source/meshgenerators/ParsedGenerateSideset.html\nto fix up the sideset after the conversion from the nodeset\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22553#discussioncomment-4027543",
+                  "updatedAt": "2022-11-01T13:24:58Z",
+                  "publishedAt": "2022-11-01T13:24:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mcacace"
+                  },
+                  "bodyText": "Thanks @GiudGiud. The BreakBoundaryAlongBlocks might be the solution. Quick question on top, is there a meshgenerators that could merge back the boundaries? Thanks!",
+                  "url": "https://github.com/idaholab/moose/discussions/22553#discussioncomment-4027883",
+                  "updatedAt": "2022-11-01T14:08:54Z",
+                  "publishedAt": "2022-11-01T14:08:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the RenameBoundaryGenerator may be used for merging\nhttps://mooseframework.inl.gov/source/meshgenerators/RenameBoundaryGenerator.html",
+                          "url": "https://github.com/idaholab/moose/discussions/22553#discussioncomment-4027902",
+                          "updatedAt": "2022-11-01T14:11:09Z",
+                          "publishedAt": "2022-11-01T14:11:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mcacace"
+                  },
+                  "bodyText": "Excellent! That made the trick. Thanks again @GiudGiud",
+                  "url": "https://github.com/idaholab/moose/discussions/22553#discussioncomment-4028010",
+                  "updatedAt": "2022-11-01T14:24:50Z",
+                  "publishedAt": "2022-11-01T14:24:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Inquiry about the flux in x direction",
+          "author": {
+            "login": "abc-hy"
+          },
+          "bodyText": "Hi everyone,\nI was wondering if there is flux in x direction in 2D model. Since the model is 2D, the flux in x direction means the flux that passes through the y-z plane, however, there is no z axis in 2D model, Why is there still flux in x direction? Is my way of calculating the jx not right?\nThis is how I calculate flux in x direction:\n\n(Mobility=1 here)\nThe following is jx:\n\nThank you,\nBest,",
+          "url": "https://github.com/idaholab/moose/discussions/22542",
+          "updatedAt": "2022-11-15T19:19:01Z",
+          "publishedAt": "2022-10-30T23:07:58Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you please paste your mesh block here?\nI suspect your mesh is actually in the x,y plane?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4018652",
+                  "updatedAt": "2022-10-31T13:20:31Z",
+                  "publishedAt": "2022-10-31T13:20:30Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "Yes. only in x,y plane. no z axis.\nWhy do I get flux in x direction?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4018928",
+                          "updatedAt": "2022-10-31T13:49:42Z",
+                          "publishedAt": "2022-10-31T13:49:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "because the simulation is in the xy plane?\nin the Z direction (out of plane) I would expect 0 flux",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4018976",
+                          "updatedAt": "2022-10-31T13:55:14Z",
+                          "publishedAt": "2022-10-31T13:55:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "But jx must be normal to y-z plane, if there is no z axis, there is no that plane.\nYes, there is no z axis, so, there is 0 flux in z direction.",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019060",
+                          "updatedAt": "2022-10-31T14:04:34Z",
+                          "publishedAt": "2022-10-31T14:04:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "Where is wrong?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019072",
+                          "updatedAt": "2022-10-31T14:05:52Z",
+                          "publishedAt": "2022-10-31T14:05:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "your mesh is in the XY plane not the XZ",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019145",
+                          "updatedAt": "2022-10-31T14:12:52Z",
+                          "publishedAt": "2022-10-31T14:12:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "????what? can you explain it clearly?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019163",
+                          "updatedAt": "2022-10-31T14:14:17Z",
+                          "publishedAt": "2022-10-31T14:14:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "nz = 0 there are no elements in the Z direction",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019179",
+                          "updatedAt": "2022-10-31T14:16:31Z",
+                          "publishedAt": "2022-10-31T14:16:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "yes. So, there is no z axis, then, why do I get flux in x direction?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019221",
+                          "updatedAt": "2022-10-31T14:21:22Z",
+                          "publishedAt": "2022-10-31T14:21:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think you should explain why there should not be flux in the X direction",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019236",
+                          "updatedAt": "2022-10-31T14:23:44Z",
+                          "publishedAt": "2022-10-31T14:23:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "because based on the the definition of flux, flux unit, which is #/(m^2*s), it means the amount of solute that pass through per unit area unit time, since , there is no z axis, so there is no y-z plane, ( x direction is normal to y-z plane), if there is no y-z plane, then where does the flux come from?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019359",
+                          "updatedAt": "2022-10-31T14:37:12Z",
+                          "publishedAt": "2022-10-31T14:37:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abc-hy"
+                  },
+                  "bodyText": "infinite periodicity? What periodicity? I did not set periodic boundary\ncondition, I used zero flux BC\n\u2026\nOn Mon, Oct 31, 2022 at 10:16 AM Guillaume Giudicelli < ***@***.***> wrote:\n No it's a 2D model.\n You should think about what it means to do a 2D simulation. It usually\n assumes infinite periodicity in the 3rd dimension\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22542 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/APF2ZCQJI55MVDMZPC5DLF3WF7PDBANCNFSM6AAAAAARSSCVMU>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019747",
+                  "updatedAt": "2022-10-31T15:18:35Z",
+                  "publishedAt": "2022-10-31T15:18:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "for the 3rd dimension, you likely effectively have 0 flux which is equivalent to periodic.\nThis is dependent on what was implemented in the kernels. For reactor physics, you can implement 2D systems with an axial model.",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4019817",
+                          "updatedAt": "2022-10-31T15:24:51Z",
+                          "publishedAt": "2022-10-31T15:24:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "It seems that 2D model and 3D model does not have difference. Could you please clarify the difference of 2D model and 3D model?",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4024032",
+                          "updatedAt": "2022-11-01T03:41:49Z",
+                          "publishedAt": "2022-11-01T03:41:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In a 3D model you may have heterogeneity in the 3rd dimension, in 2D you cant",
+                          "url": "https://github.com/idaholab/moose/discussions/22542#discussioncomment-4027616",
+                          "updatedAt": "2022-11-01T13:32:34Z",
+                          "publishedAt": "2022-11-01T13:32:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

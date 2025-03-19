@@ -1,0 +1,935 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNi0yOFQwNzoyODoyNi0wNjowMM4AUZkr"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Outlet velocity under fully developed flow using INS AD",
+          "author": {
+            "login": "smpark7"
+          },
+          "bodyText": "The INS FE AD system produces velocity upshoots/downshoots at the outlet for pipe/channel flow under fully developed flow conditions.\nThis can be reproduced using the pipe flow test by refining the mesh (e.g., nx=800, ny=20), lengthening the pipe from 1m to 4m, and reducing the Reynolds number to 100 (for faster transition to fully developed flow).\nThe figure shows the x velocity from x=3m to 4m along y=0m. An upshoot appears near the outlet after a region of relatively stable fully developed flow.\n\nRefining the mesh near the outlet boundary does not help and may actually worsen the solution where the flow transitions from coarse to fine mesh regions, possibly due to reduced SUPG stabilization from the smaller mesh sizes.\nI can't figure out the numerical reasoning behind this behavior. Is there any way to suppress the upshoots/downshoots?",
+          "url": "https://github.com/idaholab/moose/discussions/24834",
+          "updatedAt": "2023-06-29T14:40:22Z",
+          "publishedAt": "2023-06-27T17:49:35Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "I'm not seeing it. I applied this patch\ndiff --git a/modules/navier_stokes/test/tests/finite_element/ins/rz-x-axial-coord/pipe-flow.i b/modules/navier_stokes/test/tests/finite_element/ins/rz-x-axial-coord/pipe-flow.i\nindex a609bf2107..58de9a989a 100644\n--- a/modules/navier_stokes/test/tests/finite_element/ins/rz-x-axial-coord/pipe-flow.i\n+++ b/modules/navier_stokes/test/tests/finite_element/ins/rz-x-axial-coord/pipe-flow.i\n@@ -1,8 +1,8 @@\n # 2d siumulation of a water through a pipe.\n mu=1e-3 # Nsm^-2\n rho=997.0 # kgm^-3\n-Re=1000.0\n-pipe_length=1 # m\n+Re=100.0\n+pipe_length=4 # m\n pipe_radius=0.1 # m\n u_inlet=${fparse (mu * Re)/(2 * pipe_radius * rho)} # ms^-1\n \n@@ -18,8 +18,8 @@ u_inlet=${fparse (mu * Re)/(2 * pipe_radius * rho)} # ms^-1\n     xmax = ${pipe_length}\n     ymin = 0\n     ymax = ${pipe_radius}\n-    nx = 50\n-    ny = 5\n+    nx = 800\n+    ny = 20\n   []\n []\n \n\nand the radial velocity profiles look identical to me at x = pipe-length/2 and x = pipe-length",
+                  "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6297205",
+                  "updatedAt": "2023-06-27T19:00:26Z",
+                  "publishedAt": "2023-06-27T19:00:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Oh ok I do see what you see. Is this really a big concern though? I mean this is the plot with a y-axis from 0 to .002",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6297236",
+                          "updatedAt": "2023-06-27T19:04:26Z",
+                          "publishedAt": "2023-06-27T19:04:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I tried both Dirichlet and natural conditions at the outlet and the results are pretty much identical",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6297381",
+                          "updatedAt": "2023-06-27T19:26:01Z",
+                          "publishedAt": "2023-06-27T19:26:00Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "My main concern is mass/energy conservation under this type of flow over a long period of time. Does this fall within expectations for non-conservative behavior in FEM flow modeling?",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6297396",
+                          "updatedAt": "2023-06-27T19:29:02Z",
+                          "publishedAt": "2023-06-27T19:27:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "For discussion on conservativeness of continuous finite elements, I refer you to https://www.sciencedirect.com/science/article/abs/pii/S002199910096577X which includes discussion about Dirichlet boundary conditions.\nYou may also explore turning off stabilization terms as those introduce volumetric _grad_test objects which implicitly add their own flux contribution at boundaries, e.g. a natural BC for momentum will zero out the sum of stresses, pressure (if the latter is integrated by parts), and stabilization",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6298497",
+                          "updatedAt": "2023-06-27T22:18:11Z",
+                          "publishedAt": "2023-06-27T22:18:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "BTW investigating this I did find some bugs that I'm fixing in #24842",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6298665",
+                          "updatedAt": "2023-06-27T22:53:34Z",
+                          "publishedAt": "2023-06-27T22:53:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "Thanks for the reference and the stabilization suggestion. I'll look into them and report my findings here if they're interesting.",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6298758",
+                          "updatedAt": "2023-06-27T23:19:06Z",
+                          "publishedAt": "2023-06-27T23:19:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "Just to clarify, what exactly do you mean by \"Dirichlet BC at the outlet\"? Do you mean fixing the x velocity to a parabolic profile?",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6306659",
+                          "updatedAt": "2023-06-28T16:06:40Z",
+                          "publishedAt": "2023-06-28T16:06:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "No I believe that pipe flow test uses a Dirichlet BC for pressure at the outlet as it doesn't integrate the pressure by parts",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6307072",
+                          "updatedAt": "2023-06-28T16:53:00Z",
+                          "publishedAt": "2023-06-28T16:52:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "For the natural BC case, I assume you applied integration by parts? Did you write your own BC object for the pressure contribution along the axial boundary?",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6309007",
+                          "updatedAt": "2023-06-28T21:11:01Z",
+                          "publishedAt": "2023-06-28T21:11:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "For the natural BC case, I assume you applied integration by parts?\n\nyes\n\nDid you write your own BC object for the pressure contribution along the axial boundary?\n\nNo. We are already setting the y-velocity in a Dirichlet way there. And there is no pressure contribution to the x-velocity equation along the axis-boundary since the normal is in the -y direction",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6309978",
+                          "updatedAt": "2023-06-29T00:37:29Z",
+                          "publishedAt": "2023-06-29T00:37:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "smpark7"
+                  },
+                  "bodyText": "@lindsayad I noticed that the INSADMomentumViscous kernel overrides the computeResidual method and it does not check for displaced meshes. Could it be the reason for the discrepancies between INS and INSAD results in #24042?\nAlso, I was wondering what's the difference between accumulating residuals using accumulateTaggedLocalResidual and _assembly.processResiduals.",
+                  "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6309897",
+                  "updatedAt": "2023-06-29T00:15:51Z",
+                  "publishedAt": "2023-06-29T00:14:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I noticed that the INSADMomentumViscous kernel overrides the computeResidual method and it does not check for displaced meshes. Could it be the reason for the discrepancies between INS and INSAD results in #24042?\n\nThere is no need to check for displacements in the residual method. Data members like _JxW always contains the right numbers; it just doesn't contain any derivative information for Jacobian computation. That's why we do the checks in the Jacobian computation. @eiloo was getting different answers because they were not setting use_displaced_mesh = true in the INSAD materials.\n\nAlso, I was wondering what's the difference between accumulating residuals using accumulateTaggedLocalResidual and _assembly.processResiduals\n\nThere is no difference in terms of results. (_assembly.processResiduals has actually been removed)",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6310000",
+                          "updatedAt": "2023-06-29T00:42:18Z",
+                          "publishedAt": "2023-06-29T00:42:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "Okay thanks for clarifying!",
+                          "url": "https://github.com/idaholab/moose/discussions/24834#discussioncomment-6316158",
+                          "updatedAt": "2023-06-29T14:39:50Z",
+                          "publishedAt": "2023-06-29T14:39:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to run ComputeCrystalPlasticityStress and get the stress-strain curve",
+          "author": {
+            "login": "xchengood"
+          },
+          "bodyText": "Hi Moose expert,\nI am new to Moose and looking through materials module and hope to use ComputeCrystalPlasticityStress class to calculate the response of a FCC crystalline solid. The example file given by Moose is https://mooseframework.inl.gov/source/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdate.html.\nThe question is how I can run this example file to get the stress-strain or strain-time curve. I found there are many input files at the end of the page and have no idea how to compile and run them. This example seems to be a little more complicated example than those introduced in the get started for new users.\nThank you for your help in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/17531",
+          "updatedAt": "2023-06-29T14:33:03Z",
+          "publishedAt": "2021-04-07T16:26:18Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "PengWei97"
+                  },
+                  "bodyText": "Hi xchenggood,\nAdd the following code to the input file, and make sure that the Outputs module csv = true, then you will find a csv file exists in this path, where Cauchy stress, Lagrangian strain and time exist.\n\n[Postprocessors]\n[./stress_yy]\ntype = ElementAverageValue\nvariable = stress_yy\nblock = 'ANY_BLOCK_ID 0'\n[../]\n[./e_yy]\ntype = ElementAverageValue\nvariable = e_yy\nblock = 'ANY_BLOCK_ID 0'\n[../]\n[]\nFinally, the specific input file is as follows,\nprop_grain_read_cp_03.i",
+                  "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-582453",
+                  "updatedAt": "2022-09-12T17:03:17Z",
+                  "publishedAt": "2021-04-08T01:06:00Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Really thank you for your guidance. It is much helpful. I look through the file you provide and download the entire folder 'monkey-main' on the up-level containing this file. When I try to use 'make -j8' that I learned in the get started for new users to compile prop_grain_read_cp_03.i, I got some errors. Could you tell me a little more about where I should put the folder 'monkey-main' to and how to compile and run prop_grain_read_cp_03.i correctly? Those examples in tutorial section have been put to the right path or directory. But I have no idea how to add this file to the right part and test it. Best regards.",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-585687",
+                          "updatedAt": "2023-06-29T13:32:49Z",
+                          "publishedAt": "2021-04-08T16:13:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Really thank you for your guidance. It is much helpful. I look through the file you provide and download the entire folder 'monkey-main' on the up-level containing this file. When I try to use 'make -j8' that I learned in the get started for new users to compile prop_grain_read_cp_03.i, I got some errors. Could you tell me a little more about where I should put the folder 'monkey-main' to and how to compile and run prop_grain_read_cp_03.i correctly? Those examples in tutorial section have been put to the right path or directory. But I have no idea how to add this file to the right part and test it. Best regards.\n\nhi @xchengood,\nIf there is no problem with my understanding, you can take a look at Step 2: Write an Input File to how to execute an input file. And if the execution is not successful, please send me the information output to the terminal after running to let me know where your problem lies.\nwei peng",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-587426",
+                          "updatedAt": "2023-06-29T13:32:49Z",
+                          "publishedAt": "2021-04-09T01:52:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@PengWei97 Thanks for your reply again. I try to execute prop_grain_read_cp_03.i using commands introduced in the Step2 and I got the following error. How can I fix it? Thank you.\n\nBest wishes!",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-590138",
+                          "updatedAt": "2023-06-29T13:32:50Z",
+                          "publishedAt": "2021-04-09T14:58:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "what is the executable file you are using?\nYou should compile the moose by running make -j 8  under /moose/modules/ for combined applications  or /moose/modules/tensor_mechanics/ for mechanics applications.",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-591082",
+                          "updatedAt": "2023-06-29T13:33:09Z",
+                          "publishedAt": "2021-04-09T18:07:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "Dear @xchengood\nThe way I usually do is to create an application as described in:\nhttps://mooseframework.inl.gov/getting_started/new_users.html#create-an-app\nMake sure you enable all the modules in the Makefile before compiling.\nThe executable created should run your input file properly.\nThe ElementPropertyReadFile is part of the tensor mechanics module,\ntherefore, as @jiangwen84 suggests, your executable is not linking properly with that specific module.\nBest Regards,\nNicol\u00f2 Grilli",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-593414",
+                          "updatedAt": "2023-06-29T13:33:09Z",
+                          "publishedAt": "2021-04-10T08:28:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "hi @xchengood,\nAs suggested by @jiangwen84 and @ngrilli, you should modify the Makefile file after creating your own application, make sure TENSOR_MECHANICS := yes, then make -j4 to compile them once to generate the *-opt file, and finally type in the terminal *-opt -i prop_grain_read_cp_03.i to execute the input file of moose.\nBest Regards\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-593938",
+                          "updatedAt": "2023-06-29T13:33:13Z",
+                          "publishedAt": "2021-04-10T11:57:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@jiangwen84 @ngrilli @PengWei97. Really thank you for your helpful suggestions.  I succeed in getting output with csv format and the curve is drawn below. Based on my limited understanding, the curve seems to be weird and I am confused about it shows a linear relationship.\n\n\nBased on this curve, there are some bemused points in my head.\n\nThis output seems the stress as a function of time. How can I get strain-time or strain-stress curve? what is unit for time?\nHow can I check and visualize the generated mesh?\nAbout material definition, how can I define my own material property?\n\nI appreciate your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-600762",
+                          "updatedAt": "2023-06-29T13:33:30Z",
+                          "publishedAt": "2021-04-12T15:55:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "hi @xchengood,\nCan you display the input file you are writing now? In this way, I can give you some preliminary suggestions for your three questions. After all, I am also a moose rookie.\nBest Regards\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-605238",
+                          "updatedAt": "2023-06-29T13:33:33Z",
+                          "publishedAt": "2021-04-13T14:47:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Hi @PengWei97. The input file I used is the same as the one you mentioned in https://github.com/PengWei97/monkey/blob/main/problem/poly_cp/prop_grain_read_cp_03.i. The 'input_file.txt' in programming is also the same as the one in the poly_cp folder. Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-610626",
+                          "updatedAt": "2022-09-12T17:03:19Z",
+                          "publishedAt": "2021-04-14T15:17:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "hi @xchengood,\n\nThe 'input_file.txt' in programming is also the same as the one in the poly_cp folder.\n\nYou should input the input_file.txt file with 200 sets of Euler angles, like this,  input_file.txt, otherwise the simulation will report an error. And by reading ElementPropertyReadFile.C, you will find that when nprop = 3, it is not necessary to use the last column of the input_file.txt file provided by moose.\n\n\nThis output seems the stress as a function of time. How can I get strain-time or strain-stress curve? what is unit for time?\n\n\nIn this way, using the Euler angle input file I just provided, simulate the uniaxial stretching of 200 grains, and finally get a file named prop_grain_read_out_xiu03.csv, which contains time(s), Lagrangian strain, and Cauchy stress. And you can output the stress-strain curve, as shown in the figure,\n\nAfter that, the unit system of the crystal plasticity module is mm-MPa-s. Please forgive me that I forgot the specific moose URL.\n\n\nHow can I check and visualize the generated mesh?\n\n\nFirst, moose has its own visualization software, peacock. Second, you can use paraview, a software to visualize the mesh you generate, which is also introduced on the moose website.\n\n\nAbout material definition, how can I define my own material property?\n\n\nDefining your own material properties may be more difficult than you think. You may need to refer to the existing material modules of moose and its introduction to writing C++ code in the introductory files. Please forgive me that I am currently trying to continue the modification of the material module, and I have no more experience to share with you. hi @jiangwen84 and @ngrilli, Would you have any good experiences to share in this regard?\nBest Regards\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-614212",
+                          "updatedAt": "2022-09-12T17:03:24Z",
+                          "publishedAt": "2021-04-15T08:43:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "THOMPSONFLORIDA"
+                  },
+                  "bodyText": "Hello all\ni am working on adding the impact of elastic stress on a corrosion model using phase field(MOOSE)\ni need your contribution on how to fomulate the free energy expression\nor share an example input file",
+                  "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-6314527",
+                  "updatedAt": "2023-06-29T11:42:56Z",
+                  "publishedAt": "2023-06-29T11:42:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThe phase field module has several pages on how to formulate free energies. You could start from there\nhttps://mooseframework.inl.gov/modules/phase_field/index.html\nThen once you are comfortable with that and with thermo-mechanics, you should check out some examples of coupling in the combined module\nhttps://github.com/idaholab/moose/tree/next/modules/combined/examples/phase_field-mechanics\nPS: next time, open your own post please ;)\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/17531#discussioncomment-6316080",
+                          "updatedAt": "2023-06-29T14:33:03Z",
+                          "publishedAt": "2023-06-29T14:33:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Velocity Vector and FieldSplitPreconditioner",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "Can the velocity vector be used directly with the FieldSplitPreconditioner or does it have to be used with the velocity components?",
+          "url": "https://github.com/idaholab/moose/discussions/24857",
+          "updatedAt": "2023-06-29T12:50:04Z",
+          "publishedAt": "2023-06-29T00:56:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI think so.\nI just tried and it worked fine. I think this was enabled last year by #22643\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24857#discussioncomment-6311071",
+                  "updatedAt": "2023-06-29T04:00:18Z",
+                  "publishedAt": "2023-06-29T04:00:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Split Example Code Error",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "I am attempting to run the example code from on this link:\nhttps://mooseframework.inl.gov/moose/source/splits/Split.html#76a55bb6-ab21-4d48-9a17-30276ae31f93\nI get the following error when running the example.:\n../combined-opt -i Split.i\n*** ERROR ***\nInvalid option \"4\" in MooseEnum.  Valid options (not case-sensitive) are \"FOURTH EIGHTH\".\nWhat do I need to do in order to eliminate this error in order to test the example?",
+          "url": "https://github.com/idaholab/moose/discussions/24851",
+          "updatedAt": "2023-06-29T12:50:30Z",
+          "publishedAt": "2023-06-28T18:37:24Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Try to write FOURTH instead of 4",
+                  "url": "https://github.com/idaholab/moose/discussions/24851#discussioncomment-6309728",
+                  "updatedAt": "2023-06-28T23:43:54Z",
+                  "publishedAt": "2023-06-28T23:43:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "That suggestion work like a charm. Thank you. The latest issue with the code as written is the following:\nmpiexec -n 3 ../combined-opt -i Split.i\n\n\n*** ERROR ***\n/home/twise/projects/moose/modules/combined/FlowAboutCyl/Split.i:106: section 'Splits' does not have an associated \"Action\".\nDid you misspell it?\n/home/twise/projects/moose/modules/combined/FlowAboutCyl/Split.i:107: section 'Splits/nuv' does not have an associated \"Action\".\nDid you misspell it?\n/home/twise/projects/moose/modules/combined/FlowAboutCyl/Split.i:114: section 'Splits/nu' does not have an associated \"Action\".\nDid you misspell it?\n/home/twise/projects/moose/modules/combined/FlowAboutCyl/Split.i:120: section 'Splits/v' does not have an associated \"Action\".\nDid you misspell it?",
+                          "url": "https://github.com/idaholab/moose/discussions/24851#discussioncomment-6309786",
+                          "updatedAt": "2023-06-29T02:59:46Z",
+                          "publishedAt": "2023-06-28T23:59:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ah dont use splits.\nUse the Field Split Preconditioner:\nhttps://mooseframework.inl.gov/source/preconditioners/FieldSplitPreconditioner.html\nThe syntax is almost the same",
+                          "url": "https://github.com/idaholab/moose/discussions/24851#discussioncomment-6310721",
+                          "updatedAt": "2023-06-29T02:59:36Z",
+                          "publishedAt": "2023-06-29T02:59:35Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Stored energy kernel with mesh adaptivity",
+          "author": {
+            "login": "HiltyF"
+          },
+          "bodyText": "Hello all,\nI am working on a recrystallization problem and noticed that the ACSEDGPoly kernel is heavily influenced by mesh adaptivity. The effect is seen in the GIF below, both cases are  a single circular grain in the middle of a large grain with high dislocation density. The Small grain grows due to the dislocation energy, as expected. However, when mesh adaptivity is on (top right) the circle grain becomes rapidly deformed and grows significantly slower compared to when the mesh stays uniform (bottom right). The contours just highlight the differences in the circular grains.\nThe input file for these cases is at the end of the post. If I comment out the ACSEDGPoly kernels and perform this test again then the results with and without mesh adaptivity are the same.\nCan anyone give insight into what is causing this behavior?\nThanks,\nFloyd\n\nfile = 'Stored_Energy_Adaptivity'\n\n[Mesh]\n  parallel_type = 'REPLICATED'\n  type = GeneratedMesh\n  dim = 2\n  nx = 50\n  ny = 50\n  xmin = -5e-4\n  xmax = 5e-4\n  ymin = -5e-4\n  ymax = 5e-4\n  elem_type = QUAD4\n[]\n\n[Adaptivity]\n  steps = 1\n  marker = gr1_mark\n  max_h_level = 1\n  initial_steps = 1\n  initial_marker = uniform\n  [Markers]\n    [gr1_mark]\n      type = ValueRangeMarker\n      variable = gr1\n      lower_bound = 0.01\n      upper_bound = .95\n    []\n    [uniform]\n      type = UniformMarker\n      mark = REFINE\n    []\n  []\n[]\n\n[GlobalParams]\n  op_num = 2\n  var_name_base = gr\n  enable_jit = false\n[]\n\n[UserObjects]\n  [grain_tracker]\n    type = GrainTracker\n    compute_var_to_feature_map = true\n    threshold = 0.2\n    connecting_threshold = 0.08\n    compute_halo_maps = true\n    remap_grains = true\n  []\n[]\n\n[ICs]\n  [IC_gr0]\n    type = SpecifiedSmoothCircleIC\n    variable = gr0\n    x_positions = 0\n    y_positions = 0\n    z_positions = 0\n    radii = 1e-4\n    int_width = 1e-5\n    invalue = 0\n    outvalue = 1\n  []\n  [IC_gr1]\n    type = SpecifiedSmoothCircleIC\n    variable = gr1\n    x_positions = 0\n    y_positions = 0\n    z_positions = 0\n    radii = 1e-4\n    int_width = 1e-5\n    invalue = 1\n    outvalue = 0\n  []\n[]\n\n[Variables]\n  [gr0]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [gr1]\n    order = FIRST \n    family = LAGRANGE\n  []\n[]\n\n[AuxVariables]\n  [bnds]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [unique_grains]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [T]\n    [InitialCondition]\n      type = ConstantIC\n      value = 1200\n    []\n  []\n[]\n\n[Kernels]\n  [PolycrystalKernel]\n  []\n  # [PolycrystalStoredEnergy]\n  #   grain_tracker = grain_tracker\n  #   deformed_grain_num = 1\n  # []\n  [ACStoredEnergy_gr0]\n    type = ACSEDGPoly\n    deformed_grain_num = 1\n    grain_tracker = grain_tracker\n    op_index = 0\n    v = gr1\n    variable = gr0\n  []\n  [ACStoredEnergy_gr1]\n    type = ACSEDGPoly\n    deformed_grain_num = 1\n    grain_tracker = grain_tracker\n    op_index = 1\n    v = gr0\n    variable = gr1\n  []\n[]\n\n[AuxKernels]\n  [unique_grains]\n    type = FeatureFloodCountAux\n    variable = unique_grains\n    flood_counter = grain_tracker\n    field_display = UNIQUE_REGION\n    execute_on = 'INITIAL TIMESTEP_END'\n  []\n  [bnds_aux]\n    type = BndsCalcAux\n    variable = bnds\n    execute_on = timestep_end\n  []\n[]\n\n[Materials]\n  [consts]\n    type = GenericConstantMaterial\n    #              J/m3   m          -     -         J/K/mol  m          eV/K        eV/K\n    prop_names = ' shear  b          alpha gamma Q_a R        gb_length  gamma_asymm kb          J2eV          length time'\n    prop_values = '7.6e10 1.7983e-10 0.5   1     275 8.3145   5e-8       1.5         8.617343e-5 6.24150974e18 1e-3   1'\n  []\n  [gb_scale]\n    type = ParsedMaterial\n    property_name = lgb\n    expression = 'gb_length/length'\n    material_property_names = 'gb_length length'\n  []\n  [dislocation_density]\n    type = ParsedMaterial\n    ## 1/m^2\n    property_name = Disloc_Den_i\n    expression = 'gr0*7e15*length^2'\n    coupled_variables = 'gr0'\n    material_property_names = 'length'\n    outputs = 'exodus'\n  []\n\n  ## Grain Growth\n  [GBenergy]\n    type = ParsedMaterial\n    ## J/m^2 -> eV/m^2\n    property_name = 'GBenergy'\n    expression = '(1/(2*a^2*N)*(R*T*log(D0b/D0l)+(Hl-Hb)))*J2eV*length^2' # Varin  https://doi.org/10.1016/0025-5416(84)90144-7\n    #                       m         1/mol    m^2/s  m^2/s     J/mol J/mol\n    constant_names = '      a         N        D0b    D0l       Hl    Hb    '\n    constant_expressions = '3.598e-10 6.022e23 6.1e-4 0.0118e-4 280   177.52'\n    coupled_variables = 'T'\n    material_property_names = 'R J2eV length'\n  []\n  [kappa_op]\n    type = ParsedMaterial\n    ## eV/mm\n    property_name = 'kappa_op'\n    expression = '3/4*GBenergy*lgb' # Aagesen 2018\n    material_property_names = 'GBenergy lgb'\n    # outputs = 'exodus'\n  []\n  [kappa]\n    type = ParsedMaterial\n    ## eV/mm\n    property_name = 'kappa'\n    expression = '3/4*GBenergy*lgb' # Aagesen 2018\n    material_property_names = 'GBenergy lgb'\n    # outputs = 'exodus'\n  []\n  [mu]\n    type = ParsedMaterial\n    ## eV/mm^3\n    property_name = 'mu'\n    expression = '6*GBenergy/lgb' # Aagesen 2018\n    material_property_names = 'GBenergy lgb'\n    # outputs = 'exodus'\n  []\n  [GBmob]\n    type = ParsedMaterial\n    ## Units m/GPa/s -> m/Pa/s (Pa = kg/m/s^2) -> m^2*s/kg (m^4/J/s)\n    property_name = 'GBmob'\n    expression = '(0.0000000669538*T^3-0.000110855*T^2+0.0853373*T-17.4132)/GPa2Pa'\n    constant_names = 'GPa2Pa'\n    constant_expressions = '1e9  '\n    coupled_variables = 'T'\n  []\n  [Mgb]\n    type = ParsedMaterial\n    ## m^4/J/s -> m^4/eV/s\n    property_name = Mgb\n    expression = 'GBmob*time/J2eV/length^4'\n    material_property_names = 'GBmob time J2eV length'\n    # outputs = 'exodus'\n  []\n  [L]\n    type = ParsedMaterial\n    ## m^3/eV/s\n    property_name = L\n    expression = 'Mgb*GBenergy/kappa'\n    material_property_names = 'Mgb GBenergy kappa lgb'\n    # outputs = 'exodus'\n  []\n  [rho_eff]\n    type = ParsedMaterial\n    # 1/m^2\n    property_name = rho_eff\n    expression = 'Disloc_Den_i'\n    material_property_names = 'Disloc_Den_i'\n    # outputs = 'exodus'\n  []\n  [Stored_free_energy]\n    type = DerivativeParsedMaterial\n    ## J/m -> eV/m\n    property_name = beta\n    expression = '0.5*shear*b^2*J2eV*length'\n    material_property_names = 'shear b J2eV length'\n    outputs = 'exodus'\n  []\n[]\n\n[Preconditioning]\n  [ASM]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n    petsc_options_value = ' asm      31                  preonly       lu           2'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = PJFNK\n  l_max_its = 15\n  l_tol = 1e-7\n  nl_max_its = 20\n  nl_abs_tol = 1e-11\n  nl_rel_tol = 1e-8\n  start_time = 0.0\n  end_time = 1\n  num_steps = 100\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1e-7\n    optimal_iterations = 4\n    cutback_factor = 0.8\n    growth_factor = 1.2\n  []\n[]\n\n[Postprocessors]\n  [0_dt]\n    type = TimestepSize\n  []\n  [0_run_time]\n    type = PerfGraphData\n    section_name = \"Root\"\n    data_type = total\n  []\n  [1_dofs]\n    type = NumDOFs\n  []\n  [2_aveGrainSize]\n    type = AverageGrainVolume\n    feature_counter = grain_tracker\n  []\n[]\n\n[Outputs]\n  [out]\n    file_base = CSV/${file}\n    type = CSV\n  []\n  [exodus]\n    type = Exodus\n    interval = 1\n    file_base = Exodus/${file}\n    execute_on = 'INITIAL TIMESTEP_END FINAL'\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/24600",
+          "updatedAt": "2023-06-28T21:07:38Z",
+          "publishedAt": "2023-06-05T20:47:40Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "HiltyF"
+                  },
+                  "bodyText": "Just poking this since it seems to have fallen off, I am really curious if anyone knows why mesh adaptivity would cause such a strong change in the results. I feel like I have the mesh refinement adequately surrounding the grain boundary such that the difference should be small, if at all.",
+                  "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6244623",
+                  "updatedAt": "2023-06-21T17:48:52Z",
+                  "publishedAt": "2023-06-21T17:48:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I would speculate that mesh adaptivity is not a conservative process. Refining the mesh is not conserving the quantities solved by your physics, creating discrepancies\nBut I m not an expert on this. Let's ping some real ones:\n@permcody @laagesen",
+                          "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6244816",
+                          "updatedAt": "2023-06-21T18:10:42Z",
+                          "publishedAt": "2023-06-21T18:10:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "I think the parameters you are using in the ValueRangeMarker seem reasonable, but I have not seen that marker used for phase-field modeling before. It seems like it is doing what one would expect, but I would try using the GradientJumpIndicator with ErrorFractionMarker that we have more typically used in phase-field modeling to see if the same thing happens.",
+                  "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6255471",
+                  "updatedAt": "2023-06-22T19:24:53Z",
+                  "publishedAt": "2023-06-22T19:24:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "HiltyF"
+                  },
+                  "bodyText": "Thank you for the suggestion, @laagesen. I was able to find a combination of the coarsen and refine values in the ErrorFractionMarker that maintains the correct shape for the growing grain, however its growth rate was significantly reduced. There seems to be a threshold for the coarsen value below which the behavior is consistent, however the refine fraction is more touchy. It seems that around refine = 0.7 I get the best behavior, lower will slow the growth more and there are some noticeable fluctuations, higher values cause faster growth but it is extremely erratic (as shown below).\nDo you have any suggestions about how to choose values for coarsen and refine? Also, do you have any other tips for how to improve the behavior, or what is the root cause for the high level of mesh adaptivity sensitivity?\nThanks again for your help!\nRed: Uniform mesh\nBlue: Refine = 0.4\nBlack: Refine = 0.7\nGreen: Refine = 0.99",
+                  "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6263761",
+                  "updatedAt": "2023-06-23T15:54:08Z",
+                  "publishedAt": "2023-06-23T15:54:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "My gut feel is that the dislocation stored energy driving force must be really large compared to the curvature driving force, and you need a high mesh resolution to capture this properly. Did you ever try to check mesh size sensitivity on a uniform mesh prior to starting to add adaptivity? Just to make sure that the finest resolution you are using in the uniform mesh is actually fine enough to obtain a converged result. Maybe you need a finer mesh that would typically needed to resolve the interface width, which would normally be the limiting factor. This is all I can think of off hand...",
+                  "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6264549",
+                  "updatedAt": "2023-06-23T17:25:32Z",
+                  "publishedAt": "2023-06-23T17:25:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "HiltyF"
+                  },
+                  "bodyText": "Thank you again for the suggestions.\nI did a mesh size sensitivity study on a uniform mesh, the mesh size I am using gives the same results as more refined meshes. I also tried increasing the number of refinement levels for the adaptive mesh, up to having ~20 elements across the interface. In these adaptive cases the growth changes with any change to the adaptivity scheme, but the growth behavior remains erratic.\nWith regard to the dislocation stored energy driving force, I lowered the dislocation density until the circle grain no longer grew. Just above that, when the stored energy driving force is just slightly larger than the curvature driving force, the grain still grows erratically. So, the culprit does not appear to be a large difference in driving forces.\nOne other thing, @GiudGiud, has suggested that it could be due to a lack of conservation. Since dislocations are not conserved, and that determines the stored energy driving force, it's difficult to really investigate. The best I could think of was lower the phase mobility to where the grains no longer evolve, in this situation as the mesh adapts the integral of the dislocation density does not change. So, I don't believe the adaptivity is a source for non-conservation, but I am open to additional ways I could try to verify this.",
+                  "url": "https://github.com/idaholab/moose/discussions/24600#discussioncomment-6308985",
+                  "updatedAt": "2023-06-28T21:07:38Z",
+                  "publishedAt": "2023-06-28T21:07:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "multi-level Multiapp variable transfer",
+          "author": {
+            "login": "karthichockalingam"
+          },
+          "bodyText": "Hi,\nLet's say you have hierarchical levels of Multiapps - can you transfer a variable from the bottom-most (leaf-level sub-app) directly to the master without having to transfer between the intermediate-level sub-apps?\nBest,\nKarthik.",
+          "url": "https://github.com/idaholab/moose/discussions/24849",
+          "updatedAt": "2023-06-29T07:06:31Z",
+          "publishedAt": "2023-06-28T18:11:54Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nNo we can do parent to grand-child-app transfers directly.\nYou could consider collapsing the hierarchy and have a parent/main app and make the grand-child app a child app of the parent/main app\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24849#discussioncomment-6308644",
+                  "updatedAt": "2023-06-28T20:16:18Z",
+                  "publishedAt": "2023-06-28T20:16:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about ADInertialForce",
+          "author": {
+            "login": "TheGreatCid"
+          },
+          "bodyText": "Hi All,\nI am using ADDynamicStressDivergenceTensors to set up a dynamics problem. Something I noticed is that when I use IntertialForce in tandem with ADDynamicStressDivergenceTensors, the problem works fine. However, if I use ADInertialForce, I find that SVD analysis returns singular values(and the NL iterations do not converge). Is this a known bug or am I supposed to use a non-AD inertia kernel?",
+          "url": "https://github.com/idaholab/moose/discussions/24845",
+          "updatedAt": "2023-06-28T17:14:03Z",
+          "publishedAt": "2023-06-28T14:15:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "maxnezdyur"
+                  },
+                  "bodyText": "I have had some problems with this also but I am surprised about the singular values with the SVD. Can't give any answers to your questions, but I have some questions of my own! What does the convergence history look like and what strain are you using?",
+                  "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6305745",
+                  "updatedAt": "2023-06-28T14:39:25Z",
+                  "publishedAt": "2023-06-28T14:38:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "This is with finite strain and the linear iterations breakdown at the first timestep",
+                          "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6305755",
+                          "updatedAt": "2023-06-28T14:39:33Z",
+                          "publishedAt": "2023-06-28T14:39:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Not sure if this will help with yours, but if you have time try the below because it helped me before. I had this weird thing where if it goes past the first NL iteration it worked, but this was a while ago.\n[Dampers]\n  [jac]\n    type = ElementJacobianDamper\n    max_increment = 0.01\n  []\n[]\n\nEdit: Misread your earlier message as nonlinear iteration broke down, not sure if the Damper would even help with the linear iterations. Also still would want the whole singular value issue looked into even if this \"fixed\" the problem.",
+                          "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6305783",
+                          "updatedAt": "2023-06-28T14:52:16Z",
+                          "publishedAt": "2023-06-28T14:41:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "yeah, the damper is nice, but it won't help with singular values. It's very odd...",
+                          "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6305927",
+                          "updatedAt": "2023-06-28T14:55:47Z",
+                          "publishedAt": "2023-06-28T14:55:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If you share a MOOSE-only minimal example I can do some investigation",
+                          "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6307100",
+                          "updatedAt": "2023-06-28T16:56:46Z",
+                          "publishedAt": "2023-06-28T16:56:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Bit of an issue there. I did try to create MOOSE-only MWE, but I have been unable to replicate the bug. So I'm probably on my own here.",
+                          "url": "https://github.com/idaholab/moose/discussions/24845#discussioncomment-6307251",
+                          "updatedAt": "2023-06-28T17:14:04Z",
+                          "publishedAt": "2023-06-28T17:14:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Steady-State Problem on a Single Element",
+          "author": {
+            "login": "smpeyres"
+          },
+          "bodyText": "I am trying to implement a steady-state, zero-dimensional chemical kinetics model using CRANE. Traditionally, an ODETimeDerivative kernel is added for each of the species and each species' density is initialized. The ChemicalReactions block parses out the listed reactions as individual reaction kernels, which are quite similar to MOOSE's native & relatively simple Reaction kernels.\nI tried to implement a steady-solve for a two-reaction network for which the steady-state solution from a Transient solve is known and verified. However, my initial attempts result in the electron density 'e' plummeting many orders of magnitude and the ion density 'Ar+' remaining constant. Both of these should change but remain equal to each other.\nI believe my issue is one of applying ill-posed constraints on the values. The reaction-network used has a steady-state solution for 'e' = 'Ar+' that is equal to the ratio of the two rate coefficients with no dependence on the value of 'Ar'. A simple steady-state problem using diffusion on a 1D mesh seems to work just fine because the boundary conditions seem to provide sufficient constraints.\nYou can find the input file and associated data in my fork of crane -> branch : steady -> problems/steady/TwoReactionArgon.\nAny suggestions?\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/24730",
+          "updatedAt": "2023-06-28T16:30:37Z",
+          "publishedAt": "2023-06-19T14:50:55Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI wont be able to help but I would recommend creating a github repo and hosting the files instead of sharing a zip file. Not too many people will download a zip file from the internet.\n@mtnwalker for comments on the physics\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24730#discussioncomment-6222105",
+                  "updatedAt": "2023-06-19T17:46:57Z",
+                  "publishedAt": "2023-06-19T17:46:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpeyres"
+                          },
+                          "bodyText": "Yes, I will do that! I'll update the post with a link to the branch when I am finished.",
+                          "url": "https://github.com/idaholab/moose/discussions/24730#discussioncomment-6222125",
+                          "updatedAt": "2023-06-19T17:49:42Z",
+                          "publishedAt": "2023-06-19T17:49:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpeyres"
+                          },
+                          "bodyText": "Update: I got it working on the branch linked with draft 4. Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/24730#discussioncomment-6306893",
+                          "updatedAt": "2023-06-28T16:30:38Z",
+                          "publishedAt": "2023-06-28T16:30:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@tanoret @mtnwalker who can we tag on chemical reactions with MOOSE?",
+                  "url": "https://github.com/idaholab/moose/discussions/24730#discussioncomment-6271050",
+                  "updatedAt": "2023-06-24T22:17:56Z",
+                  "publishedAt": "2023-06-24T22:17:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Preserve circular geometries when refining mesh",
+          "author": {
+            "login": "TheGreatCid"
+          },
+          "bodyText": "Hi all,\nI am making a cylindrical mesh using meshing tools built into moose. I start with a coarse mesh and then refine it as shown below:\n  [gmg1]\n    type = AnnularMeshGenerator\n    nt = 40\n    rmax = 5.13\n    rmin = 4.75\n    nr = 2\n  []\n  [extrude1]\n    type = AdvancedExtruderGenerator\n    input = gmg1\n    heights = '1.225 0.05 1.225'\n    num_layers = '2 5 2'\n    direction = '0 0 1'\n  []\n  [sub]\n    type = SubdomainBoundingBoxGenerator\n    block_id = 5\n    block_name = 'ref'\n    input = extrude1\n    bottom_left = '-1.25 4.63 -1'\n    top_right = '1.25 5.63 10'\n  []\n  [refine]\n    type = RefineBlockGenerator\n    input = sub\n    block = 5\n    refinement = 2\n  []\n\n\nThis produces a cylindrical mesh. However, the issue is that the refinement interpolates points between nodes without knowledge of the original circular geometry, resulting in flat surfaces after refinement. I'm curious if there is a workaround for this or if I will need to try to generate this outside of MOOSE",
+          "url": "https://github.com/idaholab/moose/discussions/24846",
+          "updatedAt": "2023-06-28T15:43:42Z",
+          "publishedAt": "2023-06-28T15:01:48Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe have this generator to do that, in 2D\nThen you can extrude the corrected boundary to 3D\nhttps://mooseframework.inl.gov/source/meshgenerators/CircularBoundaryCorrectionGenerator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306039",
+                  "updatedAt": "2023-06-28T15:05:06Z",
+                  "publishedAt": "2023-06-28T15:05:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "The issue for me is that I am looking for the refinement pattern pictured above with hanging nodes. I don't believe I can accomplish that with this method. I would need to refine the 2D mesh locally, apply the circular correction, and then extrude it, which would make a uniform amount of layers around the circumference of the domain, which I am trying to avoid due to computational costs.",
+                          "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306119",
+                          "updatedAt": "2023-06-28T15:12:23Z",
+                          "publishedAt": "2023-06-28T15:12:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "uniform amount of layers around the circumference of the domain\nthat does not have to be. Your 2D mesh does not need to have that, and you dont need to refine it uniformly around the circumference either",
+                          "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306207",
+                          "updatedAt": "2023-06-28T15:21:12Z",
+                          "publishedAt": "2023-06-28T15:21:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "I could be using the extruder wrong because I don't understand how to achieve that. For  AdvancedExtruderGenerator the only variability you have is the number of layers between certain heights using the heights and num_layers argument. I don't have the option to say, let the part of the mesh within a bounding box extrude with 10 layers and the rest of the mesh extrude with only 5 layers, which is what I would need to achieve something similar to the refinement pictured in original post",
+                          "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306387",
+                          "updatedAt": "2023-06-28T15:36:37Z",
+                          "publishedAt": "2023-06-28T15:36:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh right.\nYeah can't do that.\nYou could adapt the mesh generator code for 3D",
+                          "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306406",
+                          "updatedAt": "2023-06-28T15:38:52Z",
+                          "publishedAt": "2023-06-28T15:38:44Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "yea, I'll take a look at the circular correction code and see how easy it would be to modify",
+                          "url": "https://github.com/idaholab/moose/discussions/24846#discussioncomment-6306453",
+                          "updatedAt": "2023-06-28T15:43:40Z",
+                          "publishedAt": "2023-06-28T15:43:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Thread usage]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Hello moose users,\nI am curious whether MOOSE can designate the typical thread to calculate.\nFor example:\nWorkstation with 128 threads (1 CPU)\n64 threads for inputfile1.i\n64 threads for inputfile2.i\nIf I run the input files with --n-threads=64 option, then only 64 threads do the calculations for the two input files.\nSo, the remaining 64 threads take a rest very well...\nIs there any way to assign different threads to input files?",
+          "url": "https://github.com/idaholab/moose/discussions/24844",
+          "updatedAt": "2023-06-28T13:28:26Z",
+          "publishedAt": "2023-06-28T10:38:15Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "What happens if you fork two sessions (eg open two terminals) and use each to run an input file with 64 threads?",
+                  "url": "https://github.com/idaholab/moose/discussions/24844#discussioncomment-6303379",
+                  "updatedAt": "2023-06-28T10:41:46Z",
+                  "publishedAt": "2023-06-28T10:41:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Note that you can still use MPI on a threaded cpu. It will use more memory but it will scale better.\nFor threading scalability you will want to test it on your machine and your problem to determine how many threads you can use on an input and still get a speed up",
+                  "url": "https://github.com/idaholab/moose/discussions/24844#discussioncomment-6304965",
+                  "updatedAt": "2023-06-28T13:28:42Z",
+                  "publishedAt": "2023-06-28T13:28:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,917 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNy0yNFQwMTo1MDo1MC0wNjowMM4AUucg"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Efficient Computations and Delineation of Multiple Strain Sources",
+          "author": {
+            "login": "AndrewFalkowski"
+          },
+          "bodyText": "Hello,\nI am looking to model steady-state, elastic stresses evolving from a combination of strain sources: thermal and volumetric swelling. The code below runs, but I am wondering if there is a more efficient or stable method of computing and combining the two strains. Additionally, is there a recommended way of outputting the strains independently such that the contribution of each strain could be visualized independently?\nThanks!\nb0_swell_val = 0.01\nb1_swell_val = 0.02\n\nb0_cte_val = 5.5e-6\nb1_cte_val = 4.1e-6\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 10\n    ny = 5\n    xmax = 2\n    ymax = 1\n  []\n  [partition]\n    type = SubdomainBoundingBoxGenerator\n    input = gen\n    bottom_left = '0 0 0'\n    top_right = '1 1 0'\n    block_id = 1\n  []\n[]\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n[]\n\n[AuxVariables]\n  [volumetric_strain]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [T]\n    initial_condition = 500\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Modules/TensorMechanics/Master]\n  [master]\n    strain = FINITE\n    eigenstrain_names = 'swelling_eigenstrain thermal_eigenstrain'\n    decomposition_method = EigenSolution #Necessary for exact solution\n  []\n[]\n\n[AuxKernels]\n  [volumetric_strain]\n    type = RankTwoScalarAux\n    scalar_type = VolumetricStrain\n    rank_two_tensor = total_strain\n    variable = volumetric_strain\n  []\n[]\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0\n  []\n  [bottom]\n    type = DirichletBC\n    variable = disp_y\n    boundary = bottom\n    value = 0.0\n  []\n[]\n[Materials]\n  [elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 1e6\n    poissons_ratio = 0.3\n  []\n  [finite_strain_stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n  [b0_thermal_expansion]\n    type = ComputeThermalExpansionEigenstrain\n    eigenstrain_name = thermal_eigenstrain\n    stress_free_temperature = 100\n    thermal_expansion_coeff = ${b0_cte_val}\n    temperature = T\n    block = 0\n  []\n  [b1_thermal_expansion]\n    type = ComputeThermalExpansionEigenstrain\n    eigenstrain_name = thermal_eigenstrain\n    stress_free_temperature = 100\n    thermal_expansion_coeff = ${b1_cte_val}\n    temperature = T\n    block = 1\n  []\n  [b0_swelling]\n    type = GenericConstantMaterial\n    prop_names = b0_swelling\n    prop_values = ${b0_swell_val}\n  []\n  [b1_swelling]\n    type = GenericConstantMaterial\n    prop_names = b1_swelling\n    prop_values = ${b1_swell_val}\n  []\n  [b0_volumetric_eigenstrain]\n    type = ComputeVolumetricEigenstrain\n    volumetric_materials = b0_swelling\n    eigenstrain_name = swelling_eigenstrain\n    args = ''\n    block = 0\n  []\n  [b1_volumetric_eigenstrain]\n    type = ComputeVolumetricEigenstrain\n    volumetric_materials = b1_swelling\n    eigenstrain_name = swelling_eigenstrain\n    args = ''\n    block = 1\n  []\n[]\n[Executioner]\n  type = Steady\n  solve_type = PJFNK\n  l_max_its = 100\n  l_tol = 1e-4\n  nl_abs_tol = 1e-8\n  nl_rel_tol = 1e-12\n[]\n[Outputs]\n  exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/24882",
+          "updatedAt": "2023-07-25T17:00:11Z",
+          "publishedAt": "2023-06-30T16:31:00Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Your question seems to imply that the method you show is either inefficient or unstable or both. I wonder how you arrived at that conclusion?",
+                  "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6327666",
+                  "updatedAt": "2023-06-30T16:33:50Z",
+                  "publishedAt": "2023-06-30T16:33:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AndrewFalkowski"
+                          },
+                          "bodyText": "I don't have any cases where the above fails, but I am curious if there is a better way of doing it that is syntactically compact and if there are any potential issues in my implementation?\nI am more interested in extracting the independent strain effects. Would that just be a matter of assigning each to a variable?",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6327708",
+                          "updatedAt": "2023-06-30T16:40:11Z",
+                          "publishedAt": "2023-06-30T16:40:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "What you did looks fine and is how it is intended. You can try adding outputs = exodus to the *Eigenstrain type blocks. That will output all components of the strains if I recall correctly.",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6327716",
+                          "updatedAt": "2023-06-30T16:42:55Z",
+                          "publishedAt": "2023-06-30T16:42:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AndrewFalkowski"
+                          },
+                          "bodyText": "That works, thank you! While experimenting, I noticed that I get an error if I try to switch the model to an axisymmetric coordinate system with coord_type=RZ:\nmaster_strain: Calling \"coupled[Vector][Gradient/Dot]Old[er]\" on variable \"displacements\" when using a \"Steady\" executioner is not allowed. This value is available only in transient simulations.\nIf the error is the result of the executioner being Steady, then I'm not sure why this error isn't present for default coord_type=XYZ.\nAny way to resolve this and maintain a steady state simulation for an axisymmetric model?",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6327891",
+                          "updatedAt": "2023-06-30T17:02:41Z",
+                          "publishedAt": "2023-06-30T17:02:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AndrewFalkowski"
+                          },
+                          "bodyText": "Wanted to follow up on this and see if this might be a bug or if there is a better tool for computing swelling in an axisymmetric model.",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6513411",
+                          "updatedAt": "2023-07-21T21:18:00Z",
+                          "publishedAt": "2023-07-21T21:17:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There must be an extra term for RZ that relies on the old value.\ndo you have the name of the class that is giving this error? I could take a look",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6516240",
+                          "updatedAt": "2023-07-22T12:19:30Z",
+                          "publishedAt": "2023-07-22T12:19:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AndrewFalkowski"
+                          },
+                          "bodyText": "Not sure on which class is throwing the error.\nI am calling ComputeAxisymmetricRZFiniteStrain under the materials block, but the error seems invariant to this call as the same error is produced if I use ComputeFiniteStrainElasticStress.\nWhat can I provide to best help diagnose the issue?",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6531450",
+                          "updatedAt": "2023-07-24T16:06:23Z",
+                          "publishedAt": "2023-07-24T16:04:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can put a breakpoint in the debugger and get a backtrace on the error\nactually it looks like it's master_strain: that is outputting this. Something created by the action. Maybe show_actions=true will show a strain object created by the action",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6532978",
+                          "updatedAt": "2023-07-24T19:21:30Z",
+                          "publishedAt": "2023-07-24T19:21:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AndrewFalkowski"
+                          },
+                          "bodyText": "There are two strain objects being created here: one for thermal and the other for swelling strain. From show_actions, I find the following:\n[DBG][ACT] TASK (   check_copy_nodal_vars) TYPE (             CopyNodalVarsAction) NAME (volumetric_strain) Memory usage 102MB\n\u22ee\n[DBG][ACT] TASK (        add_aux_variable) TYPE (            AddAuxVariableAction) NAME (volumetric_strain) Memory usage 110MB\n\u22ee\n[DBG][ACT] TASK (     copy_nodal_aux_vars) TYPE (             CopyNodalVarsAction) NAME (volumetric_strain) Memory usage 112MB\n\u22ee\n[DBG][ACT] TASK (            add_material) TYPE (               AddMaterialAction) NAME (mat1_volumetric_eigenstrain) Memory usage 115MB\n[DBG][ACT] TASK (            add_material) TYPE (               AddMaterialAction) NAME (mat2_volumetric_eigenstrain) Memory usage 115MB\n\u22ee\n[DBG][ACT] TASK (          add_aux_kernel) TYPE (                 AddKernelAction) NAME (volumetric_strain) Memory usage 117MB\n\nI am not familiar enough with the moose debugger to add breakpoints, but here is some dummy code that will reproduce the error.\nmat1_swell_val = 0.01\nmat2_swell_val = -0.005\n\nmat1_cte_val = 4.3e-6\nmat2_cte_val = 4.5e-6\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  stress_free_temperature = 1000\n[]\n\n[Mesh]\n  coord_type = RZ # switch to xyz for solve\n  [geom]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    xmax = 1\n    ymax = 2\n    nx = 20\n    ny = 40\n  []\n  [mat1]\n    type = ParsedSubdomainMeshGenerator\n    input = geom\n    combinatorial_geometry = 'x <= 0.9 & y>=0'\n    block_name = mat1\n    block_id = 1\n  []\n  [mat2]\n    type = ParsedSubdomainMeshGenerator\n    input = mat1\n    combinatorial_geometry = 'x > 0.9 & y>=0'\n    block_name = mat2\n    block_id = 2\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [T]\n    initial_condition = 900\n  []\n[]\n\n[AuxVariables]\n  [volumetric_strain]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[Modules/TensorMechanics/Master]\n  [master]\n    strain = FINITE\n    material_output_order = SECOND\n    eigenstrain_names = 'swelling_eigenstrain thermal_eigenstrain'\n    decomposition_method = EigenSolution #Necessary for exact solution\n    generate_output = 'max_principal_stress min_principal_stress vonmises_stress stress_xx stress_yy stress_xy'\n    temperature = T\n    cylindrical_axis_point1 = '0 0 0'\n    cylindrical_axis_point2 = '0 1 0'\n  []\n[]\n\n[AuxKernels]\n  [volumetric_strain]\n    type = RankTwoScalarAux\n    scalar_type = VolumetricStrain\n    rank_two_tensor = total_strain\n    variable = volumetric_strain\n  []\n[]\n\n[Kernels]\n  [heat_conduction]\n    type = HeatConduction\n    variable = T\n  []\n[]\n\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0\n  []\n  [bottom]\n    type = DirichletBC\n    variable = disp_y\n    boundary = bottom\n    value = 0.0\n  []\n  [in_temp]\n    type = DirichletBC\n    variable = T\n    boundary = 'left'\n    value = 600\n  []\n  [out_temp]\n    type = DirichletBC\n    variable = T\n    boundary = 'right'\n    value = 475\n  []\n[]\n[Materials]\n  [mat1_elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 45e9\n    poissons_ratio = 0.2\n    block = 'mat1'\n  []\n  [mat2_elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 200e9\n    poissons_ratio = 0.2\n    block = 'mat2'\n  []\n  [mat1_k]\n    type = HeatConductionMaterial\n    thermal_conductivity = 34\n    block = 'mat1'\n  []\n  [mat2_k]\n    type = HeatConductionMaterial\n    thermal_conductivity = 56\n    block = 'mat2'\n  []\n  [mat1_thermal_expansion]\n    type = ComputeThermalExpansionEigenstrain\n    eigenstrain_name = thermal_eigenstrain\n    thermal_expansion_coeff = ${mat1_cte_val}\n    temperature = T\n    block = 'mat1'\n  []\n  [mat2_thermal_expansion]\n    type = ComputeThermalExpansionEigenstrain\n    eigenstrain_name = thermal_eigenstrain\n    thermal_expansion_coeff = ${mat2_cte_val}\n    temperature = T\n    block = 'mat2'\n  []\n  [mat1_swelling]\n    type = GenericConstantMaterial\n    prop_names = mat1_swelling\n    prop_values = ${mat1_swell_val}\n  []\n  [mat2_swelling]\n    type = GenericConstantMaterial\n    prop_names = mat2_swelling\n    prop_values = ${mat2_swell_val}\n  []\n  [mat1_volumetric_eigenstrain]\n    type = ComputeVolumetricEigenstrain\n    volumetric_materials = mat1_swelling\n    eigenstrain_name = swelling_eigenstrain\n    args = ''\n    block = 'mat1'\n  []\n  [mat2_volumetric_eigenstrain]\n    type = ComputeVolumetricEigenstrain\n    volumetric_materials = mat2_swelling\n    eigenstrain_name = swelling_eigenstrain\n    args = ''\n    block = 'mat2'\n  []\n  [finite_strain_stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n[]\n\n[Debug]\n  show_actions = true\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = NEWTON\n  automatic_scaling = true\n  compute_scaling_once = false\n  petsc_options_iname = '-pc_type -mat_factor_solver_package'\n  petsc_options_value = 'lu superlu_dist'\n[]\n\n[Outputs]\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6534036",
+                          "updatedAt": "2023-07-24T21:51:17Z",
+                          "publishedAt": "2023-07-24T21:51:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'm out of town right now. I ll let the others investigate why you get this error.\n@dschwen",
+                          "url": "https://github.com/idaholab/moose/discussions/24882#discussioncomment-6542602",
+                          "updatedAt": "2023-07-25T17:00:11Z",
+                          "publishedAt": "2023-07-25T17:00:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Why does the iterative method not converge?",
+          "author": {
+            "login": "nanguaxiaofendui"
+          },
+          "bodyText": "\u2018\u2019\u2019\nl_clad = 1\nr_in = 0.004\nr_out = 0.005\n[GlobalParams]\ndisplacements = 'disp_x disp_y disp_z'\nincremental = true\nfamily=LAGRANGE\norder=second\n[]\n[Mesh]\n[top_half_1]\ntype = ConcentricCircleMeshGenerator\nnum_sectors = 16\nradii = '${fparse r_in} ${fparse r_out}'\nrings = '1 3'\nhas_outer_square = off\npitch = 2\nportion =  right_half\npreserve_volumes = off\n[]\n[top_half_2]\ntype = BlockDeletionGenerator\ninput = top_half_1\nblock = '1'\nnew_boundary = 'inner'\n[]\n[clad_3d]\ntype = AdvancedExtruderGenerator\ninput = top_half_2\nheights = '${fparse l_clad }'\ndirection = '0 0 1'\nnum_layers = '8'\nbottom_boundary = '201'\ntop_boundary = '202'\n[]\n[node1]\ntype = ExtraNodesetGenerator\ncoord = '0.0 ${fparse -r_out} 0.0;'\nnew_boundary = '21'\ninput = clad_3d\n[]\n[node2]\ntype = ExtraNodesetGenerator\ncoord = '0.0 ${fparse -r_out} ${fparse l_clad}'\nnew_boundary = '22'\ninput = node1\n[]\nsecond_order=true\n[]\n[Variables]\n[./disp_x]\n[../]\n[./disp_y]\n[../]\n[./disp_z]\n[../]\n[]\n[Kernels]\n[gravity_y]\ntype = Gravity\nvariable = disp_y\nvalue = -9.81\n[]\n[]\n[Modules/TensorMechanics/Master]\n[all]\nstrain = FINITE\nadd_variables = true\ngenerate_output =\"vonmises_stress\"\ncylindrical_axis_point1 = '0 0 0'\ncylindrical_axis_point2 = '0 0 1'\n[]\n[]\n[BCs]\n[symmx]\ntype = DirichletBC #\nvariable = disp_x\nboundary = \"21 22\"\nvalue = 0\n[]\n[symmy]\ntype = DirichletBC  #\nvariable = disp_y\nboundary = \"21 22\"\nvalue = 0\n[]\n[symmz]\ntype = DirichletBC  #\nvariable = disp_z\nboundary = \"21\"\nvalue = 0\n[]\n[sym]\ntype = DirichletBC\nvariable = disp_x\nboundary = \"left\"\nvalue = 0\n[]\n[Pressure]\n[outer_pressure] #\nboundary = outer\nfunction = '4e6t'\n[]\n[inner_pressure] #\nboundary = inner\nfunction = '7e6t'\n[]\n[]\n[]\n[Materials]\n[elasticity_tensor]\ntype = ComputeIsotropicElasticityTensor\nyoungs_modulus =7.5e10\npoissons_ratio = 0.3\n[]\n[cstress]\ntype = ComputeFiniteStrainElasticStress\n[]\n[./cladding_density]\ntype = Density\ndensity = 6551.0\n[../]\n[]\n[Executioner]\ntype = Transient\nsolve_type = 'NEWTON'\nline_search = 'none'\nautomatic_scaling = true\ncompute_scaling_once = false\n[]\n\u2018\u2019\u2019\nThe above example can be convergent with lu, but gmres cannot, why is that? Please tell me, thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/25029",
+          "updatedAt": "2023-07-25T06:32:50Z",
+          "publishedAt": "2023-07-25T02:39:04Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nnot all solve methods will solve all nonlinear problems with any preconditioning. Please add a Preconditioning block and search for what works for your problem. The litterature in your field is usually a good starting point\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25029#discussioncomment-6536568",
+                  "updatedAt": "2023-07-25T06:32:12Z",
+                  "publishedAt": "2023-07-25T06:14:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nanguaxiaofendui"
+                          },
+                          "bodyText": "Thank you very much",
+                          "url": "https://github.com/idaholab/moose/discussions/25029#discussioncomment-6536664",
+                          "updatedAt": "2023-07-25T06:31:20Z",
+                          "publishedAt": "2023-07-25T06:31:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Examples in moose can help as well btw, especially if we are solving the same physics",
+                          "url": "https://github.com/idaholab/moose/discussions/25029#discussioncomment-6536673",
+                          "updatedAt": "2023-07-25T06:32:50Z",
+                          "publishedAt": "2023-07-25T06:32:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Wrong _qp update value when defining additional material property in \"ComputeLinearElasticStress\"",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi MOOSE developers,\nI attempt to modify the stress calculation ComputeLinearElasticStress and define additional material property similar as stress in order to keep track its change. As a test, I first declare a material property called additional_prop inside ComputeGeneralStressBase and initialize it as 0:\n#pragma once\n\n#include \"Material.h\"\n#include \"RankTwoTensor.h\"\n#include \"RankFourTensor.h\"\n#include \"RotationTensor.h\"\n#include \"DerivativeMaterialInterface.h\"\n\nclass ComputeGeneralStressBaseTest : public DerivativeMaterialInterface<Material>\n{\npublic:\n  static InputParameters validParams();\n\n  ComputeGeneralStressBaseTest(const InputParameters & parameters);\n\nprotected:\n  virtual void initQpStatefulProperties() override;\n  virtual void computeQpProperties() override;\n\n  /**\n   * Compute the stress and store it in the _stress material property\n   * for the current quadrature point\n   **/\n  virtual void computeQpStress() = 0;\n\n  /// Base name prepended to all material property names to allow for\n  /// multi-material systems\n  const std::string _base_name;\n\n  /// Mechanical strain material property\n  const MaterialProperty<RankTwoTensor> & _mechanical_strain;\n  /// Stress material property\n  MaterialProperty<RankTwoTensor> & _stress;\n  /// Elastic strain material property\n  MaterialProperty<RankTwoTensor> & _elastic_strain;\n\n  /// Extra stress tensor\n  const MaterialProperty<RankTwoTensor> & _extra_stress;\n\n  /// initial stress components\n  std::vector<const Function *> _initial_stress_fcn;\n\n  /// derivative of stress w.r.t. strain (_dstress_dstrain)\n  MaterialProperty<RankFourTensor> & _Jacobian_mult;\n\n  /// additional Material Property\n  MaterialProperty<Real> & _additional_prop;\n};\n\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"ComputeGeneralStressBaseTest.h\"\n#include \"ComputeElasticityTensorBase.h\"\n#include \"Function.h\"\n\nInputParameters\nComputeGeneralStressBaseTest::validParams()\n{\n  InputParameters params = Material::validParams();\n  params.addParam<std::string>(\"base_name\",\n                               \"Optional parameter that allows the user to define \"\n                               \"multiple mechanics material systems on the same \"\n                               \"block, i.e. for multiple phases\");\n  return params;\n}\n\nComputeGeneralStressBaseTest::ComputeGeneralStressBaseTest(const InputParameters & parameters)\n  : DerivativeMaterialInterface<Material>(parameters),\n    _base_name(isParamValid(\"base_name\") ? getParam<std::string>(\"base_name\") + \"_\" : \"\"),\n    _mechanical_strain(getMaterialPropertyByName<RankTwoTensor>(_base_name + \"mechanical_strain\")),\n    _stress(declareProperty<RankTwoTensor>(_base_name + \"stress\")),\n    _elastic_strain(declareProperty<RankTwoTensor>(_base_name + \"elastic_strain\")),\n    _extra_stress(getDefaultMaterialProperty<RankTwoTensor>(_base_name + \"extra_stress\")),\n    _Jacobian_mult(declareProperty<RankFourTensor>(_base_name + \"Jacobian_mult\")),\n    _additional_prop(declareProperty<Real>(\"additional_prop\"))\n{\n}\n\nvoid\nComputeGeneralStressBaseTest::initQpStatefulProperties()\n{\n  _elastic_strain[_qp].zero();\n  _stress[_qp].zero();\n\n  _additional_prop[_qp] = 0.0;\n}\n\nvoid\nComputeGeneralStressBaseTest::computeQpProperties()\n{\n  computeQpStress();\n\n  // Add in extra stress\n  _stress[_qp] += _extra_stress[_qp];\n}\n\nThen in the ComputeLinearElasticStress.C, I did three steps: 1. retrieve the old value, 2. update value (by adding 1), 3. assign back value.\n#include \"ComputeLinearElasticStressTest.h\"\n\nregisterMooseObject(\"farms_cbdmApp\", ComputeLinearElasticStressTest);\n\nInputParameters\nComputeLinearElasticStressTest::validParams()\n{\n  InputParameters params = ComputeStressBaseTest::validParams();\n  params.addClassDescription(\"Compute stress using elasticity for small strains\");\n  return params;\n}\n\nComputeLinearElasticStressTest::ComputeLinearElasticStressTest(const InputParameters & parameters)\n  : ComputeStressBaseTest(parameters),\n    _elasticity_tensor_name(_base_name + \"elasticity_tensor\"),\n    _elasticity_tensor(getMaterialPropertyByName<RankFourTensor>(_elasticity_tensor_name))\n{\n}\n\nvoid\nComputeLinearElasticStressTest::initialSetup()\n{\n  // _base_name + \"unstabilized_deformation_gradient\" is only declared if we're\n  // using the Lagrangian kernels.  It's okay to invoke this small strain\n  // material if you are using that kernel system and the\n  // ComputeLagrangianWrappedStress wrapper\n  if (hasBlockMaterialProperty<RankTwoTensor>(_base_name + \"strain_increment\") &&\n      !hasBlockMaterialProperty<RankTwoTensor>(_base_name + \"unstabilized_deformation_gradient\"))\n    mooseError(\"This linear elastic stress calculation only works for small strains; use \"\n               \"ComputeFiniteStrainElasticStress for simulations using incremental and finite \"\n               \"strains.\");\n}\n\nvoid\nComputeLinearElasticStressTest::computeQpStress()\n{\n  // stress = C * e\n  _stress[_qp] = _elasticity_tensor[_qp] * _mechanical_strain[_qp];\n\n  // Assign value for elastic strain, which is equal to the mechanical strain\n  _elastic_strain[_qp] = _mechanical_strain[_qp];\n\n  // Compute dstress_dstrain\n  _Jacobian_mult[_qp] = _elasticity_tensor[_qp];\n  \n  //add 1 to the props\n  //retrieve value\n  Real additional_prop_vals = _additional_prop[_qp];\n  //do some calculations\n  Real additional_prop_vals_add_1 = additional_prop_vals + 1.0;\n  //update value\n  _additional_prop[_qp] = additional_prop_vals_add_1;\n  \n  Real x_coord = _q_point[_qp](0);\n  Real y_coord = _q_point[_qp](1);\n  std::cout<<\" x_coord: \"<<x_coord<<\" y_coord: \"<<y_coord<<\" additional_prop_vals: \"<<additional_prop_vals<<\" _additional_prop[_qp]: \"<<_additional_prop[_qp]<<std::endl;\n}\n\nIn the code, I output the coordinates, the old value and the new value, I expect for each point, the value should change from 0 to 1, but the output is wrong:\nTime Step 0, time = 0\n\nTime Step 1, time = 1, dt = 1\n x_coord: -228.868 y_coord: -228.868 additional_prop_vals: 0 _additional_prop[_qp]: 1\n x_coord: -171.132 y_coord: -228.868 additional_prop_vals: 0 _additional_prop[_qp]: 1\n x_coord: -228.868 y_coord: -171.132 additional_prop_vals: 0 _additional_prop[_qp]: 1\n x_coord: -171.132 y_coord: -171.132 additional_prop_vals: 0 _additional_prop[_qp]: 1\n x_coord: -128.868 y_coord: -228.868 additional_prop_vals: 1 _additional_prop[_qp]: 2\n x_coord: -71.1325 y_coord: -228.868 additional_prop_vals: 1 _additional_prop[_qp]: 2\n x_coord: -128.868 y_coord: -171.132 additional_prop_vals: 1 _additional_prop[_qp]: 2\n x_coord: -71.1325 y_coord: -171.132 additional_prop_vals: 1 _additional_prop[_qp]: 2\n x_coord: -28.8675 y_coord: -228.868 additional_prop_vals: 2 _additional_prop[_qp]: 3\n x_coord: 28.8675 y_coord: -228.868 additional_prop_vals: 2 _additional_prop[_qp]: 3\n x_coord: -28.8675 y_coord: -171.132 additional_prop_vals: 2 _additional_prop[_qp]: 3\n x_coord: 28.8675 y_coord: -171.132 additional_prop_vals: 2 _additional_prop[_qp]: 3\n x_coord: 71.1325 y_coord: -228.868 additional_prop_vals: 3 _additional_prop[_qp]: 4\n x_coord: 128.868 y_coord: -228.868 additional_prop_vals: 3 _additional_prop[_qp]: 4\n x_coord: 71.1325 y_coord: -171.132 additional_prop_vals: 3 _additional_prop[_qp]: 4\n x_coord: 128.868 y_coord: -171.132 additional_prop_vals: 3 _additional_prop[_qp]: 4\n x_coord: 171.132 y_coord: -228.868 additional_prop_vals: 4 _additional_prop[_qp]: 5\n x_coord: 228.868 y_coord: -228.868 additional_prop_vals: 4 _additional_prop[_qp]: 5\n x_coord: 171.132 y_coord: -171.132 additional_prop_vals: 4 _additional_prop[_qp]: 5\n x_coord: 228.868 y_coord: -171.132 additional_prop_vals: 4 _additional_prop[_qp]: 5\n x_coord: -228.868 y_coord: -128.868 additional_prop_vals: 5 _additional_prop[_qp]: 6\n x_coord: -171.132 y_coord: -128.868 additional_prop_vals: 5 _additional_prop[_qp]: 6\n x_coord: -228.868 y_coord: -71.1325 additional_prop_vals: 5 _additional_prop[_qp]: 6\n x_coord: -171.132 y_coord: -71.1325 additional_prop_vals: 5 _additional_prop[_qp]: 6\n x_coord: -128.868 y_coord: -128.868 additional_prop_vals: 6 _additional_prop[_qp]: 7\n x_coord: -71.1325 y_coord: -128.868 additional_prop_vals: 6 _additional_prop[_qp]: 7\n x_coord: -128.868 y_coord: -71.1325 additional_prop_vals: 6 _additional_prop[_qp]: 7\n x_coord: -71.1325 y_coord: -71.1325 additional_prop_vals: 6 _additional_prop[_qp]: 7\n x_coord: -28.8675 y_coord: -128.868 additional_prop_vals: 7 _additional_prop[_qp]: 8\n x_coord: 28.8675 y_coord: -128.868 additional_prop_vals: 7 _additional_prop[_qp]: 8\n x_coord: -28.8675 y_coord: -71.1325 additional_prop_vals: 7 _additional_prop[_qp]: 8\n x_coord: 28.8675 y_coord: -71.1325 additional_prop_vals: 7 _additional_prop[_qp]: 8\n x_coord: 71.1325 y_coord: -128.868 additional_prop_vals: 8 _additional_prop[_qp]: 9\n x_coord: 128.868 y_coord: -128.868 additional_prop_vals: 8 _additional_prop[_qp]: 9\n x_coord: 71.1325 y_coord: -71.1325 additional_prop_vals: 8 _additional_prop[_qp]: 9\n x_coord: 128.868 y_coord: -71.1325 additional_prop_vals: 8 _additional_prop[_qp]: 9\n x_coord: 171.132 y_coord: -128.868 additional_prop_vals: 9 _additional_prop[_qp]: 10\n x_coord: 228.868 y_coord: -128.868 additional_prop_vals: 9 _additional_prop[_qp]: 10\n x_coord: 171.132 y_coord: -71.1325 additional_prop_vals: 9 _additional_prop[_qp]: 10\n x_coord: 228.868 y_coord: -71.1325 additional_prop_vals: 9 _additional_prop[_qp]: 10\n...\n\nIt seems like the first element, each value change from 0 to 1 (correct!), but for second element, it \"magically\" obtain the 1 and update to 2 and so on. However, since each _qp is different, this seems impossible. The input file is given below:\n[Mesh]\n    [./msh]\n      type = GeneratedMeshGenerator\n      dim = 2\n      nx = 5\n      ny = 5\n      xmin = -250\n      xmax = 250\n      ymin = -250\n      ymax = 250\n    []\n  []\n\n  [GlobalParams]\n    #primary variables\n    displacements = 'disp_x disp_y'\n  []\n\n  [Modules]\n    [./TensorMechanics]\n      [./Master]\n        [./all]\n          strain = SMALL\n          add_variables = true\n          planar_formulation = PLANE_STRAIN\n          generate_output = 'stress_xx stress_yy stress_xy'\n        [../]\n      [../]\n    [../]\n  []\n\n  [Kernels]\n    [./inertia_x]\n      type = InertialForce\n      use_displaced_mesh = false\n      variable = disp_x\n    []\n    [./inertia_y]\n      type = InertialForce\n      use_displaced_mesh = false\n      variable = disp_y\n    []\n  []\n\n  [Materials]\n    [elasticity]\n        type = ComputeIsotropicElasticityTensor\n        lambda = 32.04e9\n        shear_modulus = 32.04e9\n        use_displaced_mesh = false\n    []\n    [stress]\n        type = ComputeLinearElasticStressTest\n    []\n    [density]\n        type = GenericConstantMaterial\n        prop_names = density\n        prop_values = 2670\n    []\n  []\n\n  [Executioner]\n    type = Transient\n    dt = 1\n    end_time = 1\n    num_steps = 1\n    [TimeIntegrator]\n      type = CentralDifference\n      solve_type = lumped\n    []\n  []\n\n  [Outputs]\n    exodus = true\n    interval = 1\n  []\n\nPlease enlighten me if there is something wrong. Or if there is a better way to declare/update material property that could achieve the same effect. Thanks a lot!!",
+          "url": "https://github.com/idaholab/moose/discussions/25025",
+          "updatedAt": "2023-07-25T06:19:08Z",
+          "publishedAt": "2023-07-24T12:29:35Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "what was the solution?",
+                  "url": "https://github.com/idaholab/moose/discussions/25025#discussioncomment-6534403",
+                  "updatedAt": "2023-07-24T23:01:33Z",
+                  "publishedAt": "2023-07-24T23:01:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Although I'm not sure the reason here, but it is correct if I retrieve values from the previous time step using getMaterialPropertyOldByName, update the value and feed it back into the variable (which is current time step)",
+                          "url": "https://github.com/idaholab/moose/discussions/25025#discussioncomment-6535465",
+                          "updatedAt": "2023-07-25T02:28:44Z",
+                          "publishedAt": "2023-07-25T02:28:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think this is normal?\nIf you retrieve the current value then the second time in a time step you compute the material property, you have already added the extra stress into stress",
+                          "url": "https://github.com/idaholab/moose/discussions/25025#discussioncomment-6536591",
+                          "updatedAt": "2023-07-25T06:19:09Z",
+                          "publishedAt": "2023-07-25T06:19:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Dynamically loading custom app with level 2 ncrc apps on INL HPC",
+          "author": {
+            "login": "jfaulkner31"
+          },
+          "bodyText": "I have access to some level 2 ncrc applications (griffin, pronghorn, ect...) on INL HPC. I also have a custom application with my own kernels and FVBCs that I would like to use in my simulations. I have managed to get this running on my personal machine. The steps I take locally are:\n\nInstall and compile ncrc application in conda channel.\nCompile MOOSE following the general instructions for compiling moose from source.\nCompile my custom application.\nInclude something like the following in my input when running anyNcrcApp-opt:\n\n[Problem]\n    register_objects_from = 'FirebirdApp'\n    library_path = '/home/jfaulkner31/projects/firebird/lib'\n[]\n\nBut I am having a lot of difficulty doing the same on INL HPC to the point where I am wondering if what I want is even possible. I am  loading griffin/pronghorn as modules, compiling moose from the general INL-HPC instructions, compiling my own app using essentially the same makefile as I do locally, then hitting an error upon runtime that looks like this:\n symbol lookup error: ../../firebird/lib/libfirebird-opt.so.0: undefined symbol: _ZN16FunctorInterface14defaultFunctorIN11MetaPhysicL10DualNumberIdNS1_28SemiDynamicSparseNumberArrayIdmNS1_8NWrapperILm53EEEEELb1EEEEEPKN5Moose15FunctorEnvelopeIT_EERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE\nI imagine I might be able to do essentially the same as what I do locally through a conda environment, but that seems a bit silly considering there already are the proper modules available. I also imagine that I am missing a crucial step  when interacting with / loading modules. I am wondering if there is some kind of streamlined step by step process for what I want to accomplish or if I am indeed missing an important step. Any help is greatly appreciated!\nCheers!",
+          "url": "https://github.com/idaholab/moose/discussions/25021",
+          "updatedAt": "2023-07-24T22:56:49Z",
+          "publishedAt": "2023-07-24T05:47:07Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt's awesome that this works on your machine.\nOn HPC, I would check every module to make sure the MOOSE version is the same between all the applications\nIn the header of a simulation you can see the commit number for moose\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25021#discussioncomment-6526184",
+                  "updatedAt": "2023-07-24T07:46:42Z",
+                  "publishedAt": "2023-07-24T07:46:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jfaulkner31"
+                          },
+                          "bodyText": "Hi Guillaume,\nIt looks like the two MOOSE versions are not the same:\nFor griffin simulations I get:\nFramework Information:\nMOOSE Version:           git commit a24bf209dc on 2023-07-11\nLibMesh Version:         dc964ef4e459ba7ce080f8d6c1f4cac939cfbfed\nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2`\n\nand for MOOSE / my custom app named Firebird:\nMOOSE Version:           git commit d2ef20eecd on 2023-07-21\nLibMesh Version:         dc964ef4e459ba7ce080f8d6c1f4cac939cfbfed\nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\n\nHowever, I checked the same locally and it looks like each were built with with different framework versions back in May. Here is what appears in the headers in my local install that seems to work:\nFirebird/MOOSE:\nFramework Information:\nMOOSE Version:           git commit 0bd329c1be on 2023-06-05\nLibMesh Version:         \nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\n\ngriffin-opt:\nFramework Information:\nMOOSE Version:           git commit 62c21c5da1 on 2023-05-25\nLibMesh Version:         \nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\n\nI have also noticed that when simply loading the griffin module before moose installation, I get all failing tests. But if I unload the griffin module before running tests, I get all passing tests in moose. OK, so I install moose without griffin loaded (but with the same mvapich2 version as griffin!) and then compile my app. I then run tests in my custom app and get all tests passing. I then load the griffin module, try to run tests again, and get all tests failing.\nI can also attempt to run the dynamically linked simulation as before using griffin-opt and get the same error:\nchannelTH0_externalLoop0: Parallelism:\nchannelTH0_externalLoop0:   Num Processors:        6\nchannelTH0_externalLoop0:   Num Threads:           1\nchannelTH0_externalLoop0: \n\n*** Warning, This code is deprecated and will be removed in future versions:\nDeprecated Object: SolutionInitialCondition\nThis object will be removed on Mon Jul  1 01:00:00 2024\nReplace SolutionInitialCondition with SolutionIC\n\ngriffin-opt: symbol lookup error: ../../firebird/lib/libfirebird-opt.so.0: undefined symbol: _ZN16FunctorInterface14defaultFunctorIN11MetaPhysicL10DualNumberIdNS1_28SemiDynamicSparseNumberArrayIdmNS1_8NWrapperILm53EEEEELb1EEEEEPKN5Moose15FunctorEnvelopeIT_EERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEE\n\nI then completely comment out the FV interface kernel that is being inherited from the custom app - the simulation runs fine now, but without the interface kernel of course and with no complaints about the dynamically loaded app.\nIs there a way, when cloning moose, to use the same MOOSE version that was used in Griffin, so that both MOOSE versions are the same?\nThanks for the assistance!",
+                          "url": "https://github.com/idaholab/moose/discussions/25021#discussioncomment-6534282",
+                          "updatedAt": "2023-07-24T23:11:41Z",
+                          "publishedAt": "2023-07-24T22:33:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "You can see the version of moose you need:\n\nFor griffin simulations I get:\n\nFramework Information:\nMOOSE Version: git commit a24bf20 on 2023-07-11\nLibMesh Version: dc964ef4e459ba7ce080f8d6c1f4cac939cfbfed\nPETSc Version: 3.16.6\nSLEPc Version: 3.16.2\n\nIn the moose repository for your application, simply do:\ngit checkout a24bf209dced6a69d60604b746a61657ddda9e8d\n\nwhich will put you in a detached (but valid) state of moose at the same commit as the other application.",
+                          "url": "https://github.com/idaholab/moose/discussions/25021#discussioncomment-6534391",
+                          "updatedAt": "2023-07-24T22:58:57Z",
+                          "publishedAt": "2023-07-24T22:56:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "normals vs mapped normals",
+          "author": {
+            "login": "gabburgio"
+          },
+          "bodyText": "Hello all\nI am trying to implement an array boundary condition to model albedo from a reflector in multigroup diffusion theory.\nThis is my current attempt at the class:\nsource\n#include \"ArrayAlbedoBC.h\"\n\nregisterMooseObject(\"pertApp\", ArrayAlbedoBC);\n\nInputParameters\nArrayAlbedoBC::validParams()\n{\n  InputParameters params = ArrayIntegratedBC::validParams();\n\n  params.addRequiredParam<RealEigenMatrix>(\"albedo_matrix\",\"(incoming current in group i)/(outgoing current in group j)\");\n  params.addRequiredParam<MaterialPropertyName>(\"diffusivity\", \"____\");\n\n  return params;\n}\n\nArrayAlbedoBC::ArrayAlbedoBC(const InputParameters & parameters)\n  : ArrayIntegratedBC(parameters),\n    _array_normals(_assembly.mappedNormals()),\n    _grad_u(_var.gradSln()),\n    _diffusivity(getMaterialProperty<RealEigenVector>(\"diffusivity\")),\n    _albedo_matrix(getParam<RealEigenMatrix>(\"albedo_matrix\"))\n\n{\n}\n\n\nvoid\nArrayAlbedoBC::computeQpResidual(RealEigenVector & residual)\n{\n  auto one = Eigen::MatrixXd::Identity(_diffusivity.size(),_diffusivity.size());\n\n  //source = (A - Id)* (1/4 Phi - 1/2 D dPhi / dn)  cfr. Stacey 76\n\n  residual = -((_albedo_matrix - one) * ( 0.25*_u[_qp] - 0.5* (_diffusivity[_qp].asDiagonal() * _grad_u[_qp]) * array_normals[_qp]) ) * _test[_i][_qp];\n\n}\n\n\nheader:\n\n#pragma once\n\n#include \"ArrayIntegratedBC.h\"\n\nclass ArrayAlbedoBC : public ArrayIntegratedBC \n{\npublic:\n  static InputParameters validParams();\n\n  ArrayAlbedoBC(const InputParameters & parameters);\n\nprotected:\n  virtual void computeQpResidual(RealEigenVector & residual) override;\n\n\n   const MaterialProperty<RealEigenVector> & _diffusivity;    \n\n   const ArrayVariableGradient & _grad_u;\n   const RealEigenMatrix & _albedo_matrix; \n\n  /// Normals in type of Eigen map\n  const std::vector<Eigen::Map<RealDIMValue>> & _array_normals;\n\n};\n\n\nThis seems to work for a four group calculation but gives me a segfault for a 2 group one.\nI have also tried to use the normals from arrayintegratedBC (which I am extending) but I get type errors from eigen during compilation:\nIn member function 'virtual void ArrayAlbedoBC::computeQpResidual(libMesh::RealEigenVector&)':\n/home/gburgio/projects/pert/src/bcs/ArrayAlbedoBC.C:34:111: error: no match for 'operator*' (operand types are 'const Eigen::CwiseBinaryOp<Eigen::internal::scalar_product_op<double, double>, const Eigen::CwiseNullaryOp<Eigen::internal::scalar_constant_op<double>, const Eigen::Matrix<double, -1, 3> >, const Eigen::Product<Eigen::DiagonalWrapper<const Eigen::Matrix<double, -1, 1> >, Eigen::Matrix<double, -1, 3>, 1> >' and 'const libMesh::Point')\n   34 |   residual = -((_albedo_matrix - one) * ( 0.25*_u[_qp] - 0.5* (_diffusivity[_qp].asDiagonal() * _grad_u[_qp]) * _normals[_qp]) ) * _test[_i][_qp];\n\n\nAny advice on how to fix this is greatly appreciated",
+          "url": "https://github.com/idaholab/moose/discussions/25000",
+          "updatedAt": "2023-07-24T20:38:23Z",
+          "publishedAt": "2023-07-20T17:48:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@zachmprince @YaqiWang any idea how to help?",
+                  "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6502413",
+                  "updatedAt": "2023-07-20T18:13:58Z",
+                  "publishedAt": "2023-07-20T18:13:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "gabburgio"
+                  },
+                  "bodyText": "Ok I think I figured it out, dumb mistake on my part in using\n  auto one = Eigen::MatrixXd::Identity(_diffusivity.size(),_diffusivity.size());\ninstead of:\n  auto one = Eigen::MatrixXd::Identity(_diffusivity[_qp].size(),_diffusivity[_qp].size());\n(I realize there's surely a better way to do this)\nI would still like to ask whether using the mapped normals is indeed the correct choice here, and, if so, why.\nIs it just to have access to Eigen linear algebra methods?\nThanks",
+                  "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6521536",
+                  "updatedAt": "2023-07-23T14:58:35Z",
+                  "publishedAt": "2023-07-23T14:58:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "gabburgio"
+                  },
+                  "bodyText": "I would also like to ask whether\n    _grad_u(_var.gradSln()),\nis the right way to retrieve the gradient, or if for instance it will give me problems with coupled simulations and I should try to do something like\n`_grad_u(coupledArrayGradient(\"variable\")),`\n\nwith \"variable\" coming from ResidualObject.h (although I found that doesn't work, perhaps I should set up an interface)",
+                  "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6532036",
+                  "updatedAt": "2023-07-24T17:09:27Z",
+                  "publishedAt": "2023-07-24T17:09:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "GradSln is fine, it s just a tad more complicated than using coupledGradient",
+                          "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6532787",
+                          "updatedAt": "2023-07-24T18:52:56Z",
+                          "publishedAt": "2023-07-24T18:52:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "There are also some nuances if you're doing explicit calculations, e.g. you may want not the current gradient. coupledGradient takes the implicit/explicit status of a kernel into account",
+                          "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6533108",
+                          "updatedAt": "2023-07-24T19:40:32Z",
+                          "publishedAt": "2023-07-24T19:40:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "also coupledArrayGradient is for array variable gradients. And coupledGradient for regular variables. I think you have it right",
+                          "url": "https://github.com/idaholab/moose/discussions/25000#discussioncomment-6533555",
+                          "updatedAt": "2023-07-24T20:38:24Z",
+                          "publishedAt": "2023-07-24T20:38:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Advection kernel behaving differently in TET4 mesh compared in HEX8",
+          "author": {
+            "login": "schakrabortygithub"
+          },
+          "bodyText": "Hi,\nI was trying to use 'ConservativeAdvection' kernel to propagate a scalar field variable along a particular direction (say along x-direction). First I used a HEX8 mesh with 'upwind' correction for the advection term and 'MassLumpedTimeDerivative' for the time derivative term. The model gives expected result. But now if I change the mesh to TET4, I get strange oscillation. Any suggestion to resolve this issue?\nI am attaching the field plot and the plot along the z-direction.\nHere is a simple input script to reproduce the problem,\n[Mesh]\n[./gmg]\n  type = GeneratedMeshGenerator\n  dim = 3\n  nx = 10\n  ny = 10\n  nz = 2\n  xmax = 0.1\n  ymax = 0.1\n  zmax = 0.02\n  elem_type = TET4 #TET4, HEX, HEX8\n  #show_info = True\n[../]\n[]\n\n[Outputs]\n    file_base = ./Data_CDT_ScalarVar_Temp_TET4\n    csv = true\n    exodus = true\n    #append_date = true\n    append_date_format = '%Y-%m-%d-%H-%M-%S'\n    execute_on = 'timestep_end'\n  [./console]\n    type = Console\n    output_file = true\n    max_rows = 0\n  [../]\n[]\n\n[Variables]\n  [./DD_EdgePositive_00]\n    order = FIRST\n    family = LAGRANGE\n  [../]\n[]\n\n[ICs]\n  [./IC_DD_EdgePositive_00]\n    type = FunctionIC\n    variable = DD_EdgePositive_00\n    function = '1.0'\n  [../]\n[]\n\n[Kernels]\n  [./dot_DD_EdgePositive_00]\n    type = MassLumpedTimeDerivative  #MassLumpedTimeDerivative\n    variable = DD_EdgePositive_00\n  [../]\n  [./advection_DD_EdgePositive_00]\n    type = ConservativeAdvection #ConservativeAdvection, AdvectionCDT\n    variable = DD_EdgePositive_00\n    upwinding_type = Full\n    velocity = '0.1 0.0 0.0'\n    #block = 0\n  [../]\n\n[]\n\n[Preconditioning]\n  [./smp]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = 'NEWTON' #'NEWTON' , 'PJFNK'\n  #automatic_scaling = true\n  #scaling_group_variables = 'disp_x disp_y disp_z; DD_EdgePositive_01'\n  petsc_options_iname = '-pc_type -pc_asm_overlap -sub_pc_type -ksp_type -ksp_gmres_restart'\n  petsc_options_value = ' asm      2              lu            gmres     200'\n  nl_abs_tol = 1e-5  #1e-10 for all *_tol\n  nl_rel_tol = 1e-5\n  nl_abs_step_tol = 1e-5\n\n  dt = 0.01\n  dtmin = 0.00001\n  dtmax = 0.01\n  end_time = 1\n[]\n\nBest\nSubhendu",
+          "url": "https://github.com/idaholab/moose/discussions/24994",
+          "updatedAt": "2023-07-24T18:52:06Z",
+          "publishedAt": "2023-07-20T06:17:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI am wondering if the mass lumping plays a role here. Can you try with a regular time derivative?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6498815",
+                  "updatedAt": "2023-07-20T12:11:18Z",
+                  "publishedAt": "2023-07-20T12:11:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "With regular time derivative, there is no improvement.\nWithout mass lumping, even HEX8 mesh shows oscillation near boundary or interfaces. As you can see in the attached image, at the right boundary there is a zone with negative gradient of the variable which is unphysical. For longer simulation, it gets worse. Mass lumping eliminates this issue. This is very important because the actual problem that I am trying to solve is to implement 'DiscoFlux' Crystal plasticity model within MOOSE. In this model, dislocation densities are array variable and are transported within each grain using advection model with no flow BC at the interface. The mesh is split with each grain as separate geometry and only displacement is made continuous across interfaces (grain boundary) using penalty method. As the dislocation pile-up at the interface (grain boundary), a separate interface-kernel is used to transport them across the interface from one slip system to the other one based on some geometric criterion. The gradient of the dislocation density (actually the net polarity) contributes towards  the hardening of the material and thus the velocity of dislocations. Hence, capturing the gradient accurately is important. All of these are implemented and worked as expected for simple bi-crystal or rectangular grains with HEX8 mesh but when TET4 mesh is used the above problem arises. And we need to use TET4 mesh for a real polycrystalline material with curved grain boundary.",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6500460",
+                          "updatedAt": "2023-07-20T14:49:12Z",
+                          "publishedAt": "2023-07-20T14:49:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ABallisat"
+                  },
+                  "bodyText": "(I might be missing something but...) How do you end up with a value of 3? It looks like your IC is 1 throughout and with a constant velocity that should just shift that constant field sideways, not change the values. You also don't have any BCs which would introduce a change. I've not played with those kernels so I don't know what CFL values it is happy with but seeing as you are at 0.1 for hex elements it might be worth trying with smaller timesteps to see if you get less oscillations. The tets will have smaller side lengths therefore a higher CFL number which may well be less stable.",
+                  "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6499771",
+                  "updatedAt": "2023-07-20T13:44:10Z",
+                  "publishedAt": "2023-07-20T13:44:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "Based on my understanding, in the weak form of the advection equation the boundary terms does appear. That can be used to specify the 'inflow' or 'outflow' BC to make the flux go in/out at the boundary. But not specifying the BC is basically 'noflow' BC. The total volume integrated quantity will remain constant and the quantity will get accumulated/depleted at the boundary based on the direction of the advection velocity. The problem that we are trying to solve, we need no-flow BC at the boundary/interface so that the quantity remain preserved. The large value at the boundary than the specified IC is due to this accumulation.\nI did try with smaller time-step with fixed dt=0.001, but no improvement.\nAlso, I am using implicit time integration. Should be unconditionally stable.\nLet me know if you have other thoughts.\nBest\nSubhendu\nLos Alamos National Laboratory",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6500858",
+                          "updatedAt": "2023-07-20T15:23:52Z",
+                          "publishedAt": "2023-07-20T15:23:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Does the default nonlinear relative tolerance of 1e-8 not work?",
+                  "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6502442",
+                  "updatedAt": "2023-07-20T18:19:38Z",
+                  "publishedAt": "2023-07-20T18:19:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "No, tried with nl_rel_tol=1e-8 and 1e-10 but no benefit.",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6503439",
+                          "updatedAt": "2023-07-20T20:49:30Z",
+                          "publishedAt": "2023-07-20T20:49:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@WilkAndy @cpgr do you guys use ConservativeAdvection?",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6503800",
+                          "updatedAt": "2023-07-20T21:55:55Z",
+                          "publishedAt": "2023-07-20T21:55:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I don't sorry!",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6504423",
+                          "updatedAt": "2023-07-21T00:11:15Z",
+                          "publishedAt": "2023-07-21T00:11:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI took a look.\nIf you add a Dirichlet BC you can get a good solution (relatively, the left has 0 flux so the solution is probably nonsense still) for TET4 and HEX8.\n[BCs]\n  [inlet]\n    type = DirichletBC\n    variable = DD_EdgePositive_00\n    value = 1\n    boundary = right\n  []\n[]\n\nif you don't, it's an advection problem with no boundary value so it does not know what value to get upwind. I think we need a boundary condition to get a well-posed problem.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6520167",
+                  "updatedAt": "2023-07-23T09:34:50Z",
+                  "publishedAt": "2023-07-23T09:34:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "Hi Guillaume,\nThanks for the suggestion!\nBut specifying the BC still does not solve the problem.\nIn the attached image (image_1) you can see specifying the Dirichlet BC at the right makes the solution smooth at the surface, as it is expected, but there are oscillation in other parts of the domain. None of these appears in the HEX8 mesh.\nAlso, if the advection velocity has non zero component in all three direction (image_02) then we need to specify the Dirichlet BC in all boundaries, that will make the problem trivial.\nI am wondering if it has to do with not specifying the Dirichlet BC then why the problem does not appear for HEX8 elements, why only for TET4 element?\nAlso, do you have any suggestion on what kind of BC I should use if I want no flux transfer across the boundary i.e impermeable kind of boundary, and also the total quantity (volume integrated over the domain) to remain constant. Specifying any Dirichlet_BC or flow_BC  at the boundary will not keep the total quantity conserved.\nBest\nSubhendu",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6532560",
+                          "updatedAt": "2023-07-24T18:20:22Z",
+                          "publishedAt": "2023-07-24T18:20:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you have a velocity that s not straight from that face with the dirichlet BC you have an ind\u00e9termination still. So you need BCs on every face the velocity vector \u00ab\u00a0originated from\u00a0\u00bb\nFig 1 and 2 are good right? Only fig 3 & 4 have issues?\nsince you have advection in x, y, and z (0.1 in each direction), I d expect a dirichlet BC for 3 faces at lowest x, y and z",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6532700",
+                          "updatedAt": "2023-07-24T23:32:36Z",
+                          "publishedAt": "2023-07-24T18:41:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I reckon you should consider Neumann BCs on the faces. The face value will adapt to get the right advective flux",
+                          "url": "https://github.com/idaholab/moose/discussions/24994#discussioncomment-6532781",
+                          "updatedAt": "2023-07-24T18:52:07Z",
+                          "publishedAt": "2023-07-24T18:52:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Cubit Model I can Borrow",
+          "author": {
+            "login": "Andres-fierro-inl"
+          },
+          "bodyText": "Does anyone have a Cubit mesh of a\nCylinder with an extruding pipe from the middle and bottom?\nI do not know how to mesh it.\nI appreciate you all",
+          "url": "https://github.com/idaholab/moose/discussions/25003",
+          "updatedAt": "2023-07-24T14:12:13Z",
+          "publishedAt": "2023-07-20T20:34:45Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@GregVernon @rwcarlsen if you could please point us to the right documentation or example for meshing this.\nthank you!",
+                  "url": "https://github.com/idaholab/moose/discussions/25003#discussioncomment-6503551",
+                  "updatedAt": "2023-07-20T21:09:26Z",
+                  "publishedAt": "2023-07-20T21:09:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GregVernon"
+                          },
+                          "bodyText": "Sure, I'm not sure I completely understand the request, but tomorrow I'll work up an example.",
+                          "url": "https://github.com/idaholab/moose/discussions/25003#discussioncomment-6506266",
+                          "updatedAt": "2023-07-21T06:39:28Z",
+                          "publishedAt": "2023-07-21T06:39:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@Andres-fierro-inl can you please post a picture of the relevant part of the cad",
+                          "url": "https://github.com/idaholab/moose/discussions/25003#discussioncomment-6506916",
+                          "updatedAt": "2023-07-21T07:56:23Z",
+                          "publishedAt": "2023-07-21T07:56:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Andres-fierro-inl"
+                          },
+                          "bodyText": "I lost track of this, Sorry!\nI got it figured out, though!\nThank you both",
+                          "url": "https://github.com/idaholab/moose/discussions/25003#discussioncomment-6530183",
+                          "updatedAt": "2023-07-24T14:12:14Z",
+                          "publishedAt": "2023-07-24T14:12:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "AMD Support?",
+          "author": {
+            "login": "smpeyres"
+          },
+          "bodyText": "I am on the market for a new laptop, debating between AMD- and Intel-based CPU w/ integrated graphics on a Linux OS. Is MOOSE supported on AMD hardware?\nI ask because back when support for Apple's M1 was still in development, someone (don't recall who) mentioned that some dependencies or MOOSE core functionalities were Intel-specific (please correct me if I am wrong!), but have been extended to support Apple silicon now. It also seems INL's recent supercomputing resources have all been Intel, too, which may or may not be related.\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/25018",
+          "updatedAt": "2023-07-24T12:28:49Z",
+          "publishedAt": "2023-07-23T17:01:27Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@milljm @loganharbour will be most informed here\nMOOSE works very well on M1 & M2",
+                  "url": "https://github.com/idaholab/moose/discussions/25018#discussioncomment-6522083",
+                  "updatedAt": "2023-07-23T17:10:22Z",
+                  "publishedAt": "2023-07-23T17:10:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I recall issues in the past with Apple Silicon, but no longer. It's the platform most of the internal team is using these days (to echo what @GiudGiud said).\nAs for Intel vs AMD for the Linux arches, no functionality reduction that I know of.",
+                          "url": "https://github.com/idaholab/moose/discussions/25018#discussioncomment-6529032",
+                          "updatedAt": "2023-07-24T12:28:49Z",
+                          "publishedAt": "2023-07-24T12:28:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "write_hdf5 option",
+          "author": {
+            "login": "ykvishal"
+          },
+          "bodyText": "I want to use write_hdf5 = true option from Exodus in my following output block\n[Outputs]\n  checkpoint=true\n  [exodus]\n    type = Exodus\n    file_base = ${file}\n    execute_on = 'INITIAL TIMESTEP_END FINAL'\n    write_hdf5 = true\n    start_step =10\n  [] \n[]\n\nBut I am getting following error:\nlibMesh terminating:\nError creating ExodusII/Nemesis mesh file.\n[0] ../src/mesh/exodusII_io_helper.C, line 2307, compiled Jun 21 2023 at 12:25:49\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n\nI have installed moose recently via conda approach.",
+          "url": "https://github.com/idaholab/moose/discussions/24992",
+          "updatedAt": "2023-07-24T07:51:41Z",
+          "publishedAt": "2023-07-19T23:20:40Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@milljm do we set up the mamba build with hdf5 support on all platforms?\nyou generally don\u2019t need to do timestep_end and final for output btw.",
+                  "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6498794",
+                  "updatedAt": "2023-07-20T12:09:21Z",
+                  "publishedAt": "2023-07-20T12:09:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The standard install (Conda), yes, for sure there is HDF5 /w MPI support, for all supported platforms.",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6499046",
+                          "updatedAt": "2023-07-20T12:33:16Z",
+                          "publishedAt": "2023-07-20T12:33:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Do you mind following the debugging instructions and getting us a backtrace? @ykvishal",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6499068",
+                          "updatedAt": "2023-07-20T12:35:47Z",
+                          "publishedAt": "2023-07-20T12:35:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ykvishal"
+                          },
+                          "bodyText": "I followed the steps mentioned on the Debugging  page. I got following output\n\n(gdb) r\nStarting program: /home/v.yadav/projects/nonlinpf/nonlinpf-dbg -i PolycrystalGrainGrowth.i\n[Thread debugging using libthread_db enabled]\nUsing host libthread_db library \"/lib64/libthread_db.so.1\".\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/v.yadav/mambaforge3/envs/moose/lib/libgfortran.so.5]\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/v.yadav/mambaforge3/envs/moose/lib/libgcc_s.so.1]\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/v.yadav/mambaforge3/envs/moose/lib/libquadmath.so.0]\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/v.yadav/mambaforge3/envs/moose/lib/libstdc++.so.6]\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/v.yadav/mambaforge3/envs/moose/lib/libgomp.so.1]\n[New Thread 0x2aaac0d36700 (LWP 59999)]\n\n\nSetting Up\n  Initializing\n    Initializing Equation Systems.................                                       [ 92.82 s] [  500 MB]\n  Finished Initializing                                                                  [ 93.47 s] [  500 MB]\nFinished Setting Up                                                                      [ 96.91 s] [  500 MB]\nCurrently Executing\n  Performing Initial Setup\n    Computing Max Dofs Per Element                                                       [ 10.04 s] [  501 MB]\nFramework Information:\nMOOSE Version:           git commit 3591928 on 2023-06-22\nLibMesh Version:         \nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\nCurrent Time:            Thu Jul 20 15:58:18 2023\nExecutable Timestamp:    Thu Jul 20 14:36:33 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   66049\n  Elems:                   65536\n  Num Subdomains:          1\n\nNonlinear System:\n  Num DOFs:                1056784\n  Num Local DOFs:          1056784\n  Num Constrained DOFs:    8208\n  Local Constrained DOFs:  8208\n  Variables:               { \"gr0\" \"gr1\" \"gr2\" \"gr3\" \"gr4\" ... \"gr11\" \"gr12\" \"gr13\" \"gr14\" \"gr15\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                328193\n  Num Local DOFs:          328193\n  Num Constrained DOFs:    513\n  Local Constrained DOFs:  513\n  Variables:               \"bnds\" { \"unique_grains\" \"var_indices\" \"ghost_regions\" \"halos\" } \n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             ConstantDT\n  TimeIntegrator:          BDF2\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    hypre boomeramg \n\n    Computing User Objects\n      Finished Computing Polycrystal Initial Condition                                   [  5.94 s] [  535 MB]\n    Finished Computing User Objects                                                      [  8.85 s] [  543 MB]\n    Projecting Initial Solutions................................................................. [334.12 s] [  543 MB]\n    Currently Setting Up Materials\n      Computing Initial Material Values........                                          [ 45.85 s] [  544 MB]\n    Finished Setting Up Materials                                                        [ 45.85 s] [  544 MB]\n    Computing User Objects\n      Flooding Features........................................................................................................................................ [694.81 s] [  563 MB]\n      Currently Finalizing GrainTracker\n        Expanding Edge Halos............................................................. [312.28 s] [  907 MB]\n        Currently Communicating and Merging\n          Preparing Data For Transfer............                                        [ 66.90 s] [ 1004 MB]\n        Finished Communicating and Merging                                               [ 70.47 s] [ 1019 MB]\n        Updating Field Info..............Finished inside of GrainTracker\n\n                                                [ 81.87 s] [ 1023 MB]\n      Finished Finalizing GrainTracker                                                   [464.94 s] [ 1023 MB]\n    Finished Computing User Objects                                                      [1159.75 s] [ 1023 MB]\n  Still Performing Initial Setup......\n    Computing User Objects................                                               [ 91.68 s] [ 1023 MB]\n  Finished Performing Initial Setup                                                      [1689.31 s] [ 1023 MB]\n\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+-------------------+----------------+----------------+----------------+----------------+\n| time           | DOFs           | avg_grain_volumes | dt             | grain_tracker  | n_elements     | n_nodes        |\n+----------------+----------------+-------------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   1.384977e+06 |      2.233010e+02 |   0.000000e+00 |   2.560000e+02 |   6.553600e+04 |   6.604900e+04 |\n+----------------+----------------+-------------------+----------------+----------------+----------------+----------------+\n\n\n Currently Outputting..\nExodus Library Warning/Error: [ex_create_int]\n\tERROR: file create failed for PFTrainingDataset001.e\nlibMesh terminating:\nError creating ExodusII/Nemesis mesh file.\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: libMesh::ExodusII_IO_Helper::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n3: libMesh::ExodusII_IO::write_nodal_data_common(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, bool)\n4: libMesh::ExodusII_IO::write_nodal_data(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<double, std::allocator<double> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)\n5: libMesh::MeshOutput<libMesh::MeshBase>::write_equation_systems(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n6: libMesh::ExodusII_IO::write_timestep(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, int, double, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n7: Exodus::outputNodalVariables()\n8: AdvancedOutput::output(MooseEnumItem const&)\n9: Exodus::output(MooseEnumItem const&)\n10: OversampleOutput::outputStep(MooseEnumItem const&)\n11: OutputWarehouse::outputStep(MooseEnumItem)\n12: FEProblemBase::outputStep(MooseEnumItem)\n13: Transient::preExecute()\n14: Transient::execute()\n15: MooseApp::executeExecutioner()\n16: MooseApp::run()\n17: main\n18: __libc_start_main\n19: /home/v.yadav/projects/nonlinpf/nonlinpf-dbg(+0x4079) [0x555555558079]\n[0] ../src/mesh/exodusII_io_helper.C, line 2307, compiled Jun 21 2023 at 12:22:32\n\n\nBreakpoint 1, 0x00002aaabe470820 in PMPI_Abort () from /home/v.yadav/mambaforge3/envs/moose/lib/libmpi.so.12\nMissing separate debuginfos, use: debuginfo-install glibc-2.17-326.el7_9.x86_64\n\n(gdb) bt\n#0  0x00002aaabe470820 in PMPI_Abort () from /home/v.yadav/mambaforge3/envs/moose/lib/libmpi.so.12\n#1  0x00002aaab6f3fa11 in libMesh::libmesh_terminate_handler() () from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#2  0x00002aaabe0b8514 in __cxxabiv1::__terminate(void (*)()) () from /home/v.yadav/mambaforge3/envs/moose/lib/libstdc++.so.6\n#3  0x00002aaabe0b8566 in std::terminate() () from /home/v.yadav/mambaforge3/envs/moose/lib/libstdc++.so.6\n#4  0x00002aaabe0b8758 in __cxa_throw () from /home/v.yadav/mambaforge3/envs/moose/lib/libstdc++.so.6\n#5  0x00002aaab7579a9f in libMesh::ExodusII_IO_Helper::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >) ()\n   from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#6  0x00002aaab7545da5 in libMesh::ExodusII_IO::write_nodal_data_common(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, bool) ()\n   from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#7  0x00002aaab754305f in libMesh::ExodusII_IO::write_nodal_data(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<double, std::allocator<double> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&) () from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#8  0x00002aaab781c333 in libMesh::MeshOutput<libMesh::MeshBase>::write_equation_systems(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*) ()\n   from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#9  0x00002aaab7543f27 in libMesh::ExodusII_IO::write_timestep(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, int, double, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*) () from /home/v.yadav/mambaforge3/envs/moose/libmesh/lib/libmesh_dbg.so.0\n#10 0x00002aaab3642f44 in Exodus::outputNodalVariables (this=0x5555581cece0) at /home/v.yadav/projects/moose/framework/src/outputs/Exodus.C:314\n#11 0x00002aaab3626816 in AdvancedOutput::output (this=0x5555581cece0, type=...) at /home/v.yadav/projects/moose/framework/src/outputs/AdvancedOutput.C:280\n#12 0x00002aaab3643b30 in Exodus::output (this=0x5555581cece0, type=...) at /home/v.yadav/projects/moose/framework/src/outputs/Exodus.C:447\n#13 0x00002aaab3651ded in OversampleOutput::outputStep (this=0x5555581cece0, type=...) at /home/v.yadav/projects/moose/framework/src/outputs/OversampleOutput.C:96\n#14 0x00002aaab364f9f3 in OutputWarehouse::outputStep (this=0x555555839f70, type=...) at /home/v.yadav/projects/moose/framework/src/outputs/OutputWarehouse.C:160\n#15 0x00002aaab2b2f43e in FEProblemBase::outputStep (this=0x555557ad8480, type=...) at /home/v.yadav/projects/moose/framework/src/problems/FEProblemBase.C:5804\n#16 0x00002aaab34cf2a1 in Transient::preExecute (this=0x555557f4ca10) at /home/v.yadav/projects/moose/framework/src/executioners/Transient.C:272\n#17 0x00002aaab34cf42f in Transient::execute (this=0x555557f4ca10) at /home/v.yadav/projects/moose/framework/src/executioners/Transient.C:301\n#18 0x00002aaab3d2b53c in MooseApp::executeExecutioner (this=0x555555839770) at /home/v.yadav/projects/moose/framework/src/base/MooseApp.C:1166\n#19 0x00002aaab3d2e57c in MooseApp::run (this=0x555555839770) at /home/v.yadav/projects/moose/framework/src/base/MooseApp.C:1465\n#20 0x00005555555586a9 in main (argc=3, argv=0x7fffffffafa8) at /home/v.yadav/projects/nonlinpf/src/main.C:33",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6511575",
+                          "updatedAt": "2023-07-21T16:37:30Z",
+                          "publishedAt": "2023-07-21T16:37:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The file creation failed and we don\u2019t get much more information than that unfortunately. Since it s working without hdf5 (right?) it s not a write access problem.\nSo it has to be something tied to hdf5. The warnings at the beginning of the debugging log make me think the environment is contaminated. Do you mind running the diagnostics log in moose/scripts and reporting back?",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6518314",
+                          "updatedAt": "2023-07-22T20:45:00Z",
+                          "publishedAt": "2023-07-22T20:44:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ykvishal"
+                          },
+                          "bodyText": "Yes, MOOSE is working smoothly without hdf5 option\nHere is the diagnostics output\nSat Jul 22 21:35:28 EDT 2023\n\nSystem Arch: LSB Version: :core-4.1-amd64:core-4.1-noarch:cxx-4.1-amd64:cxx-4.1-noarch:desktop-4.1-amd64:desktop-4.1-noarch:languages-4.1-amd64:languages-4.1-noarch:printing-4.1-amd64:printing-4.1-noarch Distributor ID: RedHatEnterpriseServer Description: Red Hat Enterprise Linux Server release 7.9 (Maipo) Release: 7.9 Codename: Maipo\n\nMOOSE Package Version: Custom Build\n\nCPU Count: 128\n\nMemory Free: 806872.199 MB\n\nVariable `which $CC` check:\n/home/v.yadav/mambaforge3/envs/moose/bin/mpicc\n\n$CC --version:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nMPICC:\nwhich mpicc:\n\t/home/v.yadav/mambaforge3/envs/moose/bin/mpicc\nmpicc -show:\n\tx86_64-conda-linux-gnu-cc -I/home/v.yadav/mambaforge3/envs/moose/include -I/home/v.yadav/mambaforge3/envs/moose/include -L/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-rpath,/home/v.yadav/mambaforge3/envs/moose/lib -I/home/v.yadav/mambaforge3/envs/moose/include -L/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-rpath -Wl,/home/v.yadav/mambaforge3/envs/moose/lib -Wl,--enable-new-dtags -lmpi\n\nCOMPILER x86_64-conda-linux-gnu-cc:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nPython:\n\t/home/v.yadav/mambaforge3/envs/moose/bin/python\n\tPython 3.10.8\n\nMODULES:\n\nCurrently Loaded Modules:\n  1) ufrc\n\n \n\nPETSc configure:\nstatic const char *petscconfigureoptions = \"--download-hypre=1 --with-shared-libraries=1 --with-hdf5-dir=${PREFIX}  --with-make-np=16  --with-debugging=no --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-openmp=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 CC=mpicc CXX=mpicxx FC=mpif90 FC=mpif90 FC=mpif77 AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include -std=c++17 -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/v.yadav/mambaforge3/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/v.yadav/mambaforge3/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -I/home/v.yadav/mambaforge3/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include   -I/home/v.yadav/mambaforge3/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/v.yadav/mambaforge3/envs/moose/lib -L/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/v.yadav/mambaforge3/envs/moose/lib -L/home/v.yadav/mambaforge3/envs/moose/lib\" --prefix=/home/v.yadav/mambaforge3/envs/moose\";\n\nPETSc linked libraries:\n\tlinux-vdso.so.1 =>  (0x00007ffd17b5e000)\n\tlibHYPRE-2.23.0.so => /home/v.yadav/mambaforge3/envs/moose/lib/./libHYPRE-2.23.0.so (0x00002b2fe6364000)\n\tlibstrumpack.so => /home/v.yadav/mambaforge3/envs/moose/lib/./libstrumpack.so (0x00002b2fe67bf000)\n\tlibsuperlu_dist.so.7 => /home/v.yadav/mambaforge3/envs/moose/lib/./libsuperlu_dist.so.7 (0x00002b2fe499a000)\n\tlibpthread.so.0 => /lib64/libpthread.so.0 (0x00002b2fe716f000)\n\tlibhdf5.so.200 => /home/v.yadav/mambaforge3/envs/moose/lib/./libhdf5.so.200 (0x00002b2fe738b000)\n\tlibparmetis.so => /home/v.yadav/mambaforge3/envs/moose/lib/./libparmetis.so (0x00002b2fe4acc000)\n\tlibmetis.so => /home/v.yadav/mambaforge3/envs/moose/lib/./libmetis.so (0x00002b2fe4b0a000)\n\tlibm.so.6 => /lib64/libm.so.6 (0x00002b2fe77bd000)\n\tlibstdc++.so.6 => /home/v.yadav/mambaforge3/envs/moose/lib/./libstdc++.so.6 (0x00002b2fe7abf000)\n\tlibdl.so.2 => /lib64/libdl.so.2 (0x00002b2fe7c73000)\n\tlibmpifort.so.12 => /home/v.yadav/mambaforge3/envs/moose/lib/./libmpifort.so.12 (0x00002b2fe7e77000)\n\tlibmpi.so.12 => /home/v.yadav/mambaforge3/envs/moose/lib/./libmpi.so.12 (0x00002b2fe7ec8000)\n\tlibgfortran.so.5 => /home/v.yadav/mambaforge3/envs/moose/lib/./libgfortran.so.5 (0x00002b2fe82e2000)\n\tlibgcc_s.so.1 => /home/v.yadav/mambaforge3/envs/moose/lib/./libgcc_s.so.1 (0x00002b2fe4b78000)\n\tlibgomp.so.1 => /home/v.yadav/mambaforge3/envs/moose/lib/./libgomp.so.1 (0x00002b2fe848e000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00002b2fe84c7000)\n\tlibquadmath.so.0 => /home/v.yadav/mambaforge3/envs/moose/lib/././libquadmath.so.0 (0x00002b2fe8895000)\n\tlibmpicxx.so.12 => /home/v.yadav/mambaforge3/envs/moose/lib/././libmpicxx.so.12 (0x00002b2fe88cf000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00002b2fe4976000)\n\tlibcrypto.so.1.1 => /home/v.yadav/mambaforge3/envs/moose/lib/././libcrypto.so.1.1 (0x00002b2fe88ee000)\n\tlibcurl.so.4 => /home/v.yadav/mambaforge3/envs/moose/lib/././libcurl.so.4 (0x00002b2fe8bc2000)\n\tlibrt.so.1 => /lib64/librt.so.1 (0x00002b2fe8c69000)\n\tlibz.so.1 => /home/v.yadav/mambaforge3/envs/moose/lib/././libz.so.1 (0x00002b2fe8e71000)\n\tlibnghttp2.so.14 => /home/v.yadav/mambaforge3/envs/moose/lib/./././libnghttp2.so.14 (0x00002b2fe8e8b000)\n\tlibssh2.so.1 => /home/v.yadav/mambaforge3/envs/moose/lib/./././libssh2.so.1 (0x00002b2fe8eb7000)\n\tlibssl.so.1.1 => /home/v.yadav/mambaforge3/envs/moose/lib/./././libssl.so.1.1 (0x00002b2fe8efb000)\n\tlibgssapi_krb5.so.2 => /home/v.yadav/mambaforge3/envs/moose/lib/./././libgssapi_krb5.so.2 (0x00002b2fe8f8c000)\n\tlibkrb5.so.3 => /home/v.yadav/mambaforge3/envs/moose/lib/././././libkrb5.so.3 (0x00002b2fe8fde000)\n\tlibk5crypto.so.3 => /home/v.yadav/mambaforge3/envs/moose/lib/././././libk5crypto.so.3 (0x00002b2fe90b5000)\n\tlibcom_err.so.3 => /home/v.yadav/mambaforge3/envs/moose/lib/././././libcom_err.so.3 (0x00002b2fe90cc000)\n\tlibkrb5support.so.0 => /home/v.yadav/mambaforge3/envs/moose/lib/././././libkrb5support.so.0 (0x00002b2fe90d2000)\n\tlibkeyutils.so.1 => /home/v.yadav/mambaforge3/envs/moose/lib/././././libkeyutils.so.1 (0x00002b2fe90e1000)\n\tlibresolv.so.2 => /lib64/libresolv.so.2 (0x00002b2fe90e8000)\n\nENVIRONMENT:\nSLURM_NODELIST=c0703a-s27\nAS=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-as\nSLURM_JOB_NAME=sys/dashboard/sys/bc_desktop/hipergator\nMANPATH=/opt/slurm/share/man:/apps/ufrc/share/man:/opt/slurm/share/man:/apps/lmod/lmod/share/man::/opt/puppetlabs/puppet/share/man\nAR=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ar\nLDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/v.yadav/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/v.yadav/mambaforge3/envs/moose/lib -L/home/v.yadav/mambaforge3/envs/moose/lib\nXDG_SESSION_ID=c253\nMOOSE_NO_CODESIGN=true\nHOSTNAME=c0703a-s27.ufhpc\nSLURM_TOPOLOGY_ADDR=ibswt1-1.ibswt2-2.ibsw0702-s41.c0703a-s27\nSLURMD_NODENAME=c0703a-s27\nGCC_NM=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-nm\nVTKINCLUDE_DIR=/home/v.yadav/mambaforge3/envs/moose/libmesh-vtk/include/vtk-9.2\nHDF5_DIR=/home/v.yadav/mambaforge3/envs/moose\nSLURM_PRIO_PROCESS=0\nSLURM_NODE_ALIASES=(null)\nTERM=xterm-256color\nSHELL=/bin/bash\nhost=c0703a-s27.ufhpc\n__LMOD_REF_COUNT_MODULEPATH=/apps/lmod/modulefiles/core:1\nSLURM_EXPORT_ENV=NONE\nVTE_VERSION=5204\nHOST=x86_64-conda-linux-gnu\nHISTSIZE=1000\nSLURM_JOB_QOS=michael.tonks qos\nLMOD_ROOT=/apps/lmod\nNM=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-nm\nMODULEPATH_ROOT=/apps/lmod/modulefiles\nTMPDIR=/scratch/local/3209474\nSLURM_TOPOLOGY_ADDR_PATTERN=switch.switch.switch.node\nLMOD_SYSTEM_DEFAULT_MODULES=ufrc\nCPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/v.yadav/mambaforge3/envs/moose/include\nCONDA_SHLVL=1\nLMOD_PACKAGE_PATH=/apps/lmod/conf\nCONDA_PROMPT_MODIFIER=(moose) \nWINDOWID=27318397\nLMOD_PKG=/apps/lmod/8.4.26\nSIZE=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-size\nGSETTINGS_SCHEMA_DIR_CONDA_BACKUP=\nQTDIR=/usr/lib64/qt-3.3\nQTINC=/usr/lib64/qt-3.3/include\nLMOD_VERSION=8.4.26\nCXX_FOR_BUILD=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-c++\n__LMOD_REF_COUNT_LOADEDMODULES=ufrc:1\nGFORTRAN=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nQT_GRAPHICSSYSTEM_CHECKED=1\nUSER=v.yadav\nSLURM_NNODES=1\nLD_LIBRARY_PATH=/opt/slurm/lib64:/opt/slurm/lib64:\nLMOD_sys=Linux\nEigen3_DIR=/home/v.yadav/mambaforge3/envs/moose/libmesh/include/Eigen\nCONDA_EXE=/home/v.yadav/mambaforge3/bin/conda\nCONDA_TOOLCHAIN_BUILD=x86_64-conda-linux-gnu\nFC_FOR_BUILD=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nWASP_DIR=/home/v.yadav/mambaforge3/envs/moose/wasp\nSLURM_JOBID=3209474\n__LMOD_REF_COUNT__LMFILES_=/apps/lmod/modulefiles/core/ufrc.lua:1\nDEBUG_FORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nSESSION_MANAGER=local/unix:@/tmp/.ICE-unix/91993,unix/unix:/tmp/.ICE-unix/91993\nSLURM_NTASKS=32\nCXXFLAGS=-fvisibility-inlines-hidden  -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include -std=c++17\nRCSTORAGE_CONF=/apps/ufrc/conf/rcstorage.toml\nLD_GOLD=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld.gold\nSTRINGS=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strings\nCONDA_TOOLCHAIN_HOST=x86_64-conda-linux-gnu\nCONDA_BUILD_SYSROOT=/home/v.yadav/mambaforge3/envs/moose/x86_64-conda-linux-gnu/sysroot\n_CE_CONDA=\nCPP=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-cpp\nCXXFILT=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-c++filt\nSLURM_TASKS_PER_NODE=32\nPATH=/home/v.yadav/mambaforge3/envs/moose/bin:/opt/slurm/bin:/apps/ufrc/bin:/opt/TurboVNC/bin:/home/v.yadav/mambaforge3/condabin:/opt/slurm/bin:/usr/lib64/qt-3.3/bin:/usr/local/bin:/bin:/usr/bin:/usr/local/sbin:/usr/sbin:/opt/puppetlabs/bin:/home/v.yadav/bin:/home/v.yadav/bin:/home/v.yadav/mambaforge3/envs/moose/wasp/bin\n_ModuleTable001_=X01vZHVsZVRhYmxlXz17WyJNVHZlcnNpb24iXT0zLFsiY19yZWJ1aWxkVGltZSJdPWZhbHNlLFsiY19zaG9ydFRpbWUiXT1mYWxzZSxkZXB0aFQ9e30sZmFtaWx5PXt9LG1UPXt1ZnJjPXtbImZuIl09Ii9hcHBzL2xtb2QvbW9kdWxlZmlsZXMvY29yZS91ZnJjLmx1YSIsWyJmdWxsTmFtZSJdPSJ1ZnJjIixbImxvYWRPcmRlciJdPTEscHJvcFQ9e30sWyJzdGFja0RlcHRoIl09MCxbInN0YXR1cyJdPSJhY3RpdmUiLFsidXNlck5hbWUiXT0idWZyYyIsWyJ3ViJdPSJNLip6ZmluYWwiLH0sfSxtcGF0aEE9eyIvYXBwcy9sbW9kL21vZHVsZWZpbGVzL2NvcmUiLH0sWyJzeXN0ZW1CYXNlTVBBVEgiXT0iL2FwcHMvbG1vZC9tb2R1bGVmaWxlcy9jb3JlIix9\nMAIL=/var/spool/mail/v.yadav\nSLURM_CONF=/opt/slurm/etc/slurm.conf\nSLURM_WORKING_CLUSTER=hipergator:vslurm:6817:9472:109\nMESON_ARGS=--buildtype release\nGSETTINGS_SCHEMA_DIR=/home/v.yadav/mambaforge3/envs/moose/share/glib-2.0/schemas\nSLURM_CPUS_PER_TASK=1\nSLURM_JOB_ID=3209474\nXML_CATALOG_FILES=file:///home/v.yadav/mambaforge3/envs/moose/etc/xml/catalog file:///etc/xml/catalog\nCONDA_PREFIX=/home/v.yadav/mambaforge3/envs/moose\nLD=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld\nBUILD=x86_64-conda-linux-gnu\nDEBUG_CXXFLAGS=-fvisibility-inlines-hidden -std=c++17 -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include\nC_INCLUDE_PATH=/home/v.yadav/mambaforge3/envs/moose/include\nSLURM_JOB_USER=v.yadav\nPWD=/home/v.yadav/projects/moose/scripts\nF90=mpif90\n_LMFILES_=/apps/lmod/modulefiles/core/ufrc.lua\nSTRIP=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strip\nLIBMESH_DIR=/home/v.yadav/mambaforge3/envs/moose/libmesh\nELFEDIT=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-elfedit\nCMAKE_ARGS=-DCMAKE_AR=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ar -DCMAKE_CXX_COMPILER_AR=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_C_COMPILER_AR=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_RANLIB=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ranlib -DCMAKE_CXX_COMPILER_RANLIB=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_C_COMPILER_RANLIB=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_LINKER=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld -DCMAKE_STRIP=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strip\nLANG=en_US.UTF-8\nGCC_RANLIB=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib\nF95=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-f95\nMODULEPATH=/apps/lmod/modulefiles/core\n_ModuleTable_Sz_=1\nSLURM_JOB_UID=8600\nLOADEDMODULES=ufrc\nSLURM_NODEID=0\nDEBUG_FFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nSLURM_SUBMIT_DIR=/var/www/ood/apps/sys/dashboard\nF77=mpif77\nSLURM_TASK_PID=91878\nSLURM_NPROCS=32\nLMOD_CMD=/apps/lmod/8.4.26/libexec/lmod\nSLURM_CPUS_ON_NODE=32\nLMOD_AVAIL_STYLE=ufrc:system\nHISTCONTROL=ignoredups\nSLURM_PROCID=0\n_CE_M=\nENVIRONMENT=BATCH\nCC_FOR_BUILD=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-cc\nCXX=mpicxx\nSLURM_JOB_NODELIST=c0703a-s27\nOBJCOPY=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-objcopy\nHOME=/home/v.yadav\nSHLVL=5\nSLURM_GET_USER_ENV=1\nSLURM_LOCALID=0\n__LMOD_REF_COUNT_PATH=/apps/ufrc/bin:1;/opt/TurboVNC/bin:1;/home/v.yadav/mambaforge3/condabin:1;/opt/slurm/bin:1;/usr/lib64/qt-3.3/bin:1;/usr/local/bin:1;/bin:1;/usr/bin:1;/usr/local/sbin:1;/usr/sbin:1;/opt/puppetlabs/bin:1;/home/v.yadav/bin:1\nFORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include\nSLURM_JOB_GID=3742\nSLURM_JOB_CPUS_PER_NODE=32\nSLURM_CLUSTER_NAME=hipergator\nCFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include\nDEBUG_CPPFLAGS=-D_DEBUG -D_FORTIFY_SOURCE=2 -Og -isystem /home/v.yadav/mambaforge3/envs/moose/include\nSLURM_GTIDS=0\nSLURM_SUBMIT_HOST=ondemand3.ufhpc\nGCC=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc\n_CONDA_PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata_x86_64_conda_cos6_linux_gnu\nFC=mpif90\nMPIHOME=/home/v.yadav/mambaforge3/envs/moose\nSLURM_JOB_PARTITION=hpg-default\nBASH_ENV=/init/bash\nVTKLIB_DIR=/home/v.yadav/mambaforge3/envs/moose/libmesh-vtk/lib\nCONDA_PYTHON_EXE=/home/v.yadav/mambaforge3/bin/python\nLOGNAME=v.yadav\nADDR2LINE=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-addr2line\nQTLIB=/usr/lib64/qt-3.3/lib\nSLURM_TMPDIR=/scratch/local/3209474\nSLURM_JOB_ACCOUNT=michael.tonks\nDBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-VFlpKND3FG,guid=93f1b7bb6f8db2ec9399eca564b57fdd\nbuild_alias=x86_64-conda-linux-gnu\nMODULESHOME=/apps/lmod/8.4.26\nSLURM_JOB_NUM_NODES=1\nLESSOPEN=||/usr/bin/lesspipe.sh %s\nLMOD_SETTARG_FULL_SUPPORT=no\nCONDA_DEFAULT_ENV=moose\n__Init_Default_Modules=1\nRANLIB=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ranlib\nDEBUG_CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include\nWEBSOCKIFY_CMD=/usr/bin/websockify\nport=5902\nDISPLAY=:2.0\nXDG_RUNTIME_DIR=/run/user/8600\nCC=mpicc\nCMAKE_PREFIX_PATH=/home/v.yadav/mambaforge3/envs/moose:/home/v.yadav/mambaforge3/envs/moose/x86_64-conda-linux-gnu/sysroot/usr\nREADELF=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-readelf\nhost_alias=x86_64-conda-linux-gnu\nLMOD_DIR=/apps/lmod/8.4.26/libexec\n__LMOD_REF_COUNT_MANPATH=/apps/ufrc/share/man:1;/opt/slurm/share/man:1;/apps/lmod/lmod/share/man:1;/opt/puppetlabs/puppet/share/man:1\nOBJDUMP=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-objdump\nGCC_AR=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar\nPETSC_DIR=/home/v.yadav/mambaforge3/envs/moose\nLMOD_COLORIZE=yes\nSLURM_MEM_PER_NODE=262144\nGPROF=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gprof\nCOLORTERM=truecolor\nFFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/v.yadav/mambaforge3/envs/moose/include\nGXX=/home/v.yadav/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-g++\nBASH_FUNC_port_used()=() {  local port=\"${1#*:}\";\n local host=$((expr \"${1}\" : '\\(.*\\):' || echo \"localhost\") | awk 'END{print $NF}');\n local port_strategies=(port_used_nc port_used_lsof port_used_bash port_used_python port_used_python3);\n for strategy in ${port_strategies[@]};\n do\n $strategy $host $port;\n status=$?;\n if [[ \"$status\" == \"0\" ]] || [[ \"$status\" == \"1\" ]]; then\n return $status;\n fi;\n done;\n return 127\n}\nBASH_FUNC_wait_until_port_used()=() {  local port=\"${1}\";\n local time=\"${2:-30}\";\n for ((i=1; i<=time*2; i++))\n do\n port_used \"${port}\";\n port_status=$?;\n if [ \"$port_status\" == \"0\" ]; then\n return 0;\n else\n if [ \"$port_status\" == \"127\" ]; then\n echo \"commands to find port were either not found or inaccessible.\";\n echo \"command options are lsof, nc, bash's /dev/tcp, or python (or python3) with socket lib.\";\n return 127;\n fi;\n fi;\n sleep 0.5;\n done;\n return 1\n}\nBASH_FUNC_module()=() {  eval $($LMOD_CMD bash \"$@\") && eval $(${LMOD_SETTARG_CMD:-:} -s sh)\n}\nBASH_FUNC_find_port()=() {  local host=\"${1:-localhost}\";\n local port=$(random_number \"${2:-2000}\" \"${3:-65535}\");\n while port_used \"${host}:${port}\"; do\n port=$(random_number \"${2:-2000}\" \"${3:-65535}\");\n done;\n echo \"${port}\"\n}\nBASH_FUNC_random_number()=() {  shuf -i ${1}-${2} -n 1\n}\nBASH_FUNC_source_helpers()=() {  function random_number () \n { \n shuf -i ${1}-${2} -n 1\n };\n export -f random_number;\n function port_used_python () \n { \n python -c \"import socket; socket.socket().connect(('$1',$2))\" > /dev/null 2>&1\n };\n function port_used_python3 () \n { \n python3 -c \"import socket; socket.socket().connect(('$1',$2))\" > /dev/null 2>&1\n };\n function port_used_nc () \n { \n nc -w 2 \"$1\" \"$2\" < /dev/null > /dev/null 2>&1\n };\n function port_used_lsof () \n { \n lsof -i :\"$2\" > /dev/null 2>&1\n };\n function port_used_bash () \n { \n local bash_supported=$(strings /bin/bash 2>/dev/null | grep tcp);\n if [ \"$bash_supported\" == \"/dev/tcp/*/*\" ]; then\n ( : < /dev/tcp/$1/$2 ) > /dev/null 2>&1;\n else\n return 127;\n fi\n };\n function port_used () \n { \n local port=\"${1#*:}\";\n local host=$((expr \"${1}\" : '\\(.*\\):' || echo \"localhost\") | awk 'END{print $NF}');\n local port_strategies=(port_used_nc port_used_lsof port_used_bash port_used_python port_used_python3);\n for strategy in ${port_strategies[@]};\n do\n $strategy $host $port;\n status=$?;\n if [[ \"$status\" == \"0\" ]] || [[ \"$status\" == \"1\" ]]; then\n return $status;\n fi;\n done;\n return 127\n };\n export -f port_used;\n function find_port () \n { \n local host=\"${1:-localhost}\";\n local port=$(random_number \"${2:-2000}\" \"${3:-65535}\");\n while port_used \"${host}:${port}\"; do\n port=$(random_number \"${2:-2000}\" \"${3:-65535}\");\n done;\n echo \"${port}\"\n };\n export -f find_port;\n function wait_until_port_used () \n { \n local port=\"${1}\";\n local time=\"${2:-30}\";\n for ((i=1; i<=time*2; i++))\n do\n port_used \"${port}\";\n port_status=$?;\n if [ \"$port_status\" == \"0\" ]; then\n return 0;\n else\n if [ \"$port_status\" == \"127\" ]; then\n echo \"commands to find port were either not found or inaccessible.\";\n echo \"command options are lsof, nc, bash's /dev/tcp, or python (or python3) with socket lib.\";\n return 127;\n fi;\n fi;\n sleep 0.5;\n done;\n return 1\n };\n export -f wait_until_port_used;\n function create_passwd () \n { \n tr -cd 'a-zA-Z0-9' < /dev/urandom 2> /dev/null | head -c${1:-8}\n };\n export -f create_passwd\n}\nBASH_FUNC_ml()=() {  eval $($LMOD_DIR/ml_cmd \"$@\")\n}\nBASH_FUNC_create_passwd()=() {  tr -cd 'a-zA-Z0-9' < /dev/urandom 2> /dev/null | head -c${1:-8}\n}\n_=/bin/env",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6519002",
+                          "updatedAt": "2023-07-23T01:37:50Z",
+                          "publishedAt": "2023-07-23T01:37:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So you are using your own HDF5\nIs that on purpose?\nHDF5_DIR=/home/v.yadav\nalso do you see hdf5 if you do \u2018mamba list\u2019 ?\nif you have a second hdf5 that s the problem",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6519285",
+                          "updatedAt": "2023-07-23T03:51:19Z",
+                          "publishedAt": "2023-07-23T03:51:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ykvishal"
+                          },
+                          "bodyText": "I had installed h5py package for some python work. I did not install anything else for hdf5.  So I am not sure about this HDF5_DIR path.\nmabma install gives\nhdf5                      1.12.1          mpi_mpich_h08b82f9_4    conda-forge",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6519414",
+                          "updatedAt": "2023-07-23T05:01:24Z",
+                          "publishedAt": "2023-07-23T05:01:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Oh it seems to be set to the conda HDF5 so that\u2019s ok actually. I must have misread it to a different path earlier.\nIs this a cluster? If so are you getting the error on the head node or the compute node?",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6519590",
+                          "updatedAt": "2023-07-23T06:22:37Z",
+                          "publishedAt": "2023-07-23T06:22:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Are you wanting to use hdf5 for parallel IO?\nif you want to write in parallel you ll want to use Nemesis not Exodus. Exodus is serial",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6519596",
+                          "updatedAt": "2023-07-23T06:24:53Z",
+                          "publishedAt": "2023-07-23T06:24:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok I can reproduce this on my machine. This is a real bug.\n@roystgnr and @milljm  for awareness.\nI raised this issue:\n#25017\nThank you for reporting @ykvishal. Please bear with us while we fix this",
+                          "url": "https://github.com/idaholab/moose/discussions/24992#discussioncomment-6520110",
+                          "updatedAt": "2023-07-23T09:19:17Z",
+                          "publishedAt": "2023-07-23T09:16:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Does periodic mesh necessary for periodic boundary conditions?",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Dear all,\nI am interested in running an RVE micro-structure model applying periodic boundary conditions and material laws defined by crystal plasticity considerations. I was thinking to create neper tessellations with different grain morphological properties and estimate the resulting behavior  based on the mesh sensitivities. I chose to go ahead with 'Tets' as this tends to capture the underlying micro-structure to a reasonable accuracy. A mesh with 'Tets' will in practice never be able to maintain periodicity along the edges/surfaces of the model, which makes it hard to apply periodic BC's. Surprisingly moose does seem to have no issues running this model (attached) and produced results, although i am not sure about its accuracy. My question being that, whether the periodic boundary conditions implemented in moose requires a strict construction of a periodic mesh or not.\n\nAny comments on the accuracy of the results with a non-periodic mesh is most welcome.\nKind regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/25019",
+          "updatedAt": "2023-07-24T07:50:50Z",
+          "publishedAt": "2023-07-23T22:31:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nNo the periodic boundaries wont complain if the mesh is not periodic, and it wont be able to enforce peridocity if it's not\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25019#discussioncomment-6526232",
+                  "updatedAt": "2023-07-24T07:50:51Z",
+                  "publishedAt": "2023-07-24T07:50:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

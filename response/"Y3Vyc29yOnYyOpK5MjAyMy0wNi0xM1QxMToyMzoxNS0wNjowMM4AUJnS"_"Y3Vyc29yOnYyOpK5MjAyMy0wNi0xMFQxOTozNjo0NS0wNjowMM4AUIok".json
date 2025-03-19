@@ -1,0 +1,1654 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNi0xMFQxOTozNjo0NS0wNjowMM4AUIok"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "A postprocessor for outputting the quadrature rule used in MOOSE",
+          "author": {
+            "login": "KamalnathOSU"
+          },
+          "bodyText": "Dear MOOSE team,\nThank you very much for the workshop last week. I did learn a lot about MOOSE and FEM. I was also listening to the youtube lecture for FEM basics. While talking about the numerical integration,  Derek @friedmud  mentioned that with N quadrature points, polynominal of degree 2N-1 can be integrated accurately in 1D. I was interested knowing about the quadrature rule used in MOOSE for higher dimensional elements like QUAD4, QUAD9, HEX8, etc.. But in the last week's workshop, Roy @roystgnr said that MOOSE does not output the quadrature rule and it could be a good first PR \ud83e\udd47 .\nAs I was comfortable with Postprocessors, I wrote a postprocessor QuadratureRulePP that scans through all the elements and extracts the maximum (or minimum) quadrature rule in the mesh/block.\nI think it could be a nice addition to postprocessors in the framework. What do you guys think ?\n-Kamal",
+          "url": "https://github.com/idaholab/moose/discussions/24653",
+          "updatedAt": "2023-06-24T22:09:20Z",
+          "publishedAt": "2023-06-10T15:07:47Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nfor me the ideal way to output the quadrature would be able to output for all elements or a selection of elements the quadrature points and the quadrature weights. This is likely best using a Reporter rather than a PP or VPP.\nSame for sides for side quadratures.\nThis is a little more work but it is more informative than just the max number.\nAlso in the simulation header it would be good to output the name of the quadrature and its order. If there are more than one we probably would have to say something like \u201cmultiple quadratures in use\u201d.\nThis would be a solid contribution to the framework. I ll let @roystgnr decide whether to look at min/max qps first.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6140678",
+                  "updatedAt": "2023-06-10T15:59:51Z",
+                  "publishedAt": "2023-06-10T15:59:50Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KamalnathOSU"
+                          },
+                          "bodyText": "Initially, I thought of outputting the quadrature order for each element. But it most cases, MOOSE uses same quadrature rule for all the elements.\nIn this mesh mixed_elem_mesh.i , I have two kinds of elements but both the maximum and minimum of quadrature rule was 8.\n\nIn this mesh qrule_mesh.i , I have both FIRST LAGRANGE and SECOND LAGRANGE variables. But both the  maximum and minimum of quadrature rule was 9.\n\nFor the FIRST LAGRANGE (rather linear LAGRANGE), quadrature rule of 4 should have been sufficient. But that has been bumped up to 9 in this case.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141093",
+                          "updatedAt": "2023-06-10T17:51:23Z",
+                          "publishedAt": "2023-06-10T17:51:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KamalnathOSU"
+                          },
+                          "bodyText": "I am pasting the input scripts for your reference.\n#  Filename: qrule_mix.i\n[Mesh]\n        [gmg1]\n            type = GeneratedMeshGenerator\n            dim = 2\n            nx = 4\n            ny = 4\n            elem_type = QUAD9\n            xmin = 0\n            ymin = 0\n            xmax = 1\n            ymax = 1\n        []\n\n        [gmg2]\n            type = GeneratedMeshGenerator\n            dim = 2\n            nx = 4\n            ny = 4\n            elem_type = QUAD9\n            xmin = 2\n            ymin = 0\n            xmax = 3\n            ymax = 1\n        []\n\n        [finalmesh]\n                type = CombinerGenerator\n                inputs = 'gmg1 gmg2'\n        []\n\n        [spilt1]\n                type = SubdomainBoundingBoxGenerator\n                bottom_left = '-0.1 -0.1 0'\n                top_right = '1.1 1.1 0'\n                input = 'finalmesh'\n                block_id = 1\n                location = OUTSIDE\n        []\n[]\n\n[Variables]\n        [u1]\n            order = FIRST\n            family = LAGRANGE\n            block = 0\n        []\n        [u2]\n            order = SECOND\n            family = LAGRANGE\n            block = 1\n        []\n[]\n\n[Kernels]\n        [diffusion1]\n                type = Diffusion\n                variable = u1\n        []\n        [diffusion2]\n                type = Diffusion\n                variable = u2\n        []\n[]\n\n[Executioner]\n        type = Steady\n[]\n\n[Outputs]\n        exodus = true\n[]\n\n[Postprocessors]\n        [qrule_min]\n                type = QuadratureRulePP\n                value_type = min\n        []\n        [qrule_max]\n                type = QuadratureRulePP\n                value_type = max\n        []\n[]\n\n# Filename: mixed_elem_mesh.i\n[Mesh]\n    [fmg]\n    type = FileMeshGenerator\n    file = 'mixed_elem_mesh.e'\n    []\n    [extrude]\n    type = AdvancedExtruderGenerator\n    input = fmg\n    heights = '3 3'\n    num_layers = '3 3'\n    direction = '0 0 1'\n    []\n[]\n\n[Variables/u]\n[]\n\n[Kernels]\n        [diffusion]\n                type = Diffusion\n                variable = u\n        []\n[]\n\n[Executioner]\n        type = Steady\n[]\n\n[Outputs]\n        exodus = true\n[]\n\n[Postprocessors]\n        [qrule_min]\n                type = QuadratureRulePP\n                value_type = min\n        []\n        [qrule_max]\n                type = QuadratureRulePP\n                value_type = max\n        []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141129",
+                          "updatedAt": "2023-06-10T18:01:09Z",
+                          "publishedAt": "2023-06-10T18:01:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is because of the elem_type of QUAD9\nBecause you are using a second_order element, we are upping the quadrature just in case you are using second (or higher) order variables as well.\n\nBut it most cases, MOOSE uses same quadrature rule for all the elements.\n\nTrue but debugging the quadrature is not for most cases. It's for the minority of difficult cases.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141519",
+                          "updatedAt": "2023-06-10T20:02:13Z",
+                          "publishedAt": "2023-06-10T20:02:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KamalnathOSU"
+                          },
+                          "bodyText": "But in qrule_QUAD9.i , even though I use the QUAD9 (second order element), as my shape function was linear, I got on 4th order quadrature (4-qrule). Output is shown below. Hence, QUAD9 can have 4-qrule.\n../../../.././newpp-opt -i qrule_default/qrule_QUAD9.i\nWARNING: Environment variable LD_PRELOAD already has value [], will not forward new value [/apps/xalt/xalt/lib64/libxalt_init.so] from parent process environment\nRunning within container. Not loading modules\nConfigured to use MOOSE-Apptainer- (17th May 2023)\nFramework Information:\nMOOSE Version:           git commit 5b5a5e99e3 on 2023-06-07\nLibMesh Version:         5e720a226ba3740dbe92c135936612461f489ada\nPETSc Version:           3.16.5\nSLEPc Version:           3.16.2\nCurrent Time:            Sat Jun 10 16:11:33 2023\nExecutable Timestamp:    Sat Jun 10 09:42:57 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh:\n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   81\n  Elems:                   16\n  Num Subdomains:          1\n\nNonlinear System:\n  Num DOFs:                25\n  Num Local DOFs:          25\n  Variables:               \"u\"\n  Finite Element Types:    \"LAGRANGE\"\n  Approximation Orders:    \"FIRST\"\n\nExecution Information:\n  Executioner:             Steady\n  Solver Mode:             Preconditioned JFNK\n\n\nPostprocessor Values:\n+----------------+----------------+\n| time           | qrule          |\n+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+\n\n 0 Nonlinear |R| = 0.000000e+00\n Solve Converged!\n\nPostprocessor Values:\n+----------------+----------------+\n| time           | qrule          |\n+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |\n|   1.000000e+00 |   4.000000e+00 |\n+----------------+----------------+\n\nMy question is  why in qrule_mesh.i , the left block has 9-qrule ? The left block has only linear shape functions. Hence, its quadrature shouldn't have bumped to 9-qrule from 4-qrule right ? I couldn't get understand this logic.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141583",
+                          "updatedAt": "2023-06-10T20:20:42Z",
+                          "publishedAt": "2023-06-10T20:20:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh interesting.\nWe probably dont bother optimizing this down to a lower q-rule if a higher q-rule is needed elsewhere.\nI know of a project looking at different order variables in different regions. I ll raise it up with them see if they can take a look",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141599",
+                          "updatedAt": "2023-06-10T20:28:35Z",
+                          "publishedAt": "2023-06-10T20:28:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "I don't know if MOOSE design used the same justification, but in other libMesh codes I've found that it works well to make the \"base\" quadrature rule the same for all variables, even if some are higher order and others lower, because Gaussian quadrature isn't nested, so even if your variables decouple it's still cheaper to have shape functions and derivatives (and possibly Hessians) evaluated at the same (e.g. 9) points rather than evaluating everything at 13 points so that an assembly can carefully do some of the quadrature at 9 points and the rest of the quadrature at 4.\nFor different order variables in different regions due to p refinement, the usual M.O. is to increment from the default base quadrature rule order in conjunction with (twice) the p refinement level of an element; IIRC libMesh does this automatically enough that MOOSE shouldn't need changes.\nFor different order variables in different regions due to subdomain-restricted variable support ... we might not be doing the optimal thing there yet.  I know it's not a case I've thought about, at least.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157521",
+                          "updatedAt": "2023-06-12T23:20:21Z",
+                          "publishedAt": "2023-06-12T23:20:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "I got on 4th order quadrature\n\nI don't think you're using \"order\" correctly here.  It does not mean \"the number of points in the quadrature rule\"; it means (for rules which integrate some function space exactly) the order of functions which are integrated exactly.  An order 3 Gaussian quadrature rule integrates cubics exactly with 2 points on an Edge, or bicubics with 4 points on a Quad, or tricubics with 8 points on a hex, for example.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157535",
+                          "updatedAt": "2023-06-12T23:23:49Z",
+                          "publishedAt": "2023-06-12T23:23:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KamalnathOSU"
+                          },
+                          "bodyText": "I got on 4th order quadrature\n\nI don't think you're using \"order\" correctly here. It does not mean \"the number of points in the quadrature rule\"; it means (for rules which integrate some function space exactly) the order of functions which are integrated exactly. An order 3 Gaussian quadrature rule integrates cubics exactly with 2 points on an Edge, or bicubics with 4 points on a Quad, or tricubics with 8 points on a hex, for example.\n\nThank you for the explanation. It was not very clear in the documentation. I think I understand it now.",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157609",
+                          "updatedAt": "2023-06-12T23:42:12Z",
+                          "publishedAt": "2023-06-12T23:42:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We just added documentation on quadrature. it will show up on the website within the week",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157652",
+                          "updatedAt": "2023-06-12T23:52:24Z",
+                          "publishedAt": "2023-06-12T23:52:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "https://mooseframework.inl.gov/docs/PRs/24546/site/syntax/Executioner/Quadrature/index.html\n(this page is temporary)",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157690",
+                          "updatedAt": "2023-06-13T00:00:10Z",
+                          "publishedAt": "2023-06-13T00:00:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "KamalnathOSU"
+                  },
+                  "bodyText": "On a related note, I was also playing with SetupQuadratureAction to see whether I can manually the set the quadrature of left block (block=0) to 4 and the right block (block=1) to 9 with custom_orders option. But If I use custom_orders = 'FOURTH NINTH' , I get 9 and 25 q-points respectively.\nIs this a bug ?\nBelow are the input and output files.\n# FileName : qrule_mix_custom.i\n\nMesh]\n        [gmg1]\n            type = GeneratedMeshGenerator\n            dim = 2\n            nx = 4\n            ny = 4\n            elem_type = QUAD9\n            xmin = 0\n            ymin = 0\n            xmax = 1\n            ymax = 1\n        []\n\n        [gmg2]\n            type = GeneratedMeshGenerator\n            dim = 2\n            nx = 4\n            ny = 4\n            elem_type = QUAD9\n            xmin = 2\n            ymin = 0\n            xmax = 3\n            ymax = 1\n        []\n\n        [finalmesh]\n                type = CombinerGenerator\n                inputs = 'gmg1 gmg2'\n        []\n\n        [spilt1]\n                type = SubdomainBoundingBoxGenerator\n                bottom_left = '-0.1 -0.1 0'\n                top_right = '1.1 1.1 0'\n                input = 'finalmesh'\n                block_id = 1\n                location = OUTSIDE\n        []\n[]\n\n[Variables]\n        [u1]\n            order = FIRST\n            family = LAGRANGE\n            block = 0\n        []\n        [u2]\n            order = SECOND\n            family = LAGRANGE\n            block = 1\n        []\n[]\n\n[Kernels]\n        [diffusion1]\n                type = Diffusion\n                variable = u1\n        []\n        [diffusion2]\n                type = Diffusion\n                variable = u2\n        []\n[]\n\n[Executioner]\n        type = Steady\n        [Quadrature]\n                custom_blocks = '0      1'\n                custom_orders = 'FOURTH NINTH'\n        []\n[]\n\n[Outputs]\n        exodus = true\n[]\n\n[Postprocessors]\n        [qrule_block0]\n                type = QuadratureRulePP\n                block = '0'\n        []\n        [qrule_block1]\n                type = QuadratureRulePP\n                block = '1'\n        []\n[]\n\nOutput::\n./newpp-opt -i test/tests/postprocessors/QuadratureRulePP/qrule_default/qrule_mix_custom.i\nWARNING: Environment variable LD_PRELOAD already has value [], will not forward new value [/apps/xalt/xalt/lib64/libxalt_init.so] from parent process environment\nRunning within container. Not loading modules\nConfigured to use MOOSE-Apptainer- (17th May 2023)\nFramework Information:\nMOOSE Version:           git commit 5b5a5e99e3 on 2023-06-07\nLibMesh Version:         5e720a226ba3740dbe92c135936612461f489ada\nPETSc Version:           3.16.5\nSLEPc Version:           3.16.2\nCurrent Time:            Sat Jun 10 17:45:43 2023\nExecutable Timestamp:    Sat Jun 10 17:36:15 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   162\n  Elems:                   32\n  Num Subdomains:          2\n\nNonlinear System:\n  Num DOFs:                106\n  Num Local DOFs:          106\n  Variables:               \"u1\" \"u2\" \n  Finite Element Types:    \"LAGRANGE\" \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \"SECOND\" \n\nExecution Information:\n  Executioner:             Steady\n  Solver Mode:             Preconditioned JFNK\n\n\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | qrule_block0   | qrule_block1   |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+----------------+\n\n 0 Nonlinear |R| = 0.000000e+00\n Solve Converged!\n\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | qrule_block0   | qrule_block1   |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   1.000000e+00 |   9.000000e+00 |   2.500000e+01 |\n+----------------+----------------+----------------+",
+                  "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141849",
+                  "updatedAt": "2023-06-10T21:52:05Z",
+                  "publishedAt": "2023-06-10T21:52:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "see the code the Gauss quadrature init_2D\nhttps://mooseframework.inl.gov/docs/doxygen/libmesh/classlibMesh_1_1QGauss.html\nThe 2D quadratures are tensor products for QUAD9",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6141902",
+                          "updatedAt": "2023-06-10T22:10:37Z",
+                          "publishedAt": "2023-06-10T22:10:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "KamalnathOSU"
+                  },
+                  "bodyText": "@roystgnr @GiudGiud\nHi Roy,\nAs you said in the slack, I tried adding a variables in FEProblemBase.C:createQRules() to print the quadrature information in the console header. Additionally, I also had to make some additions in ConsoleUtils, Console and Conversion to make the console output consistent. These are the changes I made.\nNow, If the run the following input\n[Mesh]\n        [gmg]\n            type = GeneratedMeshGenerator\n            dim = 2\n            nx = 4\n            ny = 4\n            elem_type = QUAD9\n        []\n[]\n\n[Variables/u]\n        order = SECOND\n        family = LAGRANGE\n[]\n\n[Kernels]\n        [diffusion]\n                type = Diffusion\n                variable = u\n        []\n[]\n\n[Executioner]\n        type = Steady\n[]\n\n[Outputs]\n        exodus = true\n[]\n\nI get the following console output\nFramework Information:\nMOOSE Version:           git commit ce4b9d20e3 on 2023-06-12\nLibMesh Version:         5e720a226ba3740dbe92c135936612461f489ada\nPETSc Version:           3.16.5\nSLEPc Version:           3.16.2\nCurrent Time:            Mon Jun 12 20:03:43 2023\nExecutable Timestamp:    Sat Jun 10 17:36:15 2023\n\nParallelism:\n  Num Processors:                  1\n  Num Threads:                     1\n\nMesh:\n  Parallel Type:                   replicated\n  Mesh Dimension:                  2\n  Spatial Dimension:               2\n  Nodes:                           81\n  Elems:                           16\n  Num Subdomains:                  1\n\nNonlinear System:\n  Num DOFs:                        81\n  Num Local DOFs:                  81\n  Variables:                       \"u\"\n  Finite Element Types:            \"LAGRANGE\"\n  Approximation Orders:            \"SECOND\"\n\nQuadrature Information:\n  Default Qtype:                   GAUSS\n  Default Qorder:                  5\nMax N_Qp per Elem:                 9\n\nExecution Information:\n  Executioner:                     Steady\n  Solver Mode:                     Preconditioned JFNK\n\n 0 Nonlinear |R| = 0.000000e+00\n Solve Converged!\n\nDoes the Quadrature Information header look good ?\nIf so, shall I make a PR for the header addition ?",
+                  "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157828",
+                  "updatedAt": "2023-06-13T00:34:00Z",
+                  "publishedAt": "2023-06-13T00:34:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think this is going to raise more questions than it answers tbh. Do users want to think about the quadrature?\nWhile we think about this, this quadrature info would fit under Execution Information:\nsame as the time integration scheme",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157867",
+                          "updatedAt": "2023-06-13T00:42:09Z",
+                          "publishedAt": "2023-06-13T00:42:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KamalnathOSU"
+                          },
+                          "bodyText": "Yes, some users might get confused by it. That's why I made the header for Quadrature separate from Execution Information: which can be turned off separately in Console::ValidParam().\n // System information controls\n MultiMooseEnum info(\"framework mesh aux nonlinear relationship execution output quadrature\",\n                     \"framework mesh aux nonlinear execution quadrature\");\n params.addParam<MultiMooseEnum>(\"system_info\",\n                                 info,\n                                 \"List of information types to display \"\n                                 \"('framework', 'mesh', 'aux', 'nonlinear', 'relationship', \"\n                                 \"'execution', 'output')\");\n\nWe can make the default header for quadrature turned off like the following. Then it should be fine right ?\n // System information controls\n MultiMooseEnum info(\"framework mesh aux nonlinear relationship execution output quadrature\",\n                     \"framework mesh aux nonlinear execution\");\n params.addParam<MultiMooseEnum>(\"system_info\",\n                                 info,\n                                 \"List of information types to display \"\n                                 \"('framework', 'mesh', 'aux', 'nonlinear', 'relationship', \"\n                                 \"'execution', 'output')\");",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6157959",
+                          "updatedAt": "2023-06-13T00:57:13Z",
+                          "publishedAt": "2023-06-13T00:57:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Max NQp per Elem ought to be indented.  I'd vote for this being off by default but I do like the ability to turn it on.  Users almost never want to think about the quadrature, but sometimes they have to...",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6165124",
+                          "updatedAt": "2023-06-13T15:33:41Z",
+                          "publishedAt": "2023-06-13T15:33:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'm not sure about providing min/max though. I think unless it's by block, and even with the element type mentioned, it just raises more questions than it answers",
+                          "url": "https://github.com/idaholab/moose/discussions/24653#discussioncomment-6165359",
+                          "updatedAt": "2023-06-13T15:55:49Z",
+                          "publishedAt": "2023-06-13T15:55:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about the pressure in THM",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel Hi josh, I find that the lateral velocity calculated now is smaller than the common subchannel program. And in the lateral momentum equation, the lateral pressure gradient has a certain effect. So I'm wondering if it's because the solving method of pressure in THM is different. In my understanding, pressure is always calculated as a nonlinear variable. But in THM, pressure is calculated as a material property. Do you think this will have any influence?\nBtw I noticed that there was only a area gradient term in axial momentum equation. Isn't there should be a pressure gradient term in the axial momentum equation?\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/24529",
+          "updatedAt": "2023-06-13T15:04:10Z",
+          "publishedAt": "2023-05-30T13:02:25Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Sorry for the delay. What is \"the common subchannel program\"? You say \"pressure is always calculated as a nonlinear variable\". I don't know what you mean by \"always\" - it's definitely a choice of the flow formulation. Maybe you mean \"often\" or \"usually\". There are formulations where pressure is a solution variable and ones where it's not. The one in THM, like you said, does not have pressure as a solution variable - it has a compressible formulation with {rhoA, rhouA, rhoEA} as solution variables. In theory, it should not matter which set of variables you choose to be the solution variables if you solve the nonlinear system completely. It should only matter what the governing equations are. Maybe \"the common subchannel program\" uses an incompressible flow formulation, and yes, this is a potential cause of discrepancy in the solutions. As far as variable vs. material property, this should not matter in our case, since THM's variables are piecewise constant on each element. If they were piecewise linear for instance, there would be a difference between values of variables vs. material properties at a given quadrature point.\nYes, there is an area gradient term on the momentum equation. See ADOneD3EqnMomentumAreaGradient.",
+                  "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6053760",
+                  "updatedAt": "2023-05-31T20:57:41Z",
+                  "publishedAt": "2023-05-31T20:57:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Maybe you mean \"often\" or \"usually\"\n\nYes, it's my fault. \"often\" or \"usually\" is more suitable.\n\nMaybe \"the common subchannel program\" uses an incompressible flow formulation, and yes, this is a potential cause of discrepancy in the solutions.\n\nOK, I got it.\n\nYes, there is an area gradient term on the momentum equation. See ADOneD3EqnMomentumAreaGradient.\n\n@joshuahansel I didn't express clearly. There should be a pressure gradient term like d(PA)/dx in the momentum equation right? And d(PA)/dx = PdA/dx + AdP/dx. I can only find the PdA/dx (ADOneD3EqnMomentumAreaGradient). Shouldn't there be a AdP/dx?\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6055440",
+                          "updatedAt": "2023-06-01T02:29:09Z",
+                          "publishedAt": "2023-06-01T02:28:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "The d(pA)/dx term is added in ADNumericalFlux3EqnDGKernel. So you actually end up with d(pA)/dx - p dA/dx.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6061134",
+                          "updatedAt": "2023-06-01T13:09:33Z",
+                          "publishedAt": "2023-06-01T13:09:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel All right, there's no problem with the governing equation.\nBtw, can you give me any advice if I want to build a incompressible flow model in THM? I want to find out the reason why there is an error with the temperature.\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6071961",
+                          "updatedAt": "2023-06-02T13:27:35Z",
+                          "publishedAt": "2023-06-02T13:26:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Rebuilding a model seems complicated, maybe is there any way to only replace the way to calculate the material property?",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6072794",
+                          "updatedAt": "2023-06-02T14:31:58Z",
+                          "publishedAt": "2023-06-02T14:31:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Making an incompressible flow model will probably be a lot of work. I think you would just need to write an entirely new component. If you don't want to change the flow model and just want to change some material properties, you need to override whatever method in FlowModelSinglePhase that is creating the material with that property. It might mean you end up duplicating a lot of code in that method to create the other objects.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6091187",
+                          "updatedAt": "2023-06-05T14:18:06Z",
+                          "publishedAt": "2023-06-05T14:18:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Making an incompressible flow model will probably be a lot of work.\n\n@joshuahansel I agree with that. First I plan to create a new incompressible flow model. But I realize that if I do that, I need to change all the components which are relative with FlowChannel1Phase. But if I make a direct modification on the FlowModelSinglePhase, I won't be able to use the compressible flow model. Is there a way that can keep the compressible flow model and build a incompressible flow model at the same time?\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6109978",
+                          "updatedAt": "2023-06-07T10:22:47Z",
+                          "publishedAt": "2023-06-07T10:22:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "To keep compatibility with all of the other components, your best bet is probably to inherit your new flow model from FlowModelSinglePhase. That way, other components still recognize it as the original. Before doing any real work, test this concept: inherit from FlowModelSinglePhase but don't change anything. Then in your component, use the new flow model and see if all of the other components complain.\nIf this incompressible flow model were to be something that ended up being contributed to THM, I'd probably think about a better design for all of this. We'd probably factor some commonality out of the flow model and flow components into base classes that represent all of single-phase flow, not just single-phase compressible flow. But I'm assuming you're mainly doing this as troubleshooting.\nI hope that you've exhausted other troubleshooting steps first before undertaking the effort: at this point, are you pretty confident that it's usage of a compressible model vs. incompressible one? Nothing wrong with your channel coupling components or heat transfer?",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6110805",
+                          "updatedAt": "2023-06-07T12:05:21Z",
+                          "publishedAt": "2023-06-07T12:05:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel What you say makes sense. I will continue to test if there's anything wrong with my coupling.\nBut there still exists problems for the calculation of liquid metal. In SimpleFluidProperties, viscosity and thermal conductivity are constant, it can't describe the flow of liquid metal in an assembly correctly. And I think there is a fundamental error if I mix SimpleFluidProperties and LeadBismuthFluidProperties.So...It's an annoying question.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6112285",
+                          "updatedAt": "2023-06-07T14:30:18Z",
+                          "publishedAt": "2023-06-07T14:30:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "What fluid(s) are you trying to model? Lead bismuth? What is this \"mixing\" you're referring to?",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6112554",
+                          "updatedAt": "2023-06-07T14:49:56Z",
+                          "publishedAt": "2023-06-07T14:49:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel liquid_metal like sodium, lead and LBE.\nThe \"mixing\" is mentioned in this issue: #24197 (reply in thread)",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6117581",
+                          "updatedAt": "2023-06-08T02:55:43Z",
+                          "publishedAt": "2023-06-08T02:55:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Ethan-xj"
+                  },
+                  "bodyText": "@GiudGiud Hello Giud. Thanks for your suggestion and I'm afraid that my affiliation is restricted.\n@joshuahansel Hi josh, I think the material property may not be the most crucial problem. I calculate a two-channels benchmark and the calculated values do not agree with the theoretical values. So there's still something wrong with the equations.\nHere is the main part of the lateral equation:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_LateralMomentum_Test.h\"\n#include \"FLARE_SolutionVariableUO_A.h\"\n#include \"SinglePhaseFluidProperties.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_LateralMomentum_Test);\n\nInputParameters\nFLARE_LateralMomentum_Test::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addParam<Real>(\"lk\", 0.00242 ,\"Length of the turbulence\");\n  params.addParam<Real>(\"sk\", 0.00142 ,\"Width of the gap\");\n  params.addParam<Real>(\"kg\", 0.05 ,\"Drag coefficient of the cross flow\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho\", \"Density property\");\n  params.addRequiredParam<MaterialPropertyName>(\"p\", \"Pressure property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addRequiredParam<UserObjectName>(\"fp\", \"The name of the user object for fluid properties\");\n  params.addClassDescription(\"Computes the lateral velocity between 2 channels.\");\n  return params;\n}\n\nFLARE_LateralMomentum_Test::FLARE_LateralMomentum_Test(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _rho(getADMaterialProperty<Real>(\"rho\")),\n    _p(getADMaterialProperty<Real>(\"p\")),\n    _lk(getParam<Real>(\"lk\")),\n    _sk(getParam<Real>(\"sk\")),\n    _kg(getParam<Real>(\"kg\")),\n    _q_uo(getUserObject<FLARE_SolutionVariableUO_A>(\"q_uo\")),\n    _fp(getUserObject<SinglePhaseFluidProperties>(\"fp\"))\n\n{\n}\n\nADReal\nFLARE_LateralMomentum_Test::computeQpResidual()\n{\n  ADReal adj_A = _q_uo.getAdjacentA(_current_elem->id());\n  ADReal adj_rhoA = _q_uo.getAdjacentRHOA(_current_elem->id());\n  ADReal adj_rhouA = _q_uo.getAdjacentRHOUA(_current_elem->id());\n  ADReal adj_rhoEA = _q_uo.getAdjacentRHOEA(_current_elem->id());\n  ADReal adj_rho = adj_rhoA/adj_A;\n  ADReal adj_v = 1.0/adj_rho;\n  ADReal adj_e = (adj_rhoEA-0.5*adj_rhouA*adj_rhouA/adj_rhoA)/adj_rhoA;\n  ADReal adj_p = _fp.p_from_v_e(adj_v,adj_e);\n  return  -_test[_i][_qp]*_sk/_lk*(_p[_qp]-adj_p)+\n          _test[_i][_qp]*_kg*std::abs(_u[_qp])*_u[_qp]/(_sk*_lk*(_rho[_qp]+adj_rho));\n}\n\nAnd I've already showed the time derivative part and the convective part before. Here is the equation:\n\nDid I miss any necessary part of the code?\nEthan",
+                  "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6132888",
+                  "updatedAt": "2023-06-11T03:08:28Z",
+                  "publishedAt": "2023-06-09T13:05:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Your source terms look fine. I assume your time derivative kernels are fine too. The most likely culprit is your advective term, so I think you'll want to check that one very carefully (verify that you are adding correct values to residuals - don't just look at your code).",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6155496",
+                          "updatedAt": "2023-06-12T18:21:50Z",
+                          "publishedAt": "2023-06-12T18:21:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel Yes you're right. I find that even if I add the add the addRDGMooseObjects() in addMooseObjects(), the advective term still do not work. So I output the process parameters to check the code. And I find the problem is because of the _normals[_qp]. Honestly, I don't know what the normal vector of 1D mesh should be. But in the case ad_dg_convection.i The mesh is in x direction and the _normals[_qp] is (1,0,0). So since my flow channel is along z direction, I write the code like: ADReal vdotn = average_vel * _normals[_qp](2) which is wrong. Because I find that the _normals[_qp] of z-direction-mesh is still (1,0,0). Now I change the code to ADReal vdotn = average_vel * _normals[_qp](0); The code works, but I think the _normals[_qp] is strange, how should I use it?\nAnd there's another problem I find recently, It's about the other 3 equations. w will be coupled to the mass, momentum and energy equations. For example, in the axial momentum equation:\n\nIn the lateral term w*u, u depends on the direction of the w.\nThe lateral term code is previously:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MomentumLateralTerm_S_Test.h\"\n#include \"FLARE_SolutionVariableUO_A.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MomentumLateralTerm_S_Test);\n\nInputParameters\nFLARE_MomentumLateralTerm_S_Test::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredCoupledVar(\"w\", \"lateral velocity\");\n  params.addRequiredParam<MaterialPropertyName>(\"vel\", \"Velocity property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addClassDescription(\"Computes the lateral velocity between 2 channels.\");\n  return params;\n}\n\nFLARE_MomentumLateralTerm_S_Test::FLARE_MomentumLateralTerm_S_Test(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _w(adCoupledValue(\"w\")),\n    _vel(getADMaterialProperty<Real>(\"vel\")),\n    _q_uo(getUserObject<FLARE_SolutionVariableUO_A>(\"q_uo\"))\n{\n}\n\nADReal\nFLARE_MomentumLateralTerm_S_Test::computeQpResidual()\n{\n  ADReal adj_rhoA = _q_uo.getAdjacentRHOA(_current_elem->id());\n  ADReal adj_rhouA = _q_uo.getAdjacentRHOUA(_current_elem->id());\n  ADReal adj_vel = adj_rhouA/adj_rhoA;\n  if(_w[_qp] > 0)\n  {\n    return  _test[_i][_qp]*_w[_qp]*_vel[_qp];\n  }\n  else\n  {\n    return  _test[_i][_qp]*_w[_qp]*adj_vel;\n  }\n}\n\nBut I realize that maybe I should use the w of last time step to decide the form of u, so I modify the code:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MomentumLateralTerm_S_Test.h\"\n#include \"FLARE_SolutionVariableUO_A.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MomentumLateralTerm_S_Test);\n\nInputParameters\nFLARE_MomentumLateralTerm_S_Test::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredCoupledVar(\"w\", \"lateral velocity\");\n  params.addRequiredParam<MaterialPropertyName>(\"vel\", \"Velocity property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addClassDescription(\"Computes the lateral velocity between 2 channels.\");\n  return params;\n}\n\nFLARE_MomentumLateralTerm_S_Test::FLARE_MomentumLateralTerm_S_Test(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _w(adCoupledValue(\"w\")),\n    _w_older(coupledValueOld(\"w\")),\n    _vel(getADMaterialProperty<Real>(\"vel\")),\n    _q_uo(getUserObject<FLARE_SolutionVariableUO_A>(\"q_uo\"))\n{\n}\n\nADReal\nFLARE_MomentumLateralTerm_S_Test::computeQpResidual()\n{\n  ADReal adj_rhoA = _q_uo.getAdjacentRHOA(_current_elem->id());\n  ADReal adj_rhouA = _q_uo.getAdjacentRHOUA(_current_elem->id());\n  ADReal adj_vel = adj_rhouA/adj_rhoA;\n  if(_w_older[_qp] > 0)\n  {\n    return  _test[_i][_qp]*_w[_qp]*_vel[_qp];\n  }\n  else\n  {\n    return  _test[_i][_qp]*_w[_qp]*adj_vel;\n  }\n}\n\nAfter that, the solution is closer to the theoretical solution. But still not approach the theoretical solution. There should be other errors present.\nBtw, The benchmark is here:\nCTF Void Drift Validation Study.pdf\nIn the page 3-4, Two-Channel Friction Model Verification.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6160469",
+                          "updatedAt": "2023-06-13T07:45:21Z",
+                          "publishedAt": "2023-06-13T07:45:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Honestly, I don't know what the normal vector of 1D mesh should be\n\nWhat did you set the orientation parameter for your component to be? The normal vector is in the context of the DG kernel, so we're on an internal side in your 1D mesh. You're on one element, and you have a neighbor element. The normal points from your element to the neighbor element.\nRegarding your lateral velocities, the modification you made might be necessary if you have issues with nonlinear convergence. Otherwise, the original may be ok. One question that comes to mind is: do you use this lateral momentum kernel for both of your channels? If so, then you have a problem because one of your channels needs to flip the sign on the conditional.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6162867",
+                          "updatedAt": "2023-06-13T12:00:16Z",
+                          "publishedAt": "2023-06-13T12:00:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel The orientation is '0 0 1', here is my input file:\nT_in = 473.15         # K\n# m_dot_in = 1e-4     # kg/s\npress = 15.5e6         # Pa\n\n[GlobalParams]\n  initial_p = ${press}\n  initial_vel = 6.85\n  initial_T = ${T_in}\n\n  rdg_slope_reconstruction = full\n  closures = simple_closures\n  fp = he\n[]\n\n[FluidProperties]\n  [./he]\n#    type = StiffenedGasFluidProperties\n#    gamma = 2.35\n#    cv = 1816.0\n#    q = -1.167e6\n#    p_inf = 1.0e9\n    type = SimpleFluidProperties\n  [../]\n[]\n\n[Materials]\n  [f_mat]\n    type = ADWallFrictionBareRodMaterial\n    D_h = D_h\n    f_D = f_D\n    mu = mu\n    rho = rho\n    vel = vel\n  [../]\n[]\n\n[Closures]\n  [simple_closures]\n#    type = Closures1PhaseSimple\n    type = Closures1PhaseNone\n  []\n[]\n\n[Components]\n  [./inlet1]\n    type = InletMassFlowRateTemperature1Phase\n    input = 'core_chan1:in'\n    m_dot = 6\n    T = 473.15\n  [../]\n  [core_chan1]\n    type = FlowChannel1Phase\n    position = '0 0 0'\n    orientation = '0 0 1'\n    length = 500\n    n_elems = 500\n    A = 0.001\n    D_h = 0.1333\n  [../]\n  [outlet1]\n    type = Outlet1Phase\n    input = 'core_chan1:out'\n    p = 15.5e6\n  [../]\n  [./inlet2]\n    type = InletMassFlowRateTemperature1Phase\n    input = 'core_chan2:in'\n    m_dot = 12\n    T = 473.15\n  [../]\n  [core_chan2]\n    type = FlowChannel1Phase\n    position = '0.5 0 0'\n    orientation = '0 0 1'\n    length = 500\n    n_elems = 500\n    A = 0.002\n    D_h = 0.2667\n  [../]\n  [outlet2]\n    type = Outlet1Phase\n    input = 'core_chan2:out'\n    p = 15.5e6\n  [../]\n  [Gap]\n    type = Gap_Test\n    current_flow_channel = core_chan1\n    adjacent_flow_channel = core_chan2\n    fp = he\n  [../]\n[]\n\n[Preconditioning]\n  [./a]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[VectorPostprocessors]\n  [./M_SC1]\n    type = ElementValueSampler\n    variable = rhouA\n    sort_by = z\n    block = 'core_chan1'\n  [../]\n  [./M_SC2]\n    type = ElementValueSampler\n    variable = rhouA\n    sort_by = z\n    block = 'core_chan2'\n  [../]\n  [./W_SC1]\n    type = ElementValueSampler\n    variable = w\n    sort_by = z\n    block = 'core_chan1'\n  [../]\n  [./E_SC1]\n    type = ElementValueSampler\n    variable = rhoEA\n    sort_by = z\n    block = 'core_chan1'\n  [../]\n  [./E_SC2]\n    type = ElementValueSampler\n    variable = rhoEA\n    sort_by = z\n    block = 'core_chan2'\n  [../]\n  [./P_SC1]\n    type = ElementValueSampler\n    variable = p\n    sort_by = z\n    block = 'core_chan1'\n  [../]\n  [./P_SC2]\n    type = ElementValueSampler\n    variable = p\n    sort_by = z\n    block = 'core_chan2'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 100\n  dt = 0.1\n\n#  line_search = basic\n  solve_type = 'PJFNK'\n  l_max_its = 100\n\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-5\n  nl_max_its = 40\n\n  automatic_scaling = true\n  off_diagonals_in_auto_scaling = true\n  line_search = 'none'\n  steady_state_detection = true\n\n  petsc_options = '-ksp_type<preonly>'\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n\n#  petsc_options = '-pc_svd_monitor'\n#  petsc_options_iname = '-pc_type'\n#  petsc_options_value = 'svd'\n[]\n\n[Outputs]\n  exodus = true\n  [CSV_L]\n    type = CSV\n    execute_on = 'FINAL'\n    file_base = ./CTF_TEST1/CSV\n  [../]\n  [VTK]\n    type = VTK\n    interval = 4\n    file_base = ./CTF_TEST1/VTK\n  [../]\n[]\n\nI write these codes in my dg kernel:\n  std::cout<<\"x of normal vector is:\"<<_normals[_qp](0)<<std::endl;\n  std::cout<<\"y of normal vector is:\"<<_normals[_qp](1)<<std::endl;\n  std::cout<<\"z of normal vector is:\"<<_normals[_qp](2)<<std::endl;\n\nAnd for my input file, it outputs in the terminal:\nx of normal vector is:1\ny of normal vector is:0\nz of normal vector is:0\nx of normal vector is:1\ny of normal vector is:0\nz of normal vector is:0\nx of normal vector is:1\ny of normal vector is:0\nz of normal vector is:0\n\nI don't know why.\n\nRegarding your lateral velocities, the modification you made might be necessary if you have issues with nonlinear convergence. Otherwise, the original may be ok. One question that comes to mind is: do you use this lateral momentum kernel for both of your channels? If so, then you have a problem because one of your channels needs to flip the sign on the conditional.\n\nYes, I didn't show the code here. The lateral equation will only be solved once. And in the other flow channel, the w is transferred by UO like the way I transfer rhoA, rhouA and rhoEA. And don't worry, I noticed that I should flip the sign.\nAs you see in the input file, I set the length to 500. It's a large number for a pipe. And the result is better than before. I've got the theoretical solution. But this happens at about 100m(which happens at 10m in ctf). I output the mass flwo rate:\nid,rhouA,x,y,z\n500,12.041793375222,0.5,0,0.5\n501,12.124408362103,0.5,0,1.5\n502,12.205679493002,0.5,0,2.5\n503,12.284704437757,0.5,0,3.5\n504,12.360901279337,0.5,0,4.5\n505,12.433918666798,0.5,0,5.5\n506,12.503569841219,0.5,0,6.5\n507,12.569784307738,0.5,0,7.5\n508,12.632572525886,0.5,0,8.5\n509,12.692000164584,0.5,0,9.5\n510,12.748169453551,0.5,0,10.5\n511,12.801205754223,0.5,0,11.5\n512,12.851247960381,0.5,0,12.5\n513,12.898441635251,0.5,0,13.5\n514,12.942934280111,0.5,0,14.5\n515,12.984872016246,0.5,0,15.5\n516,13.024397406213,0.5,0,16.5\n517,13.06164800882,0.5,0,17.5\n518,13.096755502584,0.5,0,18.5\n519,13.129845228927,0.5,0,19.5\n520,13.161035970839,0.5,0,20.5\n521,13.190439966524,0.5,0,21.5\n522,13.218163022421,0.5,0,22.5\n523,13.244304710319,0.5,0,23.5\n524,13.268958625059,0.5,0,24.5\n525,13.292212676207,0.5,0,25.5\n526,13.314149404741,0.5,0,26.5\n527,13.334846262621,0.5,0,27.5\n528,13.354375948031,0.5,0,28.5\n529,13.372806693046,0.5,0,29.5\n530,13.390202520056,0.5,0,30.5\n531,13.406623519368,0.5,0,31.5\n532,13.422126131421,0.5,0,32.5\n533,13.436763342055,0.5,0,33.5\n534,13.450584920693,0.5,0,34.5\n535,13.463637636174,0.5,0,35.5\n536,13.47596544483,0.5,0,36.5\n537,13.487609667192,0.5,0,37.5\n538,13.498609132374,0.5,0,38.5\n539,13.509000393737,0.5,0,39.5\n540,13.51881784462,0.5,0,40.5\n541,13.5280938577,0.5,0,41.5\n542,13.536858918228,0.5,0,42.5\n543,13.545141697076,0.5,0,43.5\n544,13.552969236855,0.5,0,44.5\n545,13.560366986777,0.5,0,45.5\n546,13.567358943782,0.5,0,46.5\n547,13.57396771458,0.5,0,47.5\n548,13.58021461249,0.5,0,48.5\n549,13.586119731434,0.5,0,49.5\n550,13.591702017823,0.5,0,50.5\n551,13.596979343588,0.5,0,51.5\n552,13.601968542763,0.5,0,52.5\n553,13.606685540142,0.5,0,53.5\n554,13.611145342438,0.5,0,54.5\n555,13.615362132636,0.5,0,55.5\n556,13.619349274823,0.5,0,56.5\n557,13.623119385104,0.5,0,57.5\n558,13.62668437388,0.5,0,58.5\n559,13.630055496122,0.5,0,59.5\n560,13.633243384048,0.5,0,60.5\n561,13.636258055687,0.5,0,61.5\n562,13.639108997776,0.5,0,62.5\n563,13.641805167014,0.5,0,63.5\n564,13.644355004735,0.5,0,64.5\n565,13.646766501485,0.5,0,65.5\n566,13.649047208491,0.5,0,66.5\n567,13.651204257506,0.5,0,67.5\n568,13.653244390193,0.5,0,68.5\n569,13.655173960477,0.5,0,69.5\n570,13.656998990569,0.5,0,70.5\n571,13.658725171581,0.5,0,71.5\n572,13.660357880506,0.5,0,72.5\n573,13.661902197871,0.5,0,73.5\n574,13.663362925233,0.5,0,74.5\n575,13.664744599626,0.5,0,75.5\n576,13.666051521821,0.5,0,76.5\n577,13.667287744499,0.5,0,77.5\n578,13.668457100621,0.5,0,78.5\n579,13.669563214049,0.5,0,79.5\n580,13.670609514522,0.5,0,80.5\n581,13.67159925177,0.5,0,81.5\n582,13.672535483814,0.5,0,82.5\n583,13.673421114039,0.5,0,83.5\n584,13.674258874883,0.5,0,84.5\n585,13.6750513637,0.5,0,85.5\n586,13.675801024692,0.5,0,86.5\n587,13.676510178651,0.5,0,87.5\n588,13.677181024721,0.5,0,88.5\n589,13.677815634051,0.5,0,89.5\n590,13.678415964473,0.5,0,90.5\n591,13.678983877117,0.5,0,91.5\n592,13.679521118856,0.5,0,92.5\n593,13.680029362665,0.5,0,93.5\n594,13.680510157565,0.5,0,94.5\n595,13.680964989727,0.5,0,95.5\n596,13.68139526748,0.5,0,96.5\n597,13.681802313852,0.5,0,97.5\n598,13.682187390752,0.5,0,98.5\n599,13.682551670516,0.5,0,99.5\n600,13.682896272559,0.5,0,100.5\n601,13.683222270307,0.5,0,101.5\n602,13.683530684524,0.5,0,102.5\n603,13.683822466099,0.5,0,103.5\n604,13.684098510831,0.5,0,104.5\n605,13.684359663599,0.5,0,105.5\n606,13.68460671575,0.5,0,106.5\n607,13.684840423047,0.5,0,107.5\n608,13.685061507321,0.5,0,108.5\n609,13.685270673374,0.5,0,109.5\n610,13.685468557763,0.5,0,110.5\n611,13.68565575632,0.5,0,111.5\n612,13.68583285412,0.5,0,112.5\n613,13.686000383973,0.5,0,113.5\n614,13.686158877768,0.5,0,114.5\n615,13.6863088135,0.5,0,115.5\n616,13.686450667461,0.5,0,116.5\n617,13.686584871806,0.5,0,117.5\n618,13.686711842528,0.5,0,118.5\n619,13.686831966343,0.5,0,119.5\n620,13.68694561021,0.5,0,120.5\n621,13.687053119773,0.5,0,121.5\n622,13.68715481933,0.5,0,122.5\n623,13.687251037245,0.5,0,123.5\n624,13.687342064074,0.5,0,124.5\n625,13.687428181323,0.5,0,125.5\n626,13.687509651822,0.5,0,126.5\n627,13.687586736954,0.5,0,127.5\n628,13.687659670319,0.5,0,128.5\n629,13.687728673442,0.5,0,129.5\n630,13.687793943166,0.5,0,130.5\n631,13.687855683302,0.5,0,131.5\n632,13.687914098132,0.5,0,132.5\n633,13.687969357207,0.5,0,133.5\n634,13.688021629004,0.5,0,134.5\n\nIt's a good news. Does this indicate that I should improve the spatial convergence of the equation? Do you have any ideas about this?\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6163869",
+                          "updatedAt": "2023-06-13T13:41:47Z",
+                          "publishedAt": "2023-06-13T13:41:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "I'm not sure about the normal vector thing. I vaguely remember something weird about normal vectors and 1D elements (where only the first coordinate is used), so I guess that is what is happening.\n\nDoes this indicate that I should improve the spatial convergence of the equation?\n\nAre you asking if it means that you need to refine your mesh? If so, I'd definitely try a finer mesh to see if you get to the theoretical solution at the theoretical position.",
+                          "url": "https://github.com/idaholab/moose/discussions/24529#discussioncomment-6164768",
+                          "updatedAt": "2023-06-13T15:04:11Z",
+                          "publishedAt": "2023-06-13T15:04:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Manipulating the values sampled by VectorProcessor by a Matrix",
+          "author": {
+            "login": "salaudeen-ya"
+          },
+          "bodyText": "Hi,\nAssuming I have a LineSampler with a VectorPostprocessor of two points, these results are u1 and u2. Consider that I would like to combine the u1 and u2 as follows:\n\nThe idea is to be able to use F_1 and F_2 at the corresponding nodes in another subdomain.\nTo make it more general, the matrix above is assembled for any number of elements and points as follows;\n\nHow best can I achieve each Fs? How can each Fs be transferred?\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/24658",
+          "updatedAt": "2023-06-24T22:13:30Z",
+          "publishedAt": "2023-06-11T17:11:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe dont have anything like that in the code.\nYou could make a new VPP or Reporter that processes the output of the LineValueSampler as desired\nI would love to see a ParsedVPP or a ParsedReporter in MOOSE if you want to develop that.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6145625",
+                  "updatedAt": "2023-06-11T17:17:25Z",
+                  "publishedAt": "2023-06-11T17:17:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Once you have F, there's a transfer for vector postprocessors (VPPs) vectors",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6145627",
+                          "updatedAt": "2023-06-11T17:17:47Z",
+                          "publishedAt": "2023-06-11T17:17:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "salaudeen-ya"
+                          },
+                          "bodyText": "So one thing I have tried is to modify the actual part of the LineValueSampler that output the values:\n Real\nLineValueSampler::getValue(const Point & p) const\n{\n  if (_values.size() != 1)\n    mooseError(\"LineValueSampler: When calling getValue() on LineValueSampler, \"\n               \"only one variable can be provided as input to LineValueSampler.\");\n\n  // Check if vectors are sorted by id\n  if (_sort_by != 3)\n    mooseError(\"LineValueSampler: When calling getValue() on LineValueSampler, \"\n               \"`sort_by` should be set to `id`.\");\n\n  Real value = std::numeric_limits<Real>::infinity();\n\n  // Project point onto the line segment and normalize by length of line segment\n  Real position =\n      (p - _points[0]) * (_points.back() - _points[0]) / Utility::pow<2>(_line_vector_norm);\n\n  if (position >= 0.0 and position <= 1.0)\n  {\n    unsigned int vec_pos =\n        std::lower_bound(_id.begin(), _id.end(), position * _line_vector_norm) - _id.begin();\n\n    if (MooseUtils::absoluteFuzzyEqual(_id[vec_pos], position * _line_vector_norm))\n      value = _vpp_value[vec_pos];\n    else\n    {\n      mooseWarning(\"Value requested outside of sampled points\");\n      value = (_vpp_value[vec_pos - 1] + _vpp_value[vec_pos]) * 0.5;\n    }\n  }\n\n  return value;\n}\n\n\nI modified the following to include my desired matrix-vector multiplication.\nif (MooseUtils::absoluteFuzzyEqual(_id[vec_pos], position * _line_vector_norm))\n      value = _vpp_value[vec_pos];\n    else\n    {\n      mooseWarning(\"Value requested outside of sampled points\");\n      value = (_vpp_value[vec_pos - 1] + _vpp_value[vec_pos]) * 0.5;\n    }\n\nHowever, both the LineValueSampler and my custom sampler output the same result in the CSV file when used on the same line. What could be wrong?",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6156033",
+                          "updatedAt": "2023-06-12T19:26:30Z",
+                          "publishedAt": "2023-06-12T19:25:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "where is the matrix multiplication? which line?",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6156721",
+                          "updatedAt": "2023-06-12T21:04:35Z",
+                          "publishedAt": "2023-06-12T21:04:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "salaudeen-ya"
+                          },
+                          "bodyText": "This is a new version of the getValue() of a new custom ParsedLineValueSampler\nReal\nParsedLineValueSampler::getValue(const Point & p) const\n{\n  if (_values.size() != 1)\n    mooseError(\"ParsedLineValueSampler: When calling getValue() on ParsedLineValueSampler, \"\n               \"only one variable can be provided as input to ParsedLineValueSampler.\");\n\n  // Check if vectors are sorted by id\n  if (_sort_by != 3)\n    mooseError(\"ParsedLineValueSampler: When calling getValue() on ParsedLineValueSampler, \"\n               \"`sort_by` should be set to `id`.\");\n\n  Real value = std::numeric_limits<Real>::infinity();\n  \n  // Project point onto the line segment and normalize by length of line segment\n  Real position =\n      (p - _points[0]) * (_points.back() - _points[0]) / Utility::pow<2>(_line_vector_norm);\n\n    unsigned int vec_pos =\n        std::lower_bound(_id.begin(), _id.end(), position * _line_vector_norm) - _id.begin();\n    \n    // new\n    double a = 1.0/3.0;\n    double b = 1.0/6.0;\n \n      if (vec_pos == 0)\n        value = a * _vpp_value[0] + b * _vpp_value[1];\n      if (vec_pos == 1)\n        value = b * _vpp_value[0] + a * _vpp_value[1];\n\n      for (unsigned int i = 2; i < vec_pos ; ++i){\n        value = b * _vpp_value[i - 1] + 2 * a * _vpp_value[i] + b * _vpp_value[i + 1];\n      }\n      value = b * _vpp_value[vec_pos - 1] + a * _vpp_value[vec_pos];\n      //\n  \n\n  return value;\n}\n\nI'm baffled why this could still give the same output as the initial getValue() function in the LineValueSampler",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157242",
+                          "updatedAt": "2023-06-12T22:24:52Z",
+                          "publishedAt": "2023-06-12T22:23:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if (vec_pos == 0)\n        value = a * _vpp_value[0] + b * _vpp_value[1];\n      if (vec_pos == 1)\n        value = b * _vpp_value[0] + a * _vpp_value[1];\n\n      for (unsigned int i = 2; i < vec_pos ; ++i){\n        value = b * _vpp_value[i - 1] + 2 * a * _vpp_value[i] + b * _vpp_value[i + 1];\n      }\n      value = b * _vpp_value[vec_pos - 1] + a * _vpp_value[vec_pos];\n      //\n\nthis doesnt look right. You re rewriting the value multiple times.\nIt s missing another if clause at the end I think",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157587",
+                          "updatedAt": "2023-06-12T23:36:46Z",
+                          "publishedAt": "2023-06-12T23:36:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "salaudeen-ya"
+                          },
+                          "bodyText": "Okay, but then a \"naked\" getValue function pasted below still gives the same result:\nReal\nParsedLineValueSampler::getValue(const Point & p) const\n{ Real value = std::numeric_limits<Real>::infinity();\n\n  return value;\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157740",
+                          "updatedAt": "2023-06-13T00:11:05Z",
+                          "publishedAt": "2023-06-13T00:10:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "did you mark it as override in the header? just to check\nReal getValue(const Point & p) const override\nand also what does the input look like?\nand how are you checking that it gives the same answer ?",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157746",
+                          "updatedAt": "2023-06-13T00:12:08Z",
+                          "publishedAt": "2023-06-13T00:12:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "salaudeen-ya"
+                          },
+                          "bodyText": "I have this in the header file:\n  virtual Real spatialValue(const Point & p) const override { return getValue(p); }\n\n  /**\n   * Gets the value of the variable at a point p.\n   * Returns zero if p does not lie along the line segment.\n   **/\n  Real getValue(const Point & p) const;\n\nWith this, the  Real getValue(const Point & p) const; throws an error when I tried to mark it as override.\nA sample input file is as follows and note that I am sampling on the same line:\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 32\n  ny = 32\n  xmin = 0\n  xmax = 2\n  ymin = 0\n  ymax = 1\n[]\n\n[Variables]\n  [u]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[Kernels]\n  [diffusion]\n    type = MatDiffusion\n    variable = u\n    diffusivity = 1\n  []\n   [reaction]\n    type =  Reaction\n    variable = u\n    rate = 0.25\n  []\n\n[]\n\n\n[BCs]\n  [rightBC] \n    type = DirichletBC\n    variable = u\n    boundary = 'right'\n    value = 0\n  []\n  [bottomBC] \n    type = DirichletBC\n    variable = u\n    boundary = 'bottom'\n    value = 0\n  []\n\n  [topBC] \n    type = NeumannBC\n    variable = u\n    boundary = 'top'\n    value = 3\n  []\n[]\n\n[VectorPostprocessors]\n  [Linevalue]\n    type = LineValueSampler\n    start_point = '1 0 0'\n    end_point = '1 1 0'\n    num_points = 5\n    sort_by = x\n    variable = u\n  []\n   [ParsedLinevalue]\n    type = ParsedLineValueSampler\n    start_point = '1 0 0'\n    end_point = '1 1 0'\n    num_points = 5\n    sort_by = x\n    variable = u\n  []\n[]\n\n[Executioner]\n\n  type = Steady\n  solve_type = 'PJFNK'\n  \n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  console = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157782",
+                          "updatedAt": "2023-06-13T00:21:58Z",
+                          "publishedAt": "2023-06-13T00:21:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You need to fix that\nWith this, the  Real getValue(const Point & p) const; throws an error when I tried to mark it as override.\n\nyou must be overriding the previous function definition\nand you are getting an error because the function declaration is not exactly the same",
+                          "url": "https://github.com/idaholab/moose/discussions/24658#discussioncomment-6157819",
+                          "updatedAt": "2023-06-13T00:32:49Z",
+                          "publishedAt": "2023-06-13T00:32:49Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Suggestions of coupling interface functionality to Auxkernels or BCs or UserObject?",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi all, I'm trying to find the appropriate approach to do some calculations at the interfaces using interface quantities and enforce the outcome (velocity or displacement) as boundary condition along the interface nodes strongly before solving the system, I wonder whether I should start with AuxKernels or BCs or UserObject? Appreciate your suggestions",
+          "url": "https://github.com/idaholab/moose/discussions/24654",
+          "updatedAt": "2023-06-12T22:09:25Z",
+          "publishedAt": "2023-06-10T16:30:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nBCs, DirichletBCs, can set values strongly (using the preset parameter as true), which even reduces the size of the nonlinear system.\nI would start there.\nAuxKernels are not made for boundary work, though there are some options there.\nInterfaceKernels are likely where you want to work if these boundaries are true interfaces (using variables defined on both sides)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6141524",
+                  "updatedAt": "2023-06-10T20:04:15Z",
+                  "publishedAt": "2023-06-10T20:04:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks Guillaume, I think InterfaceKernels could weakly set the displacement across the interface. That could be something I want to try. But if I want to use BC system along interface (that is, to write all the calculations inside BC object with the interface information available)  is there a workaround available? Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6142707",
+                          "updatedAt": "2023-06-11T03:56:11Z",
+                          "publishedAt": "2023-06-11T03:55:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can have a look at MatchedValueBC see how it gets information from the other variable.\nA BC has to be external to a variable's domain. The domain for that variable must end at the BC.\nAt least that's true for finite volume. In finite element, I've never dealt with that.",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6142719",
+                          "updatedAt": "2023-06-11T04:04:48Z",
+                          "publishedAt": "2023-06-11T04:04:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You could use a nodal BC to impose some strong constraint on a nodeset interior to the a finite element variable's domain in theory, but I've never seen someone do it in practice",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6155554",
+                          "updatedAt": "2023-06-12T18:27:40Z",
+                          "publishedAt": "2023-06-12T18:27:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks. I choose to use InterfaceKernel, it almost be able to achieve what I want, however, If I want to put all the calculations inside the object inherited from InterfaceKernel, I have to update some quantities and save them for the next time step use. I'm struggling to find a way to do it, neither material property or aux variables seems not working.. I know Kernels have the \"save_in\" option to save residual and output as aux variable, should I modify that part or there is a better approach",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6156840",
+                          "updatedAt": "2023-06-12T21:19:27Z",
+                          "publishedAt": "2023-06-12T21:19:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You should use stateful material properties\nOR\nauxiliary variables and the coupledValueOld routine to retrieve the previous step value of the variable",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6156940",
+                          "updatedAt": "2023-06-12T21:28:20Z",
+                          "publishedAt": "2023-06-12T21:28:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks, but the question is, I cannot update them inside the kernel :(",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6156971",
+                          "updatedAt": "2023-06-12T21:33:48Z",
+                          "publishedAt": "2023-06-12T21:33:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Okay, I think couple InterfaceMaterial (do all calculations, updates using material property) and InterfaceKernel (pass material property) could do the trick",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6157057",
+                          "updatedAt": "2023-06-12T21:49:31Z",
+                          "publishedAt": "2023-06-12T21:49:31Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes, to update those quantities you need to do it in a Material object for a property or an Auxkernel for an auxiliary variable",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6157067",
+                          "updatedAt": "2023-06-12T21:50:58Z",
+                          "publishedAt": "2023-06-12T21:50:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Yes, in my case, AuxKernel seems not suitable for retrieving quantities across interface, so Material object is better",
+                          "url": "https://github.com/idaholab/moose/discussions/24654#discussioncomment-6157081",
+                          "updatedAt": "2023-06-12T21:53:21Z",
+                          "publishedAt": "2023-06-12T21:53:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Courant Number in Finite Volume Navier Stokes",
+          "author": {
+            "login": "ABallisat"
+          },
+          "bodyText": "Hello all,\nI am trying to calculate the Courant number for a cell using INSFV within a custom kernel. I am trying to implement summing the Courant number over all faces which requires knowledge of the velocity at each face. I am using Rhie Chow interpolation for calculating the face velocities however I am getting an error. The code I am using is below\n  // Local courant number\n  ADReal courantNumber = v.norm() *_face_info->faceArea();\n  const ElemInfo currentElemInfo = ElemInfo(currentElement);\n\n  for (int i=0; i<currentElement->n_sides(); ++i)\n  {\n    if (i != sideID) // because we already calculated it in the declaration\n    {\n      const FaceInfo * f = _mesh.faceInfo(currentElement, i);\n      // FaceInfo objects are not created for every face on every element. They are only created once\n      // per boundary between two elements and the element with the lower elementID (number) stores it.\n      // If it is a null pointer then we need to get it from the neighbour\n      if (f == nullptr)\n      {\n        const Elem * neighbourElement = currentElement->neighbor_ptr(i);\n        const unsigned int faceIndex = currentElement->opposite_side(i);\n        f = _mesh.faceInfo(neighbourElement, faceIndex);\n      }\n      ADRealVectorValue v = _rc_vel_provider.getVelocity(_velocity_interp_method, *f, _tid);\n      courantNumber += v.norm() * f->faceArea();\n    }\n  }\n  courantNumber *= _dt/currentElement->volume();\nThe comments hopefully explain most of the logic I have learned looking through the source code for the INSFV module. The error I am getting is\nAttempted access into CellCenteredMapFunctor 'a' with a key that does not yet exist in the map. Make sure to fill your CellCenteredMapFunctor for all elements you will attempt to access later.\n\nwhich I am guessing comes from the Rhie Chow interpolator not being able to access the information of the other element needed to calculate the velocity on the face. Is there a way to do this or a much simpler way of going about this? I wouldn't be surprised if I am missing something. Any help greatly appreciated!\nThanks in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/24093",
+          "updatedAt": "2023-06-24T22:14:48Z",
+          "publishedAt": "2023-04-17T15:19:20Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhen are you evaluating the courant number?\nIf you run this kernel before the RC interpolator has run, it s unable to provide the coefficients.\nTypically on INITIAL, that is a problem\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5638932",
+                  "updatedAt": "2023-04-17T15:53:19Z",
+                  "publishedAt": "2023-04-17T15:53:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "It is in the middle of a kernel's computeQpResidual function. I have copied the INSFVScalarFieldAdvection and changed the computeQpResidual function so the execution time should be the same as that. Looking at the docs I cannot see any execute on options for any of the INSFV kernels so being honest I am not sure exactly when this gets called but it should be the same as INSFVScalarFieldAdvection.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5639030",
+                          "updatedAt": "2023-04-17T16:01:17Z",
+                          "publishedAt": "2023-04-17T16:01:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Kernels indeed do not have execute_on options. They are executed on every linear and nonlinear iterations.\nThe NSFV momentum advection kernels are essentially run in two parts, first you compute their contribution to the Rhie Chow coefficients, then the contribution to the residual / jacobian.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5639914",
+                          "updatedAt": "2023-04-18T12:50:18Z",
+                          "publishedAt": "2023-04-17T17:28:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Why do you need the Courant number in your kernel? If you are iterating over faces of elements attached to the current face, then yea you're definitely not guaranteed to have a filled Rhie-Chow coefficient map because you may be iterating beyond the current process domain's stencil",
+                  "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5639398",
+                  "updatedAt": "2023-04-17T16:33:29Z",
+                  "publishedAt": "2023-04-17T16:33:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "ok good to know, apologies this shows my lack of understanding. I am still investigating sharp interface advection and currently looking at the CICSAM scheme which uses the Courant number as part of the calculation of the the flux through faces. A decent approximation I suppose would probably be to calculate the value at the end of a timestep and then use that in the next step, can you foresee any problems with that? Would the coefficient map be filled by the end of the timestep?",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5639910",
+                          "updatedAt": "2023-04-17T17:28:27Z",
+                          "publishedAt": "2023-04-17T17:28:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If you're basing off of INSFVScalarFieldAdvection then is it enough to just compute the Courant number with the velocity from the current face (given by _face_info)?",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5641813",
+                          "updatedAt": "2023-04-17T21:02:08Z",
+                          "publishedAt": "2023-04-17T21:02:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "The CICSAM scheme uses the cell Courant number, calculated as the sum of the Courant number at each face over all faces of a cell. I had considered using only the face value and am still working out the implications of making that approximation. Ideally I would like to do it with all the faces if possible. I guess the challenge then is trying to make sure that the Rhie Chow interpolator's coefficient map is fully populated, is there a way to check this or force it to populate before it calls the computeQpResidual of the kernel?",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5641913",
+                          "updatedAt": "2023-04-17T21:16:31Z",
+                          "publishedAt": "2023-04-17T21:16:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Is your kernel acting on a passive scalar, or what equation is it contributing to (may be multiple)?",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5642381",
+                          "updatedAt": "2023-04-17T22:27:17Z",
+                          "publishedAt": "2023-04-17T22:27:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "I am solving an advection diffusion equation for a scalar and this kernel is being used in place of the INSFVScalarFieldAdvection kernel, hopefully as a drag and drop replacement. The Courant number is part of the calculation of the value of the scalar at the cell face, this is all to do with advecting sharp interfaces for multiphase flows. The advection velocity comes from the solution of the weakly compressible Navier Stokes equations hence why I am doing this using the finite volume framework.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5646476",
+                          "updatedAt": "2023-04-18T08:48:14Z",
+                          "publishedAt": "2023-04-18T08:48:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Could you give me access to your code and input? We have several ideas for combatting your problem but I want to be 100% sure my hypothesis about your issue is correct",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5652262",
+                          "updatedAt": "2023-04-18T17:58:22Z",
+                          "publishedAt": "2023-04-18T17:58:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Thanks yes I should be able to, I will need to throw it into a separate repo but should hopefully get time to do that today.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5658509",
+                          "updatedAt": "2023-04-19T08:52:12Z",
+                          "publishedAt": "2023-04-19T08:52:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Are you using uniform refinement / adaptivity ?\nWhat kind of boundary conditions do you have?\nI ll add more info to this error message you are getting",
+                  "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5648970",
+                  "updatedAt": "2023-04-18T13:15:41Z",
+                  "publishedAt": "2023-04-18T13:15:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "I am not using any refinement or adaptivity, it is a fixed QUAD4 mesh built using a GeneratedMeshGenerator. My test case is a simple circle being advected in a constant diagonal velocity field in 2D. The inlet BCs are fixed INSFVInletVelocityBC of value [0.1, 0.1] on the left and bottom edges, the pressure is fixed at 0 on the right and top edges (the domain is a square).",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5649151",
+                          "updatedAt": "2023-04-18T13:31:19Z",
+                          "publishedAt": "2023-04-18T13:31:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I wonder if we forgot an edge case in those combined boundaries.\nWould you mind having the velocity inlet through a single boundary (and set the other one, for example left, as noslip or freeslip)\nand the pressure outlet through a single boundary (and set the other one, for example right, as noslip or freeslip) ?\nthank you!\nThis might not be it, I apologize in advance if this is not helpful",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5649238",
+                          "updatedAt": "2023-04-18T13:37:14Z",
+                          "publishedAt": "2023-04-18T13:37:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Honestly I'm all ears to suggestions so happy to give it a go. I will run it this afternoon and get back to you :) thanks for the help",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5649275",
+                          "updatedAt": "2023-04-18T13:39:53Z",
+                          "publishedAt": "2023-04-18T13:39:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Unfortunately removing the boundary conditions didn't work, I tried all combinations of removing velocity and pressure boundary conditions, and having none at all and the error still occured",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5658458",
+                          "updatedAt": "2023-04-19T08:47:38Z",
+                          "publishedAt": "2023-04-19T08:47:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok Alex has a pretty good idea of why it's happening. It s indeed not related to boundary conditions.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5667417",
+                          "updatedAt": "2023-04-19T23:35:48Z",
+                          "publishedAt": "2023-04-19T23:35:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Yea I do have a strong guess, but I'd like to verify",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5668539",
+                          "updatedAt": "2023-04-20T03:17:06Z",
+                          "publishedAt": "2023-04-20T03:17:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Thanks both, I have just added you to the repo, let me know if you have any issues accessing it. Thanks again for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5673762",
+                          "updatedAt": "2023-04-20T13:14:27Z",
+                          "publishedAt": "2023-04-20T13:14:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Can you run your problem in debug mode? There are divide by zero errors due to acceptorValue and upwindValue being the same value. Please fix those so that I can get to the bad 'a' coefficient access. I've also opened ABallisat/CICSAM#1 to update your code to the current MOOSE",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5676635",
+                          "updatedAt": "2023-04-20T17:44:06Z",
+                          "publishedAt": "2023-04-20T17:44:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Thanks, I will take a look at them and fix that issue. I know I am not going to get much time in the next week so I may be quiet till the end of the month but will be straight back onto this after that.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5687889",
+                          "updatedAt": "2023-04-21T15:38:57Z",
+                          "publishedAt": "2023-04-21T15:38:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "sounds good!",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5710814",
+                          "updatedAt": "2023-04-24T16:55:05Z",
+                          "publishedAt": "2023-04-24T16:55:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ABallisat"
+                  },
+                  "bodyText": "Sorry not sure I understand what you mean by a variable variation, could you clarify please?\nI ran it with full fat INSFV so solving for velocity for two different cases. The first was a constant velocity regime, it is initialised to [0.1, 0.1] everywhere and the inlet is set be the same. In this way the INS equations are being solved but the velocity remains the same for all time. The second (variable) case is starting with an initial velocity of [0.1, 0.1] everywhere and then setting the inlet to [0.1+sin(t), 0.1+sin(t)] so that the solution of the INS equations leads to transient variations in the velocity field. In both cases I found the a coefficients to be the same, and both were run in parallel as above. Hope that makes sense!",
+                  "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5977849",
+                  "updatedAt": "2023-05-23T12:43:55Z",
+                  "publishedAt": "2023-05-23T12:43:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok this all makes sense.\nI meant a velocity field that depends on space, that is not constant everywhere.\nWas there a non-zero pressure gradient in those simulations?",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5978283",
+                          "updatedAt": "2023-05-23T13:17:44Z",
+                          "publishedAt": "2023-05-23T13:17:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Yes, example from a time step below. There are inlets on the bottom and left sides of that square.",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5979117",
+                          "updatedAt": "2023-05-23T14:23:51Z",
+                          "publishedAt": "2023-05-23T14:23:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok I m inclined to believe we\u2019re in the green. I was expecting an issue",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5979418",
+                          "updatedAt": "2023-05-23T14:48:45Z",
+                          "publishedAt": "2023-05-23T14:48:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "There is probably no double counting because there are no elemental kernels active. That is the only thing _elem_range is used for",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5980395",
+                          "updatedAt": "2023-05-23T16:22:48Z",
+                          "publishedAt": "2023-05-23T16:22:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I would try reverting your _elem_range change and see whether just this mod that you made\n  params.addRelationshipManager(\"ElementSideNeighborLayers\",\n                              Moose::RelationshipManagerType::GEOMETRIC,\n                              [](const InputParameters &, InputParameters & rm_params)\n                              { rm_params.set<unsigned short>(\"layers\") = 3; });\n\nis sufficient. I suspect that it is",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5980407",
+                          "updatedAt": "2023-05-23T16:24:03Z",
+                          "publishedAt": "2023-05-23T16:24:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Never mind. There is the time derivative term. I am shocked there is no exodiff between serial and parallel",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5980479",
+                          "updatedAt": "2023-05-23T16:29:29Z",
+                          "publishedAt": "2023-05-23T16:29:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If I make that change to _elem_range and run our test suite with -p2 I see\ntest:finite_volume/materials/flow_diode.friction_flow_diode ................................. FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.dirichlet/using_velocity ........................ FAILED (EXODIFF)\ntest:finite_volume/pwcns/channel-flow.transient ............................................. FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.dirichlet/using_mdot ............................ FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.flux/direct ..................................... FAILED (EXODIFF)\ntest:finite_volume/wcns/channel-flow.transient .............................................. FAILED (EXODIFF)\ntest:finite_volume/ins/solidification.solidification_exo_pipe ............................... FAILED (EXODIFF)\ntest:finite_volume/pwcns/channel-flow.transient-action ...................................... FAILED (EXODIFF)\ntest:finite_volume/pwcns/boundary_conditions.from_mdot_action ............................... FAILED (EXODIFF)\ntest:finite_volume/ins/iks/flow-around-square.flow-around-square ............................ FAILED (EXODIFF)\ntest:finite_volume/ins/natural_convection.natural_circulation_dogleg ........................ FAILED (EXODIFF)\ntest:finite_volume/ins/solidification.solidification_centerline_profile ..................... FAILED (CSVDIFF)\ntest:finite_volume/wcns/materials.transient ................................................. FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.flux/from_velocity .............................. FAILED (EXODIFF)\ntest:finite_volume/wcns/channel-flow.transient-action ....................................... FAILED (EXODIFF)\ntest:finite_volume/wcns/natural_convection.natural_circulation_pipe ......................... FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.flux/from_velocity_action ....................... FAILED (EXODIFF)\ntest:finite_volume/wcns/boundary_conditions.flux/from_mdot .................................. FAILED (EXODIFF)\ntest:finite_volume/materials/flow_diode.controlled/time ..................................... FAILED (CSVDIFF)\ntest:finite_volume/wcns/boundary_conditions.flux/from_mdot_action ........................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction ............................................... FAILED (EXODIFF)\ntest:finite_volume/wcns/channel-flow.turbulence ............................................. FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction-action ........................................ FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction-free-slip ..................................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction-free-slip-action .............................. FAILED (EXODIFF)\ntest:finite_volume/materials/flow_diode.controlled/pdrop .................................... FAILED (CSVDIFF)\ntest:finite_volume/wcns/channel-flow.turbulence-action ...................................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction-block ......................................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.friction-block-action .................................. FAILED (EXODIFF)\ntest:finite_volume/ins/lid-driven.transient-with-temp ....................................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow.rz-by-parts ............................................ FAILED (EXODIFF)\ntest:finite_volume/materials/flow_diode.controlled/flow ..................................... FAILED (CSVDIFF)\ntest:finite_volume/ins/boussinesq.transient_wcnsfv .......................................... FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.linear-friction ......................................... FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.quadratic-friction ...................................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow/heated.transient ....................................... FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.linear-friction-action .................................. FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.quadratic-friction-action ............................... FAILED (EXODIFF)\ntest:finite_volume/pins/channel-flow/heated.transient-action ................................ FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.discontinuous ........................................... FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.transient ............................................... FAILED (EXODIFF)\ntest:finite_volume/ins/channel-flow.transient-action ........................................ FAILED (EXODIFF)\ntest:finite_volume/pins/mms/porosity_change.pressure-corrected ................... [min_cpus=8] FAILED (CRASH)\ntest:finite_volume/pins/mms/porosity_change.pressure-corrected-action ............ [min_cpus=8] FAILED (CRASH)",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5980548",
+                          "updatedAt": "2023-05-23T16:38:07Z",
+                          "publishedAt": "2023-05-23T16:38:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Ok I've opened #24454. I've tested that it works on the input file in your repo. I will create a PR to your repo once the MOOSE PR is merged ... or maybe I'll open it now",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5981259",
+                          "updatedAt": "2023-05-23T17:58:15Z",
+                          "publishedAt": "2023-05-23T17:58:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Opened ABallisat/CICSAM#3",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-5981298",
+                          "updatedAt": "2023-05-23T18:02:50Z",
+                          "publishedAt": "2023-05-23T18:02:49Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "Thanks for doing that, I believe that part of it is now working. General update: the scheme works in MOOSE but needs some tuning, the original method as posed was designed for 1D and needs some modification to get the desired properties in 2D or 3D. I will report back if/when I get something working I am happy with. Thanks again for all your help with this!",
+                          "url": "https://github.com/idaholab/moose/discussions/24093#discussioncomment-6152669",
+                          "updatedAt": "2023-06-12T13:47:27Z",
+                          "publishedAt": "2023-06-12T13:47:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How do I get the thermal conductivity on the other side of the gap\uff1f",
+          "author": {
+            "login": "nuomi68"
+          },
+          "bodyText": "Hello,\neveryone.\nI want to modify the GapConductance of MOOSE, but the code I want to implement requires the thermal conductivity on the other side of the gap. What code can I use?I noticed that GapConductance can obtain the temperature at the other side of the gap. What code should I add if I want to obtain the corresponding thermal conductivity?\nGapConductance\n    _gap_distance = pinfo->_distance;\n     _has_info = true;\n\n     const Elem * secondary_side = pinfo->_side;\n     std::vector<std::vector<Real>> & secondary_side_phi = pinfo->_side_phi;\n     std::vector<dof_id_type> secondary_side_dof_indices;\n     _dof_map->dof_indices(secondary_side, secondary_side_dof_indices, _temp_var->number());\n\n     for (unsigned int i = 0; i < secondary_side_dof_indices.size(); ++i)\n     {\n       // The zero index is because we only have one point that the phis are evaluated at\n       _gap_temp +=\n           secondary_side_phi[i][0] * (*(*_serialized_solution))(secondary_side_dof_indices[i]);\n     }\n\n\nlwz",
+          "url": "https://github.com/idaholab/moose/discussions/24613",
+          "updatedAt": "2023-06-12T18:19:45Z",
+          "publishedAt": "2023-06-06T15:32:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "I don't think we support getting neighbor material properties in the \"legacy\" thermal gap heat transfer system as it is fundamentally based on an integrated boundary condition. @bwspenc or maybe @recuero can correct me if I'm wrong. Does your model require old state information? If not, then I might recommend using the newer mortar system",
+                  "url": "https://github.com/idaholab/moose/discussions/24613#discussioncomment-6102703",
+                  "updatedAt": "2023-06-06T16:14:39Z",
+                  "publishedAt": "2023-06-06T16:14:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nuomi68"
+                          },
+                          "bodyText": "Thanks for your reply!\nmortar is a good module that I've tried to use, but my current model doesn't have good convergence for force contact on surfaces. It's a 3D problem. So I had to make the formulation a penalty in Contact.\nI have an idea that might be helpful for my problem. I first use MaterialRealAux and use an auxvariable to store the value of the thermal conductivity. Then I should be able to get the thermal conductivity value on the other side of the gap, just like I get the value of the temperature on the other side of the gap. But using the same code as the temperature, it does not work, probably because the family of the auxvariable is MONOMIAL.\nIs it possible to implement my idea. If so, how can I implement it?\n_paired_k(coupledValue(\"paired_thermal_conductivity\")),\n_paired_k_var(_quadrature ? getVar(\"paired_thermal_conductivity\", 0) : nullptr),\n_paired_k_solution(_quadrature ? &_paired_k_var->sys().currentSolution() : nullptr),\n_paired_k_dof_map(_quadrature ? &_paired_k_var->sys().dofMap() : nullptr),\n\nvoid\nGapConductance::computeGapValues()\n{\n  Node * qnode = _mesh.getQuadratureNode(_current_elem, _current_side, _qp);\n  PenetrationInfo * pinfo = _penetration_locator->_penetration_info[qnode->id()];\n  const Elem * secondary_side = pinfo->_side;\n  std::vector<std::vector<Real>> & secondary_side_phi = pinfo->_side_phi;\n  std::vector<dof_id_type> secondary_side_dof_indices;\n  _gap_paired_k=0.0;\n\n  //This line cannot be executed    *************************\n  _paired_k_dof_map->dof_indices(secondary_side, secondary_side_dof_indices, _paired_k_var->number());\n\n\n  for (unsigned int i = 0; i < secondary_side_dof_indices.size(); ++i)\n  {\n   _gap_paired_k +=\n        secondary_side_phi[i][0] * (*(*_paired_k_solution))(secondary_side_dof_indices[i]);\n  }\n}\n\nHere is the error message.\nlibMesh terminating:\nAssertion `s < this->n_systems()' failed.\ns = 1\nthis->n_systems() = 0\n\n\nStack frames: 25\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: libMesh::DofObject::n_comp_group(unsigned int, unsigned int) const\n3: libMesh::DofMap::_dof_indices(libMesh::Elem const&, int, std::vector<unsigned long, std::allocator<unsigned long> >&, unsigned int, unsigned int, libMesh::Node const* const*, unsigned int, unsigned int, unsigned long&) const\n4: libMesh::DofMap::dof_indices(libMesh::Elem const*, std::vector<unsigned long, std::allocator<unsigned long> >&, unsigned int, int) const\n\nI am very eager to get your help\uff01\nlwz",
+                          "url": "https://github.com/idaholab/moose/discussions/24613#discussioncomment-6124057",
+                          "updatedAt": "2023-06-08T15:28:56Z",
+                          "publishedAt": "2023-06-08T15:28:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "you are querying a side element which has no degrees of freedom associated with it. You need to be querying the volumetric element, which is pinfo->_elem",
+                          "url": "https://github.com/idaholab/moose/discussions/24613#discussioncomment-6124528",
+                          "updatedAt": "2023-06-08T16:14:51Z",
+                          "publishedAt": "2023-06-08T16:14:50Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nuomi68"
+                          },
+                          "bodyText": "Thank you very much for your reply to let me solve this problem, which was difficult for me. In the end, my code looks like this\nconst Elem * secondary_elem = pinfo->_elem;\n_gap_paired_k=0.0;\n      \n_paired_k_dof_map->dof_indices(secondary_elem, secondary_side_dof_indices, _paired_k_var->number());\n  //   for (unsigned int i = 0; i < secondary_side_dof_indices.size(); ++i)\n  // {\n  //  _gap_paired_k +=\n  //       secondary_side_phi[i][0] * (*(*_paired_k_solution))(secondary_side_dof_indices[i]);\n  // }\n_gap_paired_k=(*(*_paired_k_solution))(secondary_side_dof_indices[0]);\n\nOnce again, I would like to express my sincere gratitude for your selfless help.\nlwz",
+                          "url": "https://github.com/idaholab/moose/discussions/24613#discussioncomment-6125379",
+                          "updatedAt": "2023-06-08T18:04:58Z",
+                          "publishedAt": "2023-06-08T18:04:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "thank you for your gratitude @nuomi68. it's very much appreciated. Happy Mooseing!",
+                          "url": "https://github.com/idaholab/moose/discussions/24613#discussioncomment-6155489",
+                          "updatedAt": "2023-06-12T18:19:45Z",
+                          "publishedAt": "2023-06-12T18:19:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Packed Column",
+          "author": {
+            "login": "nourriahi"
+          },
+          "bodyText": "Hello everyone,\nI have been trying to use packed column header and source file which I edited them according to my needs, I used them later in the input file to vary my variables in function of temperature using csv files, the latest are well read when I use the command \"cat\" but unfortunately when opening the output file I see that the constant value is still being used instead.\n**Input file **\n  [Column]\n  type = PackedColumn\n  temperature = temperature \n  thermal_conductivity_file = data/thermal_conductivity_file1.csv\n  heat_capacity_file = data/heat_capacity_file1.csv\n  density_file = data/density_file1.csv\n  outputs = exodus \n  []\n\nPackedColumn.C\n#include \"PackedColumn.h\"\n#include\"DelimitedFileReader.h\"\n\n\nregisterMooseObject(\"additive_manufacturing_bottom_top_qs_temp_dependentApp\", PackedColumn);\n\nInputParameters\nPackedColumn::validParams()\n{\n  InputParameters params = ADMaterial::validParams();\n  params.addRequiredCoupledVar(\"temperature\",\"The temperature of the domain.\");\n  params.addParam<Real>(\n        \"thermal_conductivity\", 220, \"thermal_conductivity (K), default value for 298k\");\n  params.addParam<FileName>(\"thermal_conductivity_file\", \n                            \"the name of a file containing the thermal conductivity (K) as a function of temperature \"\n                            \"(k); if provided the constant value is ignored\");\n\n  params.addParam<Real>(\n        \"heat_capacity\", 988, \"heat_capacity (cp), default value for 298k\");\n  params.addParam<FileName>(\"heat_capacity_file\", \n                            \"the name of a file containing the heat capacity as a function of temperature \"\n                            \"(k); if provided the constant value is ignored\");\n\n  params.addParam<Real>(\n        \"density\", 2630, \"density (rho), default value for 298k\");\n  params.addParam<FileName>(\"density_file\", \n                            \"the name of a file containing the density (rho) as a function of temperature \"\n                            \"(rho); if provided the constant value is ignored\");\n\n  return params;\n}\n\nPackedColumn::PackedColumn(const InputParameters & parameters) \n : ADMaterial(parameters), \n \n  _temperature(adCoupledValue(\"temperature\")),\n\n  _k(getParam<Real>(\"thermal_conductivity\")),\n  _cp(getParam<Real>(\"heat_capacity\")),\n  _rho(getParam<Real>(\"density\")),\n\n  _thermal_conductivity(declareADProperty<Real>(\"thermal_conductivity\")),\n  _heat_capacity(declareADProperty<Real>(\"heat_capacity\")),\n  _density(declareADProperty<Real>(\"density\"))\n{\n // setting data for interpolation\n\n  _use_k_interp = initInputData(\"thermal_conductivity_file\", _k_interpolation);\n\n  _use_cp_interp = initInputData(\"heat_capacity_file\", _cp_interpolation);\n\n  _use_rho_interp = initInputData(\"density_file\", _rho_interpolation);\n\n}\nvoid \nPackedColumn::computeQpProperties()\n{\n\nADReal temp = _temperature[_qp];\n\nADReal k = _use_k_interp ? _k_interpolation.sample(temp) : _k;\n\nADReal cp = _use_cp_interp ? _cp_interpolation.sample(temp) : _cp;\n\nADReal rho = _use_rho_interp ? _rho_interpolation.sample(temp) : _rho;\n\n_thermal_conductivity[_qp] = _k;\n_heat_capacity[_qp] = _cp;\n_density[_qp] = _rho;\n\n}\n\nbool\nPackedColumn::initInputData(const std::string & param_name, ADLinearInterpolation & interp)\n{\n if (isParamValid(param_name))\n  {\n  const std::string & filename = getParam<FileName>(param_name);\n  MooseUtils::DelimitedFileReader reader(filename, &_communicator);\n  reader.setComment(\"#\");\n  reader.read();\n  interp.setData(reader.getData(0), reader.getData(1));\n  return true;\n  }\n return false;\n}\n\nPackedColumn.h\n#pragma once\n\n#include \"ADMaterial.h\"\n\n#include \"LinearInterpolation.h\"\n\nclass PackedColumn : public ADMaterial\n{\npublic:\n  static InputParameters validParams();\n\n  PackedColumn(const InputParameters & parameters);\n\nprotected: \n\n  virtual void computeQpProperties() override;\n\n  bool initInputData(const std::string & param_name, ADLinearInterpolation &interp);\n\n  const ADVariableValue & _temperature;\n\n  bool _use_k_interp;\n  const Real & _k;\n  ADLinearInterpolation _k_interpolation;\n\n  bool _use_cp_interp;\n  const Real & _cp;\n  ADLinearInterpolation _cp_interpolation;\n\n  bool _use_rho_interp;\n  const Real & _rho;\n  ADLinearInterpolation _rho_interpolation;\n\n\n  ADMaterialProperty<Real> & _thermal_conductivity;\n\n  ADMaterialProperty<Real> & _heat_capacity;\n\n  ADMaterialProperty<Real> & _density;\n\n  \n};\n\n\nThanks",
+          "url": "https://github.com/idaholab/moose/discussions/24659",
+          "updatedAt": "2023-06-12T16:13:03Z",
+          "publishedAt": "2023-06-12T11:13:34Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "KamalnathOSU"
+                  },
+                  "bodyText": "Hi @nourriahi ,\nThe problem is in your computeQpProperties() function. For the ADproperties you were always using the constants. If you modify it like below, it should work.\nvoid \nPackedColumn::computeQpProperties()\n{\n\nADReal temp = _temperature[_qp];\n\nADReal k = _use_k_interp ? _k_interpolation.sample(temp) : _k;\n\nADReal cp = _use_cp_interp ? _cp_interpolation.sample(temp) : _cp;\n\nADReal rho = _use_rho_interp ? _rho_interpolation.sample(temp) : _rho;\n\n_thermal_conductivity[_qp] = k; // note the change from _k to k\n_heat_capacity[_qp] = cp; // note the change from _cp to cp\n_density[_qp] = rho; // note the change from _rho to rho\n\n}\nTip: In future, while pasting the code in GitHub, it is better you can activate syntax highlighting .\n-Kamal",
+                  "url": "https://github.com/idaholab/moose/discussions/24659#discussioncomment-6154293",
+                  "updatedAt": "2023-06-12T16:09:02Z",
+                  "publishedAt": "2023-06-12T16:09:02Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nourriahi"
+                          },
+                          "bodyText": "Thanks for your reply, I managed to solve this issue with the same idea as your suggestion as well as getting rid of the possibility of having constant values (just left the syntax where parameters are declared as files in both header and source file)",
+                          "url": "https://github.com/idaholab/moose/discussions/24659#discussioncomment-6154332",
+                          "updatedAt": "2023-06-12T16:13:21Z",
+                          "publishedAt": "2023-06-12T16:13:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to apply constant velocity on blocks",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "This might be an easy question but I'm struggling to find an appropriate way to do it: I would like apply constant velocity on two blocks starting as initial condition shown in the figure. That is, I would like to have constant displacement increment keep adding into the system as time marching. How should I achieve this? Thanks in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/24640",
+          "updatedAt": "2023-06-24T22:48:22Z",
+          "publishedAt": "2023-06-09T03:55:14Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "This probably can help you :\nhttps://mooseframework.inl.gov/source/bcs/PresetVelocity.html\nor:\nhttps://mooseframework.inl.gov/source/auxkernels/NewmarkVelAux.html",
+                  "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6131995",
+                  "updatedAt": "2023-06-09T11:22:42Z",
+                  "publishedAt": "2023-06-09T11:22:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I think you want to displace the two blocks right?\n@recuero\nYou ll want to use the Dynamics tensor mechanics action.\nI could not find its documentation.\nPlease look for examples in the repo while we locate it\n    [./TensorMechanics/DynamicMaster]\n      [all]\n        add_variables = true\n        strain = FINITE\n        use_automatic_differentiation = false\n        generate_output = 'stress_xx stress_xy stress_xz stress_yy stress_yz stress_zz\n        strain_xx strain_xy strain_xz strain_yx strain_yy strain_yz strain_zx\n        strain_zy strain_zz\n  elastic_strain_xx  elastic_strain_xy  elastic_strain_xz  elastic_strain_yx  elastic_strain_yy\n   elastic_strain_yz  elastic_strain_zx  elastic_strain_zy  elastic_strain_zz  mechanical_strain_xx\n    mechanical_strain_xy  mechanical_strain_xz  mechanical_strain_yx  mechanical_strain_yy\n     mechanical_strain_yz  mechanical_strain_zx  mechanical_strain_zy  mechanical_strain_zz\n         vonmises_stress'\n      []\n    []\n  []\n\nlooks like this",
+                  "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6137198",
+                  "updatedAt": "2023-06-09T22:12:06Z",
+                  "publishedAt": "2023-06-09T22:12:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "If @chunhuizhao478 is using explicit, the Newmark way may not work in this case. The most immediate thing that comes to mind is to use a function that depends linearly on time (FunctionDirichletBC) applied to the displacements, have you tried that?",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6137334",
+                          "updatedAt": "2023-06-09T22:54:53Z",
+                          "publishedAt": "2023-06-09T22:54:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks Antonio, I indeed tried this, however, I think BC system don't have Block-Restrict functionality, I may only apply bc along the boundary at the interface",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6140644",
+                          "updatedAt": "2023-06-10T15:51:23Z",
+                          "publishedAt": "2023-06-10T15:51:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThe idea is that you apply the displacement on the boundary, and the rigidity of the solid makes it so that the entire solid moves.\nSo you dont need to \"block restrict\"\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6141407",
+                          "updatedAt": "2023-06-10T19:25:40Z",
+                          "publishedAt": "2023-06-10T19:25:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "The OP's description is unclear. I think he wants to apply an initial velocity to the entire system and in the hope that the inertia can keep the system moving. If so, you should look into initial condition rather than boundary condition.\n@GiudGiud if you do that you are essentially sending a shockwave through the boundaries.",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6142134",
+                          "updatedAt": "2023-06-10T23:31:56Z",
+                          "publishedAt": "2023-06-10T23:31:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks Gary, I think that's what I want to achieve, I'm not sure whether a constant velocity can be set with IC system, could you point out if there is a workaround?",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6142703",
+                          "updatedAt": "2023-06-11T03:51:44Z",
+                          "publishedAt": "2023-06-11T03:51:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "It depends on your time integration scheme. You can back up the correct u_0 that gives you the desired v_0.",
+                          "url": "https://github.com/idaholab/moose/discussions/24640#discussioncomment-6151872",
+                          "updatedAt": "2023-06-12T12:26:11Z",
+                          "publishedAt": "2023-06-12T12:26:10Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about Adaptivity block setting in MOOSE",
+          "author": {
+            "login": "abc-hy"
+          },
+          "bodyText": "Hi everyone,\nI was confused about the setting of adaptivity block in MOOSE. In the figure shown below, what does the coarsen factor mean? Does it mean, divided by 0.1 each time?\nSo, for example, if the original grid size is 0.2, then, for this adaptivity block setting, the coarsen factor can be applied for 3 times (because max_h_level is 3), and each time is divided by 0.1? So first time is 0.2/0.1=2, second time is 2/0.1=20, third time is 20/0.1=200. Therefore, the maximum possible grid size we can get is 200? Am I understanding correctly?\n\nThank you very much,\nBest,",
+          "url": "https://github.com/idaholab/moose/discussions/24657",
+          "updatedAt": "2023-06-24T22:48:42Z",
+          "publishedAt": "2023-06-11T03:51:20Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis parameter is forwarded to a libmesh class for mesh refinement\nhttps://mooseframework.inl.gov/docs/doxygen/libmesh/classlibMesh_1_1MeshRefinement.html#ac65900f46067a75f67814fc91ef05d4b\nIt means the fraction of elements to refine.\nSee the class documentation:\nThis method picks the top refine_fraction * n_elem elements for refinement and the bottom coarsen_fraction * n_elem elements for coarsening.\nRefinement is not done in arbitrary increments. A quad or a tri is split in 4 in each step at most. A hex is split in 8 hexes. We dont have any other divisions available (except from refining multiple times)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6142717",
+                  "updatedAt": "2023-06-11T04:03:00Z",
+                  "publishedAt": "2023-06-11T04:02:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abc-hy"
+                  },
+                  "bodyText": "So, you mean that the grid size can only be decreased/refined, it cannot be\nincreased? So the maximum grid size is the original grid size you set, am i\nright?\n\u2026\nOn Sat, Jun 10, 2023 at 11:03 PM Guillaume Giudicelli < ***@***.***> wrote:\n Hello\n\n This parameter is forwarded to a libmesh class for mesh refinement\n\n https://mooseframework.inl.gov/docs/doxygen/libmesh/classlibMesh_1_1MeshRefinement.html#ac65900f46067a75f67814fc91ef05d4b\n\n It means the fraction of elements to refine.\n See the class documentation:\n This method picks the top refine_fraction * n_elem elements for refinement\n and the bottom coarsen_fraction * n_elem elements for coarsening.\n\n Refinement is not done in arbitrary increments. A quad or a tri is split\n in 4 in each step at most. A hex is split in 8 hexes. We dont have any\n other divisions available (except from refining multiple times)\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#24657 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/APF2ZCQNLB6KDEIDESFHGW3XKU7P5ANCNFSM6AAAAAAZCCG4LQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6142801",
+                  "updatedAt": "2023-06-11T04:45:06Z",
+                  "publishedAt": "2023-06-11T04:45:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We can only undo refinement to increase. So you have to start with a mesh as coarse as you ll ever want it to be.",
+                          "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6142826",
+                          "updatedAt": "2023-06-11T04:55:36Z",
+                          "publishedAt": "2023-06-11T04:55:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abc-hy"
+                  },
+                  "bodyText": "Actually, i wanted to calculate the uncertainty of the model. So i need the\nmaximum possible discretization of x......\nSo the grid size will be divided by the coarsen factor to increase, is that\ncorrect?\n\u2026\nOn Sat, Jun 10, 2023 at 11:55 PM Guillaume Giudicelli < ***@***.***> wrote:\n We can only undo refinement to increase. So you have to start with a mesh\n as you ll ever want it to be.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#24657 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/APF2ZCSBK3TIMCUECGBWEYTXKVFUBANCNFSM6AAAAAAZCCG4LQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6144182",
+                  "updatedAt": "2023-06-11T11:56:16Z",
+                  "publishedAt": "2023-06-11T11:56:15Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No it's not correct.\nThe grid size will be divided by 4 (assuming quads) on every step of refinement, at the elements chosen for refinement (depending on the refine_fraction)",
+                          "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6144515",
+                          "updatedAt": "2023-06-11T13:16:22Z",
+                          "publishedAt": "2023-06-11T13:16:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abc-hy"
+                  },
+                  "bodyText": "SO, grid size will not be increased? What's the use of coarsen_factor?\n\u2026\nOn Sun, Jun 11, 2023 at 8:16\u202fAM Guillaume Giudicelli < ***@***.***> wrote:\n No it's not correct.\n The grid size will be divided by 4 (assuming quads) on every step of\n refinement, at the elements chosen for refinement (depending on the\n refine_fraction)\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#24657 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/APF2ZCT7QPWV76IFBYVPAYDXKXAK7ANCNFSM6AAAAAAZCCG4LQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6144652",
+                  "updatedAt": "2023-06-11T13:49:06Z",
+                  "publishedAt": "2023-06-11T13:49:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abc-hy"
+                  },
+                  "bodyText": "If grid size cannot be increased, why do we need coarsen factor there?\n\nOn Sun, Jun 11, 2023 at 8:48\u202fAM Haiying Yang ***@***.***>\nwrote:\n\u2026\n SO, grid size will not be increased? What's the use of coarsen_factor?\n\n On Sun, Jun 11, 2023 at 8:16\u202fAM Guillaume Giudicelli <\n ***@***.***> wrote:\n\n> No it's not correct.\n> The grid size will be divided by 4 (assuming quads) on every step of\n> refinement, at the elements chosen for refinement (depending on the\n> refine_fraction)\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#24657 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/APF2ZCT7QPWV76IFBYVPAYDXKXAK7ANCNFSM6AAAAAAZCCG4LQ>\n> .\n> You are receiving this because you authored the thread.Message ID:\n> ***@***.***>\n>",
+                  "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6144660",
+                  "updatedAt": "2023-06-11T13:50:41Z",
+                  "publishedAt": "2023-06-11T13:50:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Coarsening is used to undo levels of refinement.\nYou should just try it out on a square problem with dummy variables to see what it does",
+                          "url": "https://github.com/idaholab/moose/discussions/24657#discussioncomment-6144698",
+                          "updatedAt": "2023-06-11T14:00:13Z",
+                          "publishedAt": "2023-06-11T14:00:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "What is the best way to constrain the composition while using CALPHAD type free energy ?",
+          "author": {
+            "login": "KamalnathOSU"
+          },
+          "bodyText": "Hi all,\nWhile using CALPHAD free energy in the phase-field governing equations, we don't want the composition to approach 0 or 1 due to the presence of log(c) and log(1-c) terms. From the documentation, it looks like damper system is my best bet. But I have some doubts on it.\n\nI could not decide between BoundingValueElementDamper and BoundingValueNodalDamper. Both of them seem to operate on quadrature points. In what way they are different ?\nHow to decide the value of \"min_damping\" in this case. Is there any general guidance.\nIs there any phase-field examples file which uses damping system ?\n\nP.S: I know that using \"plog\" in the analytical expression of free energy is an alternative but in my case, I cant change the free energy expression.",
+          "url": "https://github.com/idaholab/moose/discussions/24629",
+          "updatedAt": "2023-06-12T16:22:32Z",
+          "publishedAt": "2023-06-08T14:57:57Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI would stick to NodalDamper for a nodal variable (lagrange for example) and element damper for an elemental variable (monomial for example)\nThe type of the damper will determine if the damping factor is computed only once (nodal) or on every qp (element)\nThe of the auxiliary variable for the damper will determine how the auxiliary kernel is executed. Make sure to use the same variable type as c\nAnother option btw is to use the Bounds system\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24629#discussioncomment-6126031",
+                  "updatedAt": "2023-06-08T19:41:03Z",
+                  "publishedAt": "2023-06-08T19:41:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GuoChi-Li"
+                  },
+                  "bodyText": "Hello\nIn my simulation, I also have log(c) and log(1-c) terms in my free energy function, which will cause NaN while solving the problem. Therefore, I use [Bounds] to fix it.\nA sample code would be\n[AuxVariables]\n  [./bounds_dummy]\n    order = FIRST\n    family = LAGRANGE\n  [../]\n[]\n\n[Bounds]\n  [./c_upper_bound]\n    type = ConstantBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = upper\n    bound_value = 1\n  [../]\n\n  [./c_lower_bound]\n    type = ConstantBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = lower\n    bound_value = 0\n  [../]\n\nI actually asked a similar question relating to your question. Here is the link.",
+                  "url": "https://github.com/idaholab/moose/discussions/24629#discussioncomment-6142365",
+                  "updatedAt": "2023-06-11T01:35:48Z",
+                  "publishedAt": "2023-06-11T01:34:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "KamalnathOSU"
+                  },
+                  "bodyText": "Thank you @GuoChi-Li . I will try that.",
+                  "url": "https://github.com/idaholab/moose/discussions/24629#discussioncomment-6142371",
+                  "updatedAt": "2023-06-11T01:36:46Z",
+                  "publishedAt": "2023-06-11T01:36:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

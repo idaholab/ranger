@@ -1,0 +1,893 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wOS0yM1QwMDo1MzowMS0wNjowMM4AVmLQ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Different eigenstrain at the boundary than expected",
+          "author": {
+            "login": "chakra34"
+          },
+          "bodyText": "Hi Moose community,\nI am solving a simple thermo-elastic problem with the following temperature profile for a simple cube ( a linearly varying temperature from 0-200 along z):\n\nFor this I am also giving a temperature independent and isotropic CTE of 1e-4 and a stress free temperature of 100 C. So in that case the eigenstrain should be 1e-4*(T-100) thus ranging between -0.01 to 0.01. However, when I see the moose results i see at the boundaries the value is +/- 0.0095 instead of +/- 0.01. What is the reason for this discrepancy?\n\nAlso the line profile (across the mid-cube along z) looks like this:\n\nClearly, there is a slope change at the boundary.\nFollowing is my input file\n[Mesh]\n  type = GeneratedMesh\n  dim = 3\n  nx = 20\n  ny = 20\n  nz = 20\n  xmin = 0.0\n  xmax = 1.0\n  ymin = 0.0\n  ymax = 1.0\n  zmin = 0.0\n  zmax = 1.0\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n\n[Functions]\n  [./topfunc]\n    type = ParsedFunction\n    value = '1e-4*t' # ramped displacement BC\n  [../]\n\n  [./temp_function]\n    type  = ParsedFunction\n    value = '200.0*(z+0)'\n  [../]\n  \n[]\n\n[BCs]\n\n  [./bot_fix_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'bottom'\n    value = 0\n  [../]\n\n  [./top_disp_y]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = 'top'\n    function = topfunc\n  [../]\n\n  [./left_fix_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'left'\n    value = 0\n  [../]\n\n  [./front_fix_z]\n    type = DirichletBC\n    variable = disp_z\n    boundary = 'front'\n    value = 0\n  [../]\n\n[]\n\n[Modules/TensorMechanics/Master/All]\n  strain = FINITE\n  incremental = true\n  add_variables = true\n  temperature = temp\n  eigenstrain_names = eigenstrain  \n  generate_output = 'stress_xx stress_yy stress_zz stress_xy stress_yz stress_zx'\n  use_automatic_differentiation = false\n[]\n[Materials]\n  [elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 150e9\n    poissons_ratio = 0.3\n  []\n\n  [./stress]\n    type = ComputeFiniteStrainElasticStress\n  [../]\n\n  [./thermal_expansion_strain]\n    type = ComputeThermalExpansionEigenstrain\n    thermal_expansion_coeff = 1.0e-4\n    stress_free_temperature = 100.0\n    temperature = temp\n    eigenstrain_name = eigenstrain\n  [../]\n\n[]\n\n\n[AuxVariables]\n  [temp]\n    order  = FIRST\n    family = LAGRANGE\n  []\n  [./vM_elastic_strain]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]  \n  [./von_mises_stress]\n\t#Dependent variable used to visualize the Von Mises stress\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n\n  [./eigenstrain_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./eigenstrain_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./eigenstrain_zz]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n\n  [./total_strain_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./total_strain_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./total_strain_zz]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n\n  [./sigma_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./sigma_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./sigma_zz]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n\n[]\n\n[AuxKernels]\n  [set_temp]\n     variable = temp\n     type = FunctionAux\n     function = temp_function\n  []\n  [./elastic_strain_aux]\n    type = RankTwoScalarAux\n    variable = vM_elastic_strain\n    rank_two_tensor = elastic_strain\n    scalar_type = VonMisesStress\n    execute_on = timestep_end\n  [../]\n  [./von_mises_kernel_stress]\n   #Calculates the von mises stress and assigns it to von_mises_stress\n    type = RankTwoScalarAux\n    variable = von_mises_stress\n    rank_two_tensor = stress\n    execute_on = timestep_end\n    scalar_type = VonMisesStress\n  [../]\n\n  [./eigenstrain_yy]\n    type = RankTwoAux\n    rank_two_tensor = eigenstrain\n    variable = eigenstrain_yy\n    index_i = 1\n    index_j = 1\n    execute_on = 'initial timestep_end'\n  [../]\n  [./eigenstrain_xx]\n    type = RankTwoAux\n    rank_two_tensor = eigenstrain\n    variable = eigenstrain_xx\n    index_i = 0\n    index_j = 0\n    execute_on = 'initial timestep_end'\n  [../]\n  [./eigenstrain_zz]\n    type = RankTwoAux\n    rank_two_tensor = eigenstrain\n    variable = eigenstrain_zz\n    index_i = 2\n    index_j = 2\n    execute_on = 'initial timestep_end'\n  [../]\n\n\n  [./total_strain_xx]\n    type = RankTwoAux\n    rank_two_tensor = total_strain\n    variable = total_strain_xx\n    index_i = 0\n    index_j = 0\n    execute_on = 'initial timestep_end'\n  [../]\n  [./total_strain_yy]\n    type = RankTwoAux\n    rank_two_tensor = total_strain\n    variable = total_strain_yy\n    index_i = 1\n    index_j = 1\n    execute_on = 'initial timestep_end'\n  [../]\n  [./total_strain_zz]\n    type = RankTwoAux\n    rank_two_tensor = total_strain\n    variable = total_strain_zz\n    index_i = 2\n    index_j = 2\n    execute_on = 'initial timestep_end'\n  [../]\n\n  [./sigma_xx]\n    type = RankTwoAux\n    rank_two_tensor = stress\n    variable = sigma_xx\n    index_i = 0\n    index_j = 0\n    execute_on = 'initial timestep_end'\n  [../]\n  [./sigma_yy]\n    type = RankTwoAux\n    rank_two_tensor = stress\n    variable = sigma_yy\n    index_i = 1\n    index_j = 1\n    execute_on = 'initial timestep_end'\n  [../]\n  [./sigma_zz]\n    type = RankTwoAux\n    rank_two_tensor = stress\n    variable = sigma_zz\n    index_i = 2\n    index_j = 2\n    execute_on = 'initial timestep_end'\n  [../]\n  \n[]\n\n[Postprocessors]\n\n  [./stress_mag]\n    type = ElementAverageValue\n    variable = von_mises_stress\n  [../]\n\n  [./strain_zz]\n    type = ElementAverageValue\n    variable = von_mises_stress\n  [../]\n\n  [./sigma_xx]\n    type = ElementAverageValue\n    variable = sigma_xx\n    execute_on = 'initial timestep_end'\n  [../]\n  [./sigma_yy]\n    type = ElementAverageValue\n    variable = sigma_yy\n    execute_on = 'initial timestep_end'\n  [../]\n  [./sigma_zz]\n    type = ElementAverageValue\n    variable = sigma_zz\n    execute_on = 'initial timestep_end'\n  [../]\n\n   [./eigenstrain_xx]\n    type = ElementAverageValue\n    variable = eigenstrain_xx\n    execute_on = 'initial timestep_end'\n  [../]\n  [./eigenstrain_yy]\n    type = ElementAverageValue\n    variable = eigenstrain_yy\n    execute_on = 'initial timestep_end'\n  [../]\n  [./eigenstrain_zz]\n    type = ElementAverageValue\n    variable = eigenstrain_zz\n    execute_on = 'initial timestep_end'\n  [../]\n\n  [./total_strain_xx]\n    type = ElementAverageValue\n    variable = total_strain_xx\n    execute_on = 'initial timestep_end'\n  [../]\n  [./total_strain_yy]\n    type = ElementAverageValue\n    variable = total_strain_yy\n    execute_on = 'initial timestep_end'\n  [../]\n  [./total_strain_zz]\n    type = ElementAverageValue\n    variable = total_strain_zz\n    execute_on = 'initial timestep_end'\n  [../]\n\n[]\n\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = 'Newton'\n\n  start_time = 0.0\n  dt    = 0.1\n  dtmax = 1.0\n  dtmin = 1e-31\n  nl_abs_tol = 1e-6\n  end_time = 10\n []\n\n[Outputs]\n  print_linear_residuals = true\n  perf_graph = true\n  csv = true\n  [./out]\n    type = Exodus\n    elemental_as_nodal = true\n  [../]\n  [./console]\n    type = Console\n    max_rows = 100\n  [../]\n[]\n\n\nThanks!\n-Aritra",
+          "url": "https://github.com/idaholab/moose/discussions/25572",
+          "updatedAt": "2023-09-28T13:11:35Z",
+          "publishedAt": "2023-09-25T16:53:23Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe value you are visualizing is the element centroid value, while the temperature is a nodal lagrange variable.\nI d look there for the discrepancy. I think it might be a visualization / output issue\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25572#discussioncomment-7104222",
+                  "updatedAt": "2023-09-25T16:57:35Z",
+                  "publishedAt": "2023-09-25T16:57:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "Thanks a lot @GiudGiud! Yeah makes sense, is there a way to get the nodal values as an output in moose for all nodes ? So basically how do I go about verifying this ?\n-Aritra",
+                          "url": "https://github.com/idaholab/moose/discussions/25572#discussioncomment-7104422",
+                          "updatedAt": "2023-09-25T17:18:54Z",
+                          "publishedAt": "2023-09-25T17:18:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can use a ProjectionAux to make a projection to an axuiliary variable of a different type but there can be an error",
+                          "url": "https://github.com/idaholab/moose/discussions/25572#discussioncomment-7104538",
+                          "updatedAt": "2023-09-25T17:42:13Z",
+                          "publishedAt": "2023-09-25T17:34:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "Seems like changing the auxvariabe to have SECOND order gives the proper values at the boundary! might be because strain is a derivative of displacement so having higher order makes it continuous - makes sense!?\n\nThanks  a lot!\n-Aritra",
+                          "url": "https://github.com/idaholab/moose/discussions/25572#discussioncomment-7104861",
+                          "updatedAt": "2023-09-25T18:18:25Z",
+                          "publishedAt": "2023-09-25T18:18:23Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Can we use first or second lagrange variable in THM?",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel Hi Josh,\nAs the title, can we set the solution variable to first or second lagrange? If so, is there anything that requires additional development?\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/25529",
+          "updatedAt": "2023-09-25T17:09:49Z",
+          "publishedAt": "2023-09-20T14:46:36Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "If you're asking about the flow channel components, you're stuck with CONST MONOMIAL because the spatial discretization is actually a finite volume scheme. To use a different FE type, you'd need a corresponding stabilization. We used to have FIRST LAGRANGE in the beginning with an artificial viscosity, but it was a bit problem-dependent to get it right.",
+                  "url": "https://github.com/idaholab/moose/discussions/25529#discussioncomment-7063542",
+                  "updatedAt": "2023-09-20T22:52:28Z",
+                  "publishedAt": "2023-09-20T22:52:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Yes flow channel components. I want to find out if higher-order discretization lead to more precise calculations. Btw, where can I change the order of the variable?",
+                          "url": "https://github.com/idaholab/moose/discussions/25529#discussioncomment-7089208",
+                          "updatedAt": "2023-09-23T14:35:04Z",
+                          "publishedAt": "2023-09-23T14:35:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The variables are created by the component. You could change the order in the code for sure, but again it wont necessarily converge.\nI think refining the mesh is a more supported way of examining the spatial discretization errors in your calculation",
+                          "url": "https://github.com/idaholab/moose/discussions/25529#discussioncomment-7091528",
+                          "updatedAt": "2023-09-24T01:43:27Z",
+                          "publishedAt": "2023-09-24T01:43:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "If you tried to change the variable order/family with our current methods, I just don't know what would happen. Immediate error maybe, or maybe just silent garbage.\nBut @GiudGiud is right, refining the mesh is your best bet. There are slope reconstruction options as well. There's a parameter rdg_slope_reconstruction = FULL you can use in the flow channel to get 2nd order, which will reduce mesh discretization much quicker.",
+                          "url": "https://github.com/idaholab/moose/discussions/25529#discussioncomment-7101539",
+                          "updatedAt": "2023-09-25T13:01:29Z",
+                          "publishedAt": "2023-09-25T13:01:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "As @joshuahansel said the implementation is FV/rDG, not DG. So you cannot adjust the convergence order by changing the polynomial order of the variable basis. You would have to be able to change the order of the reconstruction; one of the ways is to do what @joshuahansel mentioned with the full reconstruction. But fundamentally you will be limited at the upper end to a second order accurate reconstruction (with respect to an L2 norm)",
+                          "url": "https://github.com/idaholab/moose/discussions/25529#discussioncomment-7104338",
+                          "updatedAt": "2023-09-25T17:09:51Z",
+                          "publishedAt": "2023-09-25T17:09:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "which user object is so expensive in performance output?",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "I've got a mechanics problem that I'm running with PerfGraph output on and heaviest_branch = true. The bottom-most line on the heaviest branch output is \"ComputeUserObjects\". Is there a way to see which user object is taking up the most time?",
+          "url": "https://github.com/idaholab/moose/discussions/25517",
+          "updatedAt": "2023-09-25T16:05:16Z",
+          "publishedAt": "2023-09-19T19:32:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Maybe not with just MOOSE. For this kind of thing I'd use a full-blown profiler like gperftools as described in our profiling page.",
+                  "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050482",
+                  "updatedAt": "2023-09-19T19:57:11Z",
+                  "publishedAt": "2023-09-19T19:57:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Ah thanks. I'll look into this. Any other profiling tools that you can recommend that may already be installed on an HPC?",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050560",
+                          "updatedAt": "2023-09-19T20:06:58Z",
+                          "publishedAt": "2023-09-19T20:06:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "On INL HPC, gperftools/2.9 is probably the easiest to get going with. Just recompile in oprof mode\nyou can also find a vTune module from intel that is quite nice for very advanced studies. You can use it without the intel compilers too\nThere's a pprof module too\npprof: pprof/2022",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050595",
+                          "updatedAt": "2023-09-19T20:11:31Z",
+                          "publishedAt": "2023-09-19T20:11:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "I'm on my company's HPC, which is airgapped \ud83d\ude1e",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050604",
+                          "updatedAt": "2023-09-19T20:12:37Z",
+                          "publishedAt": "2023-09-19T20:12:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "any of these 3 installed already?",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050608",
+                          "updatedAt": "2023-09-19T20:13:07Z",
+                          "publishedAt": "2023-09-19T20:13:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Let me check...",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7050735",
+                          "updatedAt": "2023-09-19T20:23:31Z",
+                          "publishedAt": "2023-09-19T20:23:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Followup: the FEProblem::computeUserObjects method includes Postprocessors too, right?",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7103442",
+                          "updatedAt": "2023-09-25T15:44:00Z",
+                          "publishedAt": "2023-09-25T15:43:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes",
+                          "url": "https://github.com/idaholab/moose/discussions/25517#discussioncomment-7103707",
+                          "updatedAt": "2023-09-25T16:05:16Z",
+                          "publishedAt": "2023-09-25T16:05:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Not converge in liquid-metal calculation when velocity is low",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel @GiudGiud Hi guys, I create the subchannel calculation app on the basis of THM. It calculates all the channels together. But I found the  convergence is not good when the velocity is low(about 0.1 m/s).  As far as I know, SIMPLE method also has this problem. But SIMPLE can solve the case whose velocity is about 0.01 m/s(can't be lower). In MOOSE, the solving method is PJFNK. I'm wondering if there is some numerical methods in MOOSE which can help and solve this problem.\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/25315",
+          "updatedAt": "2023-09-25T12:56:08Z",
+          "publishedAt": "2023-08-28T12:42:43Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Have you already tried NEWTON instead of PJFNK?\nI'm not sure why convergence would be poor for small velocities with the spatial discretization in THM - I have not observed this before.",
+                  "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6842357",
+                  "updatedAt": "2023-08-28T13:06:48Z",
+                  "publishedAt": "2023-08-28T13:06:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Have you already tried NEWTON instead of PJFNK?\n\nThanks. I'll have a try.\n\nI'm not sure why convergence would be poor for small velocities with the spatial discretization in THM - I have not observed this before.\n\nNot in THM, but in my own subchannel app. In THM, I've tried a small velocity case, there's no non-converged situation.",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6843091",
+                          "updatedAt": "2023-08-28T14:15:19Z",
+                          "publishedAt": "2023-08-28T14:15:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If it s based on THM it might struggle too. Sodium is nearly incompressible right?",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6843430",
+                          "updatedAt": "2023-08-28T14:46:44Z",
+                          "publishedAt": "2023-08-28T14:46:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Yes, nearly incompressible. Oh I remember something, I change the numerical flux function from ADNumericalFlux3EqnHLLC to ADNumericalFlux3EqnCentered to calculate incompressible fluid. ADNumericalFlux3EqnCentered is not steady and it might be the reason. Maybe we can find a HLLC method for incompressible fluid?",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6847987",
+                          "updatedAt": "2023-08-29T01:39:45Z",
+                          "publishedAt": "2023-08-29T01:39:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Right ADNumericalFlux3EqnCentered is not recommended because it is not stable; it is recommended for testing only. I don't think HLLC makes sense for a truly incompressible fluid because it's based on finite wave speeds, but you may just be dealing with nearly incompressible fluids. SodiumSaturationFluidProperties for example could be an issue without any pressure dependence. I'm not sure. For nearly incompressible, HLLC will technically work, but have a lot of discretization error, so you may need to use a lot of mesh refinement, depending on your situation.",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6852549",
+                          "updatedAt": "2023-08-29T12:15:06Z",
+                          "publishedAt": "2023-08-29T12:15:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Thanks. First I need to find an available HLLC method for incompressible fluids. Btw, have you ever found any info about it?\nAnd I have another question: Is slope limiter necessary? If I don't add slope limiter, will the convergence be influenced?",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6853118",
+                          "updatedAt": "2023-08-29T13:09:33Z",
+                          "publishedAt": "2023-08-29T13:09:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "There are \"low-Mach fixes\" for HLLC that attempt to dial back some of the discretization error. I've tried one before and had limited success - it's problem-dependent. For slope reconstruction, I'd just do slope_reconstruction = FULL unless you see some kind of oscillatory results. For the problems we typically run, I rarely see any issues. I sometimes try the slope limiter options (e.g., minmod), but I often see bad results, except for the toy compressible flow problems like shock tubes.",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-6853475",
+                          "updatedAt": "2023-08-29T13:44:38Z",
+                          "publishedAt": "2023-08-29T13:44:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel I find that there's some mistakes in my wall friction model. And when I use a correct model, I find the low-velocity case still don't converge using PJFNK, but converges using NEWTON. I use SMP preconditioning all the time. Is there any difference in the convergence properties between PJFNK and Newton methods?\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-7089194",
+                          "updatedAt": "2023-09-23T14:31:55Z",
+                          "publishedAt": "2023-09-23T14:31:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hi Ethan\ncan you try setting full=true for pjfnk in the SMP preconditioning",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-7089703",
+                          "updatedAt": "2023-09-24T01:38:40Z",
+                          "publishedAt": "2023-09-23T16:14:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@GiudGiud I set full=true in SMP preconditioning all the time. But I don't know why the convergence properties between PJFNK and Newton methods is different. I mean NEWTON and PJFNK with full SMP preconditioning.",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-7092123",
+                          "updatedAt": "2023-09-24T06:45:17Z",
+                          "publishedAt": "2023-09-24T06:45:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Is there any difference in the convergence properties between PJFNK and Newton methods?\n\nThere is certainly a difference. My opinion is: if you have the exact Jacobian (which should be the case in THM), use NEWTON. If one doesn't work, try the other.",
+                          "url": "https://github.com/idaholab/moose/discussions/25315#discussioncomment-7101483",
+                          "updatedAt": "2023-09-25T12:56:08Z",
+                          "publishedAt": "2023-09-25T12:56:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to set pressure and stress BCs for THM in porous flow",
+          "author": {
+            "login": "Ali1990dashti"
+          },
+          "bodyText": "Dear all,\nI am trying to make a THM simulation for a storage scenario using porous flow. The model is also under the influence of stress in 3 directions, i.e. x, y, and z. For the x direction I have set the force on the left side of the model and fixed the x displacement to be zero on the right side. For y, the force is on the backside while on the front side  y displacement is zero. For z, the stress BC is on the top while the z displacement is zero on the bottom. I have also set three pressure BCs on the left side, back side and right side of the model. When I run the model, the pressure BCs in the surrounding three surfaces of the model drops the pressure value (~ 2MPa) inside the model. How can I avoid it? The following fig shows the simulation in time -29 days (I started from -30 days to maybe reach the equilibrium at time 0):\n\nThe line plot is passing through a depth of 1055 m and I expect a ~ 10 MPa pressure but in the model the pressure is dropping.\nMy input file and mesh are uploaded to this repository: https://github.com/Ali1990dashti/input_file_for_PF\nI very much appreciate any help.",
+          "url": "https://github.com/idaholab/moose/discussions/25400",
+          "updatedAt": "2023-09-25T09:06:01Z",
+          "publishedAt": "2023-09-05T07:07:06Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cpgr",
+                  "url": "https://github.com/idaholab/moose/discussions/25400#discussioncomment-6933130",
+                  "updatedAt": "2023-09-07T05:01:41Z",
+                  "publishedAt": "2023-09-07T05:01:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I haven't had a chance to have a good look, but something is throwing the initial equilibrium out of whack. Something that stands out is the value of gravity in the Gravity kernel - I think your units are Pa not MPa, so it should just be -10?",
+                          "url": "https://github.com/idaholab/moose/discussions/25400#discussioncomment-6966074",
+                          "updatedAt": "2023-09-11T10:26:37Z",
+                          "publishedAt": "2023-09-11T10:26:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ali1990dashti"
+                          },
+                          "bodyText": "Dear @cpgr, thanks for your reply. I changed my mistake regarding the gravity value. I updated it to -9.81 but still the same results. I tried a TH model with almost the same setting in porous flow and it worked, but I have no idea why when I couple the mechanics part to it so many issues happen. On the same face in my mesh I am implementing a force and pressure BC, can this make trouble? I very much appreciate your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/25400#discussioncomment-6966507",
+                          "updatedAt": "2023-09-11T11:41:54Z",
+                          "publishedAt": "2023-09-11T11:14:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ali1990dashti"
+                          },
+                          "bodyText": "@cpgr and @WilkAndy, I am still struggling with the same problem: a THM simulation in porous flow in which the pressure behaves strangely. Thanks to the comment of @cpgr,  I updated the Gravity value (to be -9.81) but the results did not change.\nThanks for your help and support.",
+                          "url": "https://github.com/idaholab/moose/discussions/25400#discussioncomment-7099314",
+                          "updatedAt": "2023-09-25T09:06:02Z",
+                          "publishedAt": "2023-09-25T09:06:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Water and Steam Dominated Hydrothermal System",
+          "author": {
+            "login": "geoyanzhan3"
+          },
+          "bodyText": "Dear all,\nOur group tried to implement the two-phase (phase change between liquid and water vapor) flow in a porous media using the same governing equations published in (Faust and Mercer, 1979).\nWe tried to use COMSOL, but COMSOL doesn't use enthalpy as the variable for energy balance. We wrote our own PDE in COMSOL, but it was not very stable, and super slow.\nI wonder if MOOSE can be used to solve those equations as attached. I guess MOOSE already has the water-steam table for getting the parameters dependent on $p, h$.\nThank you so much!\nBest,\nYan\nThe governing equations for the problem.\n$$ \\frac{\\partial (\\phi \\rho)}{\\partial t} - \\nabla \\cdot [ \\frac{K k_{rs} \\rho_s} {\\mu_s} \\cdot (\\nabla p - \\rho_s g )] - \\nabla \\cdot [ \\frac{K k_{rw} \\rho_w} {\\mu_w} \\cdot (\\nabla p - \\rho_w g )] = 0 $$\n$$ \\frac{\\partial}{\\partial t}[\\phi \\rho h + (1 - \\phi) \\rho_r h_r] - \\nabla \\cdot [ \\frac{K k_{rs} \\rho_s h_s} {\\mu_s} \\cdot (\\nabla p - \\rho_s g )] - \\nabla \\cdot [ \\frac{K k_{rw} \\rho_w h_w} {\\mu_w} \\cdot (\\nabla p - \\rho_w g )] -  \\nabla \\cdot [K_m (\\frac{\\partial T}{\\partial p})_h \\nabla p + K_m (\\frac{\\partial T}{\\partial h})_p \\nabla h]= 0 $$\nVariable:\n\n\n$p$ = Pressure\n\n$h$ = Enthalpy\n\nParameters dependent on $p, h$ (can be acquired by the water-steam table):\n\nT = temperature\n\n$h_r = C_p^r T$ = rock enthalpy\n\n$k_{rw}$ = relative permeability of water\n\n$k_{rs}$ = relative permeability of steam\n\n$\\rho_w$ = density of water\n\n$\\rho_s$ = density of steam\n\n$h_w$ = enthalpy of water\n\n$h_s$ = enthalpy of steam\n\n$\\mu_w$ = viscosity of water\n\n$\\mu_s$ = viscosity of steam\n\nParameters independent on $p, h$\n\n\n$\\phi$ = Porosity\n\n$K$ = Intrinsic permeability\n\n$K_m$ = medium thermal conductivity\n\n$\\rho_r$ = rock density\n\n$C_p^r$ = rock specific heat capacity",
+          "url": "https://github.com/idaholab/moose/discussions/25493",
+          "updatedAt": "2023-09-25T08:50:10Z",
+          "publishedAt": "2023-09-18T09:38:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cpgr @rpodgorney",
+                  "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7033902",
+                  "updatedAt": "2023-09-18T12:01:01Z",
+                  "publishedAt": "2023-09-18T12:01:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "We do have some limited pressure - enthalpy capability for water and steam in porous media - see an example https://mooseframework.inl.gov/modules/porous_flow/water_vapor.html",
+                  "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7040748",
+                  "updatedAt": "2023-09-19T02:01:11Z",
+                  "publishedAt": "2023-09-19T02:01:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "geoyanzhan3"
+                          },
+                          "bodyText": "Thank you! I have already read that page. Do you know how to set the initial water saturation if the initial fluid state is two-phase? For example, I want to benchmark the code with the Problem 2B in the DOE code comparison project. As attached",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7041023",
+                          "updatedAt": "2023-09-19T02:44:18Z",
+                          "publishedAt": "2023-09-19T02:44:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "geoyanzhan3"
+                          },
+                          "bodyText": "In addition, I benchmarked the problem in COMSOL by using temperature as the variable for the energy. And define a transition around the boiling temperature of the water to make the water or stream quality as a function of the temperature. Then, calculate the saturation to get other parameters. But this method doesn\u2019t work for other problems. Therefore, I want to try the original formulation by Faust et al. However, comsol seems does not like the enthalpy setting.",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7041059",
+                          "updatedAt": "2023-09-19T02:51:14Z",
+                          "publishedAt": "2023-09-19T02:51:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Oh, I just checked and we have an IC for the more complicated models that computes everything given an initial saturation, but not for this one. It wouldn't be hard to make, but you could just work out the initial enthalpy by hand for this case just rearranging Eq 3 of the linked page.",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7041133",
+                          "updatedAt": "2023-09-19T03:05:09Z",
+                          "publishedAt": "2023-09-19T03:05:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "geoyanzhan3"
+                          },
+                          "bodyText": "Thank you @cpgr !\nI have created an input file based on modules/porous_flow/test/tests/fluidstate/water_vapor.i to solve the problem 2B that I mentioned.\nI changed the parameters and the initial value to make the initial sw~0.65. I added a mass outflow boundary to the left:\n[BCs]\n  [drainage]\n    type = PorousFlowSink\n    variable = pliq\n    boundary = left\n    flux_function = -0.053\n  []\n[]\n\nI wonder how to set the capillary pressure as zero. And can I make the timestep increase exponentially?\nI am attaching the input file. Thank you very much!\nwater_vapor_problem2b.i.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7042171",
+                          "updatedAt": "2023-09-21T02:57:16Z",
+                          "publishedAt": "2023-09-19T06:31:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "geoyanzhan3"
+                          },
+                          "bodyText": "I modified the executioner to use the iteration adaptive stepper.\nBut the model doesn't converge after several time steps.  I appreciate any help in figuring out why it happens\nI am also attaching the updated input file. Thank you!\nwater_vapor_problem2b.i.zip\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  dtmin = 0.01\n  dtmax = 100\n  end_time = 1e5\n  nl_abs_tol = 1e-5\n    [TimeStepper]\n    type = IterationAdaptiveDT\n    optimal_iterations = 5\n    dt = 1.0\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7064749",
+                          "updatedAt": "2023-09-21T02:24:24Z",
+                          "publishedAt": "2023-09-21T02:24:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "these instructions may be able to help in the mean time\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7064900",
+                          "updatedAt": "2023-09-21T02:46:42Z",
+                          "publishedAt": "2023-09-21T02:46:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "It's almost certainly your BC that is causing the issue. At the moment, it is taking water only, no steam, and only mass, not heat.\nI assume from the benchmark problem that it should take both water and steam (mass and heat), at a ration given by the relatively perms?",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7065302",
+                          "updatedAt": "2023-09-21T03:55:53Z",
+                          "publishedAt": "2023-09-21T03:55:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "PS - a zero capillary pressure can be used pretty easily:\ntype = PorousFlowCapillaryPressureConst\npc = 0",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7065307",
+                          "updatedAt": "2023-09-21T03:56:41Z",
+                          "publishedAt": "2023-09-21T03:56:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "geoyanzhan3"
+                          },
+                          "bodyText": "Thank you very much! Do you know which BC module can I use? Or can I keep use \"PorousFlowSink\" but modified the parameters?\n[BCs]\n  [drainage]\n    type = PorousFlowSink\n    variable = pliq\n    boundary = left\n    flux_function = -0.053158\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/25493#discussioncomment-7099159",
+                          "updatedAt": "2023-09-25T08:50:10Z",
+                          "publishedAt": "2023-09-25T08:50:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to sort nodal values based on x, then y then z?",
+          "author": {
+            "login": "aaelmeli"
+          },
+          "bodyText": "Hi,\nI have a vector of sampled data on a plane from a 3D mesh where their sampled coordinates look like:\n\nx     y     z\n\n0.015, 0, 0.021\n0.015, 0, 0.001\n0.015, 0, 0.006\n0.015, 0, 0.012\n0.015, 0.001, 0.029\n0.015, 0.001, 0.005\n0.015, 0.001, 0.003\n0.015, 0.001, 0.014\n\nI used NodalValueSampler to sample the nodal values with sort_by=y option. As you see, x is fixed because I am sampling on a plane at x=0.015, y goes from lower to higher numbers (essentially because I used sort_by=y), however, for z, I could not sort it ascendingly like the following:\n\n0.015, 0, 0.001\n0.015, 0, 0.006\n0.015, 0, 0.012\n0.015, 0, 0.021\n0.015, 0.001, 0.003\n0.015, 0.001, 0.005\n0.015, 0.001, 0.014\n0.015, 0.001, 0.029\n\nNow, is there a way to achieve this in moose?",
+          "url": "https://github.com/idaholab/moose/discussions/25564",
+          "updatedAt": "2023-09-24T17:07:20Z",
+          "publishedAt": "2023-09-24T05:09:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe logic in the sampler can only use a single ordering.\nYou ll have to hack a little bit. Create a ParsedFunction that does: y + 1e-6 * z, then use a FunctionIC to set an auxiliary variable sort_order, then sample it it as well and use it as the sort_by parameter\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25564#discussioncomment-7093127",
+                  "updatedAt": "2023-09-24T11:06:41Z",
+                  "publishedAt": "2023-09-24T11:06:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I ll create a feature request for multiple orderings",
+                          "url": "https://github.com/idaholab/moose/discussions/25564#discussioncomment-7093130",
+                          "updatedAt": "2023-09-24T11:07:01Z",
+                          "publishedAt": "2023-09-24T11:07:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaelmeli"
+                          },
+                          "bodyText": "> [AuxVariables]\n>   [sort_order]\n>     order = FIRST\n>     family = MONOMIAL\n>   []\n> []\n> \n> [ICs]\n>   [sortorder]\n>     type = FunctionIC\n>     variable = 'sort_order'\n>     function = yz\n>   []\n> []\n> \n> [Functions]\n>   [yz]\n>     type = ParsedFunction\n>     value = 'y+1e-6*z'\n>   []\n> []\n> \n> [VectorPostprocessors]\n>   [wavefield_real_rcv]\n>     type = NodalValueSampler\n>     variable = 'uzr sort_order'\n>     boundary = 'rcv_points'\n>     sort_by = 'sort_order'\n>     outputs = 'u_all'\n>   []\n> []\n\nIs this what you meant? If yes, the problem is sort_by accept only id, x, y, or z.",
+                          "url": "https://github.com/idaholab/moose/discussions/25564#discussioncomment-7094650",
+                          "updatedAt": "2023-09-24T22:46:12Z",
+                          "publishedAt": "2023-09-24T16:53:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah that s unfortunate.\nIt should not be difficult to change though in the code. Look at samplerBase",
+                          "url": "https://github.com/idaholab/moose/discussions/25564#discussioncomment-7094703",
+                          "updatedAt": "2023-09-24T17:07:48Z",
+                          "publishedAt": "2023-09-24T17:07:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Complex Numbers and Wavefunctions in MOOSE",
+          "author": {
+            "login": "gj19866"
+          },
+          "bodyText": "Hi there,\nI am looking to utilize MOOSE to model the behavior of wavefunctions.\nIs there any president of people doing this and any similar work that you could point me towards?\nThis will also involve the handling of complex numbers. What is the best way to handle complex numbers in MOOSE?\nAll the best,\nGillian J",
+          "url": "https://github.com/idaholab/moose/discussions/25512",
+          "updatedAt": "2023-09-24T02:38:53Z",
+          "publishedAt": "2023-09-19T14:16:12Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cticenhour @salaudeen-ya and @aaelmeli  will have some insights on this",
+                  "url": "https://github.com/idaholab/moose/discussions/25512#discussioncomment-7047044",
+                  "updatedAt": "2023-09-19T14:20:19Z",
+                  "publishedAt": "2023-09-19T14:20:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gj19866"
+                          },
+                          "bodyText": "Great thanks, I look forward to hearing from them!",
+                          "url": "https://github.com/idaholab/moose/discussions/25512#discussioncomment-7047076",
+                          "updatedAt": "2023-09-19T14:23:02Z",
+                          "publishedAt": "2023-09-19T14:23:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "Regarding complex numbers, we solve for complex quantities regularly in the electromagnetics module, but we have to separate the real and imaginary components of the field variable into two field variables, as MOOSE doesn't perform the complex number calculation natively. This has worked well, but considering that complex number support exists in PETSc and libMesh, we do intend to add that support at the MOOSE level at some point (pending time and funding constraints).\nI do not have experience with quantum wavefunctions, so I will let others speak to that, but feel free to pose any other questions you have.",
+                  "url": "https://github.com/idaholab/moose/discussions/25512#discussioncomment-7047537",
+                  "updatedAt": "2023-09-19T15:00:54Z",
+                  "publishedAt": "2023-09-19T15:00:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gj19866"
+                          },
+                          "bodyText": "Great, thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/25512#discussioncomment-7047962",
+                          "updatedAt": "2023-09-19T15:38:04Z",
+                          "publishedAt": "2023-09-19T15:38:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaelmeli"
+                          },
+                          "bodyText": "I do have some experience in modeling mechanical waves through moose. This includes acoustics, elastics and viscoelastic waves. As @cticenhour mentioned, you will need to decouple the equations to the real and imaginary and then model both fields as two (real) dependent field living on the same mesh. there are some examples on this here.",
+                          "url": "https://github.com/idaholab/moose/discussions/25512#discussioncomment-7091644",
+                          "updatedAt": "2023-09-24T02:38:53Z",
+                          "publishedAt": "2023-09-24T02:38:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "update MOOSE",
+          "author": {
+            "login": "YNianer"
+          },
+          "bodyText": "The following issues occurred after updating moose compilation\uff1a\n/Users/XXX/Desktop/VScode/moose/framework/src/executioners/Transient.C:739:27: error: no member named 'l2_norm_diff' in 'libMesh::NumericVector'\nreturn current_solution.l2_norm_diff(old_solution) / current_solution.l2_norm();\n~~~~~~~~~~~~~~~~ ^",
+          "url": "https://github.com/idaholab/moose/discussions/25562",
+          "updatedAt": "2023-09-23T16:10:50Z",
+          "publishedAt": "2023-09-23T13:47:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nyou need to update libmesh after updating moose\nif you used the mamba build it may just be mamba update \u2014all\nIf it doesn\u2019t work, please see the pinned discussions post\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25562#discussioncomment-7089689",
+                  "updatedAt": "2023-09-24T01:39:47Z",
+                  "publishedAt": "2023-09-23T16:10:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Matematical Functions",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "Are Bessel functions and other special mathematical functions included for use in MOOSE?",
+          "url": "https://github.com/idaholab/moose/discussions/25560",
+          "updatedAt": "2023-09-23T06:53:01Z",
+          "publishedAt": "2023-09-23T04:41:17Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "You can use boost for those functions.",
+                  "url": "https://github.com/idaholab/moose/discussions/25560#discussioncomment-7087591",
+                  "updatedAt": "2023-09-23T06:53:02Z",
+                  "publishedAt": "2023-09-23T06:53:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

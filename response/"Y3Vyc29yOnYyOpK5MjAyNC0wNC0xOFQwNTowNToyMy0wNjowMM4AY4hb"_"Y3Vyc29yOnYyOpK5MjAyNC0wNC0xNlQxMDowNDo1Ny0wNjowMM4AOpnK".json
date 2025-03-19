@@ -1,0 +1,1206 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNC0xNlQxMDowNDo1Ny0wNjowMM4AOpnK"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Non-Homogeneous Reaction-Diffusion Equation with Robin BC",
+          "author": {
+            "login": "charlotte-b8086"
+          },
+          "bodyText": "I've been trying to understand how Neumann and Robin Boundary Conditions are implemented in MOOSE.\nFor one example, I decided to code up a very simple Reaction-Diffusion Equation with Robin BC whose solution I know to verify that MOOSE could converge to the correct solution. MOOSE converged quickly, and while the solution appears to have the correct shape, the values are incorrect.\nThe PDE I was considering was\n\\begin{equation*}\n-\\Delta u + u = (\\pi^2 + 1)\\sin(\\pi x) \\textrm{ on } (0, 1) \\textrm{ subject to } \\frac{\\partial u}{\\partial n} + u = \n\\begin{cases}\n-\\pi \\cos(\\pi x) + \\sin(\\pi x) & x = 0 \\\\\n\\pi \\cos(\\pi x) + \\sin(\\pi x) & x = 1\n\\end{cases}.\\end{equation*}\nSolving this PDE using the Method of Undetermined Coefficients, I found that its solution is $u(x) = \\sin(\\pi x)$.\nI implemented the Kernels in MOOSE as follows:\n[Kernels]\n  #R_u: (nabla u, nabla test) + (beta u, test) + (-f, test) = 0\n  #f = (pi^2 + beta)sin(pix)\n  [./u_diffusion]\n    variable = u\n    type = ADDiffusion\n  [../]\n  [./u_reaction]\n    variable = u\n    type = ADCoefReaction\n  [../]\n  [./force]\n    variable = u\n    type = ADBodyForce\n    function = '(pi*pi+1.0)*sin(pi*x)'#force_func\n  [../]\n[]\nFor the Boundary Conditions I made a Custom Moose Object:\nADNonHomogeneousRobinBC::ADNonHomogeneousRobinBC(const InputParameters & parameters)\n  : ADIntegratedBC(parameters),\n  _coef(getParam<Real>(\"gamma\")),\n  _n(getParam<Real>(\"normal_dir\"))\n{\n}\n\nADReal\nADNonHomogeneousRobinBC::computeQpResidual()\n{\n  return -_coef * _test[_i][_qp]*_u[_qp] +\n      _test[_i][_qp]*_n* (libMesh::pi)*std::cos(libMesh::pi * _q_point[_qp](0))+ _coef *_test[_i][_qp]*std::sin(libMesh::pi * _q_point[_qp](0));\n}\nPlease note that I have as input in my .i file normal_dir is -1 for the left boundary (x = 0) and normal_dir is 1 for the right boundary (x = 1).\nHowever, Paraview showed my solutions as:\n\nInitially I thought that this was precisely the correct solution $\\sin(\\pi x)$ with a strange vertical translation, but then I realized that the amplitude is larger than should be. While it still has the correct 'shape' of the solution curve, I don't believe that this is a correct solution for the PDE. I made the nonlinear and linear absolute errors incredibly small and there was no change.\nIs there something wrong with my Custom BC object? I am not sure why this is happening.\nI wanted to try to code this BC with ADMatNeumannBC as well to see if I could get the expected result that way (this was a recommendation in discussion post #24108 for how to code Robin BC), but I am unsure how to create a space-dependent material object (and vice verse if I were to attempt FunctionNeumannBC a variable-dependent function).\nThank you for any assistance you can offer.",
+          "url": "https://github.com/idaholab/moose/discussions/27389",
+          "updatedAt": "2024-04-17T18:57:17Z",
+          "publishedAt": "2024-04-17T01:47:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI cant find a problem except maybe _coeff showing up in the sin(pi x) term in the boundary condition which is not in the equation\nbut isnt the sin(pi x) 0 on both boundaries?\nI would check the implementation of the kernels with Dirichlet boundary conditions and an analytic solution (or with our MMS tools).\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27389#discussioncomment-9144134",
+                  "updatedAt": "2024-04-17T14:46:17Z",
+                  "publishedAt": "2024-04-17T14:46:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlotte-b8086"
+                          },
+                          "bodyText": "Hello,\nThank you for your response.\nThere was a theoretical reason why I didn't have the coefficient multiplier on the last term in the computeQpResidual and two practical reasons. For the first practical reason; as you pointed out, $\\sin(\\pi x)$ is 0 at $x = 0$ and $x = 1$.\nFor the theoretical reason, when formulating the problem I began by working with the ODE $-\\Delta u + \\beta u = f$ on $\\Omega$ subject to the boundary condition $\\frac{1}{\\gamma}\\frac{\\partial u}{\\partial n} + u = g$ on $\\partial \\Omega$. In implementation, I set $\\beta = \\gamma = 1$ (the second practical reason), but even without that being 1, rewriting this boundary condition, one has $\\frac{\\partial u}{\\partial n} = \\gamma \\left( g - u\\right)$, and the function $g$ itself, when actually picking it, is defined as $\\frac{1}{\\gamma} \\frac{\\partial u}{\\partial n} + u$. When multiplying this by $\\gamma$, the coefficient on the first term drops out.\nWhen coding this PDE with the Dirichlet BCs $u(0) = 0 = u(1)$ the solution Paraview provides is correct. The convergence also is as expected.\n\nThe convergence with the BC I developed, ADNonHomogeneousRobinBC, is terrible, which makes sense since, as confirmed by the MMS tool, the solution MOOSE provided is off from the correct solution $\\sin(\\pi x)$.\n\nIf you meant I should try to rewrite the Robin boundary condition in such a way as to implement it as a Dirichlet BC, that is an approach I haven't attempted yet. I believe that I would need to include the ADDirichletBCTempl.h file in my header file in order to override computeQpValue(). However, this header file doesn't know the _u_grad parameter. I know that ADIntegratedBC.h does have that as a default parameter. Would there be a way to inherit from both templates?\nThank you for the suggestions and assistance.",
+                          "url": "https://github.com/idaholab/moose/discussions/27389#discussioncomment-9146119",
+                          "updatedAt": "2024-04-17T17:48:00Z",
+                          "publishedAt": "2024-04-17T17:47:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you meant I should try to rewrite the Robin boundary condition in such a way as to implement it as a Dirichlet BC, that is an approach I haven't attempted yet. I believe that I would need to include the ADDirichletBCTempl.h file in my header file in order to override computeQpValue(). However, this header file doesn't know the _u_grad parameter. I know that ADIntegratedBC.h does have that as a default parameter. Would there be a way to inherit from both templates?\n\nI didnt. you wont be able to inherit both classes, you would get diamond inheritance issues.\nIf you did want to do that, you will want to try using the Functor interfaces on variables.\nCreate a new class, and retrieve a pointer to the actual variable (just _var maybe?), then you can do _var->grad(...)\nsee the doxygen for variables.\nWhat reference are you using for the MMS study? The analytical solution or the most converged case?",
+                          "url": "https://github.com/idaholab/moose/discussions/27389#discussioncomment-9146722",
+                          "updatedAt": "2024-04-17T18:53:20Z",
+                          "publishedAt": "2024-04-17T18:53:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlotte-b8086"
+                          },
+                          "bodyText": "I was trying to follow the MMS documentation. If I understand it correctly, it was using the analytical solution as reference, since this is what is spit out by\nfs,ss = mms.evaluate('-div(grad(u))', 'sin(2*pi*x)*sin(2*pi*y)')\nmms.print_fparser(fs)",
+                          "url": "https://github.com/idaholab/moose/discussions/27389#discussioncomment-9146761",
+                          "updatedAt": "2024-04-17T18:57:18Z",
+                          "publishedAt": "2024-04-17T18:57:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Modification in Action kernel",
+          "author": {
+            "login": "ashishdhole"
+          },
+          "bodyText": "Hello,\nI want to know how Action kernel works. In grain growth model, GrainGrowthAction takes care of time derivative, Allen Cahn and interface. Now interface (ACInterface) kernel is having negative sign in the discription, but I don't see that negative sign in ACInterface or in Action kernel. If I want to add an extra term to my PDE that is being subtracted from the Allen Cahn kernel (ACGrGrPoly in this case) should I include (-) sign in my new kernel in both the residual and jacobian part or I need to modify the Actions kernel.\nThank you",
+          "url": "https://github.com/idaholab/moose/discussions/27374",
+          "updatedAt": "2024-04-17T17:11:19Z",
+          "publishedAt": "2024-04-13T21:33:29Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAn Action is something different from a kernel. An action can add objects to the simulation, such as kernels.\nYou should not need to modify exisiting kernels to add another term to the equation. You can just create a new kernel if we have not implemented one that fits what you need\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106370",
+                  "updatedAt": "2024-04-13T22:16:13Z",
+                  "publishedAt": "2024-04-13T22:16:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Hello Guillaume,\nI am trying to incorporate drag pressure into the grain growth model, This require an extra term in the PDE that resist the growth. for which I made a kernel. so my question in other words is, if my action describes A+B-C=0 (thats the grain growth model, A=time derivative, B=allen cahn and c= interface kernel), if I want to add/subtract D kernel to action, can I not just add the block that discribes A+B-C+D=0.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106398",
+                          "updatedAt": "2024-04-13T22:24:14Z",
+                          "publishedAt": "2024-04-13T22:24:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can add a kernel in the [Kernels] block even if the Action is in use.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106412",
+                          "updatedAt": "2024-04-13T22:28:08Z",
+                          "publishedAt": "2024-04-13T22:28:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "adding extra kernel to input file need v and variable on which it is acted on. But for a system of say 100 order parameters, which should be the variable. The module/action part usually tkes care of such variable assignment",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106421",
+                          "updatedAt": "2024-04-13T22:33:28Z",
+                          "publishedAt": "2024-04-13T22:33:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if you want it to be automatic, then definitely do it in the action instead. This will take a little C++, it should be reasonable though., about as difficult as creating a kernel",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106482",
+                          "updatedAt": "2024-04-13T22:57:47Z",
+                          "publishedAt": "2024-04-13T22:57:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "great!\nNow I have made the kernel and I wanted to add it to the actions. But I have a doubt. In grain growth model the ACInterface is having a -ve sign in its weak form (As expressed on the website) but I don't see any such sign in the GrainGrowthAction nor do I see it in the ACInterface Kernel. Am I missing anytihng? I want to add a tern that is subtracted from AllenCan i.e. ACGrGrPoly kernel in GrainGrowthAction.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106498",
+                          "updatedAt": "2024-04-13T23:02:13Z",
+                          "publishedAt": "2024-04-13T23:02:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The sign may have been flipped because the term is moved to the left hand side?\nFor example if you look at Reaction.C, it's a loss term (should have a minus) but it s moved to the LHS so there's a plus in the computeQpResidual",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106519",
+                          "updatedAt": "2024-04-13T23:42:13Z",
+                          "publishedAt": "2024-04-13T23:13:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "But I see +ve in both ACGrGrPoly and in ACKernel if they are used in same action (GrainGrowthAction). So computeQpResidual for both these kernels shows +ve sign, which according to the equation should be opposite. is there any term/variable that is added/introduced to the ACInterface kernel which takes care of the -ve sign? Trying to figure out how actions works. I see TimeDerivative as +ve as well, which makes sense because it is in LHS from the beginning, ACGrGrPoly also should be +ve as it is -L(df/dn) in the strong form, but I am not getting why ACInterface should be +ve as well. can you please explain?",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106543",
+                          "updatedAt": "2024-04-13T23:20:38Z",
+                          "publishedAt": "2024-04-13T23:20:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@laagesen\nI can help with MOOSE. I'd rather call in an expert for phase field",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106578",
+                          "updatedAt": "2024-04-13T23:36:23Z",
+                          "publishedAt": "2024-04-13T23:36:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ashishdhole"
+                  },
+                  "bodyText": "Sure, Thank you Guillaume.",
+                  "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9106581",
+                  "updatedAt": "2024-04-13T23:38:03Z",
+                  "publishedAt": "2024-04-13T23:38:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi, ACInterface should have a positive sign, this is correct. The one step you didn't mention that introduces a change in sign is using the product rule/integration by parts to reduce the order of derivative on \\eta in the ACInterface kernel: the product rule is often written in a simple way udv = uv - vdu, so you can see the sign change there. I think this is the step you are missing. This page gives a step by step description of how the residual equation is arrived at:\nhttps://mooseframework.inl.gov/modules/phase_field/Phase_Field_Equations.html\nIf you're not familiar with the product rule/integration by parts to reduce the order of derivative as is often done in FEM discretization, I'd suggest reviewing the MOOSE framework slides and on-line training, I think it is covered pretty well there.",
+                  "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9110902",
+                  "updatedAt": "2024-04-14T18:44:12Z",
+                  "publishedAt": "2024-04-14T18:44:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Is there any example that shows the usage of additional functional density (f_add) as explained in grain growth model? I have one term in the evolution PDE that I need to subtract from f_loc.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9138782",
+                          "updatedAt": "2024-04-17T07:36:05Z",
+                          "publishedAt": "2024-04-17T07:36:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "We don't currently have a way to do this in an automated way, unfortunately, but the PolycrystalKernelAction could be modified to add this.",
+                  "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144017",
+                  "updatedAt": "2024-04-17T14:36:32Z",
+                  "publishedAt": "2024-04-17T14:36:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I actually made another Action by adding the new kernel to it and it works (kind of) but the behaviour is very different than what I would expect. Say for example, I an making a kernel that is to be subtracted from f_loc, will my residue, jacobian and offdiagonal jacobian will have negative sign in it?  Can I in some way call the residual of another kernel in my new kernal as a condition. Say if residual of ACGrGrPoly is > 0, the new kernel residual be X and if it is < 0 the residual be Y? Or do I have to integrate my physics and the existing one in one kernel to get it done?",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144122",
+                          "updatedAt": "2024-04-17T14:45:27Z",
+                          "publishedAt": "2024-04-17T14:45:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Can you say a little more about what physics you are trying to incorporate in f_loc? I can't think of an example where you would want to subtract, rather than add, energy to the system.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144362",
+                          "updatedAt": "2024-04-17T15:03:55Z",
+                          "publishedAt": "2024-04-17T15:03:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I want to subtract (3eta_ieta_j*P_z) from f_loc but under some condition.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144453",
+                          "updatedAt": "2024-04-17T15:11:18Z",
+                          "publishedAt": "2024-04-17T15:11:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "3 * eta_i * eta_j * P_z",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144460",
+                          "updatedAt": "2024-04-17T15:11:46Z",
+                          "publishedAt": "2024-04-17T15:11:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "It is a constant friction pressue that depicts a pinning pressure without actually putting a particle in the simulation. I am following Shahandeh, S., M. Greenwood, and Matthias Militzer. \"Friction pressure method for simulating solute drag and particle pinning in a multiphase-field model.\" Modelling and Simulation in Materials Science and Engineering 20, no. 6 (2012): 065008. for drag pressure model.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9144486",
+                          "updatedAt": "2024-04-17T15:13:41Z",
+                          "publishedAt": "2024-04-17T15:13:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "I'd suggest adding a material property that is a prefactor that multiplies 3eta_ieta_j*P_z to the new kernel. Then you can create a material property using the DerivativeParsedMaterial system that is -1 when you meet the condition you want to subtract and 0 when you don't want to subtract. This will be easier and more flexible than trying to check what is going on in a different kernel from within your new kernel.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9145204",
+                          "updatedAt": "2024-04-17T16:09:35Z",
+                          "publishedAt": "2024-04-17T16:09:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Okay. Do we have any examples of similar type that I can go through to implement it?",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9145228",
+                          "updatedAt": "2024-04-17T16:11:30Z",
+                          "publishedAt": "2024-04-17T16:11:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "MatDiffusion or MatReaction both have examples of material property multiplying the other terms in the kernel.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9145326",
+                          "updatedAt": "2024-04-17T16:18:04Z",
+                          "publishedAt": "2024-04-17T16:18:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Great! Thank you for your help on this. Let me try it.",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9145433",
+                          "updatedAt": "2024-04-17T16:28:21Z",
+                          "publishedAt": "2024-04-17T16:28:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "MatReaction is probably better to start looking at, because MatDiffusion is templated to allow for either scalar or tensor diffusivities. Good luck!",
+                          "url": "https://github.com/idaholab/moose/discussions/27374#discussioncomment-9145825",
+                          "updatedAt": "2024-04-17T17:11:20Z",
+                          "publishedAt": "2024-04-17T17:11:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Studying the Jacobian",
+          "author": {
+            "login": "charlieowen3065"
+          },
+          "bodyText": "Hello.\nFor a project I am working on, I'd like to better understand the Jacobian in MOOSE, as well as how uncertainty propagates to the solution.\nI am having trouble amending it before going to PETSc though, and was wondering what a good method to do so was?\nso far, I have added a function to \"FEProblemSolve\" that attempts to simply add a value to one of the elements in the sparse matrix. I also chose an element that was both non-zero and not part of the BC.\nBelow is the code I've ammended:\nbool\nFEProblemSolve::solve()\n{\n\t// This loop is for nonlinear multigrids (developed by Alex)\n\tstd::cout << \"SOLVE : START\" << std::endl;\n\tfor (MooseIndex(_num_grid_steps) grid_step = 0; grid_step <= _num_grid_steps; ++grid_step)\n\t{\n\t\tstd::cout << \"SimpleAlter :: START\" << std::endl;\n\t\tsimple_jacobian_alter();\n\t\tstd::cout << \"SimpleAlter :: END\" << std::endl;\n\t\t\n\t\tstd::cout << \"FEProblemSolve : (1)\" << std::endl;\n\t\t_problem.solve(_nl.number());\n\t\tstd::cout << \"FEProblemSolve : (2)\" << std::endl;\n\n\t\tif (_problem.shouldSolve())\n\t\t{\n\t\t\tif (_problem.converged(_nl.number()))\n\t\t\t\t_console << COLOR_GREEN << \" Solve Converged!\" << COLOR_DEFAULT << std::endl;\n\t\t\telse\n\t\t\t{\n\t\t\t\t_console << COLOR_RED << \" Solve Did NOT Converge!\" << COLOR_DEFAULT << std::endl;\n\t\t\t\treturn false;\n\t\t\t}\n\t\t}\n\t\telse\n\t\t\t_console << COLOR_GREEN << \" Solve Skipped!\" << COLOR_DEFAULT << std::endl;\n\n\t\tif (grid_step != _num_grid_steps)\n\t\t\t_problem.uniformRefine();\n\t}\n\tstd::cout << \"SOLVE : START\" << std::endl;\n\t\n\treturn _problem.converged(_nl.number());\n}\n\n\nvoid \nFEProblemSolve::simple_jacobian_alter()\n{\n\t// Petsc stuff\n\tauto & petsc_options = _problem.getPetscOptions();\n\tauto & pars = _problem.solverParams();\n\tMoose::PetscSupport::petscSetOptions(petsc_options, pars);\n\t//ExecFlagType flag = EXEC_INITIAL;\n\tExecFlagType flag = _problem.getCurrentExecuteOnFlag();\n\t_problem.execute(flag);\n\t\n\t\n\tauto & jacobian = static_cast<ImplicitSystem &>(_nl.system()).get_system_matrix();\n\t// Assemble matrix\n\t_problem.computeJacobian(*_nl.currentSolution(), jacobian, 0);\n\t\n\tint i = 2;\n\tint j = 0;\n\t\n\tReal new_val = 10000;\n\t\n\tExecFlagType flag_here = _problem.getCurrentExecuteOnFlag();\n\tstd::cout << \"Current Flag: \" << flag_here << std::endl;\n\tstd::cout << \"JACOBIAN INFO: \" << std::endl;\n\t\n\tjacobian.add(i, j, new_val);\n\tjacobian.print(std::cout, true);\n}\n\nAnd, when I run this, I get the error:\nTime Step 0, time = 0\n\nTime Step 1, time = 0.05, dt = 0.05\nSAVING JACOBIAN\nSOLVE : START\nSimpleAlter :: START\nCurrent Flag: NONE\nJACOBIAN INFO:\n[0]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[0]PETSC ERROR: Object is in wrong state\n[0]PETSC ERROR: Not for unassembled matrix\n[0]PETSC ERROR: WARNING! There are unused option(s) set! Could be the program crashed before usage or a spelling mistake, etc!\n[0]PETSC ERROR:   Option left: name:-i value: simple_heat_conduction_problem.i source: command line\n[0]PETSC ERROR:   Option left: name:-ksp_converged_reason value: ::failed source: code\n[0]PETSC ERROR:   Option left: name:-options_left value: 0 source: code\n[0]PETSC ERROR:   Option left: name:-snes_converged_reason value: ::failed source: code\n[0]PETSC ERROR: See https://petsc.org/release/faq/ for trouble shooting.\n[0]PETSC ERROR: Petsc Release Version 3.20.3, unknown\n[0]PETSC ERROR: /home/nesquid/a/owen53/projects/malamute/malamute-opt on a  named nesquid.ecn.purdue.edu by owen53 Wed Mar 27 13:44:04 2024\n[0]PETSC ERROR: Configure options --with-64-bit-indices --with-cxx-dialect=C++17 --with-debugging=no --with-fortran-bindings=0 --with-mpi=1 --with-openmp=1 --with-shared-libraries=1 --with-sowing=0 --download-fblaslapack=1 --download-hypre=1 --download-metis=1 --download-mumps=1 --download-ptscotch=1 --download-parmetis=1 --download-scalapack=1 --download-slepc=1 --download-strumpack=1 --download-superlu_dist=1 --with-hdf5-dir=${PREFIX} --with-make-np=16 --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 --with-mpi-dir=/home/nesquid/a/owen53/miniforge/envs/moose AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include  -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -I/home/nesquid/a/owen53/miniforge/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/nesquid/a/owen53/miniforge/envs/moose/include   -I/home/nesquid/a/owen53/miniforge/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/nesquid/a/owen53/miniforge/envs/moose/lib -Wl,-rpath-link,/home/nesquid/a/owen53/miniforge/envs/moose/lib -L/home/nesquid/a/owen53/miniforge/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/nesquid/a/owen53/miniforge/envs/moose/lib -Wl,-rpath-link,/home/nesquid/a/owen53/miniforge/envs/moose/lib -L/home/nesquid/a/owen53/miniforge/envs/moose/lib\" --prefix=/home/nesquid/a/owen53/miniforge/envs/moose\n[0]PETSC ERROR: #1 MatGetRow() at /data/civet0/build/conda/conda-bld/moose-petsc_1706652072497/work/src/mat/interface/matrix.c:566\nlibMesh terminating:\nNot for unassembled matrix\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\nStart: Wed Mar 27 13:44:03 EDT 2024\nEnd: Wed Mar 27 13:44:05 EDT 2024\n\n\nI have also tried inside the Output and Predictor type objects, but was seeing a similar error. I think it has something to do with the current executable flag being NONE, but maybe it is something else.\nI know that the current school of thought is that small changes to the Jacobian will cause the solution to diverge, but I would like to test it out myself. Is there another place that I should try and change it?\nI found the call to the libMesh::System object in \"TimeIntegrator\" (_nl.system().solve();), but don't see where I could properly access the Jacobian.\nIdeally as well, I'd be able to access it at each non-linear iteration, but am just trying to start with the initial Jacobian.\nAny advice?\nThanks!\nCharlie",
+          "url": "https://github.com/idaholab/moose/discussions/27204",
+          "updatedAt": "2024-04-17T14:53:32Z",
+          "publishedAt": "2024-03-27T17:53:08Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you try modifying the kernels (especially the computeQpJacobian routine, only for non-AD kernels) to suit your needs first? The kernels could have enough information to perturb the Jacobian in the desired manner since they have enough information to compute the contribution to the Jacobian in the first place.\nWith regards to this specific error, you should pull up the part of the libmesh source code that is giving you this\nlibMesh terminating:\nNot for unassembled matrix\n\nerror.\nAltering the Jacobian before the solve might not work since we'll write to it and clear it a couple times during the solve.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8932056",
+                  "updatedAt": "2024-03-27T18:01:18Z",
+                  "publishedAt": "2024-03-27T18:01:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlieowen3065"
+                          },
+                          "bodyText": "Hi Guillaume!\nI have not tried modifying a kernel yet - I'll do that now!\nWould using kernels allow me to modify it not only at the top of each time-step, but also at the iterations? I may be mistaken, but I assumed that the kernels were used to build the matrix using equations coming from the physics, then passed that information through the solver into PETSc, where it is then solved. Is there a back-and-forth between the kernels and PETSc? Or does the kernel only run once?\nI will also look into libMesh for my specific error.\nThanks!\nCharlie",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8932155",
+                          "updatedAt": "2024-03-27T18:13:26Z",
+                          "publishedAt": "2024-03-27T18:13:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is there a back-and-forth between the kernels and PETSc?\n\nthere is for PJFNK. PETSc needs to know how to compute a residual all the time\nfor Newton, there is a back and-forth on nonlinear iterations only iirc",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8932200",
+                          "updatedAt": "2024-03-27T18:18:25Z",
+                          "publishedAt": "2024-03-27T18:18:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlieowen3065"
+                          },
+                          "bodyText": "Great - Thanks!\nI'll try this out!",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8932224",
+                          "updatedAt": "2024-03-27T18:20:52Z",
+                          "publishedAt": "2024-03-27T18:20:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "To be clear: there is a callback to the MOOSE residual evaluation for every linear iteration when running PJFNK. This does not happen when using NEWTON. Both NEWTON and PJFNK call for residual evaluations (potentially multiple times if using a line search) in the outer nonlinear iteration",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8943644",
+                          "updatedAt": "2024-03-28T17:28:05Z",
+                          "publishedAt": "2024-03-28T17:28:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlieowen3065"
+                          },
+                          "bodyText": "Thank you for the responses.\nI have been looking into the MOOSE Kernels, and I agree that this looks like where I should be working, but I am little confused on the mechanisms involved.\nI see  that, in the kernel, there are functions to compute the 4x4 local Jacobian for a given element, and these functions use the Qp-computations given by specific kernel-types. However, I am lost on to where these local matrices are then used?\nI think most of my confusion revolves around this tagging system used. Does this system work by giving each element a unique tag, assigning these local matrices to the appropriate tag, then somewhere there is a method that understands how these tagged elements relate to one another in space and creates the full matrix using many tagged matrices? Then, in doing so, we can compute each local Jacobian for each kernel, add them up into one \"tagged\" local matrix? Meaning each local matrix will have the full physics involved when it moves to the full matrix?\nIs this how that works? Also, if you could point me in the direction of where the local matrices are accumulated into one, I'd really appreciate it.\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8984310",
+                          "updatedAt": "2024-04-02T13:44:21Z",
+                          "publishedAt": "2024-04-02T13:43:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "However, I am lost on to where these local matrices are then used?\n\nthese local matrices are contributed to the global Jacobian.\n\nDoes this system work by giving each element a unique tag,\n\nno. Tags are on per-matrix or per-vector basis. Once you create a tag for let's say a matrix A, you can give this tag to a few kernels to isolate their contributions to the Jacobian in matrix A.\nYou can follow the chain of calculation by looking at computeQpJacobian, then computeJacobian, then one of the Jacobian loop (in loops/) onElement().",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8984619",
+                          "updatedAt": "2024-04-02T14:02:48Z",
+                          "publishedAt": "2024-04-02T14:02:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlieowen3065"
+                          },
+                          "bodyText": "I see.\nIs there a way to add my own loop into MOOSE? I try to refrain from touching source code where able.\nI was looking through the code, and I have not yet found where I could call my own personal loop in place of the, say, \"computeJacobianThread\" loop. Any suggestions on where to look?\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8998097",
+                          "updatedAt": "2024-04-03T14:38:50Z",
+                          "publishedAt": "2024-04-03T14:38:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "grmnptr"
+                          },
+                          "bodyText": "Also, if you alter a matrix you can call matrix.close(). So between add and print. Also, matrix.print() should be enough.",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-8998196",
+                          "updatedAt": "2024-04-03T14:56:11Z",
+                          "publishedAt": "2024-04-03T14:46:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is there a way to add my own loop into MOOSE? I try to refrain from touching source code where able.\n\nYes feel free to create your own loop if you want. You will need to call it though. Use the residual loop as an example for creating the code for a new loop, and for executing that loop",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-9005023",
+                          "updatedAt": "2024-04-04T05:16:50Z",
+                          "publishedAt": "2024-04-04T05:16:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "@GiudGiud Correct me if I am wrong.\nIf this is just for learning and only run in serial, it may be easier for him to use GeneralUO and perform any actions to alter the Jacobian in JacobianSetup. We call JacobianSetup after we clear the Jacobian but before we add any elemental contributions. I can see this being easier for just an initial study problem but not good for production code.",
+                          "url": "https://github.com/idaholab/moose/discussions/27204#discussioncomment-9010117",
+                          "updatedAt": "2024-04-04T13:51:27Z",
+                          "publishedAt": "2024-04-04T13:51:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Im doing project on phase field model by utilising phase field module of moose framework",
+          "author": {
+            "login": "ankit72242"
+          },
+          "bodyText": "function = 'f2:=(1/4*eta1^4-1/2*eta1^2+1/4*eta2^4-1/2*eta2^2);\n              f3:=s*(eta1^2*eta2^2);\n              f4:=eta1*(4.67*100000)*(T_x*eta1_x+T_y*eta1_y);  \n              f5:=eta2*(4.67*100000)*(T_x*eta2_x+T_y*eta2_y);\n              f6:=(3.84e7)(T)(c*log(c)+(1-c)*log(1-c));\n              fgbb:=(f2+f3+0.25);\n               F:=f6-c*m*w*(fgbb)+w*(fgbb);'\n\nthis is my finction but error im getting is related to this only\n*** ERROR ***\nInvalid function\nf2:=(1/4*eta1^4-1/2*eta1^2+1/4*eta2^4-1/2*eta2^2);\n              f3:=s*(eta1^2*eta2^2);\n              f4:=eta1*(4.67*100000)*(T_x*eta1_x+T_y*eta1_y);\n              f5:=eta2*(4.67*100000)*(T_x*eta2_x+T_y*eta2_y);\n              f6:=(3.84e7)(T)(c*log(c)+(1-c)*log(1-c));\n              fgbb:=(f2+f3+0.25);\n               F:=f6-c*m*w*(fgbb)+w*(fgbb);\neta1, eta2, T_x, T_y, eta1_x, eta1_y, eta2_x, eta2_y, c, T\nin ParsedMaterialHelper.\nSyntax error: Operator expected\n\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const (&) [18], std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, char, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, char const (&) [27], char const*>(char const (&) [18], std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, char&&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, char const (&) [27], char const*&&)\n3: ParsedMaterialHelper<false>::functionParse(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, std::vector<PostprocessorName, std::allocator<PostprocessorName> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, std::vector<double, std::allocator<double> > const&)\n4: DerivativeParsedMaterialTempl<false>::DerivativeParsedMaterialTempl(InputParameters const&)\n5: RegistryEntry<DerivativeParsedMaterialTempl<false> >::build(InputParameters const&)\n6: Factory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int, bool)\n7: std::shared_ptr<MaterialBase> Factory::create<MaterialBase>(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int)\n8: FEProblemBase::addMaterialHelper(std::vector<MaterialWarehouse*, std::allocator<MaterialWarehouse*> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: FEProblemBase::addMaterial(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n10: Action::timedAct()\n11: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n12: ActionWarehouse::executeAllActions()\n13: MooseApp::runInputFile()\n14: MooseApp::run()\n15: ./combined-opt(+0xf7fb) [0x629f151657fb]\n16: main\n17: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x795727829d90]\n18: __libc_start_main\n19: ./combined-opt(+0xfaa5) [0x629f15165aa5]\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n-----------------------------------",
+          "url": "https://github.com/idaholab/moose/discussions/27390",
+          "updatedAt": "2024-04-17T14:16:21Z",
+          "publishedAt": "2024-04-17T06:19:50Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe syntax is invalid.\nSee the fparser documentation for the valid syntax\nhttp://warp.povusers.org/FunctionParser/\nI suspect you are missing a final statement for what to return?\nInstead of\nF:=f6-c*m*w*(fgbb)+w*(fgbb);'\n\njust:\nf6-c*m*w*(fgbb)+w*(fgbb);\n\nwhere did you find an example of this syntax?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27390#discussioncomment-9143746",
+                  "updatedAt": "2024-04-17T14:18:23Z",
+                  "publishedAt": "2024-04-17T14:16:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Can moose implement the FE2 algorithm?",
+          "author": {
+            "login": "xiekai-mc"
+          },
+          "bodyText": "like this",
+          "url": "https://github.com/idaholab/moose/discussions/26991",
+          "updatedAt": "2024-09-07T00:12:20Z",
+          "publishedAt": "2024-03-06T02:41:11Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis seems fine to do with a MultiApp. see the tutorial there\nhttps://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial02_multiapps/presentation/index.html#/\nThere s probably examples in moose that are similar?\nWhat do you think of this one?\nhttps://mooseframework.inl.gov/modules/phase_field/Mechanics_Coupling.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8687833",
+                  "updatedAt": "2024-03-06T02:45:22Z",
+                  "publishedAt": "2024-03-06T02:45:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "In the process of Newton iteration, how to synchronize the average stress of the child-app to the quadrature points of the parent-app, and how to apply the strain of each quadrature point of the parent-app to the constraint functions of the homogenization system used in the child-apps?",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8766832",
+                          "updatedAt": "2024-03-13T01:48:59Z",
+                          "publishedAt": "2024-03-13T01:48:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Child app and parent app synchronize through fixed point iterations.\nYou'll use transfers to pass fields in the parent app to the child app. Is the constraint function constant over each child app?",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8767768",
+                          "updatedAt": "2024-03-13T04:17:50Z",
+                          "publishedAt": "2024-03-13T04:17:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "I believe that the strain of the parent app should be passed to the parameter target of HomogenizationConstraint to control the child app (RVE problem). However, the parameter target  accepts a function. Is it possible to pass the variables of the parent app to the function of the child app?",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8767934",
+                          "updatedAt": "2024-03-13T04:54:20Z",
+                          "publishedAt": "2024-03-13T04:54:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No functions cannot be filled with variable data. If the function can be spatially constant, I would transfer from the main app to postprocessors in the subapp. Then a ParsedFunction can be made equal to a postprocessor",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8774348",
+                          "updatedAt": "2024-03-13T14:42:23Z",
+                          "publishedAt": "2024-03-13T14:42:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "@xiekai-mc There is a crude implementation of FE2 here: https://github.com/peiyichen1995/fe2 which hopefully can give you some idea on how it works.\nSee FE2PK1Stress and the use of QuadraturePointMultiApp\nI believe @abarun22 is doing something along the same lines. He may be able to offer some suggestions.",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-8786782",
+                          "updatedAt": "2024-03-14T13:58:48Z",
+                          "publishedAt": "2024-03-14T13:58:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "Thank you for your reply. I've looked into the code of peiyichen1995/fe2.\nIn the project ,  _fe_problem.execMultiApps is utilized within computeQpPK1Stress() to run a subapp. It use a UserObject to temporarily store the inputs and outputs of the subapp, and compute stress[_qp] and jacobian[_qp] through perturbation method. The subapp is steady and does not retain historical data.\nMy idea is, if using QuadraturePointMultiApp, it should be within computeProperties() rather than computeQpPK1Stress() to execute subapps using _fe_problem.execMultiApps.  If perturbation is also utilized to compute the jacobian, the subapps would need to be reset, reverting them to their state prior to the time step calculation. This may require using _fe_problem.restoreMultiApps.\nHowever, the first issue I encountered now is that when using QuadraturePointMultiApp and running _fe_problem.execMultiApps within computeProperties(), an error occurs.\nAssertion `!Threads::in_threads' failed\nPerfGraph timing cannot be used within threaded sections\nat /home/slime/projects/moose/framework/src/problems/FEProblemBase.C, line 4908",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-9129606",
+                          "updatedAt": "2024-04-16T12:24:01Z",
+                          "publishedAt": "2024-04-16T12:24:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nAre you using threads?\nexecuting multiapps inside computeProperties is going to be expensive. If you still want to try, you will have to not use threads and either:\n\nrun this code in opt mode so the assert does not get triggered\nOR comment out this line of FEProblem\n\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26991#discussioncomment-9129673",
+                          "updatedAt": "2024-04-16T12:28:55Z",
+                          "publishedAt": "2024-04-16T12:28:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Ray Tracing Monte Carlo Study",
+          "author": {
+            "login": "Andresfierro231"
+          },
+          "bodyText": "Good Morning\nI would love your expertise on the ray-tracing module. Do you know if instead of a quadrature study, I can define a Monte Carlo Simulation of directions?\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/27394",
+          "updatedAt": "2024-04-17T13:24:06Z",
+          "publishedAt": "2024-04-17T13:24:06Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Getting error while running make command",
+          "author": {
+            "login": "hardud"
+          },
+          "bodyText": "I have been trying to remove pytorch and install it again using pip. Then trying to configure and recompile moose (as suggested by @hugary1995  ), but still I am running into errors. I am using apple silicon. Please let me know if someone can fix the issue or has run into similar errors before. Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/27219",
+          "updatedAt": "2024-04-17T12:44:37Z",
+          "publishedAt": "2024-03-28T21:19:08Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhich set of instructions are you following for installing moose with torch?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8945710",
+                  "updatedAt": "2024-03-28T21:20:57Z",
+                  "publishedAt": "2024-03-28T21:20:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hardud"
+                          },
+                          "bodyText": "For installing, I followed the instructions mentioned in slides during the Solid Mechanics workshop by Dr Hu.",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8945722",
+                          "updatedAt": "2024-03-28T21:22:58Z",
+                          "publishedAt": "2024-03-28T21:22:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@grmnptr where are the official instructions for installing this?\nthis page doesnt seem super complete? https://mooseframework.inl.gov/modules/stochastic_tools/enable_pytorch.html",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8945772",
+                          "updatedAt": "2024-03-28T21:28:19Z",
+                          "publishedAt": "2024-03-28T21:28:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hardud"
+                          },
+                          "bodyText": "I have deleted all the moose files and uninstalled previous versions of moose.\nNow while installing moose again, my tests are failing. I did not have\n\nany build issues.",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8966959",
+                          "updatedAt": "2024-03-31T20:08:29Z",
+                          "publishedAt": "2024-03-31T20:08:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nis this on a macOS machine?\nI think we have an entry in the FAQ for this exact error and how to fix it\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8967484",
+                          "updatedAt": "2024-03-31T22:28:06Z",
+                          "publishedAt": "2024-03-31T22:28:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hardud"
+                          },
+                          "bodyText": "Yes I am using macOS. While running the make command, I see 100s of these warnings. Are they fine or is it a trouble? If it is, can you help me encounter them?\nThanks,\nHarsh",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8967519",
+                          "updatedAt": "2024-03-31T22:36:37Z",
+                          "publishedAt": "2024-03-31T22:36:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "These are fine. Just the compiler outputting more warnings than it used to and we haven\u2019t gotten to resolving them",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-8967784",
+                          "updatedAt": "2024-03-31T23:49:17Z",
+                          "publishedAt": "2024-03-31T23:49:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hardud"
+                          },
+                          "bodyText": "I am getting this information every time I am trying to run tutorials. Can you suggest how do I tackle them?\nThanks,\nHarsh",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-9135622",
+                          "updatedAt": "2024-04-16T22:13:18Z",
+                          "publishedAt": "2024-04-16T22:13:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you forgot the -i\nit should be\n......... / solid_mechanics-opt -i weak_plane_stress_elastic_jacobian.i",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-9135686",
+                          "updatedAt": "2024-04-16T22:27:23Z",
+                          "publishedAt": "2024-04-16T22:27:22Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hardud"
+                          },
+                          "bodyText": "Oh, that was so silly of me.\nThank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/27219#discussioncomment-9135697",
+                          "updatedAt": "2024-04-16T22:30:52Z",
+                          "publishedAt": "2024-04-16T22:30:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "What is the default boundary condition\uff1f",
+          "author": {
+            "login": "Always-kimi"
+          },
+          "bodyText": "Hi there,\nI've recently been learning to use the moose framework, and it\u2018s an excellent work. But I had some confusion when I learned about BCs block. There are some boundaries did not impose any condition, for example top and bottom boundaries in tutorials/darcy_thermo_mech/step01_diffusion/problems/step1.i\n[BCs]\n  [inlet]\n    type = DirichletBC  # Simple u=value BC\n    variable = pressure # Variable to be set\n    boundary = left     # Name of a sideset in the mesh\n    value = 4000        # (Pa) From Figure 2 from paper.  First data point for 1mm spheres.\n  []\n  [outlet]\n    type = DirichletBC\n    variable = pressure\n    boundary = right\n    value = 0           # (Pa) Gives the correct pressure drop from Figure 2 for 1mm spheres\n  []\n[]\n\nI like to know how moose handles these boundaries and if there are default boundary conditions\uff1f",
+          "url": "https://github.com/idaholab/moose/discussions/27380",
+          "updatedAt": "2024-04-16T17:39:38Z",
+          "publishedAt": "2024-04-16T04:07:55Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor a diffusion equation integrated by parts, the default boundary condition is 0 flux.\nThe default boundary condition depends on the implementation of the equations.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9129789",
+                  "updatedAt": "2024-04-16T12:42:39Z",
+                  "publishedAt": "2024-04-16T12:42:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Always-kimi"
+                          },
+                          "bodyText": "Hi Guillaume,\nThank you for your reply! So for each equation there are default boundary conditions, right? Do these boundary conditions depend on the kernels or on the computational feature?\nBest regards,\nKimi",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9130232",
+                          "updatedAt": "2024-04-16T13:25:13Z",
+                          "publishedAt": "2024-04-16T13:25:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The boundary conditions depend on the derivation of the weak form, and so do the kernels, so they are related and must be considered together",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9130473",
+                          "updatedAt": "2024-04-16T13:45:59Z",
+                          "publishedAt": "2024-04-16T13:45:58Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Always-kimi"
+                          },
+                          "bodyText": "Got it! Thanks so much!",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9131539",
+                          "updatedAt": "2024-04-16T15:11:34Z",
+                          "publishedAt": "2024-04-16T15:11:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlotte-b8086"
+                          },
+                          "bodyText": "How do we know what the default boundary condition for an arbitrary kernel is? Do we simply assume it is the BC which sets any surface integrals in the weak form equal to 0?\nAlso, does a prescribed boundary condition always override a default boundary condition, or is it in conjunction to? For example, if you have a species diffusing with Dirichilet boundary conditions, do the Dirichilet boundary conditions override the homogeneous Neumann boundary condition, or are both boundary conditions active.",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9133051",
+                          "updatedAt": "2024-04-16T17:21:09Z",
+                          "publishedAt": "2024-04-16T17:21:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Do we simply assume it is the BC which sets any surface integrals in the weak form equal to 0?\n\nbasically. There are BCs that behave differently, for example Dirichlet boundary conditions which are different from IntegratedBCs and set the value of the variable (instead of contributing to the residual).\nEDIT: It doesnt set it to 0. it sets it the value of the BC.\nYou can also have penalty BCs on boundaries, which will they are summed are also applied due to the penalty the residual would suffer if they were not met.\n\nAlso, does a prescribed boundary condition always override a default boundary condition, or is it in conjunction to?\n\nthey are summed, just like kernels. Summing integrated BCs on top of a 0 default obviouslty replaces the 0. Same for penalty boundary conditons.\n\nFor example, if you have a species diffusing with Dirichilet boundary conditions, do the Dirichilet boundary conditions override the homogeneous Neumann boundary condition, or are both boundary conditions active.\n\nDirichlet BC actually override (well, depending on the discretization) because they impose the value of the variable directly.\nMOOSE should error if you set inconsistent sets of boundary conditions, but it will depend on the discretization used, so do not rely on it",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9133240",
+                          "updatedAt": "2024-04-16T17:45:30Z",
+                          "publishedAt": "2024-04-16T17:36:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "charlotte-b8086"
+                          },
+                          "bodyText": "Thank you for the clarification.",
+                          "url": "https://github.com/idaholab/moose/discussions/27380#discussioncomment-9133263",
+                          "updatedAt": "2024-04-16T17:39:38Z",
+                          "publishedAt": "2024-04-16T17:39:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Spurious solid-mechanics kernels on lower-dimensional meshes",
+          "author": {
+            "login": "ttruster"
+          },
+          "bodyText": "(Apologies for long post as usual from me) I was reminded recently of an issue to raise:\nFor solid mechanics models built using the master action system and that contain lower dimensional meshes for mortar constraints, there is not an error-catch for making a model with no block restriction in the master action.\nNamely, what happens is, solid mechanics kernels and materials (strains) get generated for the lower-d mesh also, basically behaving like truss or membrane elements. The calculation runs just fine (as long as the stress material is made without a block restriction; otherwise a bunch of error messages are printed for missing stresses on the lower-d blocks). However, the result is likely not what the user intended (physics will be wrong).\nSee the two attached files, where the only difference is that block = 0 has been deleted from 3 lines.\ntwo_lower_d_examples.zip\nI welcome thoughts on a prudent fix. My 2 suggestions for the case of mixed dimensional meshes and no block restriction are: 1) only apply master actions to the highest-dimensional blocks or 2) throw an error message from the master action. Basically, I don't think there is a use case where the user intentionally wants all properties assigned to higher and lower dimensional meshes without discrimination; they should be notified of what they are doing (to save the 2 hours of debugging that it took me to notice this).\n@reverendbedford and @hugary1995 are welcome to chime in on this.\nPS: I should have brought this up before the solid mechanics renaming was rolled out; apologies for being swamped and missing that.",
+          "url": "https://github.com/idaholab/moose/discussions/27335",
+          "updatedAt": "2024-04-16T16:06:10Z",
+          "publishedAt": "2024-04-10T01:56:34Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "I actually just found this issue for my simulation which uses Mortar.  It took me a while to figure it out and it is annoying because the results are totally wrong without ang error messages or warning.\nI like your second approach better. Throwing an error and let user know the issue.  You first approach would work too,  but it will hide another setting from users.",
+                  "url": "https://github.com/idaholab/moose/discussions/27335#discussioncomment-9065419",
+                  "updatedAt": "2024-04-10T02:20:47Z",
+                  "publishedAt": "2024-04-10T02:20:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I think this will be useful outside of solid mechanics as well. I can put it in the PhysicsBase class and when solid mechanics leverages Physics for its main action, it will be fixed that way",
+                  "url": "https://github.com/idaholab/moose/discussions/27335#discussioncomment-9065700",
+                  "updatedAt": "2024-04-10T03:05:11Z",
+                  "publishedAt": "2024-04-10T03:05:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "This seems like a genuine issue, so I've opened #27385",
+                          "url": "https://github.com/idaholab/moose/discussions/27335#discussioncomment-9132172",
+                          "updatedAt": "2024-04-16T16:06:11Z",
+                          "publishedAt": "2024-04-16T16:06:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Computation at HPC system: First time computing Jacobian takes incredibly long, subsequent computations are OK",
+          "author": {
+            "login": "matthiasneuner"
+          },
+          "bodyText": "Hi there,\nI am facing a very strange issue, for which I do no have a real explanation.\nWhen doing simulations on a HPC system, the first time the Jacobian is computed takes a very long time (but it is eventually computed correctly), whereas all subsequent computations consume a normal amount of time.\nThe screenshot shows this behavior for a restarted simulation with 1e7 dof computed on 256 cpu cores:\n\nUsually, the discrepancy is smaller, but still noticeable. For this restarted simulation it was really strange.\nPlease note that it is always only  the first time the Jacobian is computed, so an overloaded HPC system is not really an explanation in my opinion.\nOf course, it is not really a problem, since the computation of the Jacobian seems correct and all subsequent steps work as expected. However, I am really curious what might causing this behavior.\nHas anybody an idea on this behavior :) ?",
+          "url": "https://github.com/idaholab/moose/discussions/20164",
+          "updatedAt": "2024-04-16T16:04:57Z",
+          "publishedAt": "2022-01-28T16:07:36Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I have no idea.\nAre you using threads too? How many nodes for those 256 cpus?\ncan you log on those nodes and see if they're actually doing work with all their cpus?\n@lindsayad might have an idea",
+                  "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2070222",
+                  "updatedAt": "2022-06-11T11:42:36Z",
+                  "publishedAt": "2022-01-29T01:27:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "What is your physics? Do you have contact? This kind of behavior is often seen when the initial sparsity pattern is not correct and PETSc has to allocate memory on the fly during Jacobian assembly. Once the first Jacobian is computed, typically the memory is sufficient for all subsequent Jacobian calculations. Our traditional contact methods are known to have some issues with the initial sparsity pattern, at least based on some recent reports",
+                  "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2070247",
+                  "updatedAt": "2022-06-11T11:42:36Z",
+                  "publishedAt": "2022-01-29T01:38:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "matthiasneuner"
+                  },
+                  "bodyText": "Thank you for both answers! My application is essentially a TensorMechanis App, using my own (stress divergence) kernels.\nFor the shown example, a cylinder is compressed in axial direction, with a pressure boundary condition acting on the sleeve.\nNo contact, but I am employ EqualValueBoundaryConstraint on one boundaries. No further exotic physics is used.\nI could try to run the same example without the EqualValueBoundaryConstraint, just to get an impression if this first delay is reduced or avoided at all.\nFurthermore, I am using no threading, just pure MPI parallelization.\nFor the 256 cores, I am using 16 nodes.",
+                  "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2073115",
+                  "updatedAt": "2022-06-11T11:42:37Z",
+                  "publishedAt": "2022-01-29T18:09:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Can you add this to your input file?\n[Problem]\n  error_on_jacobian_nonzero_reallocation = true\n[]\n\nIf the slowness in your original run is due to my hypothesis, then with this option your run should error sometime during that initial Jacobian assembly.",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2073518",
+                          "updatedAt": "2022-06-11T11:42:40Z",
+                          "publishedAt": "2022-01-29T19:26:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "matthiasneuner"
+                  },
+                  "bodyText": "I think you were right:\n[155]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[176]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[142]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[176]PETSC ERROR: Argument out of range\n[176]PETSC ERROR: New nonzero at (371,791) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[176]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[176]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[176]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[176]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[176]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[176]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[183]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[183]PETSC ERROR: Argument out of range\n[183]PETSC ERROR: New nonzero at (49,273) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[183]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[183]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[183]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[183]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[183]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[183]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[180]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[180]PETSC ERROR: Argument out of range\n[180]PETSC ERROR: New nonzero at (371,273) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[180]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[180]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[180]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[180]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[180]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[180]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[181]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[181]PETSC ERROR: Argument out of range\n[181]PETSC ERROR: New nonzero at (49,525) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[181]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[181]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[181]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[181]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[181]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[181]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[182]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[177]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[177]PETSC ERROR: Argument out of range\n[177]PETSC ERROR: New nonzero at (1267,1687) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[177]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[177]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[177]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[177]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[177]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[177]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[182]PETSC ERROR: Argument out of range\n[182]PETSC ERROR: New nonzero at (147,497) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[182]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[182]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[182]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[182]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[182]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[182]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[178]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[178]PETSC ERROR: Argument out of range\n[178]PETSC ERROR: New nonzero at (315,392) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[178]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[178]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[178]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n21.int by neuner Sun Jan 30 06:13:25 2022\n[178]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[178]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[178]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 176 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n--------------------------------------------------------------------------\nslurmstepd: error: *** STEP 44062621.0 ON sh03-05n01 CANCELLED AT 2022-01-30T06:16:47 ***\nslurmstepd: error: *** STEP 44062621.0 ON sh03-05n01 CANCELLED AT 2022-01-30T06:16:47 ***\nsrun: Job step aborted: Waiting up to 32 seconds for job step to finish.\n[166]PETSC ERROR: Argument out of range\n[142]PETSC ERROR: Argument out of range\n[157]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[166]PETSC ERROR: New nonzero at (84,301) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[142]PETSC ERROR: New nonzero at (2408,168) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[155]PETSC ERROR: Argument out of range\n[155]PETSC ERROR: New nonzero at (49,224) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[155]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[155]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[155]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n18.int by neuner Sun Jan 30 06:13:25 2022\n[155]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[155]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[166]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[142]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[155]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[166]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[142]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[157]PETSC ERROR: Argument out of range\n[166]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n19.int by neuner Sun Jan 30 06:13:25 2022\n[142]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n17.int by neuner Sun Jan 30 06:13:25 2022\n[157]PETSC ERROR: New nonzero at (371,791) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[166]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[142]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[157]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[166]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[142]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[157]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[166]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[142]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[157]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n18.int by neuner Sun Jan 30 06:13:25 2022\n[165]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[143]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[157]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[165]PETSC ERROR: Argument out of range\n[143]PETSC ERROR: Argument out of range\n[157]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[165]PETSC ERROR: New nonzero at (308,1106) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[143]PETSC ERROR: New nonzero at (182,133) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[157]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[165]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[143]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[156]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[165]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[143]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[156]PETSC ERROR: Argument out of range\n[165]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n19.int by neuner Sun Jan 30 06:13:25 2022\n[143]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n17.int by neuner Sun Jan 30 06:13:25 2022\n[156]PETSC ERROR: New nonzero at (672,140) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[165]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[143]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[156]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[165]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[143]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[156]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[165]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[143]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[156]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n18.int by neuner Sun Jan 30 06:13:25 2022\n[171]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[128]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[156]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[171]PETSC ERROR: Argument out of range\n[128]PETSC ERROR: Argument out of range\n[156]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[171]PETSC ERROR: New nonzero at (98,420) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[128]PETSC ERROR: New nonzero at (1029,987) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[156]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[171]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[128]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[158]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[171]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[128]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[158]PETSC ERROR: Argument out of range\n[171]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n19.int by neuner Sun Jan 30 06:13:25 2022\n[128]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n17.int by neuner Sun Jan 30 06:13:25 2022\n[158]PETSC ERROR: New nonzero at (357,441) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[171]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[128]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[158]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[171]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[128]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[158]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[171]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[128]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[158]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n18.int by neuner Sun Jan 30 06:13:25 2022\n[170]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[129]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[158]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[170]PETSC ERROR: Argument out of range\n[170]PETSC ERROR: New nonzero at (175,462) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[170]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[170]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[170]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n19.int by neuner Sun Jan 30 06:13:25 2022\n[129]PETSC ERROR: Argument out of range\n[158]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[170]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[170]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[129]PETSC ERROR: New nonzero at (315,728) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[158]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[170]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[129]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[152]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[167]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[129]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[152]PETSC ERROR: Argument out of range\n[167]PETSC ERROR: Argument out of range\n[129]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n17.int by neuner Sun Jan 30 06:13:25 2022\n[152]PETSC ERROR: New nonzero at (497,357) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[167]PETSC ERROR: New nonzero at (308,224) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[129]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[152]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[167]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[129]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[152]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[167]PETSC ERROR: Petsc Release Version 3.15.1, unknown \n[129]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[152]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n18.int by neuner Sun Jan 30 06:13:25 2022\n[167]PETSC ERROR: /projects/chamois/chamois-opt on a arch-moose named sh03-05n19.int by neuner Sun Jan 30 06:13:25 2022\n[130]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[152]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[167]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices\n[130]PETSC ERROR: Argument out of range\n[152]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[167]PETSC ERROR: #1 MatSetValues_MPIAIJ() at /projects/moose/petsc/src/mat/impls/aij/mpi/mpiaij.c:463\n[130]PETSC ERROR: New nonzero at (4844,4438) caused a malloc\nUse MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE) to turn off this check\n[152]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[167]PETSC ERROR: #2 MatSetValues() at /projects/moose/petsc/src/mat/interface/matrix.c:1401\n[130]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n--------------------------------------------------------------------------",
+                  "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2076760",
+                  "updatedAt": "2022-06-11T11:42:43Z",
+                  "publishedAt": "2022-01-30T16:38:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Ok can you try removing the EqualValueBoundaryConstraint and see if the error goes away?",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2076869",
+                          "updatedAt": "2022-06-11T11:42:57Z",
+                          "publishedAt": "2022-01-30T17:05:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "Ok can you try removing the EqualValueBoundaryConstraint and see if the error goes away?\n\nYes, removing that constraint results in the expected behavior. Sorry for the long delay.\nSo it seems that EqualValueBoundaryConstraint (and probably similar constraints) lead to ridiculously long initialization times?",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2317990",
+                          "updatedAt": "2022-06-11T11:42:57Z",
+                          "publishedAt": "2022-03-08T16:37:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Seems like it.\nThe fix here would be to get the sparsity pattern right from the get go with that constraint.",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2318183",
+                          "updatedAt": "2022-06-11T11:42:57Z",
+                          "publishedAt": "2022-03-08T17:06:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "How to accomplish that?",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2320984",
+                          "updatedAt": "2022-06-11T11:43:05Z",
+                          "publishedAt": "2022-03-09T03:20:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "That's something we have to fix at the framework level. I don't suppose your input is something you could send to me? If not, I can try to drum up a test problem that has the same issues",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-2326064",
+                          "updatedAt": "2022-06-11T11:43:05Z",
+                          "publishedAt": "2022-03-09T18:01:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityaghantasala"
+                          },
+                          "bodyText": "@lindsayad  any update on this fix ? We also face a similar problem with very long intialization times when using constraints.",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-9057809",
+                          "updatedAt": "2024-04-09T11:21:27Z",
+                          "publishedAt": "2024-04-09T11:21:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Nodal constraints are not a focus for our funders, so unless there has been some fix by happenstance, this is likely still an issue. Nodal constraints do not use our modern relationship manager system which is likely why the sparsity pattern estimation is so poor",
+                          "url": "https://github.com/idaholab/moose/discussions/20164#discussioncomment-9132154",
+                          "updatedAt": "2024-04-16T16:04:57Z",
+                          "publishedAt": "2024-04-16T16:04:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

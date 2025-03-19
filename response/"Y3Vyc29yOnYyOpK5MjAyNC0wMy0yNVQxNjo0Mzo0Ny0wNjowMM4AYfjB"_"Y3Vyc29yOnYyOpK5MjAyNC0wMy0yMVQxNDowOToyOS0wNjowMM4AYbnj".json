@@ -1,0 +1,1153 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMy0yMVQxNDowOToyOS0wNjowMM4AYbnj"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Completely different results (that greatly diverge from each other) by just changing mesh refinement",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Hi, I am trying to solve the heat equation in the frequency domain. I will try to make this post as detailed as possible, but the tldr is that I've done a lot of debugging and narrowed down the issue to either:\n-Incorrect usage of SideSetHeatTransferKernel, or\n-Solution method\nThe input files (and my MOOSE application) referenced in this post can be found here: https://github.com/richmondodufisan/purple/tree/main/FDTR_Simulation_Fourier/3D/Steady_State_Formulation\nThe heat equation in the diffusive (Fourier) regime is:\n\nTaking the Fourier Transform of this, we get:\n\nTo solve this problem numerically, we need to decompose into a coupled system of equations. This is where I discovered the first issue. By decomposing \"T hat\" into U + iV, we can get a system of two equations. However, when I implemented this, while the results were close to the analytical solution, I saw that there was a \"forward\" phase shift instead of a phase lag as expected (i.e phase difference between a modulated heat source and the temperature increase). I fixed this by changing the decomposition to U - iV (which I know is questionable, but it worked), such that the system of equations becomes:\n\nand\n\nI ran a couple of simulations for the SingleLayer_Test.i input file, varying material properties and they all matched with the analytical solution (https://colab.research.google.com/drive/13vhZWXeZJLbZuwk0OFUb_Qxw-fBa7lZ7?usp=sharing) pretty well, at least up to the 3rd decimal place. The exodus output also looked fine, we clearly see diffusive behavior at the location of the heat source (below is the real part of the solution):\n\nNext, I tried to extend this to the problem I am actually trying to solve, which consists of two layers with an interface between them. I tried for one mesh refinement, and while the phase calculated was somewhat close, the amplitude was off almost by a factor of 2. The exodus output also looked a bit peculiar, with a weird zone where it should be normal diffusive behavior:\n\nSince I don't really care about the amplitude for my purposes (even though it should have been a warning sign), I tried to refine the mesh to get closer to the analytical phase (https://colab.research.google.com/drive/1D2EzYUD_GQuQCWPht3R5EaZdGTBTuJn-?usp=sharing). And the result was just completely off.\n\nThis left me baffled, because I would expect that if it were an issue of mesh refinement, the results would be somewhat close, still. I used the same further refined mesh for the single layer model and it converged to the analytical solution!\n\nWhich led me to believe that there is either something wrong with my use of SideSetHeatTransferKernel, or the solution method- maybe MOOSE is having trouble finding a unique solution.\nI used ADKernel to implement the model, and switched to a Finite Difference Preconditioner. I also changed the pc-type to \"lu\" as suggested by @lindsayad when I had a problem with convergence issues in the past. Since I have eliminated the kernel as the culprit (since it is clearly giving the correct solution for a single layer model with no interface), I tried switching the \"var\" and \"neighbor_var\" variables around for SideSetHeatTransferKernel (don't think they should be impacted, but since the sign of the BC term in the finite element discretization changed after I switched the decomposition to U - iV, maybe the normal is defined differently than I thought or something) to no success.\nI am running out of ideas and actually am pretty floored as I've never run a problem where I get completely different results for the same mesh with different refinements, even fracture problems at least show similar patterns. The visual exodus output is a hint that something is not quite right, but I am struggling to think of where else to look. Is there anything I haven't thought of yet that might be worth looking into?",
+          "url": "https://github.com/idaholab/moose/discussions/27160",
+          "updatedAt": "2024-03-25T19:02:08Z",
+          "publishedAt": "2024-03-21T11:57:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@lindsayad I ll let you dispatch this.",
+                  "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8867794",
+                  "updatedAt": "2024-03-21T15:41:55Z",
+                  "publishedAt": "2024-03-21T15:41:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "@GiudGiud @lindsayad An update to this, I changed the solve type to FD. By my understanding that should be the most accurate way of constructing the Jacobian possible, basically equivalent to an analytical Jacobian if the mesh is fine enough, right? It took 21 hours to solve (as opposed to ~10 minutes with NEWTON, so even if it worked it's unfeasible for practical use), but it still gave me the same result. Does this rule out the solution method as the cause of the error? I was only able to solve for one mesh (because of how long it takes to solve).",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8888149",
+                          "updatedAt": "2024-03-23T16:50:00Z",
+                          "publishedAt": "2024-03-23T16:50:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYes it s an indication that the Jacobian is correct. I dont think you need to use FD more.\nI think something must be wrong with the problem set up. Can you try an intermediate case between the one thsat worked and the one that did not that would isolate one feature?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8888174",
+                          "updatedAt": "2024-03-23T16:55:32Z",
+                          "publishedAt": "2024-03-23T16:55:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "If the Jacobian is correct, it means the only difference between both problems is the use of SideSetHeatTransferKernel at the interface of the two blocks. Everything else is the same, all boundary conditions and geometry. I guess an intermediate case would be no jump in temperature between each block. I'll give that a shot.",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8888207",
+                          "updatedAt": "2024-03-23T17:02:06Z",
+                          "publishedAt": "2024-03-23T17:02:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "I just ran a two-layer problem with no temperature jump. The results also matched the analytical solution. Which brings me to the conclusion that the issue is with the use of SideSetHeatTransferKernel. Why it isn't working is still a puzzle to me (and why it's producing different results for the same mesh with different refinements)",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8888671",
+                          "updatedAt": "2024-03-23T18:36:44Z",
+                          "publishedAt": "2024-03-23T18:36:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lynnmunday"
+                  },
+                  "bodyText": "In the two layer problem, do you get the same answer with mesh refinement when you apply the load to the top surface (sample_pump_area) instead of the interface?\nThis is a different problem but it there might be parts of it you can use:  https://mooseframework.inl.gov/modules/solid_mechanics/1d_elastic_waves.html",
+                  "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8869404",
+                  "updatedAt": "2024-03-21T17:54:41Z",
+                  "publishedAt": "2024-03-21T17:54:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Hi, the load actually is applied to the top surface (top_pump_area), which is at the top of the first (very thin, 0.09 microns) layer. \"sample_pump_area\" is actually the interface, it was only named such because it is at the top of the sample (second layer), and it used to be just a \"portion\" of the interface and not the whole surface. in a different version of this input file i had a postprocessor to check the temperature increase at the interface as well.\ni'll check out the linked page, thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8870895",
+                          "updatedAt": "2024-03-22T02:36:32Z",
+                          "publishedAt": "2024-03-21T20:55:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "richmondodufisan"
+                  },
+                  "bodyText": "SOLVED!\nI mentioned in the original question that for some reason, I had to change the decomposition to U - iV instead of U + iV. I still do not have a mathematically rigorous reason for that, but I guess I'll figure that out later.\nWhen I got the wrong results, I tried switching around the var and neighbor_var in SideSetHeatTransferKernel for the imaginary and real parts individually (and together), thinking that the change of the sign in the decomposition could be the reason. Apparently this does not have the same effect as what eventually solved it- the solution was to change the interface conductance to a negative value (and leave the var and neighbor_var as they were). I had looked at the source code for SideSetHeatTransferKernel and didn't consider doing this, because the way the jump was calculated in computeQpresidual, switching var and neighbor_var around should have the same effect. So I'm guessing that the error is coming from the Jacobian computed by that Kernel, since it is an analytical Jacobian (not AD). That's the only explanation I could think of. Still doesn't 100% make sense to me, especially since I got extremely different results with the same mesh at different refinements. But it's solved now and I'm relieved! Same result for both meshes!\n@GiudGiud @lynnmunday @lindsayad",
+                  "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8889284",
+                  "updatedAt": "2024-03-23T21:30:16Z",
+                  "publishedAt": "2024-03-23T21:12:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "A wrong Jacobian should not affect the final result as long as the solver has converged and there is a unique solution",
+                          "url": "https://github.com/idaholab/moose/discussions/27160#discussioncomment-8906760",
+                          "updatedAt": "2024-03-25T19:02:09Z",
+                          "publishedAt": "2024-03-25T19:02:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Registering a syntax leads to \"A 'XYZ' is not a registered object.\"",
+          "author": {
+            "login": "jmeier"
+          },
+          "bodyText": "Dear all,\nIn \"registerAll\" of my moose app I try to register an input file syntax like [XYZ] (on top level) using registerSyntaxTask(\"AddXYZAction\", \"XYZ\", \"add_xyz\");.\nThe app compiles just fine.\nMy input file:\n[XYZ]\n  type = 'XYZ'\n[]\n\nIf I run my app using the input file above I get\n*** ERROR ***\nA 'XYZ' is not a registered object.\n\nDo you know why my Moose app is not finding the syntax I registered?",
+          "url": "https://github.com/idaholab/moose/discussions/27186",
+          "updatedAt": "2024-03-25T16:50:43Z",
+          "publishedAt": "2024-03-25T16:09:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you register a XYZ object to your application?\nThe syntax is recognized but you also need an object with that type\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27186#discussioncomment-8904848",
+                  "updatedAt": "2024-03-25T16:15:41Z",
+                  "publishedAt": "2024-03-25T16:15:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear @GiudGiud ,\nThanks - you are right. I forgot to add:\nregisterMooseObject(\"moose_bare_tmechApp\", XYZ);",
+                          "url": "https://github.com/idaholab/moose/discussions/27186#discussioncomment-8905341",
+                          "updatedAt": "2024-03-25T16:50:42Z",
+                          "publishedAt": "2024-03-25T16:50:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Variables Defined Result in Error for Parser Expression",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "# Geometry parameters\nrefinement = 8\n\n[Mesh]\n  [ccmg]\n    type = ConcentricCircleMeshGenerator\n    num_sectors = '${fparse refinement*2}'\n    radii = '${circle_radius} ${fparse 1.2*circle_radius}'\n    rings = '4 ${refinement} ${refinement}'\n    has_outer_square = on\n    pitch = ${pitch}\n    preserve_volumes = off\n    smoothing_max_it = 2\n\nfor the refinement variable I get the error:\nNo variable 'refinement' found for use in function parser expression.\n\nHow do I eliminate these types of errors?",
+          "url": "https://github.com/idaholab/moose/discussions/27183",
+          "updatedAt": "2024-03-25T15:03:30Z",
+          "publishedAt": "2024-03-25T01:26:15Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe parser could have been thrown off by a missing (other) varaible, like maybe circle_radius?\nOr by a runaway quote somewhere else in the input\nThe way to find these is to make the input smaller and smaller by commenting out blocks\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896165",
+                  "updatedAt": "2024-03-25T01:30:42Z",
+                  "publishedAt": "2024-03-25T01:30:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "It looks like I have an issue related to my C++ install:\n*** Warning, This code is deprecated and will be removed in future versions:\nPlease update your main.C to adapt new main function in MOOSE framework, see'test/src/main.C in MOOSE as an example of moose::main()'.",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897297",
+                          "updatedAt": "2024-03-25T04:12:33Z",
+                          "publishedAt": "2024-03-25T04:12:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you dont have to do that now, we deprecate things smoothly. Worry about it once the other problem is solved.",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897307",
+                          "updatedAt": "2024-03-25T04:15:00Z",
+                          "publishedAt": "2024-03-25T04:15:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "TLWise"
+                  },
+                  "bodyText": "@GiudGiud I tried this simple case with the following error:\n  x_min = 0.0\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n\n  nx = 100\n  ny = 100\n\n  xmin = ${x_min}\n  xmax = 1.0\n  ymin = 0.0\n  ymax = 1.0\n[]\n\nno variable 'x_min' found for substitution expression\nCould the problem be related to my OS computer combination?",
+                  "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896386",
+                  "updatedAt": "2024-03-25T02:05:17Z",
+                  "publishedAt": "2024-03-25T02:01:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "seems like a bug. can you run the diagnostics script in moose/scripts? also what s your version of moose-wasp",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896414",
+                          "updatedAt": "2024-03-25T02:05:52Z",
+                          "publishedAt": "2024-03-25T02:05:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "What is the syntax for running the diagnostic in moose/scripts, and for determining the version of the moose-wasp?",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896441",
+                          "updatedAt": "2024-03-25T02:10:53Z",
+                          "publishedAt": "2024-03-25T02:10:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "@GiudGiud I figured out how to run the diagnostic.sh. What should I look for after the run?",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896488",
+                          "updatedAt": "2024-03-25T02:18:00Z",
+                          "publishedAt": "2024-03-25T02:17:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Here is the diagnostic output minus the graphics information:\nystem Arch: Distributor ID: Ubuntu Description: Ubuntu 22.04.4 LTS Release: 22.04 Codename: jammy\n\nMOOSE Package Version: Custom Build\n\nCPU Count: 8\n\nMemory Free: 14847.438 MB\n\n$CC not set\n\nMPICC WRAPPER NOT FOUND\n\nPython:\n\t/home/twise/mambaforge3/bin/python\n\tPython 3.10.13\n\nMODULES NOT AVAILABLE\n\nPETSC_DIR not set\n\nENVIRONMENT:\n_CE_CONDA=\n_CE_M=\nCOLORTERM=truecolor\nCONDA_DEFAULT_ENV=base\nCONDA_EXE=/home/twise/mambaforge3/bin/conda\nCONDA_PREFIX=/home/twise/mambaforge3\nCONDA_PROMPT_MODIFIER=(base) \nCONDA_PYTHON_EXE=/home/twise/mambaforge3/bin/python\nCONDA_SHLVL=1\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus,guid=073883868a6b4180941c683b65fe053c\nDBUS_STARTER_ADDRESS=unix:path=/run/user/1000/bus,guid=073883868a6b4180941c683b65fe053c\nDBUS_STARTER_BUS_TYPE=session\nDESKTOP_SESSION=ubuntu\nDISPLAY=:0\nGDMSESSION=ubuntu\nGNOME_DESKTOP_SESSION_ID=this-is-deprecated\nGNOME_SHELL_SESSION_MODE=ubuntu\nGNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/d228c499_ed30_4ce5_a163_ea2cc459f97d\nGNOME_TERMINAL_SERVICE=:1.389\nGPG_AGENT_INFO=/run/user/1000/gnupg/S.gpg-agent:0:1\nGTK_IM_MODULE=ibus\nGTK_MODULES=gail:atk-bridge\nHOME=/home/twise\nIM_CONFIG_PHASE=1\nLANG=en_US.UTF-8\nLESSCLOSE=/usr/bin/lesspipe %s %s\nLESSOPEN=| /usr/bin/lesspipe %s\nLOGNAME=twise\n\nPATH=/home/twise/projects/moose/python/peacock:/home/twise/mambaforge3/bin:/home/twise/mambaforge3/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin\nPWD=/home/twise/projects/moose/scripts\nQT_ACCESSIBILITY=1\nQT_IM_MODULE=ibus\nSESSION_MANAGER=local/twise-GS73VR-6RF:@/tmp/.ICE-unix/1846,unix/twise-GS73VR-6RF:/tmp/.ICE-unix/1846\nSHELL=/bin/bash\nSHLVL=1\nSSH_AGENT_LAUNCHER=gnome-keyring\nSSH_AUTH_SOCK=/run/user/1000/keyring/ssh\nSYSTEMD_EXEC_PID=1846\nTERM=xterm-256color\nUSERNAME=twise\nUSER=twise\n_=/usr/bin/env\nVTE_VERSION=6800\nWINDOWPATH=2\nXAUTHORITY=/run/user/1000/gdm/Xauthority\nXDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg\nXDG_CURRENT_DESKTOP=ubuntu:GNOME\nXDG_DATA_DIRS=/usr/share/ubuntu:/usr/share/gnome:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop\nXDG_MENU_PREFIX=gnome-\nXDG_RUNTIME_DIR=/run/user/1000\nXDG_SESSION_CLASS=user\nXDG_SESSION_DESKTOP=ubuntu\nXDG_SESSION_TYPE=x11\nXML_CATALOG_FILES=file:///home/twise/mambaforge3/etc/xml/catalog file:///etc/xml/catalog\nXMODIFIERS=@im=ibus",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896522",
+                          "updatedAt": "2024-03-25T02:57:20Z",
+                          "publishedAt": "2024-03-25T02:22:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what does conda list | grep moose return?\nthis looks outdated since you are using mambdaforge. but let s be sure",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896762",
+                          "updatedAt": "2024-03-25T02:58:26Z",
+                          "publishedAt": "2024-03-25T02:58:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "conda list\npackages in environment at /home/twise/mambaforge3:\n\nName                    Version                   Build  Channel\n_libgcc_mutex             0.1                 conda_forge    conda-forge\n_openmp_mutex             4.5                       2_gnu    conda-forge\narchspec                  0.2.3              pyhd8ed1ab_0    conda-forge\nboltons                   23.1.1             pyhd8ed1ab_0    conda-forge\nbrotli-python             1.1.0           py310hc6cd4ac_1    conda-forge\nbrotlipy                  0.7.0           py310h2372a71_1006    conda-forge\nbzip2                     1.0.8                hd590300_5    conda-forge\nc-ares                    1.27.0               hd590300_0    conda-forge\nca-certificates           2024.2.2             hbcca054_0    conda-forge\ncertifi                   2024.2.2           pyhd8ed1ab_0    conda-forge\ncffi                      1.16.0          py310h2fee648_0    conda-forge\ncharset-normalizer        3.3.2              pyhd8ed1ab_0    conda-forge\ncolorama                  0.4.6              pyhd8ed1ab_0    conda-forge\nconda                     24.1.2          py310hff52083_0    conda-forge\nconda-libmamba-solver     24.1.0             pyhd8ed1ab_0    conda-forge\nconda-package-handling    2.2.0              pyh38be061_0    conda-forge\nconda-package-streaming   0.9.0              pyhd8ed1ab_0    conda-forge\ncryptography              42.0.5          py310h75e40e8_0    conda-forge\ndistro                    1.9.0              pyhd8ed1ab_0    conda-forge\nfmt                       10.2.1               h00ab1b0_0    conda-forge\nicu                       73.2                 h59595ed_0    conda-forge\nidna                      3.6                pyhd8ed1ab_0    conda-forge\njsonpatch                 1.33               pyhd8ed1ab_0    conda-forge\njsonpointer               2.4             py310hff52083_3    conda-forge\nkeyutils                  1.6.1                h166bdaf_0    conda-forge\nkrb5                      1.21.2               h659d440_0    conda-forge\nld_impl_linux-64          2.40                 h41732ed_0    conda-forge\nlibarchive                3.7.2                h2aa1ff5_1    conda-forge\nlibcurl                   8.6.0                hca28451_0    conda-forge\nlibedit                   3.1.20191231         he28a2e2_2    conda-forge\nlibev                     4.33                 hd590300_2    conda-forge\nlibffi                    3.4.2                h7f98852_5    conda-forge\nlibgcc-ng                 13.2.0               h807b86a_5    conda-forge\nlibgomp                   13.2.0               h807b86a_5    conda-forge\nlibiconv                  1.17                 hd590300_2    conda-forge\nlibmamba                  1.5.7                had39da4_0    conda-forge\nlibmambapy                1.5.7           py310h39ff949_0    conda-forge\nlibnghttp2                1.58.0               h47da74e_1    conda-forge\nlibnsl                    2.0.1                hd590300_0    conda-forge\nlibsolv                   0.7.28               hfc55251_0    conda-forge\nlibsqlite                 3.45.2               h2797004_0    conda-forge\nlibssh2                   1.11.0               h0841786_0    conda-forge\nlibstdcxx-ng              13.2.0               h7e041cc_5    conda-forge\nlibuuid                   2.38.1               h0b41bf4_0    conda-forge\nlibxcrypt                 4.4.36               hd590300_1    conda-forge\nlibxml2                   2.12.6               h232c23b_1    conda-forge\nlibzlib                   1.2.13               hd590300_5    conda-forge\nlz4-c                     1.9.4                hcb278e6_0    conda-forge\nlzo                       2.10              h516909a_1000    conda-forge\nmamba                     1.5.7           py310h51d5547_0    conda-forge\nmenuinst                  2.0.2           py310hff52083_0    conda-forge\nncurses                   6.4.20240210         h59595ed_0    conda-forge\nopenssl                   3.2.1                hd590300_1    conda-forge\npackaging                 24.0               pyhd8ed1ab_0    conda-forge\npip                       24.0               pyhd8ed1ab_0    conda-forge\nplatformdirs              4.2.0              pyhd8ed1ab_0    conda-forge\npluggy                    1.4.0              pyhd8ed1ab_0    conda-forge\npybind11-abi              4                    hd8ed1ab_3    conda-forge\npycosat                   0.6.6           py310h2372a71_0    conda-forge\npycparser                 2.21               pyhd8ed1ab_0    conda-forge\npyopenssl                 24.0.0             pyhd8ed1ab_0    conda-forge\npysocks                   1.7.1              pyha2e5f31_6    conda-forge\npython                    3.10.14         hd12c33a_0_cpython    conda-forge\npython_abi                3.10                    4_cp310    conda-forge\nreadline                  8.2                  h8228510_1    conda-forge\nreproc                    14.2.4.post0         hd590300_1    conda-forge\nreproc-cpp                14.2.4.post0         h59595ed_1    conda-forge\nrequests                  2.31.0             pyhd8ed1ab_0    conda-forge\nruamel.yaml               0.18.6          py310h2372a71_0    conda-forge\nruamel.yaml.clib          0.2.8           py310h2372a71_0    conda-forge\nsetuptools                69.2.0             pyhd8ed1ab_0    conda-forge\ntk                        8.6.13          noxft_h4845f30_101    conda-forge\ntoolz                     0.12.1             pyhd8ed1ab_0    conda-forge\ntqdm                      4.66.2             pyhd8ed1ab_0    conda-forge\ntruststore                0.8.0              pyhd8ed1ab_0    conda-forge\ntzdata                    2024a                h0c530f3_0    conda-forge\nurllib3                   2.2.1              pyhd8ed1ab_0    conda-forge\nwheel                     0.43.0             pyhd8ed1ab_0    conda-forge\nxz                        5.2.6                h166bdaf_0    conda-forge\nyaml-cpp                  0.8.0                h59595ed_0    conda-forge\nzstandard                 0.22.0          py310h1275a96_0    conda-forge\nzstd                      1.5.5                hfc55251_0    conda-forge",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897080",
+                          "updatedAt": "2024-03-25T03:38:07Z",
+                          "publishedAt": "2024-03-25T03:38:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "how did you install moose?\nwhich instructions did you follow?",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897103",
+                          "updatedAt": "2024-03-25T03:41:54Z",
+                          "publishedAt": "2024-03-25T03:41:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Started here, but that was about one year ago:\nhttps://mooseframework.inl.gov/getting_started/installation/conda.html\nIt appears the webpage has changed since I performed my reinstall. Initial installation was probably about three years ago.",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897174",
+                          "updatedAt": "2024-03-25T03:52:08Z",
+                          "publishedAt": "2024-03-25T03:52:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this cant be since you dont have any of the moose packages.\ndid you forget to run conda activate moose before checking the packages?",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897177",
+                          "updatedAt": "2024-03-25T03:52:44Z",
+                          "publishedAt": "2024-03-25T03:52:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "I don't believe that I ran conda activate moose, prior to running executing the conda command.",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897220",
+                          "updatedAt": "2024-03-25T03:59:57Z",
+                          "publishedAt": "2024-03-25T03:59:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "TLWise"
+                  },
+                  "bodyText": "Ran this series of commands:\ncd ~/projects/moose/scripts\nexport MOOSE_JOBS=6 METHODS=opt\n./update_and_rebuild_petsc.sh --skip-submodule-update --with-packages-download-dir=~/projects/downloads\n./update_and_rebuild_libmesh.sh --skip-submodule-update\n./update_and_rebuild_wasp.sh --skip-submodule-update\n\nGot the following errors:\n<<< Found PETSc 3.20.3 installation in /home/twise/projects/moose/scripts/../petsc ... >>>\nchecking whether we can compile a trivial PETSc program... no\nchecking for TAO support via PETSc... no\nconfigure: error: *** PETSc was not found, but --enable-petsc-required was specified.\nRunning make -j 6...\n./update_and_rebuild_libmesh.sh: line 213: make: command not found\n/home/twise/projects/moose/scripts/configure_wasp.sh: line 19: cmake: command not found\nError: configure step for WASP failed to complete successfully",
+                  "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896714",
+                  "updatedAt": "2024-03-25T02:56:50Z",
+                  "publishedAt": "2024-03-25T02:51:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You are using the conda packages right?\nIf so do not run these commands",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896752",
+                          "updatedAt": "2024-03-25T02:57:10Z",
+                          "publishedAt": "2024-03-25T02:57:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Are there some preferred commands to use for conda? Now that I have executed these commands, should I take some actions to recover the install to ensure it still works?",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8896975",
+                          "updatedAt": "2024-03-25T03:19:56Z",
+                          "publishedAt": "2024-03-25T03:19:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "mamba update --all is the preferred path for updating with conda (/mamba formerly)",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897033",
+                          "updatedAt": "2024-03-25T03:29:35Z",
+                          "publishedAt": "2024-03-25T03:29:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "see the other thread, let s see what version you are on",
+                          "url": "https://github.com/idaholab/moose/discussions/27183#discussioncomment-8897036",
+                          "updatedAt": "2024-03-25T03:29:55Z",
+                          "publishedAt": "2024-03-25T03:29:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "how to get the gap volume between two block?",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "Hi, I used the Cavity Pressure  to set the pressure Boundary Condition. when I use the IntervalVolume, I got the negative result.\nwhat's wrong?\nthe mesh is in the sliding_elastic_blocks_2d.e\nIn this mesh which type should I used to get the gap volume?",
+          "url": "https://github.com/idaholab/moose/discussions/26968",
+          "updatedAt": "2024-03-25T02:37:09Z",
+          "publishedAt": "2024-03-05T12:35:32Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "wangzhaohao"
+                  },
+                  "bodyText": "the IntervalVolume seems only effective in enclosed volume, do you have some advice? Thanks",
+                  "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687709",
+                  "updatedAt": "2024-03-06T02:27:09Z",
+                  "publishedAt": "2024-03-06T02:27:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "@GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687711",
+                          "updatedAt": "2024-03-06T02:28:19Z",
+                          "publishedAt": "2024-03-06T02:28:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is the cavity meshed? Or is it a void in the mesh?",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687741",
+                          "updatedAt": "2024-03-06T02:33:36Z",
+                          "publishedAt": "2024-03-06T02:33:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "I want to get the volume in this condition, one small cylinder in the same height pipeline, and because the thermal expansion or orther reason, two face will touch with time. I want to get the gap between the  cylinder and pipeline interface volume.",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687798",
+                          "updatedAt": "2024-03-06T02:40:18Z",
+                          "publishedAt": "2024-03-06T02:40:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is the mesh covering the fuel, clad and ALSO the gap?",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687822",
+                          "updatedAt": "2024-03-06T02:43:21Z",
+                          "publishedAt": "2024-03-06T02:43:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "the IntervalVolume seems right begin, but at last the volume is negative, it's quite odd. I also use the Contact, is it because of this?",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687831",
+                          "updatedAt": "2024-03-06T02:45:02Z",
+                          "publishedAt": "2024-03-06T02:45:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "the gap don't have mesh",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687838",
+                          "updatedAt": "2024-03-06T02:45:58Z",
+                          "publishedAt": "2024-03-06T02:45:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "Longitudinal view",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8687877",
+                          "updatedAt": "2024-03-06T02:52:09Z",
+                          "publishedAt": "2024-03-06T02:52:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok good to know.\nDid you try orienting the sidesets the other way?\nThe documentation of InternalVoolume mentions that orientation matters",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8688010",
+                          "updatedAt": "2024-03-06T03:14:52Z",
+                          "publishedAt": "2024-03-06T03:14:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "did you mean the `compoent=0 or 1 or 2'?\nThe coordinate system is a Cartesian coordinate system\uff0cshow as the picture.\n\nthe compoent  default is 0, change to 2, the volume is wrong at begain; change to 1, the result is same to 0 condition.\nI put my result on my google diver\nhttps://drive.google.com/file/d/1UQae5IA32WJbfNlBcygMbiGAB6La8Ahh/view?usp=drive_link\nhttps://drive.google.com/file/d/1HV0jg_S0Ir_xDTJ2oBRhwXqjiEpd1i-H/view?usp=drive_link",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8692681",
+                          "updatedAt": "2024-03-06T11:37:42Z",
+                          "publishedAt": "2024-03-06T11:37:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nNo I mean the orientation of the sidesets.\nA side in a sideset is actually stored as a tuple (element, side index, id of the sideset).\nBy using the neighbor instead of the element, we have (neighbor, opposite side, id) and it s the opposite side\nWhat software are you using for meshing?",
+                          "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8695222",
+                          "updatedAt": "2024-03-06T15:10:24Z",
+                          "publishedAt": "2024-03-06T15:10:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wangzhaohao"
+                  },
+                  "bodyText": "@wangzhaohao you need to give us access to the file.\n\nsorry, now the link is ok! https://drive.google.com/file/d/1HV0jg_S0Ir_xDTJ2oBRhwXqjiEpd1i-H/view?usp=sharing\n\nDo you see the penetration in the mesh? If the volume is negative, surely it can be seen in the mesh output\n\ni am not very sure. there is no mesh in gap, or i see the variable penetration?",
+                  "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8753480",
+                  "updatedAt": "2024-03-12T01:41:20Z",
+                  "publishedAt": "2024-03-12T01:41:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wangzhaohao"
+                  },
+                  "bodyText": "I solve this problem,\nit beacuse of the penalty factor is small.",
+                  "url": "https://github.com/idaholab/moose/discussions/26968#discussioncomment-8896621",
+                  "updatedAt": "2024-03-25T02:37:04Z",
+                  "publishedAt": "2024-03-25T02:37:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Initial Modification of the Solution Matrix by Removal of BCs",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "Given a typical 2nd order Poisson problem.\nAu = f,\nWhere the discrete problem reads as,\nFind u_h in V_h such that a_h(u_h,rho) = (f_h,rho) for all rho in V_h.\nA_hU_h = F_h\nFind u in V such that a(u,rho) = (f,rho) for all rho in V.\nThe continuous problem is defined with the boundary conditions, B(u) = g on the surface of the domain \"cap_gamma\".\nI would like to initialize Matrix A_h (and also U_h andF_h)  to not incorporated any BCs, corresponding to natural BCs.\nS_h(cap_gamma). S_h(cap_gamma) denotes degrees of freedom of the vector U_h that are related to the boundary cap_gamma. Is it possible to modify the MOOSE framework code to accomplish this type of modification. If so what is a good starting point to perform the modification?",
+          "url": "https://github.com/idaholab/moose/discussions/27182",
+          "updatedAt": "2024-03-24T18:23:21Z",
+          "publishedAt": "2024-03-24T18:04:20Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can turn on/off boundary conditions using the Controls system.\nA common object to use for that purpose is this one:\nhttps://mooseframework.inl.gov/source/controls/ConditionalFunctionEnableControl.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27182#discussioncomment-8894449",
+                  "updatedAt": "2024-03-24T18:20:55Z",
+                  "publishedAt": "2024-03-24T18:20:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "@GiudGiud Awesome! Thanks for pointing me in the right direction of the path of least resistance.",
+                          "url": "https://github.com/idaholab/moose/discussions/27182#discussioncomment-8894455",
+                          "updatedAt": "2024-03-24T18:23:22Z",
+                          "publishedAt": "2024-03-24T18:23:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "About the Step 5 in tutorial, I get Fatal error: <string> no such file or directory",
+          "author": {
+            "login": "Hatomzre"
+          },
+          "bodyText": "When I try to follow the step 5 in tutorial, I run 'make -j 8' and get \"Fatal error: : no such file or directory\". I have no idea about this error and how I should fix it. (ps. examples function well)",
+          "url": "https://github.com/idaholab/moose/discussions/26415",
+          "updatedAt": "2024-03-26T09:32:38Z",
+          "publishedAt": "2023-12-24T06:27:39Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\ncould you please run the diagnostics script in mosoe/scripts?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26415#discussioncomment-7937575",
+                  "updatedAt": "2023-12-24T11:29:10Z",
+                  "publishedAt": "2023-12-24T11:29:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Hatomzre"
+                          },
+                          "bodyText": "Does the diagnostics script means 'babbler/scripts/install-format-hook.sh' or some files in 'moose/scripts'. Could you give me more details? Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/26415#discussioncomment-7937684",
+                          "updatedAt": "2023-12-24T11:58:46Z",
+                          "publishedAt": "2023-12-24T11:58:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the last ls you ran, you can see diagnostics.sh. That s the diagnostic script.\nNo need to send screenshots btw, you can copy paste console output",
+                          "url": "https://github.com/idaholab/moose/discussions/26415#discussioncomment-7937712",
+                          "updatedAt": "2023-12-24T12:07:08Z",
+                          "publishedAt": "2023-12-24T12:07:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Hatomzre"
+                          },
+                          "bodyText": "Thanks. The result is:\nSun Dec 24 20:11:47 CST 2023\ndiagnostics.sh: 83: [: Linux: unexpected operator\n/usr/bin/lsb_release\nNo LSB modules are available.\n-e\nSystem Arch: Distributor ID: Ubuntu Description: Ubuntu 22.04.3 LTS Release: 22.04 Codename: jammy\n-e\nMOOSE Package Version: Custom Build\ndiagnostics.sh: 64: [: Linux: unexpected operator\n-e\nCPU Count: 32\ndiagnostics.sh: 73: [: Linux: unexpected operator\n-e\nMemory Free: 14903.668 MB\n/home/moose/miniforge/envs/moose/bin/mpicc\n-e\nVariable `which $CC` check:\n/home/moose/miniforge/envs/moose/bin/mpicc\n\n$CC --version:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n/home/moose/miniforge/envs/moose/bin/mpicc\n-e\nMPICC:\nwhich mpicc:\n        /home/moose/miniforge/envs/moose/bin/mpicc\nmpicc -show:\n        x86_64-conda-linux-gnu-cc -I/home/moose/miniforge/envs/moose/include -I/home/moose/miniforge/envs/moose/include -L/home/moose/miniforge/envs/moose/lib -Wl,-rpath,/home/moose/miniforge/envs/moose/lib -I/home/moose/miniforge/envs/moose/include -L/home/moose/miniforge/envs/moose/lib -Wl,-rpath -Wl,/home/moose/miniforge/envs/moose/lib -Wl,--enable-new-dtags -lmpi\n\nCOMPILER x86_64-conda-linux-gnu-cc:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n/home/moose/miniforge/envs/moose/bin/python\n-e\nPython:\n        /home/moose/miniforge/envs/moose/bin/python\n        Python 3.10.8\nmodule: not found\n-e\nMODULES:\ndiagnostics.sh: 1: module: not found\n-e\nPETSc configure:\nstatic const char *petscconfigureoptions = \"--with-64-bit-indices --with-cxx-dialect=C++17 --with-debugging=no --with-fortran-bindings=0 --with-mpi=1 --with-openmp=1 --with-shared-libraries=1 --with-sowing=0 --download-fblaslapack=1 --download-hypre=1 --download-metis=1 --download-mumps=1 --download-ptscotch=1 --download-parmetis=1 --download-scalapack=1 --download-slepc=1 --download-strumpack=1 --download-superlu_dist=1 --with-hdf5-dir=${PREFIX} --with-make-np=16 --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 --with-mpi-dir=/home/moose/miniforge/envs/moose AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include  -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/moose/miniforge/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/moose/miniforge/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -I/home/moose/miniforge/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include   -I/home/moose/miniforge/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/moose/miniforge/envs/moose/lib -Wl,-rpath-link,/home/moose/miniforge/envs/moose/lib -L/home/moose/miniforge/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/moose/miniforge/envs/moose/lib -Wl,-rpath-link,/home/moose/miniforge/envs/moose/lib -L/home/moose/miniforge/envs/moose/lib\" --prefix=/home/moose/miniforge/envs/moose\";\n-e\nPETSc linked libraries:\n        linux-vdso.so.1 (0x00007ffce9ff3000)\n        libHYPRE-2.29.0.so => /home/moose/miniforge/envs/moose/lib/./libHYPRE-2.29.0.so (0x00007f1392f5e000)\n        libpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f1392f54000)\n        libstrumpack.so.7.1 => /home/moose/miniforge/envs/moose/lib/./libstrumpack.so.7.1 (0x00007f1391f35000)\n        libscalapack.so.2.2 => /home/moose/miniforge/envs/moose/lib/./libscalapack.so.2.2 (0x00007f139183e000)\n        libsuperlu_dist.so.8 => /home/moose/miniforge/envs/moose/lib/./libsuperlu_dist.so.8 (0x00007f13916ba000)\n        libparmetis.so => /home/moose/miniforge/envs/moose/lib/./libparmetis.so (0x00007f139167a000)\n        libmetis.so => /home/moose/miniforge/envs/moose/lib/./libmetis.so (0x00007f139160f000)\n        libhdf5.so.200 => /home/moose/miniforge/envs/moose/lib/./libhdf5.so.200 (0x00007f13911dd000)\n        libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f13910f6000)\n        libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f13910f1000)\n        libmpifort.so.12 => /home/moose/miniforge/envs/moose/lib/./libmpifort.so.12 (0x00007f13910a0000)\n        libmpi.so.12 => /home/moose/miniforge/envs/moose/lib/./libmpi.so.12 (0x00007f1390c84000)\n        libgfortran.so.5 => /home/moose/miniforge/envs/moose/lib/./libgfortran.so.5 (0x00007f1390ad9000)\n        libgcc_s.so.1 => /home/moose/miniforge/envs/moose/lib/./libgcc_s.so.1 (0x00007f1390abe000)\n        libstdc++.so.6 => /home/moose/miniforge/envs/moose/lib/./libstdc++.so.6 (0x00007f13908db000)\n        libgomp.so.1 => /home/moose/miniforge/envs/moose/lib/./libgomp.so.1 (0x00007f139089f000)\n        libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f1390677000)\n        /lib64/ld-linux-x86-64.so.2 (0x00007f1394e3f000)\n        libquadmath.so.0 => /home/moose/miniforge/envs/moose/lib/././libquadmath.so.0 (0x00007f139063c000)\n        libzfp.so.0 => /home/moose/miniforge/envs/moose/lib/././libzfp.so.0 (0x00007f13905e8000)\n        libmpicxx.so.12 => /home/moose/miniforge/envs/moose/lib/././libmpicxx.so.12 (0x00007f13905c9000)\n        libcrypto.so.1.1 => /home/moose/miniforge/envs/moose/lib/././libcrypto.so.1.1 (0x00007f13902f7000)\n        libcurl.so.4 => /home/moose/miniforge/envs/moose/lib/././libcurl.so.4 (0x00007f1390254000)\n        librt.so.1 => /lib/x86_64-linux-gnu/librt.so.1 (0x00007f139024d000)\n        libz.so.1 => /home/moose/miniforge/envs/moose/lib/././libz.so.1 (0x00007f1390232000)\n        libnghttp2.so.14 => /home/moose/miniforge/envs/moose/lib/./././libnghttp2.so.14 (0x00007f1390206000)\n        libssh2.so.1 => /home/moose/miniforge/envs/moose/lib/./././libssh2.so.1 (0x00007f13901c2000)\n        libssl.so.1.1 => /home/moose/miniforge/envs/moose/lib/./././libssl.so.1.1 (0x00007f1390130000)\n        libgssapi_krb5.so.2 => /home/moose/miniforge/envs/moose/lib/./././libgssapi_krb5.so.2 (0x00007f13900dd000)\n        libkrb5.so.3 => /home/moose/miniforge/envs/moose/lib/././././libkrb5.so.3 (0x00007f1390006000)\n        libk5crypto.so.3 => /home/moose/miniforge/envs/moose/lib/././././libk5crypto.so.3 (0x00007f138ffec000)\n        libcom_err.so.3 => /home/moose/miniforge/envs/moose/lib/././././libcom_err.so.3 (0x00007f138ffe6000)\n        libkrb5support.so.0 => /home/moose/miniforge/envs/moose/lib/././././libkrb5support.so.0 (0x00007f138ffd7000)\n        libkeyutils.so.1 => /home/moose/miniforge/envs/moose/lib/././././libkeyutils.so.1 (0x00007f138ffce000)\n        libresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x00007f138ffba000)\n-e\nENVIRONMENT:\nADDR2LINE=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-addr2line\nAR=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ar\nAS=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-as\nBUILD=x86_64-conda-linux-gnu\nCC=mpicc\nCC_FOR_BUILD=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-cc\nCFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include\nCMAKE_ARGS=-DCMAKE_AR=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ar -DCMAKE_CXX_COMPILER_AR=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_C_COMPILER_AR=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_RANLIB=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ranlib -DCMAKE_CXX_COMPILER_RANLIB=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_C_COMPILER_RANLIB=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_LINKER=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ld -DCMAKE_STRIP=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-strip\nCMAKE_PREFIX_PATH=/home/moose/miniforge/envs/moose:/home/moose/miniforge/envs/moose/x86_64-conda-linux-gnu/sysroot/usr\nCONDA_BUILD_SYSROOT=/home/moose/miniforge/envs/moose/x86_64-conda-linux-gnu/sysroot\nCONDA_DEFAULT_ENV=moose\nCONDA_EXE=/home/moose/miniforge/bin/conda\nCONDA_PREFIX=/home/moose/miniforge/envs/moose\nCONDA_PREFIX_1=/home/moose/miniforge\nCONDA_PROMPT_MODIFIER=(moose)\nCONDA_PYTHON_EXE=/home/moose/miniforge/bin/python\nCONDA_SHLVL=2\nCONDA_TOOLCHAIN_BUILD=x86_64-conda-linux-gnu\nCONDA_TOOLCHAIN_HOST=x86_64-conda-linux-gnu\nCPP=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-cpp\nCPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/moose/miniforge/envs/moose/include\nCXX=mpicxx\nCXXFILT=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-c++filt\nCXXFLAGS=-fvisibility-inlines-hidden  -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include -std=c++17\nCXX_FOR_BUILD=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-c++\nC_INCLUDE_PATH=/home/moose/miniforge/envs/moose/include\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\nDEBUG_CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include\nDEBUG_CPPFLAGS=-D_DEBUG -D_FORTIFY_SOURCE=2 -Og -isystem /home/moose/miniforge/envs/moose/include\nDEBUG_CXXFLAGS=-fvisibility-inlines-hidden -std=c++17 -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include\nDEBUG_FFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nDEBUG_FORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nDISPLAY=172.23.32.1:0.0\nELFEDIT=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-elfedit\nEigen3_DIR=/home/moose/miniforge/envs/moose/libmesh/include/Eigen\nF77=mpif77\nF90=mpif90\nF95=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-f95\nFC=mpif90\nFC_FOR_BUILD=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nFFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include\nFORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/moose/miniforge/envs/moose/include\nGCC=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc\nGCC_AR=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar\nGCC_NM=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-nm\nGCC_RANLIB=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib\nGFORTRAN=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nGPROF=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-gprof\nGSETTINGS_SCHEMA_DIR=/home/moose/miniforge/envs/moose/share/glib-2.0/schemas\nGSETTINGS_SCHEMA_DIR_CONDA_BACKUP=\nGXX=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-g++\nHDF5_DIR=/home/moose/miniforge/envs/moose\nHOME=/home/moose\nHOST=x86_64-conda-linux-gnu\nHOSTTYPE=x86_64\nLANG=C.UTF-8\nLD=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ld\nLDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/moose/miniforge/envs/moose/lib -Wl,-rpath-link,/home/moose/miniforge/envs/moose/lib -L/home/moose/miniforge/envs/moose/lib\nLD_GOLD=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ld.gold\nLESSCLOSE=/usr/bin/lesspipe %s %s\nLESSOPEN=| /usr/bin/lesspipe %s\nLIBMESH_DIR=/home/moose/miniforge/envs/moose/libmesh\nLOGNAME=moose\nLS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:\nMESON_ARGS=--buildtype release\nMOOSE_NO_CODESIGN=true\nMPIHOME=/home/moose/miniforge/envs/moose\nNAME=ythuang\nNM=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-nm\nOBJCOPY=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-objcopy\nOBJDUMP=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-objdump\nOLDPWD=/home/moose/projects/moose\nPATH=/home/moose/miniforge/envs/moose/bin:/home/moose/miniforge/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl/lib:/mnt/c/Windows/system32:/mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/WindowsPowerShell/v1.0:/mnt/c/Windows/System32/OpenSSH:/mnt/c/Program Files (x86)/NVIDIA Corporation/PhysX/Common:/mnt/c/Program Files/NVIDIA Corporation/NVIDIA NvDLISR:/mnt/c/Users/10250/AppData/Local/Microsoft/WindowsApps:/mnt/c/Users/10250/AppData/Local/Programs/Microsoft VS Code/bin:/snap/bin:/home/moose/miniforge/envs/moose/wasp/bin\nPETSC_DIR=/home/moose/miniforge/envs/moose\nPROJ_LIB=/home/moose/miniforge/envs/moose/share/proj\nPROJ_NETWORK=ON\nPULSE_SERVER=unix:/mnt/wslg/PulseServer\nPWD=/home/moose/projects/moose/scripts\nRANLIB=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-ranlib\nREADELF=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-readelf\nSHELL=/bin/bash\nSHLVL=1\nSIZE=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-size\nSTRINGS=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-strings\nSTRIP=/home/moose/miniforge/envs/moose/bin/x86_64-conda-linux-gnu-strip\nTERM=xterm-256color\nUSER=moose\nVTKINCLUDE_DIR=/home/moose/miniforge/envs/moose/libmesh-vtk/include/vtk-9.2\nVTKLIB_DIR=/home/moose/miniforge/envs/moose/libmesh-vtk/lib\nWASP_DIR=/home/moose/miniforge/envs/moose/wasp\nWAYLAND_DISPLAY=wayland-0\nWSL2_GUI_APPS_ENABLED=1\nWSLENV=WT_SESSION:WT_PROFILE_ID:\nWSL_DISTRO_NAME=Ubuntu\nWSL_INTEROP=/run/WSL/334_interop\nWT_PROFILE_ID={61c54bbd-c2c6-5271-96e7-009a87ff44bf}\nWT_SESSION=ce2167ec-dde4-437d-9ace-5ef4867d50ff\nXDG_DATA_DIRS=/usr/local/share:/usr/share:/var/lib/snapd/desktop\nXDG_RUNTIME_DIR=/run/user/1000/\nXML_CATALOG_FILES=file:///home/moose/miniforge/envs/moose/etc/xml/catalog file:///etc/xml/catalog\n_=/usr/bin/sh\n_CE_CONDA=\n_CE_M=\n_CONDA_PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata_x86_64_conda_cos6_linux_gnu\nbuild_alias=x86_64-conda-linux-gnu\nhost_alias=x86_64-conda-linux-gnu",
+                          "url": "https://github.com/idaholab/moose/discussions/26415#discussioncomment-7937738",
+                          "updatedAt": "2023-12-24T19:18:20Z",
+                          "publishedAt": "2023-12-24T12:13:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "neutralchaos18"
+                  },
+                  "bodyText": "Because of your kernel file extension the compiler is attempting to compile moose in c, rather than its natural c++ language. The kernel file should be '.C' (uppercase dot c) and not '.c' (lowercase dot c).\nThis issue here has a similar cause and effect: #18050\nThis is what a successful output looks like. Note that it says 'Compiling C++' rather than C, as it does with your attempts.\n(moose) neutralchaos@neutralchaos-To-be-filled-by-O-E-M:~/projects/babbler$ make -j 4\nChecking if header needs updating: /home/neutralchaos/projects/moose/framework/include/base/MooseRevision.h...\nCreating Unity /home/neutralchaos/projects/babbler/build/unity_src/kernels_Unity.C\nCompiling C++ (in opt mode) /home/neutralchaos/projects/babbler/build/unity_src/kernels_Unity.C...\nLinking Library /home/neutralchaos/projects/babbler/lib/libbabbler-opt.la...\nLinking Executable /home/neutralchaos/projects/babbler/babbler-opt...\n(moose) neutralchaos@neutralchaos-To-be-filled-by-O-E-M:~/projects/babbler$\nFor what its worth, I was stuck on this issue for a few days as well.",
+                  "url": "https://github.com/idaholab/moose/discussions/26415#discussioncomment-8891913",
+                  "updatedAt": "2024-03-24T10:42:35Z",
+                  "publishedAt": "2024-03-24T10:41:25Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Inquiry Regarding Spherical Harmonics Function in MOOSE",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "Dear Community,\nI am currently working on a program that requires the use of spherical harmonics functions, and I am wondering if there is any relevant code available in MOOSE. I am aware that MOOSE incorporates Legendre polynomial functions, which led me to inquire about the availability of spherical harmonics functions as well.\nI have attempted to write my own code for spherical harmonics functions. However, I consistently encounter peculiar results during program execution.  Given that my mathematical background is not very strong, I am concerned that my understanding of the spherical harmonics function formulas may be incorrect.\nI believe having access to pre-implemented spherical harmonics functions within MOOSE would significantly facilitate my project's progress. Therefore, I would greatly appreciate it if anyone could confirm the availability of such functionality within MOOSE.\nThank you very much for your assistance.\nSincerely,\nhityyds",
+          "url": "https://github.com/idaholab/moose/discussions/27181",
+          "updatedAt": "2024-03-24T08:44:29Z",
+          "publishedAt": "2024-03-23T12:37:27Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont think we do, but we have the architecture for implementing more basis here:\nhttps://github.com/idaholab/moose/tree/next/modules/functional_expansion_tools/src/series\nand re-using that to implemenr spherical harmonics will make things easier\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27181#discussioncomment-8888156",
+                  "updatedAt": "2024-03-23T16:51:18Z",
+                  "publishedAt": "2024-03-23T16:51:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Thank you very much for your response and I appreciate your guidance. I will explore the provided resources and consider how to adapt them for implementing spherical harmonics in my program.",
+                          "url": "https://github.com/idaholab/moose/discussions/27181#discussioncomment-8890138",
+                          "updatedAt": "2024-03-24T02:13:59Z",
+                          "publishedAt": "2024-03-24T02:13:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "took another look, looks like spherical harmonics were in the todo list for the FET module there\nhttps://mooseframework.inl.gov/modules/functional_expansion_tools/index.html#1fbf33b7-3aa7-48c5-a31b-1cde80d659ec\nif you get an implementation working, I would love to get it into MOOSE after",
+                          "url": "https://github.com/idaholab/moose/discussions/27181#discussioncomment-8891394",
+                          "updatedAt": "2024-03-24T08:44:40Z",
+                          "publishedAt": "2024-03-24T08:44:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to add new physical properties to a fluid",
+          "author": {
+            "login": "shin-chan-cpu"
+          },
+          "bodyText": "Hello, I am a newbie who just started using the ns module. I want to simulate the flow of a fluid heated by a pipe in moose. I want my density, dynamic viscosity, specific heat capacity and thermal conductivity to change with temperature. How can I achieve such a simulation in moose?",
+          "url": "https://github.com/idaholab/moose/discussions/27151",
+          "updatedAt": "2024-03-23T07:55:13Z",
+          "publishedAt": "2024-03-20T13:13:36Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere are very many options for fluid properties:\nI think you are looking for this one\nhttps://mooseframework.inl.gov/source/fluidproperties/TemperaturePressureFunctionFluidProperties.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8854088",
+                  "updatedAt": "2024-03-20T14:43:06Z",
+                  "publishedAt": "2024-03-20T14:43:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "Thank you very much for your suggestion, but after I wrote the temperature in the fluid to the input card like yours, he told me that the variable type could not be converted, and the error was displayed\n'No postprocessor, scalar variable, or function with the name 'T_fluid' found. Unable to convert 'T_fluid' to type double\nIs this because I set the T_fluid this variable type is INSFVEnergyVariable?",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8859899",
+                          "updatedAt": "2024-03-21T02:13:47Z",
+                          "publishedAt": "2024-03-21T02:13:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The example is not great. Write down T_fluid in the expression as x, and pressure as y.",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8859926",
+                          "updatedAt": "2024-03-21T02:18:09Z",
+                          "publishedAt": "2024-03-21T02:18:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "It says like this in my input card, but he still has problems.\n  [rho]\n    type = ParsedFunction\n    symbol_names = 'T p'\n    symbol_values = 'T_fluid pressure'\n    expression = '1.5e3 + 0.13 * T - 1.5e-4 * p'\n  []\n\nShould I use some auxkernel to convert it?",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8860163",
+                          "updatedAt": "2024-03-21T02:58:43Z",
+                          "publishedAt": "2024-03-21T02:58:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No. Use x and y like I mentioned\nyou do not need to use symbol names and vars if you use x and y\nself reminder for me to fix the example to be clearer",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8860948",
+                          "updatedAt": "2024-03-21T05:08:34Z",
+                          "publishedAt": "2024-03-21T05:08:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "[rho]\n    type = ParsedFunction\n    expression = '1.5e3 + 0.13 * x - 1.5e-4 * y'\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8867932",
+                          "updatedAt": "2024-03-21T15:51:32Z",
+                          "publishedAt": "2024-03-21T15:51:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "But does this vary with temperature?",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8884048",
+                          "updatedAt": "2024-03-23T02:26:37Z",
+                          "publishedAt": "2024-03-23T02:26:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes it does. X gets substituted with temperature",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8884631",
+                          "updatedAt": "2024-03-23T05:30:22Z",
+                          "publishedAt": "2024-03-23T05:30:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "Thank you very much. I'll give it a try.",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8885128",
+                          "updatedAt": "2024-03-23T07:40:01Z",
+                          "publishedAt": "2024-03-23T07:40:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "After I wrote it out according to the input card, I reported the following error:\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nAttempted to get a functor with the name 'k' but multiple functors match. Make sure that you do not have functor material properties, functions, postprocessors or variables with the same names\n\nBut my input card only shows k in these places.\n[Functions]\n  [k]\n   type = ParsedFunction\n    expression = '0.08 '\n  []\n  [rho]\n    type = ParsedFunction\n    expression = '1.5e3 + 0.13 * x'\n  []\n  [mu]\n    type = ParsedFunction\n    expression = '1e-3 + 2e-6 * x'\n  []\n[]\n\n[FluidProperties]\n  [fp]\n    type = TemperaturePressureFunctionFluidProperties\n    cv = ${cv}\n    k = k\n    rho = rho\n    mu = mu\n  []\n[]\n[Materials]\n  [to_vars]\n    type = FluidPropertiesMaterialPT\n    fp = fp\n    outputs = 'all'\n    output_properties = 'density k cp cv viscosity e h'\n    pressure = pressure\n    temperature = T_fluid\n\n    compute_entropy = false\n    compute_sound_speed = false\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27151#discussioncomment-8885206",
+                          "updatedAt": "2024-03-24T07:57:57Z",
+                          "publishedAt": "2024-03-23T07:55:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "how to apply energetic threshold to an order parameter",
+          "author": {
+            "login": "RWTHLHK"
+          },
+          "bodyText": "I am deriving a new phase field model. The order parameter is associated with a generalized energetic force Y, the order parameter can only evolve when this energetic force Y >= 0(which is common in thermodynamics), how can I add this as a threshold function?",
+          "url": "https://github.com/idaholab/moose/discussions/27165",
+          "updatedAt": "2024-03-21T20:49:41Z",
+          "publishedAt": "2024-03-21T15:32:59Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@laagesen @amjokisaari",
+                  "url": "https://github.com/idaholab/moose/discussions/27165#discussioncomment-8867779",
+                  "updatedAt": "2024-03-21T15:41:11Z",
+                  "publishedAt": "2024-03-21T15:41:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "You could make the order parameter mobility a material property that includes a conditional statement that has Y>0, I think you can do this with a DerivativeParsedMaterial",
+                          "url": "https://github.com/idaholab/moose/discussions/27165#discussioncomment-8868725",
+                          "updatedAt": "2024-03-21T16:56:09Z",
+                          "publishedAt": "2024-03-21T16:56:08Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RWTHLHK"
+                          },
+                          "bodyText": "Genius idea!",
+                          "url": "https://github.com/idaholab/moose/discussions/27165#discussioncomment-8870849",
+                          "updatedAt": "2024-03-21T20:49:42Z",
+                          "publishedAt": "2024-03-21T20:49:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "The output file could not be loaded in Paraview",
+          "author": {
+            "login": "ZoeyChen1993"
+          },
+          "bodyText": "I ran a series of restart simulations, the simulations ran normally without any error, but the output file of the last simulation could not be loaded into Paraview with the error message, I tried to run the simulations again, but the same error message showed at the same specific output file restart.e-s921. I have restart.e-s1090 in total. The time of the last simulation is 50s, I tried to load output to Paraview before it completes such as 7s(178 timestep), the output file successfully loading. Could some one help me with this issue?",
+          "url": "https://github.com/idaholab/moose/discussions/27164",
+          "updatedAt": "2024-03-21T20:09:29Z",
+          "publishedAt": "2024-03-21T15:04:23Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt could be some of these files are corrupted.\nCan you isolate them in a separate folder (paraview reads all the files when the suffix are like that)? and read them from there\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8867360",
+                  "updatedAt": "2024-03-21T15:09:42Z",
+                  "publishedAt": "2024-03-21T15:09:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZoeyChen1993"
+                          },
+                          "bodyText": "Thank you, this works for opening the single output file, even the file showing on the error message, but why couldn't the entire output file be loaded? I mean in this way, I could load a single file, but could not see animation or a continuous timesteps. How can I fix this issue? I think it only happens when I use restart? Do they relate?",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8867855",
+                          "updatedAt": "2024-03-21T15:46:53Z",
+                          "publishedAt": "2024-03-21T15:46:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so the files before and after restart cannot be loaded together?",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8867891",
+                          "updatedAt": "2024-03-21T15:49:01Z",
+                          "publishedAt": "2024-03-21T15:49:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZoeyChen1993"
+                          },
+                          "bodyText": "I apologize for confusing you, that is actually another question (if you can give some suggestion on how to load output files both before and after restart). Currently, for this issue, I am loading output files just after restart, in the restart output folder.",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8868031",
+                          "updatedAt": "2024-03-21T15:58:46Z",
+                          "publishedAt": "2024-03-21T15:58:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok\nhow about loading just two files together (isolated in the same folder)? does that work?\nseems you have hundreds. do they all have the issue or just some numbers\nalso you have adaptivity turned on right?\nalso which version of Paraview?",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8868741",
+                          "updatedAt": "2024-03-21T16:57:40Z",
+                          "publishedAt": "2024-03-21T16:57:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZoeyChen1993"
+                          },
+                          "bodyText": "Hi, in the restart output folder, there are 1090 files, and when I load the restart.e file in the folder, the error in the figure appears referring to the specific restart.e-s921. Then I randomly isolate some .e-s* files to another folder and load, they all work, even the restart.e-s921 works, so it is weird. Besides, in this way, that means I can only load the render view for one time step each time. And I think I didn't have adaptivity block. This is part of the input.\n[Executioner]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  automatic_scaling = true\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  type = Transient\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  num_steps = 80000\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  # num_steps = 1000\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  nl_rel_tol = 1e-7\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n end_time=50\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  nl_max_its=10\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  l_max_its=15\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./TimeStepper]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = ConstantDT    \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    dt = 0.05\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    # dt = 3.6e14 \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [../]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./TimeIntegrator]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n   type = ImplicitEuler\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n   #type = CrankNicolson\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[../]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  #Preconditioned JFNK (default)\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  solve_type = 'PJFNK'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n#  petsc_options_iname = '-pc_type -pc_hypre_type'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n#  petsc_options_value = 'hypre boomeramg'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    petsc_options_iname = '-snes_type'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    petsc_options_value = 'vinewtonrsls'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  #petsc_options_iname = '-pc_type'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  #petsc_options_value = 'gamg'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[Functions]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./fy]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = ParsedFunction\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    expression= '0.0008'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [../]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./fx]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = ParsedFunction\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n     expression = '(0.01916+t*0.0004)'\t\n  [../]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[UserObjects]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./activated_elem_uo]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = ActivateElementsByPath\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    execute_on = timestep_begin\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    activate_distance = 0.0008\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    function_x= fx\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    function_y= fy\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    active_subdomain_id = 1\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    #inactive_subdomain_id= 0\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    expand_boundary_name = 'moving_interface'\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [../]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n################################\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[Outputs]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  execute_on = 'initial timestep_end' # Limit the output to timestep end (removes initial condition)\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n # checkpoint = true\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [./exodus]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = Exodus\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    file_base = ./restart/restart\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    interval = 1          # only output every 10 step\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [../]  \t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  [pgraph]\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    type = PerfGraphOutput\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    execute_on = 'initial final'  # Default is \"final\"\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    level = 2                     # Default is 1\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    heaviest_branch = true        # Default is false\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n    heaviest_sections = 7         # Default is 0\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n  []\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8870353",
+                          "updatedAt": "2024-03-21T20:08:48Z",
+                          "publishedAt": "2024-03-21T19:48:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZoeyChen1993"
+                          },
+                          "bodyText": "And Paraview 5.11.2",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8870359",
+                          "updatedAt": "2024-03-21T19:49:17Z",
+                          "publishedAt": "2024-03-21T19:49:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "mind trying 5.12?\nCan you load groups of files separated? like the 800 first files",
+                          "url": "https://github.com/idaholab/moose/discussions/27164#discussioncomment-8870509",
+                          "updatedAt": "2024-03-21T20:09:30Z",
+                          "publishedAt": "2024-03-21T20:09:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

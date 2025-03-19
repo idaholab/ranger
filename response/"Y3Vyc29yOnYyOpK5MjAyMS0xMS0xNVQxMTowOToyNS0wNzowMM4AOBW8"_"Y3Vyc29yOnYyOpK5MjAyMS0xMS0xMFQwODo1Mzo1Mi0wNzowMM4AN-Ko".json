@@ -1,0 +1,986 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0xMS0xMFQwODo1Mzo1Mi0wNzowMM4AN-Ko"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Which objects are proper to compute the equations (Auxvariable, postprocessor, etc)?",
+          "author": {
+            "login": "hokonkim"
+          },
+          "bodyText": "Hello, I would like to compute the equations like below.\n\nFrom several dicussions I made at here, I knew\nV_Em: local volume of Element,\ncan be computed by VolumeAux (recently made)\nBut, I'm confused about computing dV_cr/dt *delta_t and V_act.\ndV_cr/dt has parameters such as S_D,Cr2O3 (changeable) * V_Em (constant) * V_mol_Cr2O3 (constant) * 1/zF (constant).\nIn S_D,Cr2O3, V_act (changeable), V_Em(constant), and eta (changeable, AuxVariable).\nTo compute V_cr/dt*delta_t and V_act, which objects are needed?\nI tried to compute as Material Properties.. because it can use Auxvariable and Postprocessors, but I'm stuck..\n(struggling to implement V_cr_last, delta_t, and V_act)\nHow can I do compute this?\n[Materials]\n  [./CrDeposition]\n    type  = ParsedMaterial\n    block = 'PT_TPB_TET4'\n    f_name = 'CrDepoActivity_SD'\n    constant_names        = 'R          T        z     F          x_CrO2OH2   x_H2O  V_molar_Cr2O3'\n                        # (J/K/mol),  (K), (# of e-), (C/mol),    (non),      (non), (cm^3)\n    constant_expressions  = '8.3144598  1073.0   4   96485.3329   1e-8        0.01   29.12'\n    function = 'V_cr_last +\n                (274.626 * VolumeCoverage * x_CrO2OH2^(0.5) * x_H2O^(0.5) * 2 * sinh(F * 2 / R / T * aux_eta_tpb)) *\n                aux_vol_em * V_molar_Cr2O3 / z / F'\n    args = 'aux_eta_tpb aux_vol_em'\n    postprocessor_names = 'V_cr_last VolumeCoverage'\n    # Make values see at output(*.e) file\n    # outputs = exodus\n  [../]\n[]\n\n[AuxVariables]\n  [./aux_vol_em]\n    order = CONSTANT\n    family = MONOMIAL\n    block = 'PT_TPB_TET4'\n  [../]\n[]\n\n[AuxKernels]\n  [./volume_element]\n    type = VolumeAux\n    variable = aux_vol_em\n    block = 'PT_TPB_TET4'\n  [../]\n[]\n\nAlso,\n\nI'm not sure I need \"Material properties\" in AuxKernel expression like this.\n(Material properties are currently not supported, but it would be really easy to add it so feel free to contact us.)\nBut, how can I do this?\nLastly, what is the best way to compute delta t?\nThanks.\nSincerely,\nHokon Kim",
+          "url": "https://github.com/idaholab/moose/discussions/19381",
+          "updatedAt": "2022-09-01T03:08:35Z",
+          "publishedAt": "2021-11-14T05:39:23Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "To compute V_cr/dt*delta_t and V_act, which objects are needed?\n\nIs V_cr a main variable? If so you just need to form equation number 3 with kernels. Equation number 2 will naturally happen with an Euler time stepper (default is Implicit Euler)\nV_act seems fairly simple to compute from 2 variables, it s just a difference. A ParsedAux will do it.\n\nI'm not sure I need \"Material properties\" in AuxKernel expression like this.\n\nYou pretty much have a choice between using AuxVariables and MaterialProperties, unless you are using Automatic Differentiation in which case you should prefer to use Material Properties.\nUse [Materials] to compute Material properties, and [AuxKernels] to compute aux-variables. There's parsed formulations for both.\n\nLastly, what is the best way to compute delta t?\n\ndelta t is usually accessible using simply _dt.\nIf not, it can be retrieved from the problem object with _problem_ptr->dt()",
+                  "url": "https://github.com/idaholab/moose/discussions/19381#discussioncomment-1642101",
+                  "updatedAt": "2022-09-02T08:19:10Z",
+                  "publishedAt": "2021-11-15T02:53:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hokonkim"
+                          },
+                          "bodyText": "So far, I dealt V_cr as a AuxVariable. I'm confused about which objects are proper for my application.\nKernel is needed to do something related to physics for reaction, as far as I know.\nDo you think dealing equation 3 (dV_cr/dt = S_D * V_Em * ...) as Kernel would be proper for my purpose?",
+                          "url": "https://github.com/idaholab/moose/discussions/19381#discussioncomment-1642479",
+                          "updatedAt": "2022-09-02T08:19:12Z",
+                          "publishedAt": "2021-11-15T05:54:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "A kernel is usually used for each term of the equation. So dV_cr/dt is a TimeDerivative kernel on variable V_cr, and the other term is another kernel (you ll have to add that one, there is no parsedKernel afaik, only a parsedAux)\nNote that kernels are used to describe equations you want to solve using a numerical solver. If the equations are made up of terms you already know from a different solve, then you use AuxKernels to describe them, since it s not a real solve, just a substitution\nIf V_cr is not a nonlinear variable (eg a main variable, that you want to solve for), then my answer here will help you create the auxkernel you need #19292",
+                          "url": "https://github.com/idaholab/moose/discussions/19381#discussioncomment-1642500",
+                          "updatedAt": "2022-09-02T08:19:11Z",
+                          "publishedAt": "2021-11-15T06:01:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hokonkim"
+                          },
+                          "bodyText": "In this case, I don't know V_Cr unless I compute the V_cr.\nSo, V_Cr needs to be dealt as Variable.\nAt a previous discussion, local volume of Element can be access with\n _current_elem_volume\n\n(how did you make a block for only this word?)\nIn Equation.3, S_D,Cr2O3 needs to be updated with (V_Em - V_Cr) / V_Em.\nEven though I can use V_em as _current_elem_volume in ComputeQpresidual,\nhow can I V_cr in ComputeQpresidual?\nStill.. I have a lot on my mind.",
+                          "url": "https://github.com/idaholab/moose/discussions/19381#discussioncomment-1642552",
+                          "updatedAt": "2022-09-02T08:19:20Z",
+                          "publishedAt": "2021-11-15T06:22:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If the kernel is for variable V_cr then you can access its value using _u[_qp] . _u is the predefined name for the variable that the kernel applies to. It s defined for most kernels.\nIf the kernel is for another variable, you will need to add V_cr as a coupled variable in the kernel before being able to access it. See CoupledForce kernel for example",
+                          "url": "https://github.com/idaholab/moose/discussions/19381#discussioncomment-1642619",
+                          "updatedAt": "2022-09-02T08:19:25Z",
+                          "publishedAt": "2021-11-15T06:46:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Friction factor in PINS module",
+          "author": {
+            "login": "liangyu-psi"
+          },
+          "bodyText": "How to set the friction factor when I use Finite Volume Incompressible Porous media Navier Stokes module?\nBecause this module only supports constant properties and friction factors. I set the darcy friction factor as 0.02. But the frictional pressure seems much smaller than the pressure drop calculated by hand. I don't know if the method I used is wrong.\nHope to get your anwser.",
+          "url": "https://github.com/idaholab/moose/discussions/19371",
+          "updatedAt": "2023-02-03T16:13:34Z",
+          "publishedAt": "2021-11-12T14:11:31Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "liangyu-psi"
+                  },
+                  "bodyText": "@GiudGiud Master Guid, please help.",
+                  "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632143",
+                  "updatedAt": "2023-02-03T16:13:38Z",
+                  "publishedAt": "2021-11-12T14:17:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYeah we keep the friction correlations in pronghorn, an EC-ed code. But they are not that complicated.\nSo the Darcy friction factor is supposed to have a mu/rho prefactor and then a coefficient. Are you sure the 0.2 amounts to those?\nPlease just call me Guillaume\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632671",
+                  "updatedAt": "2023-02-03T16:13:38Z",
+                  "publishedAt": "2021-11-12T15:49:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liangyu-psi"
+                          },
+                          "bodyText": "Hello Guillaume\nThanks for your reply.\nI check the momentum equation. It seems that _f_darcy=f*u_superficial/2/De, not mu/rho.\nDoes it right? I plan to multiply \u2018u_superficial/2/De\u2019 on the real fricition factor which is 0.02.",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632854",
+                          "updatedAt": "2023-04-18T20:00:31Z",
+                          "publishedAt": "2021-11-12T16:20:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liangyu-psi"
+                          },
+                          "bodyText": "mu/rho is too small, so I guess it is not the correct prefactor .",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632864",
+                          "updatedAt": "2023-04-18T20:00:31Z",
+                          "publishedAt": "2021-11-12T16:21:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liangyu-psi"
+                          },
+                          "bodyText": "In addition, I counted the friction pressure drop calculated by hand and the value calculated by MOOSE. They are exactly \u2018u_superficial/2/De\u2019 times apart.",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632878",
+                          "updatedAt": "2023-02-03T16:13:38Z",
+                          "publishedAt": "2021-11-12T16:24:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "depends on the definition.\nIn the kernel we have this:\n    friction_term += (*_cL)(_current_elem)(_index)*_rho(_current_elem) * _u_functor(_current_elem) /\n                     _eps(_current_elem);\n\nso basically f (the ones you are inputting) * rho * u_interstitial\nSo just adjust your f to be 1/(2De) * old_f (* porosity maybe?)",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1632990",
+                          "updatedAt": "2023-02-03T16:13:38Z",
+                          "publishedAt": "2021-11-12T16:45:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'll go read Pronghorn manual to see how we got to our formulation and report back",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1633108",
+                          "updatedAt": "2023-02-03T16:13:38Z",
+                          "publishedAt": "2021-11-12T17:07:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liangyu-psi"
+                          },
+                          "bodyText": "Thank you so much Guillaume. Please check if it is old_f * u_superficial/(2De).",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1634533",
+                          "updatedAt": "2023-02-03T16:13:40Z",
+                          "publishedAt": "2021-11-12T22:56:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So in MOOSE we write the friction term as the sum of a linear and quadratic term. You could be talking about a linear friction model since you want the Darcy friction coefficient? There's also a quadratic term, which uses a Forchheimer friction coefficient.\nThe linear term is W rho V, and we use a correlation for W. Same for Forchheimer, and we actually place the velocity inside that coefficient (so that the term in the equation is quadratic). None of these two actually simplify to what you are usually. We use correlations developed for pebble beds.\nYour model looks like it's quadratic, maybe more along the lines of the Darcy Weisbach equation.\nSo you should simply add the velocity inside the definition of the coefficient.",
+                          "url": "https://github.com/idaholab/moose/discussions/19371#discussioncomment-1642156",
+                          "updatedAt": "2023-02-03T16:13:40Z",
+                          "publishedAt": "2021-11-15T03:15:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Index Into Vector",
+          "author": {
+            "login": "DamynChipman"
+          },
+          "bodyText": "How do I index into a vector value such as ADRealVectorValue? For example, I need the x- and y-components of _normal for a class derived from FVFluxKernel.\nHoping this is a quick question, I can't find the solution in tutorials or documentation. Thanks.",
+          "url": "https://github.com/idaholab/moose/discussions/19380",
+          "updatedAt": "2023-02-28T09:25:55Z",
+          "publishedAt": "2021-11-13T16:46:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\niirc, something like that:\nADRealVectorValue u;\nauto u_x = u(0);\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19380#discussioncomment-1636557",
+                  "updatedAt": "2023-02-28T09:26:03Z",
+                  "publishedAt": "2021-11-13T17:10:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Real vs. complex arithmetic - modeling acoustic wave equation in frequency domain",
+          "author": {
+            "login": "aaelmeli"
+          },
+          "bodyText": "Hi\nI have the following differential equation which is the acoustic wave equation in the frequency domain, so the primary variable U , the forcing function, and the boundary conditions are complex functions in space.\nOmega, c are the frequency and the acoustic wave velocity.\n\nMy question is, given that most, if not all, of the kernels in moose support only the real arithmetic, how is it difficult to implement the former equation within moose? is it easier to go with real arithmetics and have an alternative formulation for the problem or we should stick to the complex arithmetic and implement our own kernels?\nAny suggestions?",
+          "url": "https://github.com/idaholab/moose/discussions/19259",
+          "updatedAt": "2022-08-14T22:15:01Z",
+          "publishedAt": "2021-10-29T18:26:19Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@somu15 @cbolisetti any idea on this?",
+                  "url": "https://github.com/idaholab/moose/discussions/19259#discussioncomment-1616334",
+                  "updatedAt": "2022-08-14T22:15:01Z",
+                  "publishedAt": "2021-11-10T01:55:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "Unfortunately, I don't know. I had this very question myself when I was thinking about the implementation of an absorbing boundary called perfectly matched layer. Perhaps @dschwen or @fdkong has some ideas?",
+                          "url": "https://github.com/idaholab/moose/discussions/19259#discussioncomment-1625932",
+                          "updatedAt": "2022-08-14T22:15:18Z",
+                          "publishedAt": "2021-11-11T13:40:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "PETSc support complex arithmetic operations very well, and it is easy to get that setup. The challenging part is in libmesh/moose since we do not really have many cases needing complex operations.\nI think that a possible way would be to separate the system into two parts: Real and Image, and then use multiapp or other systems to couple them together. You literally do two \"real\" solves.\n@cticenhour How did you do for the Navier-Stokes-Maxwell system?",
+                          "url": "https://github.com/idaholab/moose/discussions/19259#discussioncomment-1626589",
+                          "updatedAt": "2022-08-14T22:15:19Z",
+                          "publishedAt": "2021-11-11T15:39:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaelmeli"
+                          },
+                          "bodyText": "Unfortunately, I don't know. I had this very question myself when I was thinking about the implementation of an absorbing boundary called perfectly matched layer. Perhaps @dschwen or @fdkong has some ideas?\n\nThat is very similar t what I am intending to do, implementing absorber layers of PML type.\nHow far have you reached w.r.t this? or it was just a question that came to your mind?; I am curious.",
+                          "url": "https://github.com/idaholab/moose/discussions/19259#discussioncomment-1627427",
+                          "updatedAt": "2022-08-14T22:15:20Z",
+                          "publishedAt": "2021-11-11T18:23:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "I was looking into one specific formulation for PML and just wanted to see how much effort that would be. I think it might be quite a bit of effort mainly since we don't have anything like it in MOOSE currently. So I didn't really proceed from there.",
+                          "url": "https://github.com/idaholab/moose/discussions/19259#discussioncomment-1634254",
+                          "updatedAt": "2022-08-14T22:16:00Z",
+                          "publishedAt": "2021-11-12T21:22:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Shallow Water Equations and Moose Vector Variables",
+          "author": {
+            "login": "DamynChipman"
+          },
+          "bodyText": "I am attempting to model the shallow water equations (SWE) with Moose (I'm a PhD student at Boise State University). I've used Moose for a variety of other geophysics, but the SWE are slightly more complicated. I mention that to say that I'm familiar with Moose, having gone through most of the tutorials.\nHere's my problem setup. I have the strong form that I use to generate the weak form of the equations. The weak form takes the following form (using inner product notation):\n(dqdt, \\psi) + <F(q) * n, \\psi> - (F(q), \\nabla \\psi) - (b + s, \\psi) = 0\n\\psi is the test function.\nq is the variable vector: [h, hu, hv].\nF(q) is the flux tensor: [ [hu, hv], [hu^2 + (1/2)gh^2, huv], [huv, hv^2 + (1/2)gh^2] ].\nh is water height.\nu and v are velocities.\nb and s are bathymetry and (friction) source terms.\nThese would be my questions:\nHow do I work with vector valued variables in Moose? What classes can I work with/ derive from?\nWhat about for vectors like q where the entries aren't necessarily physically related (like components of a velocity field)?\nWould I be able to use some of the tensor functionality to do this? I have briefly looked over it.\nI will continue to pour over tutorials and documentation, but any guidance would be appreciated.\nAnd finally, I read somewhere that a SWE module is in the works. Any word on progress there?\nMany thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/19356",
+          "updatedAt": "2022-06-18T06:12:29Z",
+          "publishedAt": "2021-11-11T06:35:39Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFirst, since you only have 3 components and the equation seems to be writable in a vector-formulation, vector is the right choice and should give you better performance over implementing 3 scalar equations.\nI m a little concerned that having h and hu hv, which could be of different orders of magnitude since they have a different unit / physical meaning, will lead to convergence/scaling issues. You won't be able to scale the equations separately if you lump them in a vector\nI m not sure if we have documentation specially for implementing vector equations. If you find it please let me know. The process is mostly the same, you create a vector variable, then vector kernels to implement your equation etc. There is a VectorKernel base class you can inherit from for your kernels.\nIf you have a tensor anisotropic diffusivity for example, you will be able to use the tensor utilities (in utils/) for that.\nWe support the lagrange variables as vector variables. There are vector versions of kernels, bcs, auxkernels etc.\nAn example of a vector BC:\nhttps://mooseframework.inl.gov/source/bcs/VectorDirichletBC.html\nvector kernel:\nhttps://mooseframework.inl.gov/moose/source/kernels/VectorDiffusion.html\nAuxKernel has an example of a vector aux in the text:\nhttps://mooseframework.inl.gov/syntax/AuxKernels/\nWhere did you read about the SWE? It d be easier to tag the person who was talking about it here\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1627135",
+                  "updatedAt": "2022-10-10T20:04:58Z",
+                  "publishedAt": "2021-11-11T17:17:09Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Yes I would only ever use a vector variable if the governing equation can logically be written in vector form like the momentum equation in Navier-Stokes. Speaking of which, the AD version of finite element incompressible Navier-Stokes in the navier_stokes module is probably one of the better places to look if you're curious about using vector variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1627341",
+                          "updatedAt": "2021-11-11T18:03:46Z",
+                          "publishedAt": "2021-11-11T18:03:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Our shallow water equation modeling with finite elements never really got off the ground. For modeling of hyperbolic-character equations we're going more and more towards our finite volume implementation.",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1627353",
+                          "updatedAt": "2022-10-10T20:04:59Z",
+                          "publishedAt": "2021-11-11T18:05:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "DamynChipman"
+                          },
+                          "bodyText": "Thanks for the resources on the vector variables and kernels. I'll dive into those objects to see what I can get done. All of the tutorials work with scalar variables and kernels, so thanks for pointing me towards the vector stuff. I hadn't considered the different orders of magnitude in h and u/v; I will keep that in mind moving forward.\nI saw in one of the tutorial presentations that SWE was a work in progress. I don't know who was working on it (or if that is still the case).\nI did see that Moose supports FV modeling, but I haven't looked into it much. I'll have to do that. That's how we normally solve the SWE anyways.\nRegardless, thanks for the direction! If I get any good results/progress, or if I have any further questions, I'll post them here.",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1627558",
+                          "updatedAt": "2022-10-10T20:05:00Z",
+                          "publishedAt": "2021-11-11T18:56:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Yeah, I implemented a shallow water model years ago, but I didn't know what I was doing and It had horrible artifacts with kilometer waves after some time :-D. I suppose the formulation was not stable with regular Galerkin FEM. \ud83e\udd37\u200d\u2642\ufe0f",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1629154",
+                          "updatedAt": "2022-10-10T20:05:24Z",
+                          "publishedAt": "2021-11-12T03:15:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Here is the tidal model (it was done just for fun!)\n\n  \n    \n    \n\n    globe.mp4",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1629161",
+                          "updatedAt": "2022-10-10T20:05:24Z",
+                          "publishedAt": "2021-11-12T03:18:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@aeslaughter had also worked on SWE",
+                          "url": "https://github.com/idaholab/moose/discussions/19356#discussioncomment-1629412",
+                          "updatedAt": "2022-10-10T20:05:25Z",
+                          "publishedAt": "2021-11-12T04:27:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to use variable in parsed function?",
+          "author": {
+            "login": "aiskhak"
+          },
+          "bodyText": "I want to implement the Boussinesq approximation in a MOOSE-based SAM. TO do so I have the equation of state with constant density, but I want to define body force that depends on temperature:\n[GlobalParams]\n  temperature = T \n  ...\n[]\n\n[Functions]\n  [./body_f]\n    # Boussinesq body force\n    type = ParsedFunction\n    value = 9.8*0.38*T\n    vars = 'T'\n    vals = T\n  [../]\n[]\n\n[Variables]\n  [./T]\n    initial_condition = 0.0\n  [../]\n  ...\n[]\n\n[Kernels]\n  ...\n  [./body_force]\n    type = BodyForce\n    variable = v\n    function = body_f\n  [../]\n\nHowever, MOOSE does not allow using variables in parsed functions. What would be the solution?",
+          "url": "https://github.com/idaholab/moose/discussions/19363",
+          "updatedAt": "2022-07-11T17:03:30Z",
+          "publishedAt": "2021-11-11T17:29:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ykvishal"
+                  },
+                  "bodyText": "I think that there are 2 more options MaskedBodyForce and INSADBoussinesqBodyForce. I hope that one of them will work.",
+                  "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1627845",
+                  "updatedAt": "2022-07-11T17:03:24Z",
+                  "publishedAt": "2021-11-11T20:07:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aiskhak"
+                          },
+                          "bodyText": "Thank you for the reply. It seems like MaskedBodyForce allows only using material property, but not a variable. INSADBoussinesqBodyForce works only with NS module, while I have different kernels...",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628681",
+                          "updatedAt": "2022-07-11T17:03:24Z",
+                          "publishedAt": "2021-11-12T00:02:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It's the right lead though.\nDont use a function, use a kernel directly. Functions cant depend on non-linear variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628721",
+                          "updatedAt": "2022-07-11T17:03:24Z",
+                          "publishedAt": "2021-11-12T00:26:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aiskhak"
+                          },
+                          "bodyText": "So you are saying to modify a kernel (requires access to sources)?",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628725",
+                          "updatedAt": "2022-07-11T17:03:24Z",
+                          "publishedAt": "2021-11-12T00:28:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "do you not have access to SAM source code?\nI would say add a kernel that does what you want",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628786",
+                          "updatedAt": "2022-07-11T20:38:27Z",
+                          "publishedAt": "2021-11-12T00:55:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aiskhak"
+                          },
+                          "bodyText": "yes, I do. Thanks for the advice!",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628816",
+                          "updatedAt": "2022-07-11T20:38:28Z",
+                          "publishedAt": "2021-11-12T01:07:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "travismui"
+                          },
+                          "bodyText": "@aiskhak You can use a CoupledForce kernel to add a scalar factor temperature-dependent body force. Note that Moose syntax will work in line with the SAM syntax, so you can achieve this directly from the input. If you have more complicated requirements, please feel free to contact the SAM developers directly to discuss your needs.",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628924",
+                          "updatedAt": "2022-07-11T20:38:27Z",
+                          "publishedAt": "2021-11-12T01:46:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aiskhak"
+                          },
+                          "bodyText": "Thanks, this is probably what I need.",
+                          "url": "https://github.com/idaholab/moose/discussions/19363#discussioncomment-1628930",
+                          "updatedAt": "2022-07-11T20:38:55Z",
+                          "publishedAt": "2021-11-12T01:49:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Phase Field: Solve Did NOT Converge!",
+          "author": {
+            "login": "wowodejiajia"
+          },
+          "bodyText": "Dear MOOSE developers,\nI downloaded the input code from the literature. Run it on my own computer.\n19 Nonlinear |R| = 3.234805e+06\n0 Linear |R| = 3.234805e+06\n1 Linear |R| = 3.234747e+06\n2 Linear |R| = 3.234728e+06\n3 Linear |R| = 3.234719e+06\n4 Linear |R| = 3.234713e+06\n5 Linear |R| = 3.234709e+06\n6 Linear |R| = 3.234707e+06\n7 Linear |R| = 3.234705e+06\n8 Linear |R| = 3.234703e+06\n9 Linear |R| = 3.234702e+06\n10 Linear |R| = 3.234701e+06\n11 Linear |R| = 3.234700e+06\n12 Linear |R| = 3.234699e+06\n13 Linear |R| = 3.234699e+06\n14 Linear |R| = 3.234698e+06\n15 Linear |R| = 3.234698e+06\n16 Linear |R| = 3.234697e+06\n17 Linear |R| = 3.234697e+06\n18 Linear |R| = 3.234696e+06\n19 Linear |R| = 3.234696e+06\n20 Linear |R| = 3.234695e+06\n21 Linear |R| = 3.234694e+06\n22 Linear |R| = 3.234694e+06\n23 Linear |R| = 3.234694e+06\n24 Linear |R| = 3.234693e+06\n25 Linear |R| = 3.234693e+06\n26 Linear |R| = 3.234693e+06\n27 Linear |R| = 3.234693e+06\n28 Linear |R| = 3.234693e+06\n29 Linear |R| = 3.234693e+06\n30 Linear |R| = 3.234796e+06\n31 Linear |R| = 3.234745e+06\n32 Linear |R| = 3.234725e+06\n33 Linear |R| = 3.234717e+06\n34 Linear |R| = 3.234711e+06\n35 Linear |R| = 3.234708e+06\n36 Linear |R| = 3.234705e+06\n37 Linear |R| = 3.234703e+06\n38 Linear |R| = 3.234701e+06\n39 Linear |R| = 3.234700e+06\n40 Linear |R| = 3.234699e+06\n41 Linear |R| = 3.234698e+06\n42 Linear |R| = 3.234697e+06\n43 Linear |R| = 3.234696e+06\n44 Linear |R| = 3.234696e+06\n45 Linear |R| = 3.234696e+06\n46 Linear |R| = 3.234695e+06\n47 Linear |R| = 3.234695e+06\n48 Linear |R| = 3.234695e+06\n49 Linear |R| = 3.234694e+06\n50 Linear |R| = 3.234694e+06\nLinear solve did not converge due to DIVERGED_ITS iterations 50\n20 Nonlinear |R| = 3.234580e+06\nNonlinear solve did not converge due to DIVERGED_MAX_IT iterations 20\nSolve Did NOT Converge!\nFinished Solving                                                                       [179.60 s] [    0 MB]\nAborting as solve did not converge",
+          "url": "https://github.com/idaholab/moose/discussions/19234",
+          "updatedAt": "2022-06-21T22:28:56Z",
+          "publishedAt": "2021-10-28T09:38:25Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "wowodejiajia"
+                  },
+                  "bodyText": "[Mesh]\n  # input file.\n  # Define mesh. 2-D system, simulation size 200*200.\n  type = GeneratedMesh\n  dim = 2\n  nx = 200\n  xmax = 200\n  ny = 200\n  ymax = 200\n[]\n\n[Variables]\n  # variables. w: chemical potential, eta: order parameter, pot: applied overpotential.  \n  [./w]\n  [../]\n  [./eta]\n  [../]\n  [./pot]\n  [../]\n[]\n\n[Functions]\n  # Creating functions for initial conditions.\n  [./ic_func_eta]\n    type = ParsedFunction\n    value = 0.5*(1.0-1.0*tanh((x-20)*2))\n  [../]\n  [./ic_func_c]\n    type = ParsedFunction\n    value = 0\n  [../]\n  [./ic_func_pot]\n    type = ParsedFunction\n    value = -0.225*(1.0-tanh((x-20)*2))\n  [../]\n[]\n\n[ICs]\n  # Initial conditions.\n  [./eta]\n    variable = eta\n    type = FunctionIC\n    function = ic_func_eta\n  [../]\n  [./w]\n    variable = w\n    type = FunctionIC\n    function = ic_func_c\n  [../]\n  [./pot]\n    variable = pot\n    type = FunctionIC\n    function = ic_func_pot\n  [../]\n[]\n\n[BCs]\n  # Boundary conditions.\n  [./bottom_eta]\n    type = NeumannBC\n    variable = 'eta'\n    boundary = 'bottom'\n    value = 0\n  [../]\n  [./top_eta]\n    type = NeumannBC\n    variable = 'eta'\n    boundary = 'top'\n    value = 0\n  [../]\n  [./left_eta]\n    type = DirichletBC\n    variable = 'eta'\n    boundary = 'left'\n    value = 1\n  [../]\n  [./right_eta]\n    type = DirichletBC\n    variable = 'eta'\n    boundary = 'right'\n    value = 0\n  [../]\n  [./bottom_w]\n    type = NeumannBC\n    variable = 'w'\n    boundary = 'bottom'\n    value = 0\n  [../]\n  [./top_w]\n    type = NeumannBC\n    variable = 'w'\n    boundary = 'top'\n    value = 0.0\n  [../]\n  [./left_w]\n    type = NeumannBC\n    variable = 'w'\n    boundary = 'left'\n    value = 0\n  [../]\n  [./right_w]\n    type = DirichletBC\n    variable = 'w'\n    boundary = 'right'\n    value = 0.0\n  [../]\n  [./left_pot]\n    type = DirichletBC\n    variable = 'pot'\n    boundary = 'left'\n    value = -0.45\n  [../]\n  [./right_pot]\n    type = DirichletBC\n    variable = 'pot'\n    boundary = 'right'\n    value = 0\n  [../]\n[]\n\n[Kernels]\n  [./w_dot]\n    # First part of equation 3 in main text . chi*dw/dt\n    type = SusceptibilityTimeDerivative\n    variable = w\n    f_name = chi\n    args = 'w'\n  [../]\n  [./Diffusion1]\n    # Intrinsic diffusion part of equation 3 in main text.\n    type = MatDiffusion\n    variable = w\n    diffusivity = D\n  [../]\n  [./Diffusion2]\n    # Migration.\n    type = Migration\n    variable = w\n    cv = eta\n    Q_name = 0.\n    QM_name = DN\n    cp = pot\n  [../]\n  [./coupled_etadot]\n    # Coupling between w and eta.\n    type = CoupledSusceptibilityTimeDerivative\n    variable = w\n    v = eta\n    f_name = ft\n    args = 'eta'\n  [../]\n  [./Cond]\n    # Conduction, left handside of equation 4 in main text.\n    type = Conduction\n    variable = pot\n    cp = eta\n    cv = w\n    Q_name = Le1\n    QM_name = 0.\n  [../]\n  [./coupled_pos]\n    # Source term for Equation 4 in main text.\n    type = CoupledSusceptibilityTimeDerivative\n    variable = pot\n    v = eta\n    f_name = ft2\n    args = 'eta'\n  [../]\n  [./BV]\n    # Bulter-volmer equation, right hand side of Equation 1 in main text.\n    type = Kinetics\n    variable = eta\n    f_name = G\n    cp = pot\n    cv = eta\n  [../]\n  [./AC_bulk]\n    # Driving force from switching barrier, right hand side of Equation 1 in main text.\n    type = AllenCahn\n    variable = eta\n    f_name = FF\n  [../]\n  [./AC_int]\n    # interfacial energy\n    type = ACInterface\n    variable = eta\n  [../]\n  [./Noiseeta]\n    type = LangevinNoise\n    variable = eta\n    amplitude = 0.04\n  [../]\n  [./e_dot]\n    # deta/dt\n    type = TimeDerivative\n    variable = eta\n  [../]\n[]\n\n[Materials]\n  [./constants]\n    # kappa_op: gradient coefficient;  M0:diffucion coefficient of Li+ in electrolyte\n    #  S1, S2 conductivity of electrode and electrolyte; L: kinetic coefficient; Ls: electrochemical kinetic coefficient; B: Barrier height;\n    #  es, el: difference in the chemical potential of lithium and neutral components on the electrode/electrolyte phase at initial equilibrium state;\n    # us, ul: free energy density of the electrode/electrolyte phases. Defined in Ref. 20 and 26 of the main text; A: prefactor; AA: nF/(R*T);\n    # dv is the ratio of site density for the electrode/electrolyte phases; ft2: normalized used in Equation 4.\n    type = GenericConstantMaterial\n    prop_names  = 'kappa_op  M0     S1    S2     L    Ls       B   es       el    A     ul    us    AA  dv   ft2'\n    prop_values = '0.3   317.9   1000000 1.19   6.25   0.001  2.4  -13.8  2.631   1.0   0.0695 13.8   38.69 5.5 0.0074'\n  [../]\n  [./liquid_GrandPotential]\n    # grand potential of electrolyte phase\n    type = DerivativeParsedMaterial\n    function = 'ul-A*log(1+exp((w-el)/A))'\n    args = 'w'\n    f_name = f1\n    material_property_names = 'A ul el'\n  [../]\n  [./solid_GrandPotential]\n    # grand potential of electrode phase\n    type = DerivativeParsedMaterial\n    function = 'us-A*log(1+exp((w-es)/A))'\n    args = 'w'\n    f_name = f2\n    material_property_names = 'A us es'\n  [../]\n  [./switching_function]\n    #interpolation function h\n    type = SwitchingFunctionMaterial\n    eta ='eta'\n    h_order = HIGH\n  [../]\n  [./barrier_function]\n    # Barrier function g\n    type = BarrierFunctionMaterial\n    eta = eta\n  [../]\n  [./total_GrandPotential]\n    type = DerivativeTwoPhaseMaterial\n    args = 'w'\n    eta = eta\n    fa_name = f1\n    fb_name = f2\n    derivative_order = 2\n    W = 2.4\n  [../]\n  [./coupled_eta_function]\n    # Coupling between eta and w\n    type = DerivativeParsedMaterial\n    function = '-(cs*dv-cl)*dh'  # in this code cs=-cs h=eta dh=1\n    args = ' w eta'\n    f_name = ft\n    material_property_names = 'dh:=D[h,eta] h dv cs:=D[f2,w] cl:=D[f1,w]'\n    derivative_order = 1\n  [../]\n  [./susceptibility]\n    type = DerivativeParsedMaterial\n    function = '-d2F1*(1-h)-d2F2*h*dv'\n    args = 'w'\n    f_name = chi\n    derivative_order = 1\n    material_property_names = 'h dv d2F1:=D[f1,w,w] d2F2:=D[f2,w,w]'\n  [../]\n  [./Mobility_coefficient]\n    # Mobility defined by D*c/(R*T), whereR*T is normalized by the chemical potential\n    # M0*(1-h) is the effective diffusion coefficient; cl*(1-h) is the ion concentration\n    type = DerivativeParsedMaterial\n    function = '-M0*(1-h)*cl*(1-h)'  #c is -c\n    f_name = D\n    args = 'eta w'\n    derivative_order = 1\n    material_property_names = ' M0 cl:=D[f1,w] h'\n  [../]\n  [./Free]\n    # Energy of the barrier\n    type = DerivativeParsedMaterial\n    f_name = FF\n    material_property_names = 'B'\n    args='eta'\n    function = 'B*eta*eta*(1-eta)*(1-eta)'\n    derivative_order = 1\n  [../]\n  [./Migration_coefficient]\n    # Migration coefficient.\n    type = DerivativeParsedMaterial\n    function = '-cl*(1-h)*AA*M0*(1-h)'\n    args = 'eta w'\n    f_name = DN\n    derivative_order = 1\n    material_property_names = 'M0 AA cl:=D[f1,w] h'\n  [../]\n  [./Bultervolmer]\n    type = DerivativeParsedMaterial\n    function = 'Ls*(exp(pot*AA/2.)+14.89*cl*(1-h)*exp(-pot*AA/2.))*dh'\n    args = 'pot eta w'\n    f_name = G\n    derivative_order = 1\n    material_property_names = 'Ls dh:=D[h,eta] h cl:=D[f1,w] AA'\n    outputs = exodus\n  [../]\n  [./concentration]\n    # output the ion concentration\n    type = ParsedMaterial\n    f_name = c\n    args='eta w'\n    material_property_names = 'h dFl:=D[f1,w]'\n    function = '-dFl*(1-h)'\n    outputs = exodus\n  [../]\n  [./Le1]\n    # Effective conductivity\n    type = DerivativeParsedMaterial\n    f_name = Le1\n    args = 'eta'\n    material_property_names = 'S1 S2 h'\n    function = 'S1*h+S2*(1-h)'\n    derivative_order = 1\n  [../]\n[]\n\n[GlobalParams]\n  enable_jit = false           # Disable JIT\n[]\n\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  scheme = 'bdf2'\n  solve_type = 'PJFNK'\n  l_max_its = 50\n  l_tol = 1e-4\n  nl_max_its = 20\n  nl_rel_tol = 1e-6\n  nl_abs_tol = 1e-6\n  dt = 0.02\n  end_time = 400\n  petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type\n                         -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      121                  preonly\n                         lu          8'\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  execute_on = 'TIMESTEP_END'\n  [./other]        # creates input_other.e output every 30 timestep\n     type = Exodus\n     interval = 30\n  [../]\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1551443",
+                  "updatedAt": "2022-06-21T22:28:58Z",
+                  "publishedAt": "2021-10-28T09:39:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "where did you get that model from?\nI d first have a look in the relevant module to try to see if there s an updated syntax for this input",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1554379",
+                          "updatedAt": "2022-06-21T22:29:03Z",
+                          "publishedAt": "2021-10-28T17:22:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "The article is here.\nPhase-Field Simulations of Lithium Dendrite Growth with Open-Source Software\nZijian Hong and Venkatasubramanian Viswanathan\nACS Energy Letters 2018 3 (7), 1737-1743\nDOI: 10.1021/acsenergylett.8b01009",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1556406",
+                          "updatedAt": "2022-06-21T22:29:04Z",
+                          "publishedAt": "2021-10-29T02:59:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wowodejiajia"
+                  },
+                  "bodyText": "The article is here : https://pubs.acs.org/doi/10.1021/acsenergylett.8b01009",
+                  "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1556408",
+                  "updatedAt": "2022-06-21T22:29:04Z",
+                  "publishedAt": "2021-10-29T02:59:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "added the link. 2018 so the syntax could have evolved since then.\nLet s have @laagesen @SudiptaBiswas  or @amjokisaari pitch in since this is phase field",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1556655",
+                          "updatedAt": "2022-06-21T22:29:04Z",
+                          "publishedAt": "2021-10-29T04:25:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "Thank you very much.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1557220",
+                          "updatedAt": "2022-06-21T22:29:03Z",
+                          "publishedAt": "2021-10-29T07:16:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wowodejiajia"
+                  },
+                  "bodyText": "I have changed solve_type =Newton  in [Executioner]. And then I got this result.\nThe following total 5 aux variables:\nG\nc\ndG/deta\ndG/dpot\ndG/dw\nare added for automatic output by MaterialOutputAction.\nFinished Setting Up                                                                      [  0.62 s] [  101 MB]\nFramework Information:\nMOOSE Version:           git commit b0f5d8a on 2021-10-25\nLibMesh Version:\nPETSc Version:           3.15.1\nSLEPc Version:           3.15.1\nCurrent Time:            Fri Oct 29 11:06:25 2021\nExecutable Timestamp:    Wed Oct 27 16:50:13 2021\nParallelism:\nNum Processors:          2\nNum Threads:             2\nMesh:\nParallel Type:           replicated\nMesh Dimension:          2\nSpatial Dimension:       2\nNodes:\nTotal:                 40401\nLocal:                 20326\nMin/Max/Avg:           20075/20326/20200\nElems:\nTotal:                 40000\nLocal:                 20000\nMin/Max/Avg:           20000/20000/20000\nNum Subdomains:          1\nNum Partitions:          2\nPartitioner:             metis\nNonlinear System:\nNum DOFs:                121203\nNum Local DOFs:          60978\nVariables:               { \"w\" \"eta\" \"pot\" }\nFinite Element Types:    \"LAGRANGE\"\nApproximation Orders:    \"FIRST\"\nAuxiliary System:\nNum DOFs:                200000\nNum Local DOFs:          100000\nVariables:               { \"G\" \"c\" \"dG/deta\" \"dG/dpot\" \"dG/dw\" }\nFinite Element Types:    \"MONOMIAL\"\nApproximation Orders:    \"CONSTANT\"\nExecution Information:\nExecutioner:             Transient\nTimeStepper:             ConstantDT\nSolver Mode:             NEWTON\nMOOSE Preconditioner:    SMP\n......\nTime Step 10, time = 0.00500004, dt = 2e-14\n0 Nonlinear |R| = 3.032890e+05\n0 Linear |R| = 3.032890e+05\n1 Linear |R| = 6.471922e+00\n......\n10 Linear |R| = 1.716624e-03\n11 Linear |R| = 3.090150e-04\n12 Linear |R| = 1.064597e-04\n20 Nonlinear |R| = 1.630292e+00\nNonlinear solve did not converge due to DIVERGED_MAX_IT iterations 20\nSolve Did NOT Converge!\nFinished Solving                                                                       [ 53.39 s] [    0 MB]\nAborting as solve did not converge\n*** ERROR ***\nThe following error occurred in the object \"TimeStepper\", of type \"ConstantDT\".\nSolve failed and timestep already at or below dtmin, cannot continue!\n*** ERROR ***\nThe following error occurred in the object \"TimeStepper\", of type \"ConstantDT\".\nSolve failed and timestep already at or below dtmin, cannot continue!\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 1\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nFinished: Exit code: 1\nWhat should I do?",
+                  "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1557212",
+                  "updatedAt": "2022-06-21T22:29:04Z",
+                  "publishedAt": "2021-10-29T07:15:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so the non linear residual went from 3e5 to 1.6 so the good news is that it looks like your simulation is converging. It just needs more iterations.\nSo in the [Executioner] block, please specify:\nnl_max_its = 100\nto let it take more non linear iterations.\nYou can also lower the tolerances if the residual is low enough : nl_abs_tol and nl_rel_tol can be used for that.\nSee the list of those solver parameters under Solver Parameters (at the bottom of the page)\nhttps://mooseframework.inl.gov/source/executioners/Transient.html",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1559811",
+                          "updatedAt": "2022-06-21T22:29:03Z",
+                          "publishedAt": "2021-10-29T15:44:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Is your initial condition even close to a solution at time zero? If not then it is not unusual for the first time step to require a lot of iterations to solve.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1560008",
+                          "updatedAt": "2022-06-21T22:29:03Z",
+                          "publishedAt": "2021-10-29T16:19:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "Thank you for your answers. But it doesn't work. I realized it was parallelism that was the problem. Programs can converge without running in parallel. Can you explain why that is?\nLooking forward to answer.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1586148",
+                          "updatedAt": "2022-06-21T22:29:04Z",
+                          "publishedAt": "2021-11-04T03:54:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "not every preconditioner works equally well in parallel. you could try a simple LU (which in parallel would use SuperLU automatically)",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1586215",
+                          "updatedAt": "2022-06-26T00:40:40Z",
+                          "publishedAt": "2021-11-04T04:31:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wowodejiajia"
+                  },
+                  "bodyText": "All the documents are here.\nConduction-C.txt\nConduction-h.txt\nex01-P.txt\nKinetics-C.txt\nKinetics-h.txt\nMigration-C.txt\nMigration-h.txt",
+                  "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1586164",
+                  "updatedAt": "2022-06-21T22:29:04Z",
+                  "publishedAt": "2021-11-04T04:05:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Converges fine for me with -pc_type lu. Step three struggles with a dt of 0.02 but converges after automatically cutting to 0.01. Then it continues to converge fine.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1590774",
+                          "updatedAt": "2022-06-21T22:29:03Z",
+                          "publishedAt": "2021-11-04T19:23:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "You should probably look into adaptive timestepping as during later times the simulation converges more quickly.\nTime Step 16, time = 0.3, dt = 0.02\n 0 Nonlinear |R| = 3.974561e+01\n      0 Linear |R| = 3.974561e+01\n      1 Linear |R| = 1.439269e+00\n      2 Linear |R| = 3.138209e-01\n      3 Linear |R| = 1.718015e-02\n      4 Linear |R| = 1.651372e-03\n 1 Nonlinear |R| = 2.183084e+01\n      0 Linear |R| = 2.183084e+01\n      1 Linear |R| = 3.271910e-02\n      2 Linear |R| = 1.750573e-03\n 2 Nonlinear |R| = 9.665931e-01\n      0 Linear |R| = 9.665931e-01\n      1 Linear |R| = 2.149134e-03\n      2 Linear |R| = 1.422680e-04\n      3 Linear |R| = 8.701771e-06\n 3 Nonlinear |R| = 3.019655e-03\n      0 Linear |R| = 3.019655e-03\n      1 Linear |R| = 3.152191e-05\n      2 Linear |R| = 8.527107e-07\n      3 Linear |R| = 1.259573e-07\n 4 Nonlinear |R| = 3.128464e-05\n Solve Converged!\n  Finished Solving                                                                       [  8.26 s] [    0 MB]\n\n(that's on 8 cores)",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1590781",
+                          "updatedAt": "2022-06-21T22:29:04Z",
+                          "publishedAt": "2021-11-04T19:24:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "and\nTime Step 30, time = 0.58, dt = 0.02\n0 Nonlinear |R| = 3.545873e+01\n      0 Linear |R| = 3.545873e+01\n      1 Linear |R| = 8.017880e-01\n      2 Linear |R| = 6.858638e-02\n      3 Linear |R| = 5.232085e-03\n      4 Linear |R| = 4.528376e-04\n 1 Nonlinear |R| = 7.029588e-01\n      0 Linear |R| = 7.029588e-01\n      1 Linear |R| = 4.787240e-03\n      2 Linear |R| = 3.551958e-04\n      3 Linear |R| = 4.642392e-05\n 2 Nonlinear |R| = 1.644062e-03\n      0 Linear |R| = 1.644062e-03\n      1 Linear |R| = 1.856705e-05\n      2 Linear |R| = 2.448408e-06\n      3 Linear |R| = 2.262082e-07\n      4 Linear |R| = 1.217206e-08\n 3 Nonlinear |R| = 1.516930e-05\n Solve Converged!\n  Finished Solving                                                                       [  6.79 s] [    0 MB]",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1590791",
+                          "updatedAt": "2022-06-21T22:29:30Z",
+                          "publishedAt": "2021-11-04T19:26:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Here bd240d4 is the slightly updated version of your files that I ran to get above mentioned convergence.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1590814",
+                          "updatedAt": "2022-07-06T17:51:45Z",
+                          "publishedAt": "2021-11-04T19:29:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "Thank you very much for your answer. I have one more question.\nYou used eight cores. Which cores are used for MPI and which cores are used for Threads?",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1592567",
+                          "updatedAt": "2022-07-06T17:51:45Z",
+                          "publishedAt": "2021-11-05T03:22:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "By default no threading is used, so I used all cored for MPI ranks.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1609382",
+                          "updatedAt": "2022-07-06T17:51:45Z",
+                          "publishedAt": "2021-11-09T00:48:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/19234#discussioncomment-1623553",
+                          "updatedAt": "2022-07-06T17:51:44Z",
+                          "publishedAt": "2021-11-11T03:23:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "IC setting for a trapezium in the phase field model",
+          "author": {
+            "login": "emmelines"
+          },
+          "bodyText": "Hi,\nI am building up a new simulation.\nI need a trapezium in a box as the initial condition in my model.\nIs there any suggestion to build this? (any recommend build-up IC app?)\nThank you.",
+          "url": "https://github.com/idaholab/moose/discussions/19336",
+          "updatedAt": "2021-12-16T21:46:50Z",
+          "publishedAt": "2021-11-09T18:19:08Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Check out this answer.",
+                  "url": "https://github.com/idaholab/moose/discussions/19336#discussioncomment-1615639",
+                  "updatedAt": "2021-11-09T22:06:39Z",
+                  "publishedAt": "2021-11-09T22:05:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "emmelines"
+                          },
+                          "bodyText": "Hi,\nThank you for your answer. I tried to put it together.\nDo you have any ideas on how should I fix the vtkPNGReader problem shown below:\nReading image(s)...\nERROR: In ../IO/Image/vtkPNGReader.cxx, line 44\nvtkPNGReader (0x7fbd90af37b0): Unable to open file /Users/emmelineshue/projects/moose/modules/phase_field/phase_field/test_003.png\n      ...image read finished\n\nThank you so much.",
+                          "url": "https://github.com/idaholab/moose/discussions/19336#discussioncomment-1622686",
+                          "updatedAt": "2021-11-10T22:22:16Z",
+                          "publishedAt": "2021-11-10T22:22:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what is this directory?\nphase_field/phase_field/\nI dont have it",
+                          "url": "https://github.com/idaholab/moose/discussions/19336#discussioncomment-1623269",
+                          "updatedAt": "2021-11-11T01:41:13Z",
+                          "publishedAt": "2021-11-11T01:41:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Structured vs. unstructured grids",
+          "author": {
+            "login": "aiskhak"
+          },
+          "bodyText": "Hello,\nI am doing simulations using MOOSE-based SAM for 3D coarse-grid thermal-hydraulics and I am facing the following issue.\nThe code works fine with unstructured grids, though, I need to have a structured grid for my framework. As soon as I develop structured grids, the code considerably slows down (figures of grids attached). One of the possible issues is that structured grids inevitably have sharp transitions and I am not sure that MOOSE (FEM) can handle this appropriately. Maybe it is possible to fix this by using different preconditioners and stuff like that?\n[Preconditioning]\n  [./SMP_PJFNK]\n    type = SMP\n    full = true\n    solve_type = 'PJFNK'\n    petsc_options_iname = '-pc_type -ksp_gmres_restart'\n    petsc_options_value = 'lu 100'\n  [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/19346",
+          "updatedAt": "2022-11-28T20:34:21Z",
+          "publishedAt": "2021-11-10T15:20:37Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat does this geometry look like in 3D? Is it square like this still?\nIf so you should really use a quad / hex mesh.\nThis second mesh looks incredibly skewed and with high aspect ratios. I dont think you will get a good answer from MOOSE or SAM there.\nThe cannon fluid flow solver in MOOSE are the finite volume fluid flow capabilities in the Navier Stokes module, and the FE in that module are supported as well. We dont know what was implemented in SAM. We are getting good results with structured & unstructured grids with finite volume.\nA better numerical scheme, including a better preconditioner, would indeed help you get a solution. We are currently implementing segregated solver capabilities for the finite volume solver.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19346#discussioncomment-1621288",
+                  "updatedAt": "2023-04-27T03:49:09Z",
+                  "publishedAt": "2021-11-10T17:16:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aiskhak"
+                          },
+                          "bodyText": "The mesh in 3D attached (the square region with round inlet-outlet tubes):\n\nYes, the unstructured grid looks bad, but it gives much-much better results in terms of convergence.\nSAM has only FEM implementation. Though, I am not sure how would I use the finite volume approach...\nAre there any recommendation of what to try with the FEM?",
+                          "url": "https://github.com/idaholab/moose/discussions/19346#discussioncomment-1621344",
+                          "updatedAt": "2023-04-27T03:49:31Z",
+                          "publishedAt": "2021-11-10T17:28:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "NonConstantInjection",
+          "author": {
+            "login": "Josselin-76"
+          },
+          "bodyText": "Dear community,\nThank you for your wonderful work and your constant new features.\nI am modeling a packer system with a non constant pressure injection rate into a fracture Network. To do so I have used different tools that allowed me a variation of the injection rate over times ( FunctionDirichletBC and  PorousFlowSquarePulsePointSource ), nevertheless none of them give me enough accuracy this is why I am using PorousFlowPeacemanBorehole and PorousFlowPolyLineSink.\nI am not able to find how to apply a non constant injection pressure using PorousFlowPeacemanBorehole and PorousFlowPolyLineSink. Can someone enlighten me ?\nJosselin Ouf\nRWTH Aachen, Germany",
+          "url": "https://github.com/idaholab/moose/discussions/19276",
+          "updatedAt": "2023-07-06T14:00:20Z",
+          "publishedAt": "2021-11-02T13:25:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Both PorousFlowPolyLineSink and PorousFlowPeacemanBorehole have a multiplying_var input.  This multiplies the fluxes by your defined AuxVariable.  Hopefully this does what you want.  You could make a FunctionAux for the multiplying_var, for instance.",
+                  "url": "https://github.com/idaholab/moose/discussions/19276#discussioncomment-1578656",
+                  "updatedAt": "2023-07-06T14:00:20Z",
+                  "publishedAt": "2021-11-02T20:42:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Josselin-76"
+                          },
+                          "bodyText": "Thanks for your answer,\nI have try to make FunctionAux for the multiplying_var in  PorousFlowPeacemanBorehole. However it does not offer a significant control on the injection rate even when I am using a really small value for the pipe length and radius.\nMy goal is to change the injection rate over time, this change is in method 1 perfectly executed by FunctionDirichletBC but the same injection function is partly ignored by the second method  PorousFlowPeacemanBorehole. Indeed in the second method the curve is a Heaviside like function while one may expect variation through time.\nThanks for your help.\nMethod 1\n[pre_inj_method1]\ntype = FunctionDirichletBC\nboundary = 'INJ2'\nvariable = pwater\nfunction = 'if(t<=100,0.25,if(t<=362.2,7.34-0.0054*(t-100),if(t<=671.8,6.3-0.00245*(t-362.2),if(t<=974.8,5.85-0.00102*(t-671.8),if(t<=1265.8,5.67-0.000481*(t-974.8),if(t<=2175.4,5.62+0.000396*(t-1265.8),if(t<=4000,5.98-5.35e-4(t-2175.4),5)))))))'\n[]\nResult\n\nMethod 2\n[injection_packer]\ntype = FunctionAux\nvariable = injection_packer\nfunction = packer\n[../]\n[Functions]\n[packer]\ntype = ParsedFunction\nvalue = 'if(t<=100,0.25,if(t<=362.2,7.34-0.0054*(t-100),if(t<=671.8,6.3-0.00245*(t-362.2),if(t<=974.8,5.85-0.00102*(t-671.8),if(t<=1265.8,5.67-0.000481*(t-974.8),if(t<=2175.4,5.62+0.000396*(t-1265.8),if(t<=4000,5.98-0.000535*(t-2175.4),5)))))))'\n[]\n[]\n[DiracKernels]\n[bh]\n  type = PorousFlowPeacemanBorehole\n variable = pwater\n SumQuantityUO = injected_mass\n  point_file = INJ.bh\n  fluid_phase = 0\n  bottom_p_or_t = 7.3 #MPa\n  unit_weight = '0 0 0' #fluid_density*gravitational_acceleration, Typical value for water\n  function_of = pressure\n  character = -1 # -1 source, 1 a sink\n  use_mobility = true\n  re_constant = 0.1594\nmultiplying_var = injection_packer\n\n[]\nResult",
+                          "url": "https://github.com/idaholab/moose/discussions/19276#discussioncomment-1620803",
+                          "updatedAt": "2023-07-06T14:00:21Z",
+                          "publishedAt": "2021-11-10T15:53:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

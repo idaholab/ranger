@@ -1,0 +1,977 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMC0xMS0xM1QwODoxNzo0Ny0wNzowMM17YQ=="
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "TensorMechanics force boundary condition",
+          "author": {
+            "login": "ajdubas"
+          },
+          "bodyText": "Hi there,\nI am working on a TensorMechanics problem using MOOSE and am trying to implement a force boundary condition.  To check I am implementing it correctly I am using a simple beam theory set-up and looking through the example I have tried both a NodalKernels/ConstantRate and NodalKernels/UserForcingFunctionNodalKernal with a transient ramp to the desired load.  Both of these results in a displacement two orders of magnitude greater than expected (they are consistent with each other in their answer), so am I using the correct object?  and secondly am I using it correctly?\nMany Thanks in Advance,\nAleks",
+          "url": "https://github.com/idaholab/moose/discussions/16104",
+          "updatedAt": "2022-06-30T13:41:47Z",
+          "publishedAt": "2020-11-06T13:04:09Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "crswong888"
+                  },
+                  "bodyText": "UserForcingFunctionNodalKernel is definitely the way to go for concentrated beam forces, since its more flexible than ConstantRate. But for a static load, either should do.\nI will need to see your input file to understand your issue and then I am sure we can resolve it swiftly. Please provide a link to your input file or attach it here by dragging it into the comment box (you might have to zip it if GitHub says \"We don't support that file type\"), or just copy and paste the code here.",
+                  "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-123559",
+                  "updatedAt": "2022-06-30T13:41:48Z",
+                  "publishedAt": "2020-11-06T21:18:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ajdubas"
+                  },
+                  "bodyText": "Please find input file attached.\nNote this uses small strain formulation as that is what the analytical validation case is based on.  The expected displacement is 0.01m at the forced end.\nstructural_transient_force_3D.i.zip",
+                  "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-125017",
+                  "updatedAt": "2022-06-30T13:42:03Z",
+                  "publishedAt": "2020-11-09T14:10:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "crswong888"
+                  },
+                  "bodyText": "@ajdubas what is it exactly you are trying to model here? A cantilevered steel beam with a concentrated transverse force of -10 kN at the free-end, yes?\nIf so, what are you trying to accomplish by applying 10 N in the axial direction here?\n[Functions]\n  [force]\n    type = PiecewiseLinear\n    x = '0.0 10.0'\n    y = '0.0 -10000.0'\n  []\n[]\n\nI was thinking you were working with beam elements, so that's why I said UserForcingFunctionNodalKernel is the way to go. But now I see that you are using solid elements, and so this is not the case. However, I think I still have a solution for you, but first I need to be clear about what you're trying to model here.",
+                  "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-125931",
+                  "updatedAt": "2022-06-30T13:41:59Z",
+                  "publishedAt": "2020-11-10T18:57:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crswong888"
+                          },
+                          "bodyText": "To be clear, I think you are trying to model this thing:\n\nIf so, do you agree that the analytical max deflection for weak-axis bending should be\n\nor, in accordance with Timoshenko theory:",
+                          "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-126122",
+                          "updatedAt": "2022-06-30T13:41:59Z",
+                          "publishedAt": "2020-11-10T22:26:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ajdubas"
+                  },
+                  "bodyText": "Yes, that is the solution I am trying to replicate - or more generally work out how to accurately apply a force boundary condition to solid elements.\nMy understanding of the PiecewiseLinear function ( https://mooseframework.inl.gov/source/functions/PiecewiseLinear.html ) is that the x array corresponds to time, therefore the force should ramp from 0.0N at 0.0s to -10.0kN at 10.0s if I have specified this function correctly.",
+                  "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-126451",
+                  "updatedAt": "2022-06-30T13:41:59Z",
+                  "publishedAt": "2020-11-11T03:58:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "crswong888"
+                  },
+                  "bodyText": "@ajdubas That's right, my mistake. By default, the ordinates for PiecewiseLinear correspond to time (for some reason I thought there was a t parameter, but all of these details are worked out with the axis parameter).\nThe reason for the large displacements is a vastly over-sized force. Keep in mind that UserForcingFunctionNodalKernel will apply the full magnitude of the specified forcing function to every single node on the specified boundary. Therefore, the total magnitude of the force you are applying is -10000 N / node * 340 nodes = 3.4e6 N. A force that bears more semblance to the concentrated transverse beam force you want would be roughly -29.4118 N / node. So just use this number instead of -10000 and you'll be good.\nNote that simply dividing the total force by the number of nodes and applying exactly this value to every single node isn't quite how we think of concentrated forces on beams. Since each node has a different tributary area, as we like to call it in Civil Engineering, then the force applied at each node should be proportional to this, if it were truly uniformly distributed over the cross-section (which is the assumption of beam theory). I have a very rough MooseObject to handle this calculation if you're interested. Just copy my files, PointForcingFunction3DEquivalent.C and PointForcingFunction3DEquivalent.h to your MOOSE app and recompile.\nI've made some edits to your input file here: https://github.com/crswong888/scorpion/blob/master/inputs/users/structural_transient_force_3D.i\nIt currently uses my object for point forces in 3D, so you will need those files. However, I left your old blocks commented out and also updated the force magnitude to the value you'll want in those. Lastly, I changed your executioner to something that performs at least twice as well. Enjoy :)",
+                  "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-126470",
+                  "updatedAt": "2022-06-30T13:41:59Z",
+                  "publishedAt": "2020-11-11T04:57:14Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ajdubas"
+                          },
+                          "bodyText": "Thank you, this works brilliantly.\nIs there any way of doing this natively (i.e. just using the TensorMechanics and Contacts module without any extra code)?  It seems to me like something that should come built in, so might it be worth adding the above NodalKernel into the modules?",
+                          "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-131933",
+                          "updatedAt": "2022-06-30T13:41:59Z",
+                          "publishedAt": "2020-11-17T19:51:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crswong888"
+                          },
+                          "bodyText": "I agree that this capability would be a useful tool to have in TensorMechanics. However, formal development of a new MooseObject takes time. I also don't like how my current code requires setting up multiple objects to make it work (i.e., the area postprocessor and the auxiliary kernel to store that pp value). It seems to me like this object should be able to handle the tributary areas on its own (e.g., by interpolating the shape functions to the nodes/qps with that concentrated force value - sort of like how traction loads are handled). So before I ever attempted to develop this in MOOSE, I would want to try to figure this out.\nIf you have the time, feel free to take my code and develop it in MOOSE yourself. See Framework Development to learn how to do this. Once you create a PR, tag me in it, and I can help you develop it.",
+                          "url": "https://github.com/idaholab/moose/discussions/16104#discussioncomment-131957",
+                          "updatedAt": "2022-06-30T13:41:59Z",
+                          "publishedAt": "2020-11-17T20:08:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Syntax error: Unknown identifier",
+          "author": {
+            "login": "LiuPengPeter"
+          },
+          "bodyText": "Hello everyone,\nI have a problem with my .i file which shows that:\nInvalid function\n1/Vm * ((1-c_Cu)*g_Alpha_Cu + c_Cu*g_Alpha_Sn + R*T*((1-c_Cu)*log(1-c_Cu) + c_Cu*log(c_Cu)) + c_Cu*(1-c_Cu) * (l_Alpha_0 + l_Alpha_1*(1-2*c_Cu)))\nc_Cu,Vm,g_Alpha_Cu,g_Alpha_Sn,l_Alpha_0,l_Alpha_1\nin ParsedMaterialHelper.\nSyntax error: Unknown identifier\n\nDoes it means that c_Cu,Vm,g_Alpha_Cu,g_Alpha_Sn,l_Alpha_0,l_Alpha_1 are  unknown?\nBut I have defined c_Cu in [variable] and others in [Materials] through GenericConstantMaterial.\n  [./**c_Cu**]\n      order = FIRST\n      family = LAGRANGE\n      initial_condition = 0.02\n\n  [./model_constants]\n    type = GenericConstantMaterial\n    prop_names = '**Vm** R T'\n    prop_values = '16.29e-6 8.314 523'    #Vm:m^3/mol T:K\n  [../]\n  [./energy_constant]\n    type = GenericConstantMaterial\n    prop_names = '**g_Alpha_Cu g_Alpha_Sn** g_Ser_Sn g_L_Cu g_L_Sn **l_Alpha_0 l_Alpha_1** l_L_0 l_L_1 l_L_2'\n    prop_values = '-19073 -27280 346160 -11083 -28963 -11448 -11694 -10487 -18198 10528.4'    # J/mol\n  [../]",
+          "url": "https://github.com/idaholab/moose/discussions/16197",
+          "updatedAt": "2022-09-29T06:54:00Z",
+          "publishedAt": "2020-11-16T06:31:59Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "LiuPengPeter"
+                  },
+                  "bodyText": "Could anyone help? I still couldn't find the bug...\nThank you a lot!",
+                  "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131205",
+                  "updatedAt": "2022-09-29T06:54:23Z",
+                  "publishedAt": "2020-11-17T00:25:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aprilnovak"
+                          },
+                          "bodyText": "I think you have a typo here: c_Cug_Alpha_Sn, maybe you are missing a multiplication sign between c_Cu and g_Alpha_Cu? The parser is interpreting this as a missing symbol for c_Cug_Alpha_Sn.",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131239",
+                          "updatedAt": "2022-10-01T19:13:51Z",
+                          "publishedAt": "2020-11-17T01:44:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LiuPengPeter"
+                          },
+                          "bodyText": "Sorry. I post it wrong. But that's correct in my .i file.\nCould you help me check it?\nThank you a lot!",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131246",
+                          "updatedAt": "2022-10-01T19:13:50Z",
+                          "publishedAt": "2020-11-17T01:54:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "LiuPengPeter"
+                  },
+                  "bodyText": "My .i file is:\n [./f_Cu]\n    type = ParsedMaterial\n    f_name = f_Cu\n    args = 'c_Cu'\n    material_property_names = 'Vm g_Alpha_Cu g_Alpha_Sn l_Alpha_0 l_Alpha_1'\n    # About unit of f: the unit of Vm is m^3/mol. c is the molar percenage of Sn. f is the free energy density.\n    function = '1/Vm * ((1-c_Cu)*g_Alpha_Cu + c_Cu*g_Alpha_Sn + R*T*((1-c_Cu)*log(1-c_Cu) + c_Cu*log(c_Cu)) + c_Cu*(1-c_Cu) * (l_Alpha_0 + l_Alpha_1*(1-2*c_Cu)))'\n    outputs = exodus\n  [../]\n\nCould anyone help me check? My brain is full of water now....",
+                  "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131245",
+                  "updatedAt": "2022-10-01T19:13:53Z",
+                  "publishedAt": "2020-11-17T01:53:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aprilnovak"
+                          },
+                          "bodyText": "You need to include multiplication signs in a few places - my previous comment was about two of your variables merging into one long name, but for instance I see you also have a problem with (1-c_Cu)g_Alpha_Cu  - you need to change this to (1-c_Cu)*g_Alpha_Cu .  There are a few other places this happens, too.",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131249",
+                          "updatedAt": "2022-10-01T19:14:02Z",
+                          "publishedAt": "2020-11-17T01:55:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LiuPengPeter"
+                          },
+                          "bodyText": "Thank you for your patience. But there is *. The first post is wrong by mistake. Please see my .i file.\nIt is:\n [./f_Cu]\n    type = ParsedMaterial\n    f_name = f_Cu\n    args = 'c_Cu'\n    material_property_names = 'Vm g_Alpha_Cu g_Alpha_Sn l_Alpha_0 l_Alpha_1'\n    function = '1/Vm * ((1-c_Cu)*g_Alpha_Cu + c_Cu*g_Alpha_Sn + R*T*((1-c_Cu)*log(1-c_Cu) + c_Cu*log(c_Cu)) + c_Cu*(1-c_Cu) * (l_Alpha_0 + l_Alpha_1*(1-2*c_Cu)))'\n    outputs = exodus\n  [../]",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131251",
+                          "updatedAt": "2022-10-01T19:14:03Z",
+                          "publishedAt": "2020-11-17T02:03:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Liu Peng, please use the ``` markup to format excerpts of input files. It is hard to read otherwise.",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131278",
+                          "updatedAt": "2022-10-01T19:14:07Z",
+                          "publishedAt": "2020-11-17T03:14:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "R and T are not listed in args or material_property_names",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131279",
+                          "updatedAt": "2022-10-01T19:14:07Z",
+                          "publishedAt": "2020-11-17T03:15:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LiuPengPeter"
+                          },
+                          "bodyText": "Thanks a lot!\nI made such low mistake...",
+                          "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131619",
+                          "updatedAt": "2022-10-01T19:14:07Z",
+                          "publishedAt": "2020-11-17T13:58:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "R and T are not listed in args or material_property_names",
+                  "url": "https://github.com/idaholab/moose/discussions/16197#discussioncomment-131675",
+                  "updatedAt": "2022-10-01T19:14:21Z",
+                  "publishedAt": "2020-11-17T15:06:22Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "*** ERROR *** Invalid function",
+          "author": {
+            "login": "LiuPengPeter"
+          },
+          "bodyText": "I solved the problem. While, the post couldn't be deleted...",
+          "url": "https://github.com/idaholab/moose/discussions/16221",
+          "updatedAt": "2023-02-14T15:31:14Z",
+          "publishedAt": "2020-11-17T14:04:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "We do not delete posts here so that other people may find them and lear from them. Please also do not create separate threads on the same topic.",
+                  "url": "https://github.com/idaholab/moose/discussions/16221#discussioncomment-131673",
+                  "updatedAt": "2023-02-14T15:31:14Z",
+                  "publishedAt": "2020-11-17T15:04:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Material properties and sharp transitions",
+          "author": {
+            "login": "gka80"
+          },
+          "bodyText": "I currently have a material property defined using a DerivativeParsedMaterial with an 'if' statement. The 'if' statement acts as a switch for the material property (i.e. similar to a first-order phase transition). I've tested the model above and below the critical point and it behaves as expected. However, because of the way I've modeled this, there's a sharp transition at the critical point. I'd like to \"help the solver out\" around this transition point in the hopes of improving convergence around this point and reducing runtime.\nWhat's a good way to accomplish this? If something doesn't exist, I don't have a problem with contributing if someone has an idea.\nThank you,\n-Garrett",
+          "url": "https://github.com/idaholab/moose/discussions/16189",
+          "updatedAt": "2023-02-08T07:01:13Z",
+          "publishedAt": "2020-11-15T01:28:33Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "I think this depends a bit on your physics.  For instance, in my fields where the finite element is frequently a coarse-scale representation of some complicated (unknown?) micro physics, a \"mollifier\" would be appropriate here.  That is, replace if(x<0, -1, 1) with tanh(x/m), where m is the mollifier (or some similar function).\n\na\n\u2026\n________________________________\nFrom: Garrett Kelley <notifications@github.com>\nSent: Sunday, 15 November 2020 11:28 AM\nTo: idaholab/moose <moose@noreply.github.com>\nCc: Subscribed <subscribed@noreply.github.com>\nSubject: [idaholab/moose] Material properties and sharp transitions (#16189)\n\n\nI currently have a material property defined using a DerivativeParsedMaterial with an 'if' statement. The 'if' statement acts as a switch for the material property (i.e. similar to a first-order phase transition). I've tested the model above and below the critical point and it behaves as expected. However, because of the way I've modeled this, there's a sharp transition at the critical point. I'd like to \"help the solver out\" around this transition point in the hopes of improving convergence around this point and reducing runtime.\n\nWhat's a good way to accomplish this? If something doesn't exist, I don't have a problem with contributing if someone has an idea.\n\nThank you,\n-Garrett\n\n\u2014\nYou are receiving this because you are subscribed to this thread.\nReply to this email directly, view it on GitHub<#16189>, or unsubscribe<https://github.com/notifications/unsubscribe-auth/ABS6CVITDQ5CQ6JOQZIT7VTSP4VE5ANCNFSM4TV4I5KQ>.",
+                  "url": "https://github.com/idaholab/moose/discussions/16189#discussioncomment-130123",
+                  "updatedAt": "2023-02-08T07:01:14Z",
+                  "publishedAt": "2020-11-15T21:28:49Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gka80"
+                          },
+                          "bodyText": "Aha! That seems to have done the trick to get it over the \"hump\". Thank you, Andy.\nJust in case anyone else comes across this, I defined a \"switching\" function, f(x) = 0.5+0.5tanh((x-x_c)/w), where 'x_c' represents the critical point (i.e. a temperature) and 'w' represents the \"transition width.\" If 'p_below(x)' is the property below the critical point and 'p_above(x)' is the property above the critical point, you can transition between these two properties by: p(x) = p_below(x)(1-f(x))+p_above(x)*f(x).",
+                          "url": "https://github.com/idaholab/moose/discussions/16189#discussioncomment-131258",
+                          "updatedAt": "2023-02-08T07:01:14Z",
+                          "publishedAt": "2020-11-17T02:28:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Free Coreform Cubit Learn license available for MOOSE users for meshing",
+          "author": {
+            "login": "msederberg"
+          },
+          "bodyText": "Hello MOOSE users,\nCoreform has recently rebranded Trelis to Coreform Cubit, and has made a free license of Coreform Cubit available for non-commercial use. Coreform Cubit Learn is fully functional; exports are limited to 50,000 elements. We are working on a couple of SBIR projects to enhance MOOSE, integrate MOOSE with our Coreform IGA solver, and integrate MOOSE with Coreform Cubit.\nThis new Coreform Cubit Learn license is part of this effort to make Coreform Cubit available to all members of the MOOSE community.\nWe welcome any questions or requests on our forum, we look forward to sharing more information soon on our other efforts regarding MOOSE.\nSincerely,\nMatt Sederberg\nCoreform CEO",
+          "url": "https://github.com/idaholab/moose/discussions/16200",
+          "updatedAt": "2022-06-29T02:52:53Z",
+          "publishedAt": "2020-11-16T16:31:29Z",
+          "category": {
+            "name": "News"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Creating a temperature field",
+          "author": {
+            "login": "WilkAndy"
+          },
+          "bodyText": "Hi everyone,\nI want to create a temperature field (the central region is hot) as follows.\n\nThe temperature field is given by\nwhich from the paper (Hu, Acta Materialia 58 (2010) 3230\u20133237)\nhttps://www.sciencedirect.com/science/article/pii/S1359645410000571\nMy question is that how can I build this temperature field in MOOSE?\nBest,\nPeng",
+          "url": "https://github.com/idaholab/moose/discussions/16194",
+          "updatedAt": "2023-07-20T13:57:40Z",
+          "publishedAt": "2020-11-15T21:32:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "I would use one of the \"Parsed Function\" objects in MOOSE.  For instance, if your temperature field is an IC, then use FunctionIC, while if your temperature field is an AuxVariable, then use a ParsedAux AuxKernel.   Just specify your function in the function input parameter in either case.\na",
+                  "url": "https://github.com/idaholab/moose/discussions/16194#discussioncomment-130127",
+                  "updatedAt": "2023-07-20T13:57:43Z",
+                  "publishedAt": "2020-11-15T21:35:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Not quite. One way is to use a\n[temperature]\n  type = ParsedAux\n  use_xyzt = true\n  function = 'x^2 + cos(x ...`\n  execute_on = INITIAL\n[]\n\nthe other is to use\n[temperature]\n  type = FunctionAux\n  function = 'x^2 + cos(x ...`\n  execute_on = INITIAL\n[]\n\nNo IC needed",
+                          "url": "https://github.com/idaholab/moose/discussions/16194#discussioncomment-130179",
+                          "updatedAt": "2023-07-20T13:58:04Z",
+                          "publishedAt": "2020-11-15T23:16:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Ordering of Subapps in a MultiApp System",
+          "author": {
+            "login": "freiler"
+          },
+          "bodyText": "Hello all,\nI want to solve a problem of 3 equations in a decoupled manner using a Multiapp.\nSubapp1 solves Equation 1. It needs u1 and provides u2.\nSubapp2 solves Equation 2. It needs u2 and provides u3.\nSubapp3 solves Equation 3. It needs u2 and u3, and provides u1.\nThen, I would like to have a Master that calls the three subapp solves and dictates the ordering of the solves. It is important that the 3 equations are sequential.\nCould someone please lead me to the way this can be done? Or maybe guide me to a good example that follows the same idea?\nThank you in advance,\nRamiro",
+          "url": "https://github.com/idaholab/moose/discussions/16141",
+          "updatedAt": "2022-07-08T07:33:29Z",
+          "publishedAt": "2020-11-10T16:03:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "YaqiWang"
+                  },
+                  "bodyText": "You can have a main app set equation 2 as the subapp, then add equation 1 as a subapp of the equation 2 subapp on timestep_begin, add equation 3 as a subapp of the equation 2 subapp on timestep_end. Eq. 1 and Eq. 3 input are on the same level of app tree, i.e. both subapps of the first level subapp of Eq. 2.",
+                  "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125810",
+                  "updatedAt": "2022-07-08T07:33:26Z",
+                  "publishedAt": "2020-11-10T16:20:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zachmprince"
+                  },
+                  "bodyText": "Yaqi's comment might be a little confusing, so here is a visualization:\n              u1               u3\n[ SubApp1 ]<------[ MainApp ]----->[ SubApp2 ]\n[ (Eq.1)  ]------>[ (Eq.2)  ]<-----[ (Eq.3)  ]\n              u2               u1\n\nFor the ordering, set SubApp1 execute_on = timestep_begin and SubApp2 execute_on = timestep_end",
+                  "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125850",
+                  "updatedAt": "2022-07-08T07:33:26Z",
+                  "publishedAt": "2020-11-10T17:10:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ragusa"
+                          },
+                          "bodyText": "Quick follow-up question: What if one has 4 equations? The sequence of solve to preserve is u1-->u2-->u3-->u4. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125860",
+                          "updatedAt": "2022-07-08T07:33:36Z",
+                          "publishedAt": "2020-11-10T17:20:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "Using Actions might solve this problem. Actions can enforce the ordering of adding subapps, which will be used by MOOSE to execute the subapps. We can create an action that takes parameter like inputs = 'input1 input2 input3 input4' and execute_on to add the subapps sequentially. MOOSE currently does not have the ordering capability of multiapps on the same level and the same execute_on flag, i.e. MultiApp does not accept a parameter like 'input' in mesh generators.",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125877",
+                          "updatedAt": "2022-07-08T07:33:36Z",
+                          "publishedAt": "2020-11-10T17:37:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "Oh, I forgot one thing: The data transfer happens only once both at the beginning and the end of executing multiapps at an execute_on flag. This means if we have 4 subapps on the same execute_on flag, the data outputted by one subapp will not immediately available to the next subapp until next Picard iteration. So basically we are doing Jacobi style sweeping through subapps at the same execute_on flag. So even we enforce the ordering, it does not matter anyway. Sorry about my previous reply.",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125883",
+                          "updatedAt": "2022-07-08T07:33:36Z",
+                          "publishedAt": "2020-11-10T17:45:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "I don't think actions would help in this case because all transfers with a certain execute flag happen at once, either before or after all the subapps have been executed. So the second subapp in the ordering would not receive information from first subapp's solve until until after all subapps have been executed.",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125884",
+                          "updatedAt": "2022-07-08T07:34:14Z",
+                          "publishedAt": "2020-11-10T17:46:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "Right. Someone wanted the capability of doing data transfer among sibling subapps, i.e. let subapp itself initiate the transfer after it gets executed. That along with action can solve this issue. But that subapp level transfer is something @friedmud dislike alot and could complicate the design and usage significantly.",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125887",
+                          "updatedAt": "2022-07-08T07:34:08Z",
+                          "publishedAt": "2020-11-10T17:51:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "For the case of u1->u2->u3->u4->u1 I would use a tree structure like this:\n          u3                   u2\n    ------------>[ SubApp1 ]------>[ SubSubApp1 ]\n    |            [ Eq. (2) ]<------[   (Eq.1)   ]\n    |                |         u1\n    |          u2    |\n[ MainApp ]<----------\n[ (Eq. 3) ]<----------\n     |         u4    |\n     |               |\n     ----------->[ SubApp 2]\n          u3     [ (Eq.4)  ]",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125892",
+                          "updatedAt": "2022-07-08T07:34:08Z",
+                          "publishedAt": "2020-11-10T17:56:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "freiler"
+                          },
+                          "bodyText": "This makes sense. Thank you very much for your answers!",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125893",
+                          "updatedAt": "2022-07-08T07:34:09Z",
+                          "publishedAt": "2020-11-10T17:58:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "freiler"
+                          },
+                          "bodyText": "Following @zachmprince comment above:\n\nYaqi's comment might be a little confusing, so here is a visualization:\n              u1               u3\n[ SubApp1 ]<------[ MainApp ]----->[ SubApp2 ]\n[ (Eq.1)  ]------>[ (Eq.2)  ]<-----[ (Eq.3)  ]\n              u2               u1\n\nFor the ordering, set SubApp1 execute_on = timestep_begin and SubApp2 execute_on = timestep_end\n\nI would like to transfer u1 in the scheme above to SubApp1 before the timestep ends, so that u1 is available for the upcoming timestep to properly solve for u2.\nIs there any way to do this?\nThank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128849",
+                          "updatedAt": "2022-07-08T07:34:09Z",
+                          "publishedAt": "2020-11-13T17:05:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "freiler"
+                          },
+                          "bodyText": "The transfer in order should happen in the following way:\nu2 From SubApp1 to MainApp\nu3 & u2 From MainApp to SubApp2\nu1 From SubApp2 to SubApp1 (somehow)\nThen a new iteration may start.",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128859",
+                          "updatedAt": "2022-07-08T07:34:16Z",
+                          "publishedAt": "2020-11-13T17:21:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "As long as you don't set the execute_on flag in the transfer, the order of operation should be:\n\nTransfer to_multiapp\nSolve multiapp\nTransfer from_multiapp\n\nSo if your input looks like this in the mainapp:\n[MultiApps]\n  [SubApp1]\n    type = FullSolveMultiApp\n    input = sub1.i\n    execute_on = timestep_begin\n  []\n  [SubApp2]\n    type = FullSolveMultiApp\n    input = sub2.i\n    execute_on = timestep_end\n  []\n[]\n\n[Transfers]\n  [u1_to_sub1]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp1\n    direction = to_multiapp\n    to_variable = u1\n    from_variable = u1\n  []\n  [u2_from_sub1]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp1\n    direction = from_multiapp\n    to_variable = u2\n    from_variable = u2\n  []\n  [u2_u3_to_sub2]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp2\n    direction = to_multiapp\n    to_variable = 'u2 u3'\n    from_variable = 'u2 u3'\n  []\n  [u1_from_sub2]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp2\n    direction = from_multiapp\n    to_variable = u1\n    from_variable = u1\n  []\n[]\n\nThe order of operations will be:\n\nTransfer u1 to SubApp1 from MainApp\nSolve SubApp1\nTransfer u2 to MainApp from SubApp1\nSolve MainApp\nTransfer u2 and u3 to SubApp2 from MainApp\nSolve SubApp2\nTransfer u1 to MainApp from SubApp2\n\nRepeated until convergence",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128906",
+                          "updatedAt": "2022-07-08T07:34:29Z",
+                          "publishedAt": "2020-11-13T18:49:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "freiler"
+                  },
+                  "bodyText": "@YaqiWang @zachmprince Thank you both for your answers Yaqi and Zach. This solves my current problem.\nA follow-up question on this would be if there is another way to order a sequence of subapps than using the \"execute_on\" option. My question aims at what would happen for example if we needed to solve multiple uncoupled equations (at least more than 3). The 'execute_on' option for multiple decoupled equations seems limited for a hypothetical case of this kind.\nThanks again,\nRamiro",
+                  "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125857",
+                  "updatedAt": "2022-07-08T07:36:01Z",
+                  "publishedAt": "2020-11-10T17:17:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zachmprince"
+                  },
+                  "bodyText": "execute_on is the only way to order the apps from the main app. But you can use a nested multiapp structure to facilitate more control on the ordering.  Something like in this image: https://mooseframework.inl.gov/workshop/?_ga=2.38902757.731230092.1603987117-130448754.1603987117#/51/3",
+                  "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-125876",
+                  "updatedAt": "2022-07-08T07:35:58Z",
+                  "publishedAt": "2020-11-10T17:37:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ragusa"
+                  },
+                  "bodyText": "Thanks. To avoid repeating this until convergence, I suppose we can limit the Picard iterations. This should be done at the master input, I think. In which block and what\u2019s that syntax? Thanks!\n\n\u2014jean ragusa\n\n\nhttp://multiphysics.engr.tamu.edu\nhttp://nustem.engr.tamu.edu\n-.-.-\niPhone, iTypo, iApologize.\n\nOn Nov 13, 2020, at 12:50 PM, Zachary Prince <notifications@github.com> wrote:\n\n\ufeff\n\nAs long as you don't set the execute_on flag in the transfer, the order of operation should be:\n\n  1.  Transfer to_multiapp\n  2.  Solve multiapp\n  3.  Transfer from_multiapp\n\nSo if your input looks like this in the mainapp:\n\n[MultiApps]\n  [SubApp1]\n    type = FullSolveMultiApp\n    input = sub1.i\n    execute_on = timestep_begin\n  []\n  [SubApp2]\n    type = FullSolveMultiApp\n    input = sub2.i\n    execute_on = timestep_end\n  []\n[]\n\n[Transfers]\n  [u1_to_sub1]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp1\n    direction = to_multiapp\n    to_variable = u1\n    from_variable = u1\n  []\n  [u2_from_sub1]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp1\n    direction = from_multiapp\n    to_variable = u2\n    from_variable = u2\n  []\n  [u2_u3_to_sub2]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp2\n    direction = to_multiapp\n    to_variable = 'u2 u3'\n    from_variable = 'u2 u3'\n  []\n  [u1_from_sub2]\n    type = MultiAppCopyTransfer\n    multiapp = SubApp2\n    direction = from_multiapp\n    to_variable = u1\n    from_variable = u1\n  []\n[]\n\n\nThe order of operations will be:\n\n  1.  Transfer u1 to SubApp1 from MainApp\n  2.  Solve SubApp1\n  3.  Transfer u2 to MainApp from SubApp1\n  4.  Solve MainApp\n  5.  Transfer u2 and u3 to SubApp2 from MainApp\n  6.  Solve SubApp2\n  7.  Transfer u1 to MainApp from SubApp2\n\nRepeated until convergence\n\n\u2014\nYou are receiving this because you commented.\nReply to this email directly, view it on GitHub<https://urldefense.com/v3/__https://github.com/idaholab/moose/discussions/16141*discussioncomment-128906__;Iw!!KwNVnqRv!Wsz1WSRVbPh_dl643bnIVRrOM6i_pmtwhfq7yOUvba5j4owMbMKZJjX2hgEFXzxG8w$>, or unsubscribe<https://urldefense.com/v3/__https://github.com/notifications/unsubscribe-auth/AAEMAJG6BQ5HW2QASKBAN5DSPV5VPANCNFSM4TQ27IVQ__;!!KwNVnqRv!Wsz1WSRVbPh_dl643bnIVRrOM6i_pmtwhfq7yOUvba5j4owMbMKZJjX2hgF_TbPCaA$>.",
+                  "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128912",
+                  "updatedAt": "2022-07-08T07:56:48Z",
+                  "publishedAt": "2020-11-13T19:04:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "Here are all the options regarding picard iterations:\n\nYou can find more details here",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128918",
+                          "updatedAt": "2022-07-08T07:57:38Z",
+                          "publishedAt": "2020-11-13T19:21:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "Oh sorry, this is in the [Executioner] block",
+                          "url": "https://github.com/idaholab/moose/discussions/16141#discussioncomment-128919",
+                          "updatedAt": "2022-07-08T07:57:49Z",
+                          "publishedAt": "2020-11-13T19:21:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Guidance on MultiApps and Transfers",
+          "author": {
+            "login": "robfairh"
+          },
+          "bodyText": "Hi folks, I am trying to solve a problem that uses two input files and two different meshes. The first input file solves the temperature in a cylinder. The variable changes in 'z' but not in 'r'. I record the temperature along 'z' in a .csv file using a vector-postprocessor. The second file uses the .csv file data to define the values of a BC on a line. For that, I am using 'FunctionDirichletBC' and defining the function values reading the .csv file.\nI am trying to define this with the MultiApps and the Transfer actions to run only one simulation instead of two. I haven't used these actions before. Is there any easy way to implement this?",
+          "url": "https://github.com/idaholab/moose/discussions/16051",
+          "updatedAt": "2022-07-07T04:44:13Z",
+          "publishedAt": "2020-11-03T00:02:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "I am not sure we have a transfer that exists for this case. I think what you need is a VectorPostprocessor transfer that transfers the entire vector from one system to the other. A vector version of this: MultiAppPostprocessorTransfer.\nThe best approach might be to add this capability to the existing MultiAppVectorPostprocessorTransfer, I will take a look and see how that might work. It might be easy to add.",
+                  "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-119776",
+                  "updatedAt": "2022-07-07T04:44:12Z",
+                  "publishedAt": "2020-11-03T03:32:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "I am going to try to add this capability quickly, see #16055",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-119794",
+                          "updatedAt": "2022-07-07T04:44:12Z",
+                          "publishedAt": "2020-11-03T04:49:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "Great! Thank you",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-120441",
+                          "updatedAt": "2022-07-07T04:44:12Z",
+                          "publishedAt": "2020-11-03T15:55:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "As you noticed in the issue we are going to build something a bit more generic that should work for this, but it will take some time before it is available. Will the answer below work for you?",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-121604",
+                          "updatedAt": "2022-07-07T04:44:12Z",
+                          "publishedAt": "2020-11-05T00:22:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "I'll try it and see if it works!",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-121656",
+                          "updatedAt": "2022-08-30T20:14:19Z",
+                          "publishedAt": "2020-11-05T03:35:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "vincentlaboure"
+                  },
+                  "bodyText": "I'd think the most direct way to accomplish this is using a LayeredAverage which you can transfer with a MultiAppUserObjectTransfer. Then you might have to create a VariableDirichletBC but that should be pretty straightforward.",
+                  "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-120513",
+                  "updatedAt": "2022-07-07T04:44:15Z",
+                  "publishedAt": "2020-11-03T17:25:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "Okay, I tried this approach, and it doesn't work.\nThe 'VariableDirichletBC' is the tricky part. As I would be imposing the values of a variable with the values of an auxiliary variable.\nAnd we cannot couple elemental variables into nodal objects.\nCan we?",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-125903",
+                          "updatedAt": "2022-07-07T04:44:16Z",
+                          "publishedAt": "2020-11-10T18:14:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "Maybe I am doing something else wrong.\nIn my sub file, I define the UserObjects action like this:\n[UserObjects]\n  [./sub_app_temp]\n    type = LayeredAverage\n    direction = y\n    variable = temp\n    num_layers = 100\n    execute_on = linear\n    block = 'cool'\n  [../]\n[]\n\nAnd in my master file, I define the MultiApps and the Transfers actions like this:\n[MultiApps]\n  [./sub]\n    type = FullSolveMultiApp\n    input_files = simple.i\n    no_backup_and_restore = true\n  [../]\n[]\n\n[Transfers]\n  [layered_transfer_from_sub_app]\n    type = MultiAppUserObjectTransfer\n    direction = from_multiapp\n    user_object = sub_app_temp\n    variable = sub_app_var\n    multi_app = sub\n    # displaced_source_mesh = true\n    # skip_bounding_box_check = true\n  []\n[]\n\nwhich defines an AuxVariable like this:\n[AuxVariables]\n  [./sub_app_var]\n    order = CONSTANT\n    family = MONOMIAL\n    block = 'cool'\n    initial_condition = 1\n  [../]\n[]\n\nThe transfer of the LayeredAverage object is working, and it modifies the AuxVariable. But defining the BC with the AuxVariable I haven't figured that out. Am I missing something obvious here?",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-125904",
+                          "updatedAt": "2022-07-07T04:44:16Z",
+                          "publishedAt": "2020-11-10T18:22:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "vincentlaboure"
+                          },
+                          "bodyText": "Can you try to model your VariableDirichletBC on PenaltyDirichletBC to impose your boundary condition weakly instead of strongly? The problem with a NodalBC (such as DirichletBC) is that it does not know what to do when the variable you impose is discontinuous, as in your case. On the other hand, an IntegratedBC should work fine.",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-126984",
+                          "updatedAt": "2022-07-07T04:44:24Z",
+                          "publishedAt": "2020-11-11T15:21:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "I'll try that. Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-127045",
+                          "updatedAt": "2022-07-26T02:11:53Z",
+                          "publishedAt": "2020-11-11T16:17:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robfairh"
+                          },
+                          "bodyText": "It worked! Thank you so much @vincentlaboure and @aeslaughter for your time. @aeslaughter I will still be willing to try that new capability under development.\nI had to play a little bit around with the value of penalty to get it to work. Here is a figure with my result:\n\nThe transfer sets the values of the AuxVariable sub_app_var and then, AuxDirichletBC imposes those values to the variable temp.\nHere are the .h and the .C just in case someone in the future wants to do something similar.",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-128880",
+                          "updatedAt": "2022-07-26T02:11:52Z",
+                          "publishedAt": "2020-11-13T17:49:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "The new transfer capability was just finished off a few days ago: https://mooseframework.inl.gov/source/transfers/MultiAppReporterTransfer.html",
+                          "url": "https://github.com/idaholab/moose/discussions/16051#discussioncomment-129019",
+                          "updatedAt": "2022-07-26T02:11:56Z",
+                          "publishedAt": "2020-11-13T22:24:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mortar _q_point",
+          "author": {
+            "login": "srinath-chakravarthy"
+          },
+          "bodyText": "Hello all,\nI am attempting to retrieve the location of a _qp within the mortar system. @lindayad or anyone else, do you happen to know if this is available, or any other method i can use to get the coordinates.\nCheers\nSrinath",
+          "url": "https://github.com/idaholab/moose/discussions/16171",
+          "updatedAt": "2022-06-02T06:19:55Z",
+          "publishedAt": "2020-11-12T22:46:31Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "You misspelled your @lindsayad",
+                  "url": "https://github.com/idaholab/moose/discussions/16171#discussioncomment-128457",
+                  "updatedAt": "2022-06-02T06:19:55Z",
+                  "publishedAt": "2020-11-13T04:24:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@srinath-chakravarthy I am assuming that you want the physical location of the quadrature points, not their location on the reference element. The former we cannot do at this moment, but I've opened #16177 to do so. I'll probably whip that up in the next hour. If you just want the latter, you can do _qrule_msm->qp(_qp)",
+                  "url": "https://github.com/idaholab/moose/discussions/16171#discussioncomment-128823",
+                  "updatedAt": "2022-06-02T06:20:30Z",
+                  "publishedAt": "2020-11-13T16:28:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "srinath-chakravarthy"
+                  },
+                  "bodyText": "@lindsayad Thanks so much, i was looking for the latter.",
+                  "url": "https://github.com/idaholab/moose/discussions/16171#discussioncomment-128852",
+                  "updatedAt": "2022-06-02T06:20:42Z",
+                  "publishedAt": "2020-11-13T17:12:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "srinath-chakravarthy"
+                  },
+                  "bodyText": "Oh sorry was looking for the former :).",
+                  "url": "https://github.com/idaholab/moose/discussions/16171#discussioncomment-128853",
+                  "updatedAt": "2022-06-02T06:21:42Z",
+                  "publishedAt": "2020-11-13T17:12:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Problems while compiling MOOSE",
+          "author": {
+            "login": "Giovar6"
+          },
+          "bodyText": "Good evening everybody,\nI followed literally the instructions reported at https://mooseframework.inl.gov/getting_started/installation/conda.html, to install MOOSE on Ubuntu 20.04.1 but when I compile MOOSE I got this error:\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/loops_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/kernels_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/mesh_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/interfacekernels_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/interfaces_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/timesteppers_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/problems_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/systems_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/predictors_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/fvbcs_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/postprocessors_Unity.C...\nCompiling C++ (in opt mode) /home/giovanni/projects/moose/framework/build/unity_src/variables_Unity.C...\n{standard input}: Assembler messages:\n{standard input}:19171: Warning: end of file not at end of a line; newline inserted\nx86_64-conda_cos6-linux-gnu-c++: internal compiler error: Killed (program cc1plus)\nPlease submit a full bug report,\nwith preprocessed source if appropriate.\nSee https://gcc.gnu.org/bugs/ for instructions.\nmake: *** [/home/giovanni/projects/moose/framework/build.mk:118: /home/giovanni/projects/moose/framework/build/unity_src/problems_Unity.x86_64-pc-linux-gnu.opt.lo] Errore 1\nmake: *** Attesa per i processi non terminati....\nI've tried also to run the tests, but obviously all tests failed. So I've tried to uninstall everything and reinstall but did not worked. Sometimes also Ubuntu crashed. When this problem happen generally the computer stop working for some minutes (I cannot move neither the mouse)\nWhat could be the reason for this issue?\nThank you in advance for any suggestion.\nKind regards,\nGiovanni",
+          "url": "https://github.com/idaholab/moose/discussions/16151",
+          "updatedAt": "2022-09-14T08:38:04Z",
+          "publishedAt": "2020-11-11T15:57:57Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Giovar6"
+                  },
+                  "bodyText": "Good Evevening,\nThe problem was solved. Jeson Miller explained me (at this discussion https://groups.google.com/g/moose-users/c/UjkErXUTfD0) that 6 Gb of RAM are not enough to perform the command make -j4.\nI've used instead the command: make -j3 and MOOSE compiled perfectly.\nI have also performed the test obtaining several pass and some skip.\nThank you anyway.\nGiovanni",
+                  "url": "https://github.com/idaholab/moose/discussions/16151#discussioncomment-127165",
+                  "updatedAt": "2022-09-14T08:38:09Z",
+                  "publishedAt": "2020-11-11T18:43:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "@Giovar6  Thank you for re-submitting your question!",
+                  "url": "https://github.com/idaholab/moose/discussions/16151#discussioncomment-128770",
+                  "updatedAt": "2022-09-14T08:38:11Z",
+                  "publishedAt": "2020-11-13T15:17:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

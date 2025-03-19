@@ -1,0 +1,1015 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMC0yM1QwOTo0ODo1My0wNjowMM4AV1xZ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "A question about how to get the 'EffectiveStrain'",
+          "author": {
+            "login": "Yasunaoka"
+          },
+          "bodyText": "Hi community,\nI am trying to get the 'Effective Plastic Strain' in my problem.\nAt first, I have used the\n[Auxvariables]\n[EPS]\norder = CONSTANT\nfamily = MONOMIAL\n[]\n[]\n[Auxkernels]\n[eps]\ntype = RankTwoScalarAux\nrank_two_tensor = plastic_strain\nvariable = EPS\nscalar_type = EffectiveStrain\n[]\n[]\n\nAnd then failed, then I checked #20979 and #23766 and realized that I should use\n[Auxvariables]\n[EPS]\n        order = CONSTANT\n        family = MONOMIAL\n[]\n[]\n[Auxkernels]\n[eps]\n        type = MaterialRealAux\n        property = effective_plastic_strain\n        variable = EPS\n[]\n[]\n\nBut I got an error\n*** ERROR ***\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nMaterial property 'effective_plastic_strain', requested by 'eps' is not defined on block 0\n\nThen I used the\n[Debug]\n    show_material_props = true\n[]\n\nthe response shows\nActive Materials:\n    Subdomain:  (0)\n      Material Name:       elasticity_tensor\n      Property Names:      \"effective_stiffness\" \"elasticity_tensor\" \n      Material Name:       strain\n      Property Names:      \"deformation_gradient\" \"mechanical_strain\" \"rotation_increment\" \"strain_increment\" \n                             \"strain_rate\" \"total_strain\" \n      Material Name:       stress\n      Property Names:      \"Jacobian_mult\" \"elastic_strain\" \"eqv_plastic_strain\" \"plastic_strain\" \"stress\" \n                             \n      Material Name:       density\n      Property Names:      \"density\" \n\n    Active Face Materials:\n    Subdomain:  (0)\n      Material Name:       elasticity_tensor_face\n      Property Names:      \"effective_stiffness\" \"elasticity_tensor\" \n      Material Name:       strain_face\n      Property Names:      \"deformation_gradient\" \"mechanical_strain\" \"rotation_increment\" \"strain_increment\" \n                             \"strain_rate\" \"total_strain\" \n      Material Name:       stress_face\n      Property Names:      \"Jacobian_mult\" \"elastic_strain\" \"eqv_plastic_strain\" \"plastic_strain\" \"stress\" \n                             \n      Material Name:       density_face\n      Property Names:      \"density\" \n\nActive Neighboring Materials:\n    Subdomain:  (0)\n      Material Name:       elasticity_tensor_neighbor\n      Property Names:      \"effective_stiffness\" \"elasticity_tensor\" \n      Material Name:       strain_neighbor\n      Property Names:      \"deformation_gradient\" \"mechanical_strain\" \"rotation_increment\" \"strain_increment\" \n                             \"strain_rate\" \"total_strain\" \n      Material Name:       stress_neighbor\n      Property Names:      \"Jacobian_mult\" \"elastic_strain\" \"eqv_plastic_strain\" \"plastic_strain\" \"stress\" \n                             \n      Material Name:       density_neighbor\n      Property Names:      \"density\" \n\nActive Boundary Materials:\n                           \n\n\n*** ERROR ***\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nMaterial property 'effective_plastic_strain', requested by 'eps' is not defined on block 0\n\nI noticed that there is an \"eqv_plastic_strain\", so I tried\n[Auxvariables]\n[EPS]\n        order = CONSTANT\n        family = MONOMIAL\n[]\n[]\n[Auxkernels]\n[eps]\n        type = MaterialRealAux\n        property = eqv_plastic_strain\n        variable = EPS\n[]\n[]\n\nAlthough the code ran successfully, but the \"eqv_plastic_strain\" seems to be null in the paraview.\nhere is my input file:\n#use kg mius mm\n\n[Mesh]\n    [TWC]\n        type = AnnularMeshGenerator\n        rmin = 3.5 # mm\n        rmax = 5\n        nt = 320\n        nr = 21\n    []\n[]\n  \n[Variables]\n    [disp_x]\n    []\n    [disp_y]\n    []\n[]\n\n[AuxVariables]\n    [accel_x]\n    []\n    [vel_x]\n    []\n    [accel_y]\n    []\n    [vel_y]\n    []\n    [vonmises]\n        order = CONSTANT\n        family = MONOMIAL\n    []\n    [pressure]\n        order = CONSTANT\n        family = MONOMIAL\n    []\n    [EPS]\n        order = CONSTANT\n        family = MONOMIAL\n    []\n[]\n\n[AuxKernels]\n    [accel_x]\n        type = TestNewmarkTI\n        variable = accel_x\n        displacement = disp_x\n        first = false\n    []\n    [vel_x]\n        type = TestNewmarkTI\n        variable = vel_x\n        displacement = disp_x\n    []\n    [accel_y]\n        type = TestNewmarkTI\n        variable = accel_y\n        displacement = disp_y\n        first = false\n    []\n    [vel_y]\n        type = TestNewmarkTI\n        variable = vel_y\n        displacement = disp_y\n    []\n    [vonmises]\n        type = RankTwoScalarAux\n        rank_two_tensor = stress\n        variable = vonmises\n        scalar_type = VonMisesStress\n    []\n    [pressure]\n        type = RankTwoScalarAux\n        rank_two_tensor = stress\n        variable = pressure\n        scalar_type = Hydrostatic\n    []\n    [eps]\n        type = MaterialRealAux\n        property = eqv_plastic_strain\n        variable = EPS\n    []\n[]\n\n\n\n[Kernels]\n    [DynamicTensorMechanics]\n        displacements = 'disp_x disp_y'\n    []\n    [inertia_x]\n        type = InertialForce\n        variable = disp_x\n    []\n    [inertia_y]\n        type = InertialForce\n        variable = disp_y\n    []   \n[]\n  \n[BCs]\n    [Pressure]\n        [outter_surface]\n            boundary = 'rmax'\n            function = triangle_pulse\n            displacements = 'disp_x disp_y'\n        []\n    []\n[]\n  \n[Functions]\n    [triangle_pulse]\n        #1gpa=1e9n/m^2=4e9 kg/(m*s^2)=1e9 kg/(e3e12mm*mius^2)=1e-6 kg/(mm*mius^2)\n        type = PiecewiseLinear\n        x = '0 0.25 0.5 5 10 20'\n        y = '0 8e-6 4e-6 2e-6 1e-6 0'\n    []\n[]\n  \n[Materials]\n    [elasticity_tensor]\n        type = ComputeIsotropicElasticityTensor\n        shear_modulus = 77.5e-6 #77.5Mpa\n        poissons_ratio = 0.3\n    []\n    [strain]\n        type = ComputeFiniteStrain\n        displacements = 'disp_x disp_y'\n        implicit = false\n    []\n    [stress]\n        type = FiniteStrainPlasticMaterial\n        yield_stress = '0 0.2e-6 0.8 0.2e-6'\n    []\n    [density]\n        type = GenericConstantMaterial\n        prop_names = density\n        prop_values = 7.9e-6\n    []\n[]\n  \n[Executioner]\n    type = Transient\n    start_time = 0\n    end_time = 2\n    dt = 1e-3 #1e-3~6mium a step\n    [TimeIntegrator]\n        type = CentralDifference\n        solve_type = lumped\n    []\n[]\n  \n  \n[Outputs]\n    exodus = true\n[]\n  \n\n[Debug]\n    show_material_props = true\n[]\n\nNow I have no idea what is wrong. Is the simulation from my input file generates no effective plastic strain? (but I have set the plastic constitutive model)\nThank you for your time and assistance!",
+          "url": "https://github.com/idaholab/moose/discussions/25826",
+          "updatedAt": "2023-10-25T03:08:33Z",
+          "publishedAt": "2023-10-24T02:56:54Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWell it depends on the regime of strain for most materials. If the stresses arent high enough, you only see elastic strain. Then past a certain point you start observing plastic strain.\nCan you plot the stresses and compare them to the elastic limit?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25826#discussioncomment-7371782",
+                  "updatedAt": "2023-10-24T15:45:45Z",
+                  "publishedAt": "2023-10-24T15:45:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Hi GiudGiud,\nFirstly I checked the relationship between stress levels and yield strength in the model as you suggested. The stress level in the model can reach 8e-6 (8Gpa) and stay there for some time, which is much more than the yield strength I set to 0.2e-6 (200Mpa).\nAfter this, I checked the the \"FiniteStrainPlasticMaterial\" code carefully, found that the default tolerance is about 1e-8. Then I realised that it may be that the unit system I am using does not match this tolerance. I used a unit system of kg, mm, and \u03bcs, which results in stresses even on the order of Gpa being at the e-6 level, which is very close to the e-8 tolerance.\nTherefore, I changed my unit system and now my problem is solved, thanks to your kind help!",
+                          "url": "https://github.com/idaholab/moose/discussions/25826#discussioncomment-7376429",
+                          "updatedAt": "2023-10-25T03:08:33Z",
+                          "publishedAt": "2023-10-25T03:08:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "WeakPlaneStress",
+          "author": {
+            "login": "hamedattariani"
+          },
+          "bodyText": "I tried using the \"WeakPlaneStress\" kernel by copying/pasting the provided example on the MOOSE webpage; I just used the \"elastic_thermal_weak_plane_stress_jacobian.i\" example without any change. But I received the following error.\nShould I rebuilt the MOOSE again?\nTime Step 0, time = 0\nTime Step 1, time = 1, dt = 1\n[0]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[0]PETSC ERROR: Unknown type. Check for miss-spelling or missing package: https://petsc.org/release/install/install/#external-packages\n[0]PETSC ERROR: Unable to find requested SNES type test\n[0]PETSC ERROR: See https://petsc.org/release/faq/ for trouble shooting.\n[0]PETSC ERROR: Petsc Release Version 3.16.6, unknown\n[0]PETSC ERROR: ./radiation-opt on a  named ubuntu by hamed Thu Oct 19 14:26:01 2023\n[0]PETSC ERROR: Configure options --download-hypre=1 --with-shared-libraries=1 --with-hdf5-dir=${PREFIX}  --with-make-np=16  --with-debugging=no --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-strumpack=1 --download-scalapack=1 --download-slepc=1 --with-mpi=1 --with-openmp=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0 --with-64-bit-indices --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 CC=mpicc CXX=mpicxx FC=mpif90 FC=mpif90 FC=mpif77 AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include -std=c++17 -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib\" --prefix=/home/hamed/mambaforge3/envs/moose\n[0]PETSC ERROR: #1 SNESSetType() at /data/civet0/build/mamba/conda-bld/moose-petsc_1670879152793/work/src/snes/interface/snes.c:4910\n[0]PETSC ERROR: #2 SNESSetFromOptions() at /data/civet0/build/mamba/conda-bld/moose-petsc_1670879152793/work/src/snes/interface/snes.c:961\n0 Nonlinear |R| = 0.000000e+00\nSolve Converged!",
+          "url": "https://github.com/idaholab/moose/discussions/25785",
+          "updatedAt": "2023-10-25T00:49:41Z",
+          "publishedAt": "2023-10-19T21:29:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYour Petsc is quite old. When is this installation from?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7332752",
+                  "updatedAt": "2023-10-19T21:38:06Z",
+                  "publishedAt": "2023-10-19T21:38:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hamedattariani"
+                          },
+                          "bodyText": "I installed it a few years ago. So, you recommend rebuilding everything?",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7332761",
+                          "updatedAt": "2023-10-19T21:40:21Z",
+                          "publishedAt": "2023-10-19T21:40:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes we cant guarantee a new input is runnable with an old version of MOOSE\nif you are using mamba / conda it should not take too long to get libmesh then moose updated",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7332779",
+                          "updatedAt": "2023-10-19T21:43:33Z",
+                          "publishedAt": "2023-10-19T21:43:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hamedattariani"
+                          },
+                          "bodyText": "I reinstalled everything based on the following instructions.\nhttps://mooseframework.inl.gov/getting_started/installation/conda.html\nThe moose test passed successfully.\n3994 passed, 106 skipped, 0 pending, 3 FAILED\n\nI made the application without any issues. But I still get the error.\nTime Step 0, time = 0\n\nTime Step 1, time = 1, dt = 1\n[0]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[0]PETSC ERROR: Unknown type. Check for miss-spelling or missing package: https://petsc.org/release/install/install/#external-packages\n[0]PETSC ERROR: Unable to find requested SNES type test\n[0]PETSC ERROR: WARNING! There are unused option(s) set! Could be the program crashed before usage or a spelling mistake, etc!\n[0]PETSC ERROR:   Option left: name:-i value: test.i source: command line\n[0]PETSC ERROR:   Option left: name:-ksp_converged_reason value: ::failed source: code\n[0]PETSC ERROR:   Option left: name:-KSP_TYPE value: bcgs source: code\n[0]PETSC ERROR:   Option left: name:-options_left value: 0 source: code\n[0]PETSC ERROR:   Option left: name:-PC_TYPE value: bjacobi source: code\n[0]PETSC ERROR:   Option left: name:-snes_converged_reason value: ::failed source: code\n[0]PETSC ERROR: See https://petsc.org/release/faq/ for trouble shooting.\n[0]PETSC ERROR: Petsc Development GIT revision: unknown  GIT Date: unknown\n[0]PETSC ERROR: ./radiation-opt on a  named ubuntu by hamed Mon Oct 23 16:37:06 2023\n[0]PETSC ERROR: Configure options --with-64-bit-indices --with-cxx-dialect=C++17 --with-debugging=no --with-fortran-bindings=0 --with-mpi=1 --with-openmp=1 --with-shared-libraries=1 --with-sowing=0 --download-fblaslapack=1 --download-hypre=1 --download-metis=1 --download-mumps=1 --download-ptscotch=1 --download-parmetis=1 --download-scalapack=1 --download-slepc=1 --download-strumpack=1 --download-superlu_dist=1 --with-hdf5-dir=${PREFIX} --with-make-np=16 --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 --with-mpi-dir=/home/hamed/mambaforge3/envs/moose AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include  -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib\" --prefix=/home/hamed/mambaforge3/envs/moose\n[0]PETSC ERROR: #1 SNESSetType() at /data/civet0/build/mamba/conda-bld/moose-petsc_1695766590900/work/src/snes/interface/snes.c:4735\n[0]PETSC ERROR: #2 SNESSetFromOptions() at /data/civet0/build/mamba/conda-bld/moose-petsc_1695766590900/work/src/snes/interface/snes.c:963\n 0 Nonlinear |R| = 0.000000e+00\n Solve Converged!",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7364108",
+                          "updatedAt": "2023-10-23T23:47:19Z",
+                          "publishedAt": "2023-10-23T23:40:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nwhat does the input file look like?",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7364278",
+                          "updatedAt": "2023-10-24T00:21:48Z",
+                          "publishedAt": "2023-10-24T00:21:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hamedattariani"
+                          },
+                          "bodyText": "I copied/paste it from the MOOSE sample problem.\n[GlobalParams]\norder = FIRST\nfamily = LAGRANGE\ndisplacements = 'disp_x disp_y'\ntemperature = temp\nout_of_plane_strain = strain_zz\n[]\n[Mesh]\n[./square]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 2\nny = 2\n[../]\n[]\n[Variables]\n[./disp_x]\n[../]\n[./disp_y]\n[../]\n[./strain_zz]\n[../]\n[./temp]\n[../]\n[]\n[Kernels]\n[./disp_x]\ntype = StressDivergenceTensors\nvariable = disp_x\neigenstrain_names = thermal_eigenstrain\ncomponent = 0\n[../]\n[./disp_y]\ntype = StressDivergenceTensors\nvariable = disp_y\neigenstrain_names = thermal_eigenstrain\ncomponent = 1\n[../]\n[./solid_z]\ntype = WeakPlaneStress\nvariable = strain_zz\neigenstrain_names = thermal_eigenstrain\n[../]\n[./heat]\ntype = HeatConduction\nvariable = temp\nuse_displaced_mesh = false\n[../]\n[]\n[Materials]\n[./elasticity_tensor]\ntype = ComputeIsotropicElasticityTensor\npoissons_ratio = 0.0\nyoungs_modulus = 1\n[../]\n[./strain]\ntype = ComputePlaneSmallStrain\neigenstrain_names = thermal_eigenstrain\n[../]\n[./thermal_strain]\ntype = ComputeThermalExpansionEigenstrain\nthermal_expansion_coeff = 1e-5\nstress_free_temperature = 0\neigenstrain_name = thermal_eigenstrain\n[../]\n[./stress]\ntype = ComputeLinearElasticStress\n[../]\n[./conductivity]\ntype = HeatConductionMaterial\nthermal_conductivity = 1\nuse_displaced_mesh = false\n[../]\n[]\n[Preconditioning]\n[./SMP]\ntype = SMP\nfull = true\n[../]\n[]\n[Executioner]\ntype = Transient\nsolve_type = NEWTON\npetsc_options_iname = '-ksp_type -pc_type -snes_type'\npetsc_options_value = 'bcgs bjacobi test'\nend_time = 1.0\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7364311",
+                          "updatedAt": "2023-10-24T00:30:02Z",
+                          "publishedAt": "2023-10-24T00:30:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "looks like bcgs is not included in your install of PETSc then\ndo you mind running either the diagnostics script in moose/script\nand/or ldd on the executable please",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7364410",
+                          "updatedAt": "2023-10-24T00:50:30Z",
+                          "publishedAt": "2023-10-24T00:50:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hamedattariani"
+                          },
+                          "bodyText": "Here is the output of the running diagnosis. I also copied the results of ldd on the executable.\nIt used the mamba env. So, I assumed everything should be included.\nTue Oct 24 05:23:28 PM PDT 2023\nNo LSB modules are available.\nSystem Arch: Distributor ID: Ubuntu Description: Ubuntu 22.04.3 LTS Release: 22.04 Codename: jammy\nMOOSE Package Version: Custom Build\nCPU Count: 1\nMemory Free: 122.809 MB\nVariable which $CC check:\n/home/hamed/mambaforge3/envs/moose/bin/mpicc\n$CC --version:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\nMPICC:\nwhich mpicc:\n/home/hamed/mambaforge3/envs/moose/bin/mpicc\nmpicc -show:\nx86_64-conda-linux-gnu-cc -I/home/hamed/mambaforge3/envs/moose/include -I/home/hamed/mambaforge3/envs/moose/include -L/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -I/home/hamed/mambaforge3/envs/moose/include -L/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath -Wl,/home/hamed/mambaforge3/envs/moose/lib -Wl,--enable-new-dtags -lmpi\nCOMPILER x86_64-conda-linux-gnu-cc:\nx86_64-conda-linux-gnu-cc (conda-forge gcc 10.4.0-19) 10.4.0\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\nPython:\n/home/hamed/mambaforge3/envs/moose/bin/python\nPython 3.10.8\nMODULES NOT AVAILABLE\nPETSc configure:\nstatic const char *petscconfigureoptions = \"--with-64-bit-indices --with-cxx-dialect=C++17 --with-debugging=no --with-fortran-bindings=0 --with-mpi=1 --with-openmp=1 --with-shared-libraries=1 --with-sowing=0 --download-fblaslapack=1 --download-hypre=1 --download-metis=1 --download-mumps=1 --download-ptscotch=1 --download-parmetis=1 --download-scalapack=1 --download-slepc=1 --download-strumpack=1 --download-superlu_dist=1 --with-hdf5-dir=${PREFIX} --with-make-np=16 --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 --with-mpi-dir=/home/hamed/mambaforge3/envs/moose AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include  -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include   -I/home/hamed/mambaforge3/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib\" --prefix=/home/hamed/mambaforge3/envs/moose\";\nPETSc linked libraries:\nlinux-vdso.so.1 (0x00007f17ad8d9000)\nlibHYPRE-2.29.0.so => /home/hamed/mambaforge3/envs/moose/lib/./libHYPRE-2.29.0.so (0x00007f17ab800000)\nlibpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f17ad8bd000)\nlibstrumpack.so => /home/hamed/mambaforge3/envs/moose/lib/./libstrumpack.so (0x00007f17aa600000)\nlibscalapack.so.2.2 => /home/hamed/mambaforge3/envs/moose/lib/./libscalapack.so.2.2 (0x00007f17a9e00000)\nlibsuperlu_dist.so.8 => /home/hamed/mambaforge3/envs/moose/lib/./libsuperlu_dist.so.8 (0x00007f17abc7c000)\nlibparmetis.so => /home/hamed/mambaforge3/envs/moose/lib/./libparmetis.so (0x00007f17ad87d000)\nlibmetis.so => /home/hamed/mambaforge3/envs/moose/lib/./libmetis.so (0x00007f17ab795000)\nlibhdf5.so.200 => /home/hamed/mambaforge3/envs/moose/lib/./libhdf5.so.200 (0x00007f17a9800000)\nlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f17ab6ae000)\nlibdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f17ad878000)\nlibmpifort.so.12 => /home/hamed/mambaforge3/envs/moose/lib/./libmpifort.so.12 (0x00007f17ab65d000)\nlibmpi.so.12 => /home/hamed/mambaforge3/envs/moose/lib/./libmpi.so.12 (0x00007f17a9200000)\nlibgfortran.so.5 => /home/hamed/mambaforge3/envs/moose/lib/./libgfortran.so.5 (0x00007f17a9c55000)\nlibgcc_s.so.1 => /home/hamed/mambaforge3/envs/moose/lib/./libgcc_s.so.1 (0x00007f17ad85b000)\nlibstdc++.so.6 => /home/hamed/mambaforge3/envs/moose/lib/./libstdc++.so.6 (0x00007f17a961d000)\nlibgomp.so.1 => /home/hamed/mambaforge3/envs/moose/lib/./libgomp.so.1 (0x00007f17ab621000)\nlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f17a8e00000)\n/lib64/ld-linux-x86-64.so.2 (0x00007f17ad8db000)\nlibquadmath.so.0 => /home/hamed/mambaforge3/envs/moose/lib/././libquadmath.so.0 (0x00007f17aa5c7000)\nlibzfp.so.0 => /home/hamed/mambaforge3/envs/moose/lib/././libzfp.so.0 (0x00007f17aa573000)\nlibmpicxx.so.12 => /home/hamed/mambaforge3/envs/moose/lib/././libmpicxx.so.12 (0x00007f17aa554000)\nlibcrypto.so.1.1 => /home/hamed/mambaforge3/envs/moose/lib/././libcrypto.so.1.1 (0x00007f17a8a00000)\nlibcurl.so.4 => /home/hamed/mambaforge3/envs/moose/lib/././libcurl.so.4 (0x00007f17a915d000)\nlibrt.so.1 => /lib/x86_64-linux-gnu/librt.so.1 (0x00007f17ad852000)\nlibz.so.1 => /home/hamed/mambaforge3/envs/moose/lib/././libz.so.1 (0x00007f17aa539000)\nlibnghttp2.so.14 => /home/hamed/mambaforge3/envs/moose/lib/./././libnghttp2.so.14 (0x00007f17aa50d000)\nlibssh2.so.1 => /home/hamed/mambaforge3/envs/moose/lib/./././libssh2.so.1 (0x00007f17a9119000)\nlibssl.so.1.1 => /home/hamed/mambaforge3/envs/moose/lib/./././libssl.so.1.1 (0x00007f17a9089000)\nlibgssapi_krb5.so.2 => /home/hamed/mambaforge3/envs/moose/lib/./././libgssapi_krb5.so.2 (0x00007f17a9036000)\nlibkrb5.so.3 => /home/hamed/mambaforge3/envs/moose/lib/././././libkrb5.so.3 (0x00007f17a8d29000)\nlibk5crypto.so.3 => /home/hamed/mambaforge3/envs/moose/lib/././././libk5crypto.so.3 (0x00007f17a9c3b000)\nlibcom_err.so.3 => /home/hamed/mambaforge3/envs/moose/lib/././././libcom_err.so.3 (0x00007f17abc74000)\nlibkrb5support.so.0 => /home/hamed/mambaforge3/envs/moose/lib/././././libkrb5support.so.0 (0x00007f17aa4fe000)\nlibkeyutils.so.1 => /home/hamed/mambaforge3/envs/moose/lib/././././libkeyutils.so.1 (0x00007f17abc6b000)\nlibresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x00007f17a8d15000)\nENVIRONMENT:\nADDR2LINE=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-addr2line\nAR=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ar\nAS=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-as\nbuild_alias=x86_64-conda-linux-gnu\nBUILD=x86_64-conda-linux-gnu\nCC_FOR_BUILD=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-cc\nCC=mpicc\n_CE_CONDA=\n_CE_M=\nCFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include\nC_INCLUDE_PATH=/home/hamed/mambaforge3/envs/moose/include\nCMAKE_ARGS=-DCMAKE_AR=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ar -DCMAKE_CXX_COMPILER_AR=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_C_COMPILER_AR=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar -DCMAKE_RANLIB=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ranlib -DCMAKE_CXX_COMPILER_RANLIB=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_C_COMPILER_RANLIB=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib -DCMAKE_LINKER=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld -DCMAKE_STRIP=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strip\nCMAKE_PREFIX_PATH=/home/hamed/mambaforge3/envs/moose:/home/hamed/mambaforge3/envs/moose/x86_64-conda-linux-gnu/sysroot/usr\nCOLORTERM=truecolor\nCONDA_BUILD_SYSROOT=/home/hamed/mambaforge3/envs/moose/x86_64-conda-linux-gnu/sysroot\nCONDA_DEFAULT_ENV=moose\nCONDA_EXE=/home/hamed/mambaforge3/bin/conda\nCONDA_PREFIX_1=/home/hamed/mambaforge3\nCONDA_PREFIX=/home/hamed/mambaforge3/envs/moose\nCONDA_PROMPT_MODIFIER=(moose)\nCONDA_PYTHON_EXE=/home/hamed/mambaforge3/bin/python\n_CONDA_PYTHON_SYSCONFIGDATA_NAME=_sysconfigdata_x86_64_conda_cos6_linux_gnu\nCONDA_SHLVL=2\nCONDA_TOOLCHAIN_BUILD=x86_64-conda-linux-gnu\nCONDA_TOOLCHAIN_HOST=x86_64-conda-linux-gnu\nCPPFLAGS=-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/hamed/mambaforge3/envs/moose/include\nCPP=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-cpp\nCXXFILT=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-c++filt\nCXXFLAGS=-fvisibility-inlines-hidden  -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include -std=c++17\nCXX_FOR_BUILD=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-c++\nCXX=mpicxx\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus,guid=088854657b127da67c08b7476536c676\nDBUS_STARTER_ADDRESS=unix:path=/run/user/1000/bus,guid=088854657b127da67c08b7476536c676\nDBUS_STARTER_BUS_TYPE=session\nDEBUG_CFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include\nDEBUG_CPPFLAGS=-D_DEBUG -D_FORTIFY_SOURCE=2 -Og -isystem /home/hamed/mambaforge3/envs/moose/include\nDEBUG_CXXFLAGS=-fvisibility-inlines-hidden -std=c++17 -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fvar-tracking-assignments -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include\nDEBUG_FFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nDEBUG_FORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-all -fno-plt -Og -g -Wall -Wextra -fcheck=all -fbacktrace -fimplicit-none -fvar-tracking-assignments -ffunction-sections -pipe\nDESKTOP_SESSION=ubuntu\nDISPLAY=:0\nEigen3_DIR=/home/hamed/mambaforge3/envs/moose/libmesh/include/Eigen\nELFEDIT=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-elfedit\nF77=mpif77\nF90=mpif90\nF95=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-f95\nFC_FOR_BUILD=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nFC=mpif90\nFFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include\nFORTRANFLAGS=-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/hamed/mambaforge3/envs/moose/include\nGCC_AR=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ar\nGCC=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc\nGCC_NM=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-nm\nGCC_RANLIB=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gcc-ranlib\nGDMSESSION=ubuntu\nGFORTRAN=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gfortran\nGNOME_DESKTOP_SESSION_ID=this-is-deprecated\nGNOME_SETUP_DISPLAY=:1\nGNOME_SHELL_SESSION_MODE=ubuntu\nGNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/e655abe7_a4b1_4816_a405_89c929739ff1\nGNOME_TERMINAL_SERVICE=:1.211\nGPROF=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-gprof\nGSETTINGS_SCHEMA_DIR_CONDA_BACKUP=\nGSETTINGS_SCHEMA_DIR=/home/hamed/mambaforge3/envs/moose/share/glib-2.0/schemas\nGTK_MODULES=gail:atk-bridge\nGXX=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-g++\nHDF5_DIR=/home/hamed/mambaforge3/envs/moose\nHOME=/home/hamed\nhost_alias=x86_64-conda-linux-gnu\nHOST=x86_64-conda-linux-gnu\nIM_CONFIG_PHASE=1\nLANG=en_US.UTF-8\nLDFLAGS=-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/hamed/mambaforge3/envs/moose/lib -Wl,-rpath-link,/home/hamed/mambaforge3/envs/moose/lib -L/home/hamed/mambaforge3/envs/moose/lib\nLD_GOLD=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld.gold\nLD=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ld\nLESSCLOSE=/usr/bin/lesspipe %s %s\nLESSOPEN=| /usr/bin/lesspipe %s\nLIBMESH_DIR=/home/hamed/mambaforge3/envs/moose/libmesh\nLOGNAME=hamed\nLS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:.tar=01;31:.tgz=01;31:.arc=01;31:.arj=01;31:.taz=01;31:.lha=01;31:.lz4=01;31:.lzh=01;31:.lzma=01;31:.tlz=01;31:.txz=01;31:.tzo=01;31:.t7z=01;31:.zip=01;31:.z=01;31:.dz=01;31:.gz=01;31:.lrz=01;31:.lz=01;31:.lzo=01;31:.xz=01;31:.zst=01;31:.tzst=01;31:.bz2=01;31:.bz=01;31:.tbz=01;31:.tbz2=01;31:.tz=01;31:.deb=01;31:.rpm=01;31:.jar=01;31:.war=01;31:.ear=01;31:.sar=01;31:.rar=01;31:.alz=01;31:.ace=01;31:.zoo=01;31:.cpio=01;31:.7z=01;31:.rz=01;31:.cab=01;31:.wim=01;31:.swm=01;31:.dwm=01;31:.esd=01;31:.jpg=01;35:.jpeg=01;35:.mjpg=01;35:.mjpeg=01;35:.gif=01;35:.bmp=01;35:.pbm=01;35:.pgm=01;35:.ppm=01;35:.tga=01;35:.xbm=01;35:.xpm=01;35:.tif=01;35:.tiff=01;35:.png=01;35:.svg=01;35:.svgz=01;35:.mng=01;35:.pcx=01;35:.mov=01;35:.mpg=01;35:.mpeg=01;35:.m2v=01;35:.mkv=01;35:.webm=01;35:.webp=01;35:.ogm=01;35:.mp4=01;35:.m4v=01;35:.mp4v=01;35:.vob=01;35:.qt=01;35:.nuv=01;35:.wmv=01;35:.asf=01;35:.rm=01;35:.rmvb=01;35:.flc=01;35:.avi=01;35:.fli=01;35:.flv=01;35:.gl=01;35:.dl=01;35:.xcf=01;35:.xwd=01;35:.yuv=01;35:.cgm=01;35:.emf=01;35:.ogv=01;35:.ogx=01;35:.aac=00;36:.au=00;36:.flac=00;36:.m4a=00;36:.mid=00;36:.midi=00;36:.mka=00;36:.mp3=00;36:.mpc=00;36:.ogg=00;36:.ra=00;36:.wav=00;36:.oga=00;36:.opus=00;36:.spx=00;36:.xspf=00;36:\nMESON_ARGS=--buildtype release\nMOOSE_NO_CODESIGN=true\nMPIHOME=/home/hamed/mambaforge3/envs/moose\nNM=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-nm\nOBJCOPY=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-objcopy\nOBJDUMP=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-objdump\nOLDPWD=/home/hamed/projects/moose\nPATH=/home/hamed/mambaforge3/envs/moose/bin:/home/hamed/mambaforge3/condabin:/home/hamed/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/hamed/mambaforge3/envs/moose/wasp/bin\nPETSC_DIR=/home/hamed/mambaforge3/envs/moose\nPWD=/home/hamed/projects/moose/scripts\nQT_ACCESSIBILITY=1\nQT_IM_MODULE=ibus\nRANLIB=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-ranlib\nREADELF=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-readelf\nSESSION_MANAGER=local/ubuntu:@/tmp/.ICE-unix/1633,unix/ubuntu:/tmp/.ICE-unix/1633\nSHELL=/bin/bash\nSHLVL=1\nSIZE=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-size\nSSH_AGENT_LAUNCHER=gnome-keyring\nSSH_AUTH_SOCK=/run/user/1000/keyring/ssh\nSTRINGS=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strings\nSTRIP=/home/hamed/mambaforge3/envs/moose/bin/x86_64-conda-linux-gnu-strip\nSYSTEMD_EXEC_PID=1633\nTERM=xterm-256color\nUSER=hamed\nUSERNAME=hamed\n_=/usr/bin/env\nVTE_VERSION=6800\nVTKINCLUDE_DIR=/home/hamed/mambaforge3/envs/moose/libmesh-vtk/include/vtk-9.2\nVTKLIB_DIR=/home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib\nWASP_DIR=/home/hamed/mambaforge3/envs/moose/wasp\nWAYLAND_DISPLAY=wayland-0\nXAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.8FCHD2\nXDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg\nXDG_CURRENT_DESKTOP=ubuntu:GNOME\nXDG_DATA_DIRS=/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop\nXDG_MENU_PREFIX=gnome-\nXDG_RUNTIME_DIR=/run/user/1000\nXDG_SESSION_CLASS=user\nXDG_SESSION_DESKTOP=ubuntu\nXDG_SESSION_TYPE=wayland\nXML_CATALOG_FILES=file:///home/hamed/mambaforge3/envs/moose/etc/xml/catalog file:///etc/xml/catalog\nXMODIFIERS=@im=ibus\nldd on the executable.\nlinux-vdso.so.1 (0x00007fff2fbf8000)\nlibradiation_test-opt.so.0 => /home/hamed/projects/radiation/test/lib/libradiation_test-opt.so.0 (0x00007fd103b75000)\nlibradiation-opt.so.0 => /home/hamed/projects/radiation/lib/libradiation-opt.so.0 (0x00007fd103b08000)\nlibmodule_loader_with_ray_ht_tm_pf-opt.so.0 => /home/hamed/projects/moose/modules/module_loader/lib/libmodule_loader_with_ray_ht_tm_pf-opt.so.0 (0x00007fd103af7000)\nlibphase_field-opt.so.0 => /home/hamed/projects/moose/modules/phase_field/lib/libphase_field-opt.so.0 (0x00007fd103200000)\nlibtensor_mechanics-opt.so.0 => /home/hamed/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0 (0x00007fd102400000)\nlibheat_transfer-opt.so.0 => /home/hamed/projects/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0 (0x00007fd102000000)\nlibray_tracing-opt.so.0 => /home/hamed/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0 (0x00007fd101e07000)\nlibmoose-opt.so.0 => /home/hamed/projects/moose/framework/libmoose-opt.so.0 (0x00007fd0ff600000)\nlibpcre-opt.so.0 => /home/hamed/projects/moose/framework/contrib/pcre/libpcre-opt.so.0 (0x00007fd103ac8000)\nlibhit-opt.so.0 => /home/hamed/projects/moose/framework/contrib/hit/libhit-opt.so.0 (0x00007fd103a5a000)\nlibwaspcore.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspcore.so.04 (0x00007fd103a39000)\nlibwaspddi.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspddi.so.04 (0x00007fd1031e1000)\nlibwaspexpr.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspexpr.so.04 (0x00007fd1031ad000)\nlibwasphalite.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwasphalite.so.04 (0x00007fd1023ab000)\nlibwasphit.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwasphit.so.04 (0x00007fd101db9000)\nlibwasphive.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwasphive.so.04 (0x00007fd1031a3000)\nlibwaspjson.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspjson.so.04 (0x00007fd101d75000)\nlibwasplsp.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwasplsp.so.04 (0x00007fd101d38000)\nlibwaspsiren.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspsiren.so.04 (0x00007fd103187000)\nlibwaspson.so.04 => /home/hamed/mambaforge3/envs/moose/wasp/lib/libwaspson.so.04 (0x00007fd101cea000)\nlibmesh_opt.so.0 => /home/hamed/mambaforge3/envs/moose/libmesh/lib/libmesh_opt.so.0 (0x00007fd0fde00000)\nlibtimpi_opt.so.11 => /home/hamed/mambaforge3/envs/moose/libmesh/lib/libtimpi_opt.so.11 (0x00007fd103178000)\nlibhdf5_cpp.so.200 => /home/hamed/mambaforge3/envs/moose/lib/libhdf5_cpp.so.200 (0x00007fd0ff588000)\nlibvtkIOCore-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOCore-9.2.so.1 (0x00007fd0ff51a000)\nlibvtkCommonCore-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonCore-9.2.so.1 (0x00007fd0fd400000)\nlibvtkCommonDataModel-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonDataModel-9.2.so.1 (0x00007fd0fce00000)\nlibvtkFiltersCore-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkFiltersCore-9.2.so.1 (0x00007fd0fc400000)\nlibvtkIOXML-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOXML-9.2.so.1 (0x00007fd0fdce6000)\nlibvtkImagingCore-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkImagingCore-9.2.so.1 (0x00007fd0fc000000)\nlibvtkIOImage-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOImage-9.2.so.1 (0x00007fd0fbe22000)\nlibvtkImagingMath-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkImagingMath-9.2.so.1 (0x00007fd0ff4d1000)\nlibvtkIOParallelXML-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOParallelXML-9.2.so.1 (0x00007fd0ff488000)\nlibvtkParallelMPI-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkParallelMPI-9.2.so.1 (0x00007fd0ff46c000)\nlibvtkParallelCore-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkParallelCore-9.2.so.1 (0x00007fd0ff40b000)\nlibvtkCommonExecutionModel-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonExecutionModel-9.2.so.1 (0x00007fd0fcd02000)\nlibvtksys-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/libvtksys-9.2.so.1 (0x00007fd0fdc95000)\nlibz.so.1 => /home/hamed/mambaforge3/envs/moose/lib/libz.so.1 (0x00007fd0fdc7a000)\nlibslepc.so.3.019 => /home/hamed/mambaforge3/envs/moose/lib/libslepc.so.3.019 (0x00007fd0fba00000)\nlibpetsc.so.3.019 => /home/hamed/mambaforge3/envs/moose/lib/libpetsc.so.3.019 (0x00007fd0f9e00000)\nlibHYPRE-2.29.0.so => /home/hamed/mambaforge3/envs/moose/lib/libHYPRE-2.29.0.so (0x00007fd0f9800000)\nlibstrumpack.so => /home/hamed/mambaforge3/envs/moose/lib/libstrumpack.so (0x00007fd0f8600000)\nlibscalapack.so.2.2 => /home/hamed/mambaforge3/envs/moose/lib/libscalapack.so.2.2 (0x00007fd0f7e00000)\nlibsuperlu_dist.so.8 => /home/hamed/mambaforge3/envs/moose/lib/libsuperlu_dist.so.8 (0x00007fd0fb87c000)\nlibpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007fd103171000)\nlibparmetis.so => /home/hamed/mambaforge3/envs/moose/lib/libparmetis.so (0x00007fd0fd3c2000)\nlibmetis.so => /home/hamed/mambaforge3/envs/moose/lib/libmetis.so (0x00007fd0fd357000)\nlibhdf5_hl.so.200 => /home/hamed/mambaforge3/envs/moose/lib/libhdf5_hl.so.200 (0x00007fd0fd333000)\nlibhdf5.so.200 => /home/hamed/mambaforge3/envs/moose/lib/libhdf5.so.200 (0x00007fd0f7800000)\nlibmpifort.so.12 => /home/hamed/mambaforge3/envs/moose/lib/libmpifort.so.12 (0x00007fd0fccb1000)\nlibgfortran.so.5 => /home/hamed/mambaforge3/envs/moose/lib/libgfortran.so.5 (0x00007fd0f9655000)\nlibgcc_s.so.1 => /home/hamed/mambaforge3/envs/moose/lib/libgcc_s.so.1 (0x00007fd0fcc96000)\nlibquadmath.so.0 => /home/hamed/mambaforge3/envs/moose/lib/libquadmath.so.0 (0x00007fd0fcc5d000)\nlibstdc++.so.6 => /home/hamed/mambaforge3/envs/moose/lib/libstdc++.so.6 (0x00007fd0f761d000)\nlibrt.so.1 => /lib/x86_64-linux-gnu/librt.so.1 (0x00007fd101ce5000)\nlibdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007fd101ce0000)\nlibmpi.so.12 => /home/hamed/mambaforge3/envs/moose/lib/libmpi.so.12 (0x00007fd0f7200000)\nlibmpicxx.so.12 => /home/hamed/mambaforge3/envs/moose/lib/libmpicxx.so.12 (0x00007fd0fc3e1000)\nlibm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007fd0fc2fa000)\nlibgomp.so.1 => /home/hamed/mambaforge3/envs/moose/lib/libgomp.so.1 (0x00007fd0fc2be000)\nlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007fd0f6e00000)\nlibnetcdf.so.13 => /home/hamed/mambaforge3/envs/moose/libmesh/lib/./libnetcdf.so.13 (0x00007fd0f9cf0000)\nlibcrypto.so.1.1 => /home/hamed/mambaforge3/envs/moose/lib/./libcrypto.so.1.1 (0x00007fd0f6a00000)\nlibcurl.so.4 => /home/hamed/mambaforge3/envs/moose/lib/./libcurl.so.4 (0x00007fd0f855d000)\nlibvtkdoubleconversion-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkdoubleconversion-9.2.so.1 (0x00007fd0fdc69000)\nlibvtklz4-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtklz4-9.2.so.1 (0x00007fd0fbdee000)\nlibvtklzma-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtklzma-9.2.so.1 (0x00007fd0fbdc1000)\nlibvtkzlib-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkzlib-9.2.so.1 (0x00007fd0fc2a0000)\nlibvtkloguru-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkloguru-9.2.so.1 (0x00007fd0f9cb8000)\n/lib64/ld-linux-x86-64.so.2 (0x00007fd103b90000)\nlibvtkCommonTransforms-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonTransforms-9.2.so.1 (0x00007fd0f9c75000)\nlibvtkCommonMisc-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonMisc-9.2.so.1 (0x00007fd0f6400000)\nlibvtkCommonSystem-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonSystem-9.2.so.1 (0x00007fd0f851d000)\nlibvtkpugixml-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkpugixml-9.2.so.1 (0x00007fd0f9618000)\nlibvtkCommonMath-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonMath-9.2.so.1 (0x00007fd0fb855000)\nlibvtkIOXMLParser-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkIOXMLParser-9.2.so.1 (0x00007fd0f8503000)\nlibvtkDICOMParser-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkDICOMParser-9.2.so.1 (0x00007fd0f7de3000)\nlibvtkmetaio-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkmetaio-9.2.so.1 (0x00007fd0f7d45000)\nlibvtkpng-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkpng-9.2.so.1 (0x00007fd0f7cfe000)\nlibvtktiff-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtktiff-9.2.so.1 (0x00007fd0f7c7c000)\nlibvtkjpeg-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkjpeg-9.2.so.1 (0x00007fd0f7183000)\nlibvtkIOLegacy-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkIOLegacy-9.2.so.1 (0x00007fd0f70c4000)\nlibzfp.so.0 => /home/hamed/mambaforge3/envs/moose/lib/./libzfp.so.0 (0x00007fd0f7070000)\nlibnghttp2.so.14 => /home/hamed/mambaforge3/envs/moose/lib/././libnghttp2.so.14 (0x00007fd0f7c50000)\nlibssh2.so.1 => /home/hamed/mambaforge3/envs/moose/lib/././libssh2.so.1 (0x00007fd0f702c000)\nlibssl.so.1.1 => /home/hamed/mambaforge3/envs/moose/lib/././libssl.so.1.1 (0x00007fd0f6d70000)\nlibgssapi_krb5.so.2 => /home/hamed/mambaforge3/envs/moose/lib/././libgssapi_krb5.so.2 (0x00007fd0f6d1d000)\nlibvtkkissfft-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/././libvtkkissfft-9.2.so.1 (0x00007fd0fc298000)\nlibvtkexpat-9.2.so.1 => /home/hamed/mambaforge3/envs/moose/libmesh-vtk/lib/././libvtkexpat-9.2.so.1 (0x00007fd0f6cea000)\nlibkrb5.so.3 => /home/hamed/mambaforge3/envs/moose/lib/./././libkrb5.so.3 (0x00007fd0f6929000)\nlibk5crypto.so.3 => /home/hamed/mambaforge3/envs/moose/lib/./././libk5crypto.so.3 (0x00007fd0f7c36000)\nlibcom_err.so.3 => /home/hamed/mambaforge3/envs/moose/lib/./././libcom_err.so.3 (0x00007fd0f9c6f000)\nlibkrb5support.so.0 => /home/hamed/mambaforge3/envs/moose/lib/./././libkrb5support.so.0 (0x00007fd0f6cdb000)\nlibkeyutils.so.1 => /home/hamed/mambaforge3/envs/moose/lib/./././libkeyutils.so.1 (0x00007fd0f9c68000)\nlibresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x00007fd0f6915000)",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7375573",
+                          "updatedAt": "2023-10-25T00:30:42Z",
+                          "publishedAt": "2023-10-25T00:30:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok I tried ksp_type bfgs on my local install and I also get\n[0]PETSC ERROR: Unknown type. Check for miss-spelling or missing package: https://petsc.org/release/install/install/#external-packages\n[0]PETSC ERROR: Unable to find requested KSP type bfgs\n\nwhere did you see that syntax for bfgs? is this in one of our inputs?",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7375614",
+                          "updatedAt": "2023-10-25T00:38:36Z",
+                          "publishedAt": "2023-10-25T00:38:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hamedattariani"
+                          },
+                          "bodyText": "Yes, you can find it on the MOOSE webpage:\nhttps://mooseframework.inl.gov/source/kernels/WeakPlaneStress.html\nAlso, it is a sample input script in the \"tensor mechanic\" folder. Search the following file \"elastic_thermal_weak_plane_stress_jacobian.i\" in the installed MOOSE folder.",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7375640",
+                          "updatedAt": "2023-10-25T00:43:33Z",
+                          "publishedAt": "2023-10-25T00:43:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "my bad it s spelled bcgs i splled it bfgs",
+                          "url": "https://github.com/idaholab/moose/discussions/25785#discussioncomment-7375678",
+                          "updatedAt": "2023-10-25T00:49:42Z",
+                          "publishedAt": "2023-10-25T00:49:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Cubit Mesh",
+          "author": {
+            "login": "Meghasemi-96"
+          },
+          "bodyText": "Hello,\nI generated a simple mesh using Cubit containing a sphere at the center of a cubic box. Both of them have ID blocks (e.g., 0 and 1). When I solve my governing equations in the media, although I include both ID blocks in the MOOSE script, properties for one block are not considered for solvation.\nMesh generated by Cubit:\n1.zip\nI was wondering how I can solve this issue.\nThanks,\nMehdi",
+          "url": "https://github.com/idaholab/moose/discussions/25839",
+          "updatedAt": "2023-10-24T19:17:30Z",
+          "publishedAt": "2023-10-24T18:55:35Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat do you mean by \"not considered for solvation\" ?\ndo you get an error?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25839#discussioncomment-7373609",
+                  "updatedAt": "2023-10-24T19:03:32Z",
+                  "publishedAt": "2023-10-24T19:03:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Meghasemi-96"
+                          },
+                          "bodyText": "Hello,\nThanks for your prompt response. I have two different ID blocks and two different variables for solving fick's equation. I need to consider one particular diffusion for each variable in each domain, which means that I have to define 4 different diffusion coefficients. For example,\nD_u in block 0\nD_u in block 1\nD_v in block 0\nD_v in block 1\nWhen I checked the output, I found that the inner block (i.g., 0) has no value for either of the variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/25839#discussioncomment-7373694",
+                          "updatedAt": "2023-10-24T19:13:57Z",
+                          "publishedAt": "2023-10-24T19:13:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "u has no value, but D_u probably does.\nyou can use the material property output to check\nIf u has no value, it s probably because the mesh is disjoint between the two domains so information cannot go through. You ll need to merge nodes on the boundary in Cubit",
+                          "url": "https://github.com/idaholab/moose/discussions/25839#discussioncomment-7373712",
+                          "updatedAt": "2023-10-24T19:15:48Z",
+                          "publishedAt": "2023-10-24T19:15:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Meghasemi-96"
+                          },
+                          "bodyText": "Thank you, I will check and come back to you.",
+                          "url": "https://github.com/idaholab/moose/discussions/25839#discussioncomment-7373733",
+                          "updatedAt": "2023-10-24T19:17:31Z",
+                          "publishedAt": "2023-10-24T19:17:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Symmetric Cartesian Simulation",
+          "author": {
+            "login": "gsgall"
+          },
+          "bodyText": "I am trying to simulate flow from a square channel onto a surface. To start I am only interested in the velocity and pressure profiles but later I will build on this to simulate some gas mixing. I am currently using a 2D plane in the middle of my pipe and simulating both sides of the flow and the results look good but take a very long time to converge in the region I am interested in. I would like to be able to cut the domain in half and only simulate half of this cross section and I would like to do so while solving in cartesian coordinates.\nIn my mesh I have a boundary called axis_of_symmetry and this is in the center of the channel. On this boundary I have tried INSADMomentumNoBCBC and a natural boundary condition. With either boundary condition the velocity at the center of this boundary becomes non-physical very quickly\n\nHowever, when I put this simulation in cartesian coordinates I have no issues with this boundary.\nMy input is below\n[GlobalParams]\n  integrate_p_by_parts = false\n[]\n\n[Mesh]\n  file = 'cost_jet_half.msh'\n  second_order = true\n[]\n\n[Variables]\n  [velocity]\n    order = SECOND\n    family = LAGRANGE_VEC\n    block = 'plasma'\n  []\n\n  [p]\n    order = SECOND\n    family = LAGRANGE\n    block = 'plasma'\n  []\n[]\n\n[Kernels]\n  [mass]\n    type = INSADMass\n    variable = p\n    block = 'plasma'\n  []\n\n  [momentum_time_derivative]\n    type = INSADMomentumTimeDerivative\n    variable = velocity\n    block = 'plasma'\n  []\n\n  [momentum_convection]\n    type = INSADMomentumAdvection\n    variable = velocity\n    block = 'plasma'\n  []\n\n  [momentum_viscous]\n    type = INSADMomentumViscous\n    variable = velocity\n    block = 'plasma'\n  []\n\n  [momentum_pressure]\n    type = INSADMomentumPressure\n    variable = velocity\n    pressure = p\n    block = 'plasma'\n  []\n\n  [supg]\n    type = INSADMomentumSUPG\n    variable = velocity\n    velocity = velocity\n    block = 'plasma'\n  []\n  # [gravity]\n  #   type = INSADGravityForce\n  #   variable = velocity\n  #   gravity = '0 -9.81 0'\n  # []\n[]\n\n[AuxVariables]\n  [vel_x]\n    order = SECOND\n    block = 'plasma'\n  []\n  [vel_y]\n    order = SECOND\n    block = 'plasma'\n  []\n[]\n\n[AuxKernels]\n  [vel_x]\n    type = VectorVariableComponentAux\n    variable = vel_x\n    vector_variable = velocity\n    component = 'x'\n  []\n  [vel_y]\n    type = VectorVariableComponentAux\n    variable = vel_y\n    vector_variable = velocity\n    component = 'y'\n  []\n[]\n\n[ICs]\n  [pressure]\n    type = ConstantIC\n    variable = p\n    value = 0\n    block = 'plasma'\n  []\n\n  [velocity]\n    type = VectorFunctionIC\n    variable = velocity\n    function_x = 0\n    function_y = channel_func\n    block = 'plasma'\n  []\n[]\n[BCs]\n  [inlet]\n    type = VectorFunctionDirichletBC\n    variable = velocity\n    boundary = 'inlet'\n    function_x = 0\n    function_y = 'inlet_func'\n  []\n\n  [wall]\n    type = VectorFunctionDirichletBC\n    variable = velocity\n    boundary = 'electrode target upper_atmosphere atmosphere'\n    function_x = 0\n    function_y = 0\n  []\n\n  [pressure_condition]\n    type = PenaltyDirichletBC\n    variable = p\n    boundary = 'atmosphere upper_atmosphere'\n    value = 101325\n    penalty = 1e5\n  []\n[]\n\n[Functions]\n  # convert flow rate to m^3/s\n  [flow_rate_m3_s]\n    type = ParsedFunction\n    # flow rate in slm\n    # other dimensions in m\n    symbol_names = 'flow_rate mins_to_sec l_to_m3'\n    symbol_values = '1.0      60          1e3'\n    expression = 'flow_rate / (l_to_m3 * mins_to_sec)'\n  []\n  # converting volumetric flow rate to velocity using\n  # cross sectional area\n  [max_vel]\n    type = ParsedFunction\n    symbol_names = 'flow_rate       channel_width channel_depth'\n    symbol_values = 'flow_rate_m3_s 1e-3          1e-3'\n    expression = 'flow_rate / (channel_width * channel_depth)'\n  []\n\n  [inlet_r_start]\n    type = ParsedFunction\n    value = '-0.5 / 1000'\n  []\n\n  [inlet_r_end]\n    type = ParsedFunction\n    value = '0.5 / 1000'\n  []\n\n  [inlet_r_center]\n    type = ParsedFunction\n    vars = 'inlet_r_start inlet_r_end'\n    vals = 'inlet_r_start inlet_r_end'\n    value = '( inlet_r_start + inlet_r_end ) / 2'\n  []\n\n  [inlet_func]\n    type = ParsedFunction\n    vars = 'inlet_r_start inlet_r_end inlet_r_center max_vel'\n    vals = 'inlet_r_start inlet_r_end inlet_r_center max_vel'\n    value = '-max_vel * ( ( x - inlet_r_start ) * ( x - inlet_r_end ) / ( ( inlet_r_center - inlet_r_start ) * ( inlet_r_center - inlet_r_end ) ) )'\n  []\n\n  [channel_func]\n    type = ParsedFunction\n    symbol_names = 'inlet_func'\n    symbol_values = 'inlet_func'\n    expression = 'if (x > -0.5e-3 & x < 0.5e-3,\n                  inlet_func,\n                  0)'\n  []\n[]\n\n[Materials]\n  [fluid_mats]\n    type = ADGenericConstantMaterial\n    prop_names = 'rho mu cp k'\n    prop_values = '0.1598 1.9e-5 1 1'\n    block = 'plasma'\n  []\n\n  # [ins_mat]\n  #   type = INSADMaterial\n  #   velocity = velocity\n  #   pressure = p\n  # []\n  #   block = 'plasma'\n\n  [ins_mat]\n    type = INSADTauMaterial\n    velocity = velocity\n    pressure = p\n    block = 'plasma'\n    alpha = 1\n  []\n[]\n\n[Preconditioning]\n  [SMP]\n    type = SMP\n    full = true\n    solve_type = 'NEWTON'\n  []\n[]\n\n# [Executioner]\n#   type = Steady\n#   petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_shift_amount'\n#   petsc_options_value = 'lu NONZERO 1.e-10'\n#   # nl_rel_tol = 1e-7\n#   nl_max_its = 100\n#   automatic_scaling = true\n#   compute_scaling_once = false\n#   # line_search = none\n# []\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_shift_amount'\n  petsc_options_value = 'lu NONZERO 1.e-10'\n  line_search = none\n\n  nl_abs_tol = 2e-8\n  nl_max_its = 15\n\n  l_max_its = 300\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    cutback_factor = 0.4\n    dt = 1e-8\n    growth_factor = 1.2\n    optimal_iterations = 10\n  []\n  steady_state_detection = true\n  # steady_state_tolerance = 1e-3\n  automatic_scaling = true\n  compute_scaling_once = false\n[]\n  \n[Outputs]\n  console = true\n  [out]\n    type = Exodus\n  []\n\n  [out_nl]\n    type = Exodus\n    execute_on = 'NONLINEAR'\n  []\n\n  [out_l]\n    type = Exodus\n    execute_on = 'LINEAR'\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/25611",
+          "updatedAt": "2023-10-24T16:58:22Z",
+          "publishedAt": "2023-09-28T03:28:27Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "gsgall"
+                  },
+                  "bodyText": "In my discussion there is an error when I wrote\n\"However, when I put this simulation in cartesian coordinates I have no issues with this boundary.\"\nIt should have said\n\"However, when I put this simulation in cylindrical coordinates I have no issues with this boundary.",
+                  "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7129558",
+                  "updatedAt": "2023-09-28T03:30:20Z",
+                  "publishedAt": "2023-09-28T03:30:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "So 2D XY is the problem?\nAnd 2D RZ is fine?",
+                  "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134526",
+                  "updatedAt": "2023-09-28T13:40:22Z",
+                  "publishedAt": "2023-09-28T13:40:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gsgall"
+                          },
+                          "bodyText": "Yes that is correct.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134548",
+                          "updatedAt": "2023-09-28T13:41:40Z",
+                          "publishedAt": "2023-09-28T13:41:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "in which configuration do you get the expected results?\nand did you take a look at some RZ inputs for INSAD in the test folder?",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134563",
+                          "updatedAt": "2023-09-28T13:42:50Z",
+                          "publishedAt": "2023-09-28T13:42:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "why do you want to use 2D XY?  Is the system truly XY or it's just a test?",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134571",
+                          "updatedAt": "2023-09-28T13:43:42Z",
+                          "publishedAt": "2023-09-28T13:43:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gsgall"
+                          },
+                          "bodyText": "The system is truly XY. The flow channel in the system is a rectangular prism.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134594",
+                          "updatedAt": "2023-09-28T13:45:31Z",
+                          "publishedAt": "2023-09-28T13:45:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It must be 3D then right, because XY would be an infinite prism",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134634",
+                          "updatedAt": "2023-09-28T13:49:31Z",
+                          "publishedAt": "2023-09-28T13:49:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gsgall"
+                          },
+                          "bodyText": "Yeah, the system is 3D but not axisymmetric so to model the flow from the system. I thought it would be most appropriate to model a cross section of the flow in 2D XY.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134663",
+                          "updatedAt": "2023-09-28T13:52:07Z",
+                          "publishedAt": "2023-09-28T13:52:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You wont get the wall effects right  as effectively if you model a cross section you model an infinite prism.\nHowever it may be good enough to get started.\nSo what are all the boundary conditions on the pipe part?\nIn the center it should be natural as you have symmetry right\nAt the top do you have dirichlet BCs for both components?\nand on the wall what do you have?",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134748",
+                          "updatedAt": "2023-09-28T13:59:58Z",
+                          "publishedAt": "2023-09-28T13:59:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gsgall"
+                          },
+                          "bodyText": "Since I am mostly interested in the effects of the fluid when it hits a surface would it be more effective to model the system as a cylindrical tube while maintaining the same flow volume in RZ that exists in XYZ\nOn the walls I have a 0 velocity condition.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7134778",
+                          "updatedAt": "2023-09-28T14:03:01Z",
+                          "publishedAt": "2023-09-28T14:03:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "That should be fine to get started.\nHow do you do the outlet? Where is the fluid supposed to exit?\nI see 0 dirichlet BCs on a bunch of surface.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7138102",
+                          "updatedAt": "2023-09-28T19:45:50Z",
+                          "publishedAt": "2023-09-28T19:45:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gsgall"
+                          },
+                          "bodyText": "The boundary called inlet has a half parabola as the inlet condition. It is on the top left corner of the mesh.",
+                          "url": "https://github.com/idaholab/moose/discussions/25611#discussioncomment-7139834",
+                          "updatedAt": "2023-09-29T01:13:01Z",
+                          "publishedAt": "2023-09-29T01:13:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Accessing a coupled array's du_dot_du",
+          "author": {
+            "login": "NateAM"
+          },
+          "bodyText": "I'm having some trouble accessing a coupled array's _du_dot_du variable. In my header I define\nmyClass.h\n...\nconst VariableValue & _dv_dot_dv;\n...\n\nand in the source file I define\nmyClass.C\nInputParameters myClass::validParams( ){\n    ...\n    params.addRequiredCoupledVariable( \"v\", \"my docstring\" );\n    ...\n}\n\nmyClass::myClass( const InputParameters & parameters )\n    : myBaseClass( parameters ),\n    ...\n    _v( coupledArrayValue( \"v\" ) ),\n    _v_dot( coupledArrayDot( \"v\" ) ),\n    _dv_dot_dv( coupledDotDu( \"v\" ) ),\n    ...{\n}\n\nWhen I run this, I get the moose error:\n*** ERROR ***\nVariable 'v' is of a different C++ type than you tried to fetch it as.\n\nI haven't seen any class that tries to get coupledArrayDot so is this functionality not implemented yet? Would a workaround be to use _du_dot_du? What kind of limitations would that impart on my class?",
+          "url": "https://github.com/idaholab/moose/discussions/25832",
+          "updatedAt": "2023-10-24T15:52:15Z",
+          "publishedAt": "2023-10-24T15:25:27Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI would worry about this one coupledDotDu( \"v\" ) which is likely not for Array variables (Array is not in the name)\ncan you see if it runs without that one?\nYou would then need to implementcoupledArrayDotDu( \"v\" )",
+                  "url": "https://github.com/idaholab/moose/discussions/25832#discussioncomment-7371628",
+                  "updatedAt": "2023-10-24T15:31:10Z",
+                  "publishedAt": "2023-10-24T15:31:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "Sorry, I was unclear! Yes, it's the coupledDotDu that fails for me and my subroutine works without it. I mentioned looking for coupledArrayDot because I was hoping to find someone else who had tried that.\nI guess I should follow what was done to implement this in Coupleable::coupledArrayVal or Coupleable::coupledArrayDot and then try and add that method to my class. Does that sound about right?",
+                          "url": "https://github.com/idaholab/moose/discussions/25832#discussioncomment-7371762",
+                          "updatedAt": "2023-10-24T15:44:12Z",
+                          "publishedAt": "2023-10-24T15:44:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "add it to Coupleable.C and then contribute it to MOOSE ;) ?\nyou can follow these routines. I think the regular variable coupledDotDu will also be a good inspiration",
+                          "url": "https://github.com/idaholab/moose/discussions/25832#discussioncomment-7371814",
+                          "updatedAt": "2023-10-24T15:47:12Z",
+                          "publishedAt": "2023-10-24T15:47:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "add it to Coupleable.C and then contribute it to MOOSE ;) ?\n\nYeah, that seems like the better option! I'll try and get this in and submit a pull request shortly. I'll need coupledArrayDotDotDu too so that should be included soon as well.",
+                          "url": "https://github.com/idaholab/moose/discussions/25832#discussioncomment-7371874",
+                          "updatedAt": "2023-10-24T15:52:25Z",
+                          "publishedAt": "2023-10-24T15:52:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Pre Diffusing variable",
+          "author": {
+            "login": "gj19866"
+          },
+          "bodyText": "Hi there,\nWhat would be the best method to pre diffuse a random variable before the main solve starts?\nWould this best be done with a multiapp system, or by setting a kernel only to be active before/after a chose time?\nAre there any examples of this?\nThanks\nGillian",
+          "url": "https://github.com/idaholab/moose/discussions/25817",
+          "updatedAt": "2023-10-24T12:24:06Z",
+          "publishedAt": "2023-10-23T10:21:24Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nBoth options are possible.\nIf the random variable is not a main system varaible for the main solve then you will have to use a multiapp.\nalso if in the main solve there are more variables than the diffused one, the first part with just diffusion and nothing for the other variable, you will have to be kernel to use a NullKernel for the other variables.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25817#discussioncomment-7358420",
+                  "updatedAt": "2023-10-23T12:35:43Z",
+                  "publishedAt": "2023-10-23T12:35:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gj19866"
+                          },
+                          "bodyText": "Hi Guillaume,\nThe method I have landed on is to just allow the diffusion to happen alongside the normal solve, as I can change the diffusion coefficient so that it happens on a time scale much shorter than that of the rest of the system.\nThank you for all your help.\nBest wishes,\nGillian",
+                          "url": "https://github.com/idaholab/moose/discussions/25817#discussioncomment-7369643",
+                          "updatedAt": "2023-10-24T12:24:04Z",
+                          "publishedAt": "2023-10-24T12:24:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Problem running plasticity with explicit solver",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "As discussed in #17678, the plasticity model coupled with central difference may work in principal. I set up a Drucker-Prager Model, the input file is as follows:\n#sample test geometry\n[Mesh]\n  [./msh]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 200\n    ny = 200\n    xmin = -5000\n    xmax = 5000\n    ymin = -5000\n    ymax = 5000\n    elem_type = TRI3\n  []\n[]\n\n[Variables]\n  [./disp_x]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [./disp_y]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[Kernels]\n  [./stsdev_x]\n    type = StressDivergenceTensors\n    variable = disp_x\n    displacements = 'disp_x disp_y'\n    component = 0\n    use_displaced_mesh = false\n  []\n  [./stsdev_y]\n    type = StressDivergenceTensors\n    variable = disp_y\n    displacements = 'disp_x disp_y'\n    component = 1\n    use_displaced_mesh = false\n  []\n  [./inertia_x]\n    type = InertialForce\n    use_displaced_mesh = false\n    variable = disp_x\n  []\n  [./inertia_y]\n    type = InertialForce\n    use_displaced_mesh = false\n    variable = disp_y\n  []\n[]\n\n[Materials]\n  [strain]\n    type = ComputeIncrementalSmallStrain\n    eigenstrain_names = eigenstrain_all\n    displacements = 'disp_x disp_y'\n  []\n  [eigenstrain_all]\n    type = ComputeEigenstrainFromInitialStress\n    initial_stress = 'func_initial_stress_xx           func_initial_strike_shear_stress 0  \n                      func_initial_strike_shear_stress func_initial_stress_yy           0      \n                      0 0 func_initial_stress_zz'\n    eigenstrain_name = eigenstrain_all\n  []\n  [elasticity]\n    type = ComputeIsotropicElasticityTensor\n    lambda = 32.04e9\n    shear_modulus = 32.04e9\n    use_displaced_mesh = false\n  []\n  [./admissible]\n    type = ComputeMultipleInelasticStress\n    inelastic_models = cdp\n    perform_finite_strain_rotations = false\n  [../]\n  [./cdp]\n    type = CappedDruckerPragerStressUpdate\n    DP_model = dp\n    tensile_strength = ts\n    compressive_strength = cs\n    yield_function_tol = 1E-8\n    tip_smoother = 4\n    smoothing_tol = 1E-5\n  [../]\n[]\n\n[Functions]\n  #this function is used in medimum\n  [func_initial_stress_xy_const]\n    type = ConstantFunction\n    value = 70e6\n  []\n  [./func_initial_stress_yy]\n    type = ConstantFunction\n    value = 120e6\n  []\n  #In problems with inelasticity, the sigma11 is important\n  #This is different from pure tpv205 \n  [./func_initial_stress_xx]\n    type = ConstantFunction\n    value = 135e6\n  []\n  [./func_initial_stress_zz]\n    type = ConstantFunction\n    value = 63.75e6\n  []\n[]\n\n[UserObjects]\n  [./ts]\n    type = TensorMechanicsHardeningConstant\n    value = 1000\n  [../]\n  [./cs]\n    type = TensorMechanicsHardeningConstant\n    value = 1000\n  [../]\n  [./mc_coh]\n    type = TensorMechanicsHardeningConstant\n    value = 4.3e6\n  [../]\n  [./mc_phi]\n    type = TensorMechanicsHardeningConstant\n    value = 30.5\n    convert_to_radians = true\n  [../]\n  [./mc_psi]\n    type = TensorMechanicsHardeningConstant\n    value = 0\n  [../]\n  [./dp]\n    type = TensorMechanicsPlasticDruckerPrager\n    mc_cohesion = mc_coh\n    mc_friction_angle = mc_phi\n    mc_dilation_angle = mc_psi\n    mc_interpolation_scheme = outer_tip\n    internal_constraint_tolerance = 1 # irrelevant here\n    yield_function_tolerance = 1      # irrelevant here\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  dt = 1\n  end_time = 4.0\n  num_steps = 10\n  [TimeIntegrator]\n    type = CentralDifference\n    solve_type = lumped\n  []\n[]\n\n[Outputs]\n  exodus = true\n  interval = 20\n[]\n\nI received error at first step: MultiParameterPlasticityStressUpdate: Minimum step-size violated, since MultiParameterPlasticityStressUpdate is a inner material object, I'm not sure how to adjust the step-size (default is 1). I hope someone could elaborate things I did wrong here, thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/25694",
+          "updatedAt": "2023-10-23T21:21:33Z",
+          "publishedAt": "2023-10-09T22:48:08Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@bwspenc @dschwen @jiangwen84",
+                  "url": "https://github.com/idaholab/moose/discussions/25694#discussioncomment-7234939",
+                  "updatedAt": "2023-10-09T22:59:08Z",
+                  "publishedAt": "2023-10-09T22:59:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "I hope someone could help on this, whether it will work or not in explicit solver? @GiudGiud  @hugary1995",
+                          "url": "https://github.com/idaholab/moose/discussions/25694#discussioncomment-7310144",
+                          "updatedAt": "2023-10-18T03:12:20Z",
+                          "publishedAt": "2023-10-18T03:12:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Several people have tried this before, but none has provided us with feedback, and so I don't know whether this is feasible. From a theoretical standpoint this (explicit + plasticity) should work. The error you received seems to be a limitation from the specific material model that you are using. You can tag the author of that object.",
+                          "url": "https://github.com/idaholab/moose/discussions/25694#discussioncomment-7315234",
+                          "updatedAt": "2023-10-18T13:12:33Z",
+                          "publishedAt": "2023-10-18T13:12:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks Gary, I notice this model is undocumented, where can I find the right person to tag?",
+                          "url": "https://github.com/idaholab/moose/discussions/25694#discussioncomment-7363418",
+                          "updatedAt": "2023-10-23T21:09:50Z",
+                          "publishedAt": "2023-10-23T21:09:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "It was authored by @WilkAndy .",
+                          "url": "https://github.com/idaholab/moose/discussions/25694#discussioncomment-7363494",
+                          "updatedAt": "2023-10-23T21:21:34Z",
+                          "publishedAt": "2023-10-23T21:21:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Orthotropic stiffness matrix from elasticity tensor and fillOrthotropic symmetry error",
+          "author": {
+            "login": "chakra34"
+          },
+          "bodyText": "Hi,\nI have the following 2 questions regarding Orthotropic elasticity material:\n\nI am taking in Young's modulus (E11, E22, E33), Poisson's ratio (nu12, nu23, nu31), and Shear modulus (G12, G23, G31) as input functions (of temperature) and then I fill the stiffness tensor using fill symmetric9 based on the following equation (https://mooseframework.inl.gov/source/materials/ComputeElasticityTensor.html):\n\n\nIn this case, I calculate C11, C22, C33, C12, C13, C23, C44, C55, C66 (from E's, nu's, and G's) and then populate the 4th order stiffness tensor using fillSymmetric symmetric9 option.\nDoes this make sense ? or is there something I am missing? ( I ran for a quarter cylindrical geometry where I am getting incorrect elastic strains, I should get same values for XX and YY where the orthotropic symmetry is, but I don't get it).\nMy other question is:\n2. If I fill the elastic tensor using the fill method \"orthotropic\" -- I also take 9 input Young's modulus (E11, E22, E33), Poisson's ratio (nu12, nu23, nu31), and Shear modulus (G12, G23, G31), and calculate nu21, nu32, and nu13 ( using the relation nu21 =  (nu12 * E22)/E11 ) to get the 9 vector. So ideally the following Moose symmetry assertion error should be satisfied:\n\nHowever, I am getting error :\n\nAs you can see I am getting a difference due to the floating point operations of ~7e-9 and it is triggering the assertion flag. Is there a way to avert this situation ? All my variables have double precision.\nThanks,\nAritra",
+          "url": "https://github.com/idaholab/moose/discussions/25759",
+          "updatedAt": "2023-10-23T17:36:08Z",
+          "publishedAt": "2023-10-17T15:06:18Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Add more digits?\nWhat error do you get when running the same check in python?",
+                  "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7305630",
+                  "updatedAt": "2023-10-17T15:42:12Z",
+                  "publishedAt": "2023-10-17T15:42:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "I will check in python, adding more digits, my data is not in engineering notation, as in it is not 1e6, instead it is 1000000.0, if that makes sense",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7306291",
+                          "updatedAt": "2023-10-17T16:45:38Z",
+                          "publishedAt": "2023-10-17T16:45:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "adding 0s wont help I think. We re looking for a number you would have truncated here",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7306373",
+                          "updatedAt": "2023-10-17T16:52:11Z",
+                          "publishedAt": "2023-10-17T16:52:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityakavalur"
+                          },
+                          "bodyText": "Thanks for taking a look at this @GiudGiud !\nI cant comment on the first part of the question, however, for the second part, it looks like the variables being compared have values of e+7, and have a difference of e-9, so the actual order of difference is beyond 15 digits, which is beyond the precision of double correct? I wonder if being able to pass a local tolerance in such cases would help (https://mooseframework.inl.gov/docs/doxygen/moose/namespaceMooseUtils.html#ad9865895ce5bb2c18722efa26d5c7693)",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7306870",
+                          "updatedAt": "2023-10-17T17:47:35Z",
+                          "publishedAt": "2023-10-17T17:47:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ah that could be it\nthe key is to use a relative tolerance instead of an absolute tolerance",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7307395",
+                          "updatedAt": "2023-10-17T18:53:07Z",
+                          "publishedAt": "2023-10-17T18:53:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "Hi @GiudGiud @adityakavalur , thanks for the replies. I was able to resolve this issue temporarily by scaling the values by 1e-8 so that all the numbers (E,G, nu) are comparable- any suggestion on a better fix?\nYeah I think we definitely would need to use relative tolerances, but I am not sure if it needs additional code modification for RankFourTensor or there is a flag we can pass.\nHowever, I do need some suggestion for the first problem:\nBasically I get different results when I use fillmethod 'orthotropic' for the stiffness versus if I calculate C11, C12, C13, C22, C23, C33, C44, C55, C66 as functions of E, nu, and G and then use fillmethod 'symmetric 9'. I will look into the exact values of the stiffness tensor from the two cases for my problem to see where the difference lies and update in the thread soon-- but if you have some suggestion, I really appreciate the help.\nThanks again,\n-Aritra",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7316302",
+                          "updatedAt": "2023-10-18T14:51:12Z",
+                          "publishedAt": "2023-10-18T14:51:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "Can you check that your elastic constants are correct by deforming a single element and make sure it produces the correct stresses for the strains you are putting into it?",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7320472",
+                          "updatedAt": "2023-10-18T22:33:30Z",
+                          "publishedAt": "2023-10-18T22:33:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "yep I will do that and update the thread! thanks a lot @lynnmunday :)",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7321280",
+                          "updatedAt": "2023-10-19T01:22:41Z",
+                          "publishedAt": "2023-10-19T01:22:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "Will you share the input file after you do this?  It would be a good test.",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7329276",
+                          "updatedAt": "2023-10-19T14:51:47Z",
+                          "publishedAt": "2023-10-19T14:51:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "yep, sure!",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7330836",
+                          "updatedAt": "2023-10-19T17:27:12Z",
+                          "publishedAt": "2023-10-19T17:27:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "Hi @lynnmunday, so I did a couple of tests to check it out--\nFor a block geometry with a single element both methods (fillmethod orthotropic and symmetric9) gave identical results under uniaxial loading with expected stresses.\nThen I added a temperature field in the block and the two methods gave different results (my Young's modulus and alpha_CTE were not temperature dependent).\n\nfollowing is my code snippet where I directly calculate the orthotropic tensor from 12 elastic constants using fill method orthotropic\n#include \"ComputeVariableOrthotropicElasticityTensor.h\"\n#include \"RotationTensor.h\"\n\nregisterMooseObject(\"TensorMechanicsApp\", ComputeVariableOrthotropicElasticityTensor);\nregisterMooseObject(\"TensorMechanicsApp\", ADComputeVariableOrthotropicElasticityTensor);\n\ntemplate <bool is_ad>\nInputParameters\nComputeVariableOrthotropicElasticityTensorTempl<is_ad>::validParams()\n{\n  InputParameters params = ComputeRotatedElasticityTensorBaseTempl<is_ad>::validParams();\n  params.addClassDescription(\"Compute an orthotropic elasticity tensor for elastic constants that \"\n                             \"change as a function of temperature\");\n\n  params.addRequiredCoupledVar(\"temperature\", \"Coupled temperature\");\n\n  params.addRequiredParam<FunctionName>(\n      \"E11\",\n      \"Function describing the Young's modulus E11\");\n  params.addRequiredParam<FunctionName>(\n      \"E22\",\n      \"Function describing the Young's modulus E22\");\n  params.addRequiredParam<FunctionName>(\n      \"E33\",\n      \"Function describing the Young's modulus E33\");\n\n  params.addRequiredParam<FunctionName>(\n      \"G12\",\n      \"Function describing the shear modulus G12\");\n  params.addRequiredParam<FunctionName>(\n      \"G23\",\n      \"Function describing the shear modulus G23\");\n  params.addRequiredParam<FunctionName>(\n      \"G31\",\n      \"Function describing the shear modulus G31\");\n\n  params.addRequiredParam<FunctionName>(\n      \"nu12\",\n      \"Function describing the Poisson's ratio nu12\");\n  params.addRequiredParam<FunctionName>(\n      \"nu23\",\n      \"Function describing the Poisson's ratio nu23\");\n  params.addRequiredParam<FunctionName>(\n      \"nu13\",\n      \"Function describing the Poisson's ratio nu13\");\n\n  return params;\n}\n\n\ntemplate <bool is_ad>\nComputeVariableOrthotropicElasticityTensorTempl<is_ad>::ComputeVariableOrthotropicElasticityTensorTempl(\n    const InputParameters & parameters)\n  : ComputeRotatedElasticityTensorBaseTempl<is_ad>(parameters),\n  _temperature(this->coupledValue(\"temperature\")),\n  _temp_name(this->getVar(\"temperature\",0)->name()),\n  _E11(this->getFunction(\"E11\")),\n  _E22(this->getFunction(\"E22\")),\n  _E33(this->getFunction(\"E33\")),\n  _G12(this->getFunction(\"G12\")),\n  _G23(this->getFunction(\"G23\")),\n  _G31(this->getFunction(\"G31\")),\n  _nu12(this->getFunction(\"nu12\")),\n  _nu23(this->getFunction(\"nu23\")),\n  _nu13(this->getFunction(\"nu13\")),\n  _delasticity_tensor_dT(\n  this->template declarePropertyDerivative<RankFourTensor>(_elasticity_tensor_name, _temp_name) )\n{ \n}\n\ntemplate <bool is_ad>\nvoid\nComputeVariableOrthotropicElasticityTensorTempl<is_ad>::computeQpElasticityTensor()\n{\n  // Get the stiffness values for the current temperature\n  current_qp_temperature = 0.0;\n  current_qp_temperature = _temperature[_qp];\n  _ortho_stiffness_components.resize(12);\n\n  // this should be the order: E11, E22 E33 G12 G23 G31/G13 nu21 nu31 nu32 nu12 nu13 nu23\n  // Ansys takes E11 E22 E33 nu12 nu 23 nu13 G12 G23 G13/G31\n  E11 = 0.0; E22 = 0.0; E33 = 0.0;\n  G12 = 0.0; G23 = 0.0; G31 = 0.0;\n  nu12 = 0.0; nu13 = 0.0; nu23 = 0.0;\n  nu21 = 0.0; nu31 = 0.0; nu32 = 0.0;\n\n  E11 = _E11.value(current_qp_temperature) * 1e-8 ;\n  E22 = _E22.value(current_qp_temperature) * 1e-8 ;\n  E33 = _E33.value(current_qp_temperature) * 1e-8 ;\n\n  G12 = _G12.value(current_qp_temperature) * 1e-8 ;\n  G23 = _G23.value(current_qp_temperature) * 1e-8 ;\n  G31 = _G31.value(current_qp_temperature) * 1e-8 ;\n\n  nu12 = _nu12.value(current_qp_temperature);\n  nu13 = _nu13.value(current_qp_temperature);\n  nu23 = _nu23.value(current_qp_temperature);\n\n  // _nu21 = _nu12 * (_E22/_E11) ; \n  nu21 = (nu12 * E22) / E11 ;\n  // _nu31 = _nu13 * (_E33/_E11) ;   \n  nu31 = (nu13 * E33) / E11 ;\n  // _nu32 = _nu23 * (_E33/_E22) ; \n  nu32 = (nu23 * E33) / E22 ;\n\n\n  _ortho_stiffness_components[0]  = E11 ;  \n  _ortho_stiffness_components[1]  = E22 ;  \n  _ortho_stiffness_components[2]  = E33 ;  \n  _ortho_stiffness_components[3]  = G12 ;  \n  _ortho_stiffness_components[4]  = G23 ;  \n  _ortho_stiffness_components[5]  = G31 ;  \n  _ortho_stiffness_components[6]  = nu21 ;  \n  _ortho_stiffness_components[7]  = nu31 ;  \n  _ortho_stiffness_components[8]  = nu32 ;  \n  _ortho_stiffness_components[9]   = nu12 ;  \n  _ortho_stiffness_components[10]  = nu13 ;  \n  _ortho_stiffness_components[11]  = nu23 ;  \n\n\n  _ortho_Cijkl.zero();\n  _ortho_Cijkl.fillFromInputVector(_ortho_stiffness_components, RankFourTensor:: orthotropic);\n  // Assign elasticity tensor at a given quad point\n  _elasticity_tensor[_qp] = _ortho_Cijkl *1e8;\n\n  _dortho_Cijkl.zero();\n _delasticity_tensor_dT[_qp] = _dortho_Cijkl;\n\n\n}\n\ntemplate class ComputeVariableOrthotropicElasticityTensorTempl<false>;\ntemplate class ComputeVariableOrthotropicElasticityTensorTempl<true>;\n\nI scale the values by 1e-8 to pass the mooseabsoluteFuzzy check\nwhereas for the fillmethod  symmetric9 the code snippet looks like:\n#include \"ComputeVariableAnisotropicElasticityTensor.h\"\n#include \"RotationTensor.h\"\n\nregisterMooseObject(\"TensorMechanicsApp\", ComputeVariableAnisotropicElasticityTensor);\nregisterMooseObject(\"TensorMechanicsApp\", ADComputeVariableAnisotropicElasticityTensor);\n\ntemplate <bool is_ad>\nInputParameters\nComputeVariableAnisotropicElasticityTensorTempl<is_ad>::validParams()\n{\n  InputParameters params = ComputeRotatedElasticityTensorBaseTempl<is_ad>::validParams();\n  params.addClassDescription(\"Compute an anisotropic elasticity tensor (now orthotropic) for elastic constants that \"\n                             \"change as a function of temperature\");\n\n  params.addRequiredCoupledVar(\"temperature\", \"Coupled temperature\");\n\n  params.addRequiredParam<FunctionName>(\n      \"E11\",\n      \"Function describing the Young's modulus E11\");\n  params.addRequiredParam<FunctionName>(\n      \"E22\",\n      \"Function describing the Young's modulus E22\");\n  params.addRequiredParam<FunctionName>(\n      \"E33\",\n      \"Function describing the Young's modulus E33\");\n\n  params.addRequiredParam<FunctionName>(\n      \"G12\",\n      \"Function describing the shear modulus G12\");\n  params.addRequiredParam<FunctionName>(\n      \"G23\",\n      \"Function describing the shear modulus G23\");\n  params.addRequiredParam<FunctionName>(\n      \"G31\",\n      \"Function describing the shear modulus G31\");\n\n  params.addRequiredParam<FunctionName>(\n      \"nu12\",\n      \"Function describing the Poisson's ratio nu12\");\n  params.addRequiredParam<FunctionName>(\n      \"nu23\",\n      \"Function describing the Poisson's ratio nu23\");\n  params.addRequiredParam<FunctionName>(\n      \"nu13\",\n      \"Function describing the Poisson's ratio nu13\");\n\n  return params;\n}\n\n\ntemplate <bool is_ad>\nComputeVariableAnisotropicElasticityTensorTempl<is_ad>::ComputeVariableAnisotropicElasticityTensorTempl(\n    const InputParameters & parameters)\n  : ComputeRotatedElasticityTensorBaseTempl<is_ad>(parameters),\n  _temperature(this->coupledValue(\"temperature\")),\n  _temp_name(this->getVar(\"temperature\",0)->name()),\n  _E11(this->getFunction(\"E11\")),\n  _E22(this->getFunction(\"E22\")),\n  _E33(this->getFunction(\"E33\")),\n  _G12(this->getFunction(\"G12\")),\n  _G23(this->getFunction(\"G23\")),\n  _G31(this->getFunction(\"G31\")),\n  _nu12(this->getFunction(\"nu12\")),\n  _nu23(this->getFunction(\"nu23\")),\n  _nu13(this->getFunction(\"nu13\")),\n  _delasticity_tensor_dT(\n  this->template declarePropertyDerivative<RankFourTensor>(_elasticity_tensor_name, _temp_name) )\n{ \n}\n\ntemplate <bool is_ad>\nvoid\nComputeVariableAnisotropicElasticityTensorTempl<is_ad>::computeQpElasticityTensor()\n{\n  // Get the stiffness values for the current temperature\n  current_qp_temperature = 0.0;\n  current_qp_temperature = _temperature[_qp];\n  _ortho_stiffness_components.resize(9);\n\n  // this should be the order: E11, E22 E33 G12 G23 G31/G13 nu21 nu31 nu32 nu12 nu13 nu23\n  // Ansys takes E11 E22 E33 nu12 nu 23 nu13 G12 G23 G13/G31\n  E11  = 0.0; E22  = 0.0; E33  = 0.0;\n  G12  = 0.0; G23  = 0.0; G31  = 0.0;\n  nu12 = 0.0; nu13 = 0.0; nu23 = 0.0;\n  nu21 = 0.0; nu31 = 0.0; nu32 = 0.0;\n\n  E11 = _E11.value(current_qp_temperature) ;\n  E22 = _E22.value(current_qp_temperature) ;\n  E33 = _E33.value(current_qp_temperature) ;\n\n  G12 = _G12.value(current_qp_temperature) ;\n  G23 = _G23.value(current_qp_temperature) ;\n  G31 = _G31.value(current_qp_temperature) ;\n\n  nu12 = _nu12.value(current_qp_temperature);\n  nu13 = _nu13.value(current_qp_temperature);\n  nu23 = _nu23.value(current_qp_temperature);\n\n  // _nu21 = _nu12 * (_E22/_E11) ; \n  nu21 = (nu12 * E22) / E11 ;\n  // _nu31 = _nu13 * (_E33/_E11) ;   \n  nu31 = (nu13 * E33) / E11 ;\n  // _nu32 = _nu23 * (_E33/_E22) ; \n  nu32 = (nu23 * E33) / E22 ;\n\n  //  k = 1 - nu12nu21 - nu23nu32 - nu13nu31 - nu12nu23nu31 - nu21nu32nu13 ;  \n  k     = 1 - nu12*nu21 - nu23*nu32 - nu13*nu31 - nu12*nu23*nu31 - nu21*nu32*nu13 ;  \n\n  // C11 = E11 * (1 - nu23nu32)/k\n  C11 = E11 * ( 1 - nu23*nu32) / k ;\n\n  // C22 = E22 * (1 - nu13nu31)/k\n  C22 = E22 * ( 1 - nu13*nu31) / k ;\n\n  // C33 = E33 * (1 - nu12nu21)/k\n  C33 = E33 * ( 1 - nu12*nu21) / k ;\n\n  // C12 = E11 * (nu23nu31 + nu21) /k\n  C12 = E11 * (nu23*nu31 + nu21) / k ;\n\n  // C13 = E11 * (nu21nu32 + nu31) /k\n  C13 = E11 * (nu21*nu32 + nu31) / k ;\n\n  // C23 = E22 * (nu12nu31 + nu32) / k\n  C23 = E22 * (nu12*nu31 + nu32) / k ;\n\n  // C44 = G12\n  C44 = G12 ;\n\n  // C55 = G31\n  C55 = G31 ;\n\n  // C66 = G23\n  C66 = G23 ;\n \n\n\n // C_ijkl = 'C11 C12 C13 C22 C23 C33 C44 C55 C66'\n  _ortho_stiffness_components[0]  = C11 ;  \n  _ortho_stiffness_components[1]  = C12 ;  \n  _ortho_stiffness_components[2]  = C13 ;  \n  _ortho_stiffness_components[3]  = C22 ;  \n  _ortho_stiffness_components[4]  = C23 ;  \n  _ortho_stiffness_components[5]  = C33 ;  \n  _ortho_stiffness_components[6]  = C44 ;  \n  _ortho_stiffness_components[7]  = C55 ;  \n  _ortho_stiffness_components[8]  = C66 ;  \n \n  _ortho_Cijkl.zero();\n\n  _ortho_Cijkl.fillFromInputVector(_ortho_stiffness_components, RankFourTensor:: symmetric9);\n  // Assign elasticity tensor at a given quad point\n  _elasticity_tensor[_qp] = _ortho_Cijkl;\n\n _dortho_Cijkl.zero();\n _delasticity_tensor_dT[_qp] = _dortho_Cijkl;\n\n\n}\n\ntemplate class ComputeVariableAnisotropicElasticityTensorTempl<false>;\ntemplate class ComputeVariableAnisotropicElasticityTensorTempl<true>;\n\n\nThe input file snippet looks like so:\n\n[Mesh]\n  type = GeneratedMesh\n  dim = 3\n  nx = 1\n  ny = 1\n  nz = 1\n  xmin = 0.0\n  xmax = 1.0\n  ymin = 0.0\n  ymax = 1.0\n  zmin = 0.0\n  zmax = 1.0\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n\n[Functions]\n  [./topfunc]\n    type = ParsedFunction\n    value = '1e-6*t' # ramped displacement BC\n  [../]\n\n  [./temp_function]\n    type  = ParsedFunction\n    value = '25.0*(y+1.0)'\n  [../]\n\n[]\n\n[BCs]\n\n  [./bot_fix_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'bottom'\n    value = 0\n  [../]\n\n  [./top_disp_y]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = 'top'\n    function = topfunc\n  [../]\n\n  [./left_fix_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'left'\n    value = 0\n  [../]\n\n  [./front_fix_z]\n    type = DirichletBC\n    variable = disp_z\n    boundary = 'front'\n    value = 0\n  [../]\n\n[]\n\n[Modules/TensorMechanics/Master/All]\n  strain = FINITE\n  incremental = true\n  add_variables = true\n  temperature = temp\n  eigenstrain_names = eigenstrain\n  generate_output = 'stress_xx stress_yy stress_zz stress_xy stress_yz stress_zx'\n  use_automatic_differentiation = false\n[]\n[Materials]\n\n  [thermal_expansion]\n    type = ComputeThermalExpansionEigenstrain\n    thermal_expansion_coeff = 1.0e-4\n    stress_free_temperature = 100.0\n    temperature = temp\n    eigenstrain_name = eigenstrain\n  []\n\n  [elasticity_tensor]\n    type = ComputeVariableAnisotropicElasticityTensor or ComputeVariableOrthotropicElasticityTensor\n    E11  = 730000000\n    E22  = 730000000\n    E33  = 2150000000\n    G12  = 14165008.63\n    G23  = 377271131.9\n    G31  = 377271131.9\n    nu12 = 0.0595\n    nu23 = 0.0847457627118644\n    nu13 = 0.0847457627118644\n    temperature = temp\n  []\n\n  [./stress]\n    type = ComputeFiniteStrainElasticStress\n  [../]\n\n\n[]\n\n\nPlease let me know with any questions.\nAlso if I want to print out the stiffness tensor for each _qp should I just use a C++ for loop ? Also, is there a way to get the 6x6 stiffness matrix that is obtained from the 4x4x4x4 matrices generated by the two methods (this would help me figure out what's the issue).\nThanks again,\nBest,\nAritra",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7342385",
+                          "updatedAt": "2023-10-20T18:49:06Z",
+                          "publishedAt": "2023-10-20T18:45:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lynnmunday"
+                  },
+                  "bodyText": "@chakra34  For this comment:  \"Then I added a temperature field in the block and the two methods gave different results (my Young's modulus and alpha_CTE were not temperature dependent).\"\nAre you still using a single element and are you getting the same displacement field and strain field?  Are you outputting the stress as a nodal variable.  What stress do you get if you output it as an elemental value and also what are the results still different if the temperature change is constant over the element versus the gradient you have in this example?  I haven't looked at the code and these are just some options I would try to debug this.\nAre those code snippets something you put in or are those the standard fill methods for these classes?  There is a class SymmetricRankFourTensor and some tests that check that it gives the same results as the full tensor that you might be able to use:\n/Users/mundlb/projects/moose/modules/tensor_mechanics/test/tests/mandel_notation/symmetric_small_elastic.i\nThe symmetric tensor can't be rotated because then they would no longer be symmetric.\n@dschwen Do you have anything to add?",
+                  "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7360929",
+                  "updatedAt": "2023-10-23T16:20:32Z",
+                  "publishedAt": "2023-10-23T16:20:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "Thanks @lynnmunday for the reply.\nI am still using a single element for the temperature dependent problem-- and the displacements are different, so it's not just the stress (shown below is the dispX which is different for the 2 cases)\n\nThe above code snippets are written by me which extends the orthotropic capability to account for temperature dependency. But I followed the following to compute the stiffness tensor from the Modulus and Poisson's ratio for orthotropic materials:\n\nBut am getting the different results, which is the root of my confusion.\nI will check the symmetricRankFourTensor tests and see if I can figure out what's the issue.\nThanks again,\nBest,\nAritra",
+                          "url": "https://github.com/idaholab/moose/discussions/25759#discussioncomment-7361653",
+                          "updatedAt": "2023-10-23T17:36:09Z",
+                          "publishedAt": "2023-10-23T17:36:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Jacobians of materials with coupled variables",
+          "author": {
+            "login": "NateAM"
+          },
+          "bodyText": "I have a material that is a function of various solution variables (v). I have been able to compute the Jacobians within the material property and expose the Jacobians to a kernel. This kernel however does not explicitly depend on u so when computeOffDiagJacobian is called in my kernel the Kernel doesn't update.\nBecause these are very general materials, I don't always know what they will be functions of. Is there a way to have my kernel add the coupled solution variables for a given material property to it's own without having to add that to the input definition?",
+          "url": "https://github.com/idaholab/moose/discussions/25796",
+          "updatedAt": "2023-10-23T16:14:55Z",
+          "publishedAt": "2023-10-20T17:46:19Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nComputing the Jacobian inside a material is not standard. It s the kernel's role to compute the Jacobian.\nDid you verify that computeOffDiagJacobian is called? With some preconditioning in PFJNK it is not called unless a parameter is passed.\nA kernel will not be able to modify the way a material property is being computed. The material property is pre-computed for all quadrature points when considering an element in the residual loop & jacobian loop\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7342850",
+                  "updatedAt": "2023-10-20T19:58:30Z",
+                  "publishedAt": "2023-10-20T19:58:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "Computing the Jacobian inside a material is not standard. It s the kernel's role to compute the Jacobian.\n\nSometimes you have materials that are functions of solution variables though (solid mechanics has this situation). Computing the consistent tangents of those materials in the same material object would seem seem to make sense, at least to me. Maybe I'm not thinking about it the way that the MOOSE dev team does.\n\nDid you verify that computeOffDiagJacobian is called? With some preconditioning in PFJNK it is not called unless a parameter is passed.\n\nYes, I have gotten it to call. A solution is just to add a call to addCoupledVar to the kernel that the user has to specify which variables were used when computing the material. That works, but I was hoping there would be something less prone to error.\n\nA kernel will not be able to modify the way a material property is being computed. The material property is pre-computed for all quadrature points when considering an element in the residual loop & jacobian loop\n\nI don't want the kernel to modify what the material is doing, I want a kernel that consumes a material to know that it has more dependencies that will need Jacobian contributions due to the material's dependencies.",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7343146",
+                          "updatedAt": "2023-10-20T20:48:20Z",
+                          "publishedAt": "2023-10-20T20:48:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you use AD, it will capture that additional dependencies naturally when computeResidual is called for computing the Jacobian.\nIf you do not use AD, then implementing the computeOffDiagJacobian is where you need to capture all these dependencies, manually. You ll need to add the derivatives of the material properties with regards to the variables coupled in",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7343160",
+                          "updatedAt": "2023-10-20T20:50:54Z",
+                          "publishedAt": "2023-10-20T20:50:53Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "If you use AD, it will capture that additional dependencies naturally when computeResidual is called for computing the Jacobian.\n\nOkay, that makes sense. This is a personal preference, but I like to use hand-coded Jacobians as a form of verification. I do understand the appeal of AD though.\n\nIf you do not use AD, then implementing the computeOffDiagJacobian is where you need to capture all these dependencies, manually. You ll need to add the derivatives of the material properties with regards to the variables coupled in\n\nOkay, that's disappointing but I understand. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7343174",
+                          "updatedAt": "2023-10-20T20:53:34Z",
+                          "publishedAt": "2023-10-20T20:53:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@NateAM i think it makes sense to do the derivative calculations in the material especially if you are going to use it in multiple residual objects. But as you\u2019ve noted there is no way to get around the requirement (at least not currently) that you need the explicit coupling via addCoupledVar in order to get the off diagonal Jacobian call for that variable. Sorry for the inconvenience!",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7343259",
+                          "updatedAt": "2023-10-20T21:10:07Z",
+                          "publishedAt": "2023-10-20T21:10:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "@NateAM i think it makes sense to do the derivative calculations in the material especially if you are going to use it in multiple residual objects. But as you\u2019ve noted there is no way to get around the requirement (at least not currently) that you need the explicit coupling via addCoupledVar in order to get the off diagonal Jacobian call for that variable. Sorry for the inconvenience!\n\nNo worries! I just get so used to most things being possible here that I'm surprised when I run into something that isn't available yet!",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7343352",
+                          "updatedAt": "2023-10-20T21:26:34Z",
+                          "publishedAt": "2023-10-20T21:26:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Thinking about it during my run, this seems totally fixable. I ll raise an issue. No timeline on the fix though",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7344070",
+                          "updatedAt": "2023-10-21T00:10:58Z",
+                          "publishedAt": "2023-10-21T00:10:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "NateAM"
+                          },
+                          "bodyText": "That would be great @GiudGiud! I have a workaround that is fine for the present but it would be nice if there were more guardrails to keep me from messing up an input deck.",
+                          "url": "https://github.com/idaholab/moose/discussions/25796#discussioncomment-7360875",
+                          "updatedAt": "2023-10-23T16:14:55Z",
+                          "publishedAt": "2023-10-23T16:14:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using a SolutionUserObject with the Thermal Hydraulics Module",
+          "author": {
+            "login": "TheBEllis"
+          },
+          "bodyText": "Hi MOOSE team,\nI have encountered a problem that occurs when using a SolutionUserObject in a thermal hydraulics problem.  I am using a SolutionUserObject to read in a volumetric heating variable, aptly named vol_heating, that is calculated in another MOOSE app. I then use this term with a HeatSourceFromPowerDensity object in order to apply the heating term on my heat structure. This works perfectly fine when I do not have any flow channels defined, the heat structure heats up as expected. However, when channels are defined, I get an error of the following sort.\nThe following error occurred in the object \"solution_in\", of type \"SolutionUserObject\".\n\nFailed to access the data for variable 'vol_heating' at point (x,y,z)=(       0,        0,       -5) in the 'solution_in' SolutionUserObject\n\nThe coordinate 0, 0, -5 are the starting coordinates of one of my flow channels. The SolutionUserObject is looking for the variable value on my flow channels. I understand why, but is there any way to prevent this from happening? I have tried using 'execute_on = INITIAL', but to no success. I have included some input files and a mesh which together constitute a minimum working example. The volumetric_heating input file needs to be run first so that the results can be imported in the thermal hydraulics input files with the SolutionUserObject. Running the th input file will result in the same error I mentioned above. The no_channels_th input file is almost identical, but has the flow channel removed, and runs just fine.\nTo summarise, I want to read in a variable that only exists on the heat structure, not the flow channels.\nAny help is greatly appreciated:)\nvolumetric_heating.txt\nno_th_channels.txt\nth.txt\nMesh.zip",
+          "url": "https://github.com/idaholab/moose/discussions/25713",
+          "updatedAt": "2023-10-23T15:48:53Z",
+          "publishedAt": "2023-10-11T13:23:58Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I ll take a look\nEDIT Ignore my previous reply, wrong post\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25713#discussioncomment-7254254",
+                  "updatedAt": "2023-10-11T15:46:38Z",
+                  "publishedAt": "2023-10-11T15:27:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "actually it wasnt that bad\nyou just need to add a block restriction\n[AuxKernels]\n  [aux-vol_heating]\n    type = SolutionAux\n    solution = solution_in\n    variable = vol_heating\n    from_variable = vol_heating\n    scale_factor = 1e-2\n\n    block = 'hs_geom:theblock'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/25713#discussioncomment-7254595",
+                          "updatedAt": "2023-10-11T16:03:25Z",
+                          "publishedAt": "2023-10-11T16:03:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheBEllis"
+                          },
+                          "bodyText": "Thanks Guillaume:)",
+                          "url": "https://github.com/idaholab/moose/discussions/25713#discussioncomment-7360604",
+                          "updatedAt": "2023-10-23T15:48:54Z",
+                          "publishedAt": "2023-10-23T15:48:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

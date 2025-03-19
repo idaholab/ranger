@@ -1,0 +1,1120 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMS0xN1QxMTo1MjoxMy0wNzowMM4AWRCr"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "accessing element stiffness / Jacobian matrix",
+          "author": {
+            "login": "rcontinuum"
+          },
+          "bodyText": "Hello,\nis it possible to access for each element the corresponding element stiffness / Jacobian matrix in a sort of postprocessing step?\nSay, I implemented a (monolithic) coupled problem with two scalar variables u and v, developed the corresponding Kernels  and computed in both Kernels\nKernel::computeJacobian()\nKernel::computeOffDiagJacobian(const unsigned int jvar_num)   \n\nIf I use a simple 3-noded triangular C0 element, I expect to end up with an element Jacobian matrix of the size 6x6 (6 = 3 nodes x 2 dofs_per_node). Is this 6x6 matrix somewhere actually computed/stored in MOOSE during assembly? To my understanding computeJacobian() and computeOffDiagJacobian() computes the diagonal and off-diagonal sub-blocks of the element Jacobian matrix. But do these sub-blocks get actually \"assembled\" to an (6x6) element Jacobian matrix.\nI tried with a debugger, got a bit lost and ended up in Assembly.h\nstd::vector<std::vector<std::vector<DenseMatrix<Number>>>> _sub_Kee;\nstd::vector<std::vector<std::vector<DenseMatrix<Number>>>> _sub_Keg;\n\nMy hunch: Do these variables store the Jacobian sub-blocks for each element? And if yes, why do we have two of them?\n(For \"special\" elements with neighboring contributions etc. many more ...)\nBackground: I would like to compute for each element separate the eigenvalues of the element Jacobian in a kind of postprocessing step. Like: loop over all elements, access the (6x6) element Jacobian matrix, compute its (6) eigenvalues and store the eigenvalues in, say, (6) element aux variables. And, ultimately, store them in an output file.\nMaybe, I'm digging to much in the internals of MOOSE which are not intended to be \"accessible\" to a user. But still, any hint?\nCheers\nrcontinuum",
+          "url": "https://github.com/idaholab/moose/discussions/22394",
+          "updatedAt": "2023-11-18T16:30:57Z",
+          "publishedAt": "2022-10-14T08:10:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is where the 'save_in' and 'tags' kernel parameters can be useful.\nsave_in is on its way to deprecation, but it allows you to save the contribution to the residual and to the diagonal of the Jacobian of any kernel.\ntags let you do the same thing but with matrices not just a single vector.\nPlease look at moose/test/tests/tag or moose/test/tests/misc/save_in for examples of doing this.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3878959",
+                  "updatedAt": "2022-10-14T12:59:16Z",
+                  "publishedAt": "2022-10-14T12:59:15Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "I would like to add - please don't use save_in. It's deprecated and slated for removal this FY.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3879353",
+                          "updatedAt": "2022-10-14T13:43:27Z",
+                          "publishedAt": "2022-10-14T13:43:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "rcontinuum"
+                  },
+                  "bodyText": "Hello,\nwell, if I understand correct, then\n[AuxKernels]\n    type = TagMatrixAux\n\nand\n[Kernels]\n  [diff]\n    type = Diffusion\n    variable = u\n    extra_matrix_tags = 'mat_tag1 mat_tag2'\n\ngives me via a AuxVariable access to the diagonal entries of the global Jacobian matrix. Like in\nmoose/test/tests/tag/2d_diffusion_tag_matrix.i\nBut what I like to access are the individual element Jacobian matrices. Not the global assembled matrix.\nSay, I have a mesh with 10 elements (3-noded triangles with two scalar variables u and v). In this case I want\nto access the 10 element stiffness matrices each with a size of 6x6. (6 = 3 nodes x 2 dofs_per_node)\nI mean, maybe I could define for each element its own 'block' and for each block an 'extra_matrix_tags'.\nBut I would still get only the 6 diagonal entries of each element stiffness matrix. And not the full 6x6 element stiffness\nmatrix. And think of a larger mesh and I define for each element its own block. These are a lot of blocks.\nOr do I misunderstand the 'tags' kernel parameter?\nThanks",
+                  "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3895305",
+                  "updatedAt": "2022-10-17T10:48:52Z",
+                  "publishedAt": "2022-10-17T10:48:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI think I misunderstood/misread your question and pointed you to the system jacobian rather than the element jacobians.\nyou could make an auxkernel to retrieve a number of these attributes (one component by one component, or use an ArrayAuxKernel) from the Assembly class. Please see it s doxygen.\nhttps://mooseframework.inl.gov/docs/doxygen/moose/classAssembly.html#a029498f57d8b606ecb049c27cbfaf442\nI think you will want to look at _JxW and _jac.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3897277",
+                          "updatedAt": "2022-10-17T14:41:30Z",
+                          "publishedAt": "2022-10-17T14:41:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "Hello @GiudGiud,\nsomehow, I overlooked  your comment.\nI will have a look. This class is huge.\nHmm, I checked also the following methods:\nvoid Assembly::prepareJacobianBlock()\nSizes and zeroes the Jacobian blocks used for the current element. \n\nI could try to learn from this the sizes of the Jacobian blocks for current element.\nDenseMatrix<Number> & jacobianBlock(unsigned int ivar, unsigned int jvar, TagID tag = 0)\nGet local Jacobian block for a pair of variables and a tag. \n\nDoes \"local Jacobian block\" here means \"element Jacobian block\" here. If yes,\nmaybe that is the method to use. Essentially, this method reads from the variable _sub_Kee.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3906480",
+                          "updatedAt": "2022-10-18T13:57:53Z",
+                          "publishedAt": "2022-10-18T13:57:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "Unfortunately.... not really.  If you look in the Assembly object you'll see that we sometimes end up with multiple element jacobians that all get summed together.  There is no place where you can get the final element jacobian.",
+                  "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3898570",
+                  "updatedAt": "2022-10-17T17:00:26Z",
+                  "publishedAt": "2022-10-17T17:00:26Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "OK, I'll have a look ... Assembly.h is large. So it's like several kernels give contributions to the element Jacobian, but they get separately stored and directly assembled into the global Jacobian. Not first to an element Jacobian which than would get assembled to the global Jacobian.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3903289",
+                          "updatedAt": "2022-10-18T07:55:24Z",
+                          "publishedAt": "2022-10-18T07:55:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "IFFI11Q"
+                          },
+                          "bodyText": "hello guys ,i need help to compute stiffness and mass matrix , can you help me ?",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-7605845",
+                          "updatedAt": "2023-11-18T10:51:56Z",
+                          "publishedAt": "2023-11-18T10:51:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "What do you need it for? You might want to look at the Tagging System",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-7607267",
+                          "updatedAt": "2023-11-18T16:30:58Z",
+                          "publishedAt": "2023-11-18T16:30:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "@friedmud is right. You can't get the final element Jacobian. But perhaps we can tell you the moose-way of doing what you want, if you tell us what you want to do with the element Jacobian. Maybe you are trying to estimate the CFL condition from element stiffness?",
+                  "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3898808",
+                  "updatedAt": "2022-10-17T17:43:06Z",
+                  "publishedAt": "2022-10-17T17:25:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "rcontinuum"
+                  },
+                  "bodyText": "if you tell us what you want to do with the element Jacobian\n\nI want to compute for each element Jacobian the eigenvalues. Suppose I do a nonlinear (quasistatic Tensor)Mechanics problem. And I know that my initial element stiffness matrix is positive semi-definite. That means, all eigenvalues are non-negative. During deformation the element stiffness matrix may get negative eigenvalues, especially if I have softening material behavior. That's a \"poor man's\" approach for detecting potential strain localization, \"mesh dependent\" results etc. Better would be detecting loss of ellipticity on quadrature point level (->acoustic tensor) but that's numerically often very costly.\n\n@friedmud is right. You can't get the final element Jacobian.\n\nWell, if I could access the contributions of all kernels, i.e., all \"sub-blocks\" of the element Jacobian for each element, I could do the (local) element assembly \"somewhere\" by myself. I would also need the \"element dof indices\" of the all sub-blocks.\nMy hunch is that this information is stored in\nstd::vector<std::vector<std::vector<DenseMatrix<Number>>>> _sub_Kee;  // in Assmbly.h \nCheers",
+                  "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3903360",
+                  "updatedAt": "2022-10-18T08:02:23Z",
+                  "publishedAt": "2022-10-18T08:02:22Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Suppose I do a nonlinear (quasistatic Tensor)Mechanics problem.\n\nIf that's what you are after, you can simply look at the eigenvalues of the tangent stiffness. That is either called _jacobian_mult or _dpk1 depending on which system you are using.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3906951",
+                          "updatedAt": "2022-10-18T14:47:38Z",
+                          "publishedAt": "2022-10-18T14:47:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "The caveat is that a fair amount of constitutive models defining _jacobian_mult doesn't define the exact tangent, so the eigenvalues will be off, and they may not be a good indication of localization. However, if you use the Lagrangian mechanics system, the tangent _dpk1 is exact.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3906965",
+                          "updatedAt": "2022-10-18T14:49:32Z",
+                          "publishedAt": "2022-10-18T14:49:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "And I know that my initial element stiffness matrix is positive semi-definite.\n\nI hope that's a typo, cuz if the element stiffness isn't positive definite you may run into convergence issues.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3906984",
+                          "updatedAt": "2022-10-18T14:51:22Z",
+                          "publishedAt": "2022-10-18T14:51:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "One last comment, I think there is an important question we should've asked at the very beginning: are you using AD?",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3907003",
+                          "updatedAt": "2022-10-18T14:53:06Z",
+                          "publishedAt": "2022-10-18T14:53:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "Hello @hugary1995,\n\nI think there is an important question we should've asked at the very beginning: are you using AD?\n\nI don't use AD kernels. For Mechanics I use TotalLagrangian. I should have the consistent tangent. Hopefully ;)\n\nI hope that's a typo, cuz if the element stiffness isn't positive definite you may run into convergence issues.\n\nIt's not a typo. The element stiffness matrix, of type\n$$ K_e = \\int_{B_e} \\nabla_X N  \\circ C \\cdot \\nabla_X N dV $$\nwith N shape functions, C 4th order tangent operator, definitely is positive semi-definite *).\nAssume a mesh with one element. You have to put in 2d/3d  the correct 3/6 Dirichlet BCs (to prevent rigid body motions) to make the resultant global stiffness matrix positive definite. The global stiffness matrix \"includes\" the Dirichlet BCs. Hint: use a 3-noded triangle, lin elast material, you get a 6x6 element stiffness matrix. This 6x6 matrix has rank 3. Use, e.g., Python or Matlab to compute the rank. If you are into Solid Mechanics: you have to put, e.g., a fixed support on one node and a roller on another.\n*) Well, if C is evolving during deformation, the element stiffness matrix can have also negative eigenvalues. And that I want to check numerically, as simple local indicator of \"strain localization\".\n\nIf that's what you are after, you can simply look at the eigenvalues of the tangent stiffness.\n\nI'm not interested in the eigenvalues of the global (tangent) stiffness matrix. No, I want to compute the eigenvalues of each element tangent stiffness matrix, separately.\n\nThat is either called _jacobian_mult or _dpk1 depending on which system you are using.\n\nDo you mean\nconst MaterialProperty<RankFourTensor> & _dpk1;  // TotalLagrangianStressDivergenceBase.h\nconst MaterialProperty<RankFourTensor> & _Jacobian_mult; // StressDivergenceTensors.h\n\n\nThese are the 4th order tangent operators. My C in the equation above. But I'm seeking K_e for each element.\nSure, I can implement my equation form above to get the element stiffness matrix.\nBut assume I couple Mechanics to temperature, electric field, phase field Kernels. Then the K_e not only contains C. There are also  temperature, ... blocks in K_e and OffDiagonal contributions for coupling.\nAlso in this case I'm able to program my own function for the element stiffness matrix. I do these things in my own toy FEM code. But I would basically redo with such a function what MOOSE anyway does. It has, as far as I understand, the sub_blocks of all Kernels contributing to the element Jacobian. Isn't it better (easier?) to use these sub_blocks and assemble them in a function to the \"real/full\" element stiffness matrix\ninstead of implementing my own K_e function. That's the goal off my question.\nCheers and thanks for input.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3908334",
+                          "updatedAt": "2022-10-18T17:29:13Z",
+                          "publishedAt": "2022-10-18T17:29:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "okay, I understand your question now (finally...). Thanks for the explanation.\n\nSure, I can implement my equation form above to get the element stiffness matrix.\nBut assume I couple Mechanics to temperature, electric field, phase field Kernels. Then the K_e not only contains C. There are also temperature, ... blocks in K_e and OffDiagonal contributions for coupling.\n\nThat is true. I think you were on the right track to call jacobianBlock. You just need to figure out the variable numbers of the variables you are interested in.",
+                          "url": "https://github.com/idaholab/moose/discussions/22394#discussioncomment-3908487",
+                          "updatedAt": "2022-10-18T17:51:45Z",
+                          "publishedAt": "2022-10-18T17:51:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Grain boundary (bnds) problem",
+          "author": {
+            "login": "mdh23rct"
+          },
+          "bodyText": "Dear MOOSE experts,\nHope you are doing well! I am doing a two-step grain growth and recrystallization simulation using the phase field module of MOOSE.\n\nIn the first step, I am simulating grain growth to generate a polycrystal.\nIn the second step, I use the output file of grain growth model to compute recrystallization that nucleates new grains at abrupt locations of the polycrystal.\n\nDuring recrystallization, I am finding new grains being added to the reserved OP (gr10). However, I am not seeing any change in the grain boundary (bnds) feature although recrystallization is happening. For clarification, Fig.1 shows new grains recrystallized at abrupt locations of the polycrystal, and Fig.2 demonstrates the unchanged grain boundaries (bnds) after recrystallization.\n\n\nGenerally speaking, new recrystallized grains should have generated new boundaries (bnds) with the mother grains from the grain-growth model. However, it is not happening. I exactly don't know what is missing in the recrystallization model. Maybe some sort of coupling? For your kind information, the recrystallization model employs\n[Kernels]\n[./c_force]\ntype = DiscreteNucleationForce\nvariable = 'gr10'\nmap = map\nno_nucleus_value = -1\nnucleus_value = 2\n[../]\n[./c_react]\ntype = Reaction\nvariable = 'gr10'\n[../]\n[]\nwith userobjects DiscreteNucleationInserter and DiscreteNucleationMap. I believe, @permcody may have experience with that.\nI will appreciate if you can manage time to reply and help me out. Best regards.",
+          "url": "https://github.com/idaholab/moose/discussions/25984",
+          "updatedAt": "2023-11-18T14:58:14Z",
+          "publishedAt": "2023-11-06T19:58:08Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "What does your \"GrainTracker\" block look like? Do you have one or more reserve OPs set? Also, what is your reserve_op_threshold if you explicitly set it? The default for that value is 0.95, which is pretty high.\nThe GrainTracker will ignore all the noise on the reserve OPs until it \"sees\" a value that exceeds the reserve_op_threshold. At that point in time, it'll print diagnoistic information to the console and remap that value to one of the \"regular\" OPs for tracking in the simulation. Those recrystalizing grains won't have any impact on your simulation until that happens. In your first image, what are the values of those grains? Perhaps they haven't reached the threshold yet? You can always adjust that threshold value down if you want those grains to been \"seen\" a little quicker in your simulation.",
+                  "url": "https://github.com/idaholab/moose/discussions/25984#discussioncomment-7503373",
+                  "updatedAt": "2023-11-07T20:59:03Z",
+                  "publishedAt": "2023-11-07T20:59:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@permcody the graintracker looks like:\n[./grain_tracker]\ntype = GrainTracker\nthreshold = 0.2\nconnecting_threshold = 0.08\ncompute_var_to_feature_map = true\nflood_entity_type = elemental\nexecute_on = ' initial timestep_begin'\nreserve_op = 1\nreserve_op_threshold = 0.95\nremap_grains = true\noutputs = none\n[../]\nreserve_op_threshold = 0.95 is not giving any problem. I am having only one reserved OP. Meanwhile, I have worked on it a bit.\nCurrently, I am seeing new grain nucleation in the model. New grains are having new boundaries with the mother grains as well. Please have a look at:\n\n\nYet, another problem is apparent. If you look closely to the new grains (bnds auxvariable), no clear boundaries exist between the new grains.\n\nWould you be kind to let me know what could be the reason for not having clear boundaries between new grains?\nUserobject: DiscreteNucleationInserter allows only circular grain nucleation. Is there any other kernel or any other way to introduce grain nuclei of different shapes?\nAuxKernel DiscreteNucleationAux works only on elemental auxiliary variable (monomial one). However, in my model, grain boundary variable (bnds) was a Lagrange one. So I changed the bnds type to monomial. Now, when I run the input file, an error appears \"AuxVariable with name 'bnds' already exists but is of a differing type!\". Please be aware that I have:\n\n[Modules]\n[PhaseField]\n[GrainGrowth]\n[]\n[]\n[]\n[ICs]\n[./bnds]\ntype = BndsCalcIC\nvariable = bnds\n[../]\n[]\n[AuxVariables]\n[./bnds]\norder = FIRST\nfamily = MONOMIAL\n[../]\n[]\n[AuxKernels]\n[./bnds_aux]\ntype = BndsCalcAux\nvariable = bnds\nexecute_on = TIMESTEP_END\n[../]\n[./bnds_auxx]\ntype = DiscreteNucleationAux\nmap = map\nvariable = bnds\nno_nucleus_value = -1\nnucleus_value = 2\nexecute_on = TIMESTEP_END\n[../]\n[]\nand have declared the auxiliary variable bnds just at one place. No duplicate declaration exists. What could be the reason of these error?\nI would appreciate if you could manage time to reply.\nBest regards.",
+                          "url": "https://github.com/idaholab/moose/discussions/25984#discussioncomment-7606865",
+                          "updatedAt": "2023-11-18T15:32:01Z",
+                          "publishedAt": "2023-11-18T14:58:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can I store plane_normal_vector and direction_vector in crystal plasticity framework?",
+          "author": {
+            "login": "LifengGan"
+          },
+          "bodyText": "Dear moose developers,\nI want to store plane_normal_vector (m) and direction_vector (n) in crystal plasticity framework, and I take the reference from @ngrilli, (see the link below), through the reclaim the calculateSchmidTensor() again.\nAnd I did the same thing, but it will never go through this  calculateSchmidTensor(). I got all the value were the initialized one, i.e., zero.\nSince in file CrsytalPlasticityStressUpdateBase.C, it already has one calculateSchmidTensor(), so I want to ask about the logic by recaiming this functoin.\nhttps://github.com/ngrilli/c_pfor_am/blob/HEAD/src/materials/CrystalPlasticityDislocationUpdate.C#L251\nThanks.\nLifengGan",
+          "url": "https://github.com/idaholab/moose/discussions/26088",
+          "updatedAt": "2023-11-23T02:01:16Z",
+          "publishedAt": "2023-11-17T10:13:36Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is a virtual function so if you want to change its definition you should\n\nmake a derived class from this CrystalPlasticityUpdate(Base) class\noverride it by redefining the function. Don't forget the 'override' keyword at the end of the function declaration (in the header), it will make sure the override succeeded\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26088#discussioncomment-7598672",
+                  "updatedAt": "2023-11-17T12:10:08Z",
+                  "publishedAt": "2023-11-17T12:10:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LifengGan"
+                          },
+                          "bodyText": "Hi,\nHowever, the reference in header file\nhttps://github.com/ngrilli/c_pfor_am/blob/main/include/materials/CrystalPlasticityDislocationUpdate.h#L44\nthere is no override keywork, and if i add the override keywork, get the marked \"override\", but does not override error when make file\nAnd I found in CrystalPlasticityUpdateBase class in moose, the calculateSchmidTensor() is not a virtual function, I cannot override this function.\nThe question back to the origin. How can I store plane_normal_vector and direction_vector in crystal plasticity framework?",
+                          "url": "https://github.com/idaholab/moose/discussions/26088#discussioncomment-7604458",
+                          "updatedAt": "2023-11-18T02:37:05Z",
+                          "publishedAt": "2023-11-18T02:15:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LifengGan"
+                          },
+                          "bodyText": "I did solve the problem by copy and modify in both files  ComputeMultipleCrystalPlasticityStress and CrystalPlasiticyUpdateBase for modifying calculateSchmidTensor() to the virtual one.\nI just wondering if there a simple way to solve thi problem.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/26088#discussioncomment-7604693",
+                          "updatedAt": "2023-11-18T03:12:32Z",
+                          "publishedAt": "2023-11-18T03:12:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Interface kernels and interface reaction",
+          "author": {
+            "login": "EdSheltonUKAEA"
+          },
+          "bodyText": "I am trying to understand how interface kernels work and in particular the InterfaceReaction kernel.\nI have tried to use the example input syntax given for test/tests/interfacekernels/1d_interface/reaction_1D_steady.i at this link:\nhttps://mooseframework.inl.gov/source/interfacekernels/InterfaceReaction.html\nWhen I tried to run this errors occurred.  The first thing I did was to replace the obsolete(?) \"InterfaceDiffusion\" kernel with \"InterfaceDiffusionBoundaryTerm\".\nHowever, trying to run the code still gives error \"invalid float syntax for parameter\" for the diffusion coefficient variable.\nDoes this need to be declared as an AuxVariable, or is something else going wrong?\nMany thanks in advance for any help and clarifications.\nEd\nPS.  I also initially got confused by the fact that in MOOSE source documentation webpage (https://mooseframework.inl.gov/source/index.html) \"InterfaceKernels\" refers to physical boundaries between different domains (e.g. material surfaces and phase boundaries), but just \"Interfaces\" uses the word in its computing or coding sense of getting different bits of code to work together.  I wonder if it is possible to make these different uses of the word clearer.",
+          "url": "https://github.com/idaholab/moose/discussions/18533",
+          "updatedAt": "2023-11-18T00:55:21Z",
+          "publishedAt": "2021-08-05T14:54:04Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Ed\nI checked the documentation and a float (double) diffusion coefficient is expected for D. Could you please share that block of your input file here?\nOn wording, Interfaces is fine. A possible replacement is internal sides but it's wordy. InterfaceKernels clearly does not refer to coupling codes together.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135208",
+                  "updatedAt": "2022-06-24T21:10:18Z",
+                  "publishedAt": "2021-08-05T15:11:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Here's the blocks of code from the example which make use of the \"D\" variable.\n\n[Kernels]\n[./diff_u]\ntype = MatDiffusion\nvariable = u\nblock = '0'\ndiffusivity = D\n[../]\n[./diff_v]\ntype = MatDiffusion\nvariable = v\nblock = '1'\ndiffusivity = D\n[../]\n[]\n[InterfaceKernels]\n[./interface]\ntype = InterfaceDiffusion\nvariable = u\nneighbor_var = 'v'\nboundary = 'primary0_interface'\nD = D\nD_neighbor = D\n[../]\n[./interface_reaction]\ntype = InterfaceReaction\nvariable = u\nneighbor_var = 'v'\nboundary = 'primary0_interface'\nkf = 1 # Forward reaction rate coefficient\nkb = 2 # Backward reaction rate coefficient\n[../]\n[]\n[BCs]\n[./left]\ntype = DirichletBC\nvariable = u\nboundary = 'left'\nvalue = 1\n[../]\n[./right]\ntype = DirichletBC\nvariable = v\nboundary = 'right'\nvalue = 0\n[../]\n[]\n[Materials]\n[./block0]\ntype = GenericConstantMaterial\nblock = '0'\nprop_names = 'D'\nprop_values = '4'\n[../]\n[./block1]\ntype = GenericConstantMaterial\nblock = '1'\nprop_names = 'D'\nprop_values = '2'\n[../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135228",
+                          "updatedAt": "2022-06-24T21:10:18Z",
+                          "publishedAt": "2021-08-05T15:16:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so D should be a real, not a material property for this kernel.\nSo just use '2' and '4' for D_neighbor and D.\nIf you want to use a material property you'll have to find another interface kernel or adapt this one. Will be like 3 lines to switch it over.",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135263",
+                          "updatedAt": "2022-06-24T21:10:34Z",
+                          "publishedAt": "2021-08-05T15:24:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "OK.  Thanks.\nDo you mean I change it to this:\n\n[./interface]\ntype = InterfaceDiffusion\nvariable = u\nneighbor_var = 'v'\nboundary = 'primary0_interface'\nD = '4'\nD_neighbor = '2'\n[../]\n\nAnd I can delete the Materials block completely?\nAs this is example code taken from the MOOSE website, maybe it's worth changing it there too if that's quick and easy to do.",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135319",
+                          "updatedAt": "2022-06-24T21:10:37Z",
+                          "publishedAt": "2021-08-05T15:34:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes.\nFor this particular input file you could delete the Materials block if you preferred to just specify the float values in the kernels.\nWhen you have temperature dependent material properties you will need to use material properties\nWhere did you find this particular example?\nI agree it s worth changing.",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135343",
+                          "updatedAt": "2022-07-13T18:09:26Z",
+                          "publishedAt": "2021-08-05T15:39:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "And a new error:\nmissing required parameter 'Mesh/interface/master_block'\nDoc String: \"The master set of blocks for which to draw a sideset between\"\nIt's on the website here:\nhttps://mooseframework.inl.gov/source/interfacekernels/InterfaceReaction.html",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135359",
+                          "updatedAt": "2022-07-13T18:09:25Z",
+                          "publishedAt": "2021-08-05T15:42:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok so InterfaceDiffusion is not obsolete. It's a test object. And it uses material properties for D and D_neighbor.\nIf you would rather use that, then you need to run moose with --allow-test-objects",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135431",
+                          "updatedAt": "2022-07-13T18:09:30Z",
+                          "publishedAt": "2021-08-05T15:53:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this is a separate error in a different block. There should not be a parameter called master_block.. we renamed them to primary block.\nCould you pls paste that block here? I m curious",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135442",
+                          "updatedAt": "2022-07-13T18:09:31Z",
+                          "publishedAt": "2021-08-05T15:55:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Created an issue #18534 to fix that up later",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1135467",
+                          "updatedAt": "2022-07-13T18:09:32Z",
+                          "publishedAt": "2021-08-05T16:00:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Thanks for the tip about test objects.  Is there a link to more information about these?  I can't see them specifically mentioned in either the A-Z index or source documentation page.\nBelow is the mesh block apparently giving the master block error.  As for the other code, I've just copied and pasted it from the example file on the website.\n\n[Mesh]\n[gen]\ntype = GeneratedMeshGenerator\ndim = 1\nnx = 10\nxmax = 2\n[]\n[./subdomain1]\ninput = gen\ntype = SubdomainBoundingBoxGenerator\nbottom_left = '1.0 0 0'\nblock_id = 1\ntop_right = '2.0 1.0 0'\n[../]\n[./interface]\ntype = SideSetsBetweenSubdomainsGenerator\ninput = 'subdomain1'\nprimary_block = '0'\npaired_block = '1'\nnew_boundary = 'primary0_interface'\n[../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1137952",
+                          "updatedAt": "2022-07-13T18:09:31Z",
+                          "publishedAt": "2021-08-06T07:42:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There is not. They are strictly meant for testing the framework. You can find them in moose/test/src/ though and reading the source code is usually very easy for the small simple objects\nHow old is your moose version?\nThe master_block parameter is retrieved if the primary_block is not provided to SideSetsBetweenSubdomainsGenerator. It seems fine here though.",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1140977",
+                          "updatedAt": "2022-07-13T18:09:44Z",
+                          "publishedAt": "2021-08-06T20:54:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "EdSheltonUKAEA"
+                  },
+                  "bodyText": "Also, I'm not really a computer scientist or coder, so I'm not sure where I'm meant to put that line \"--allow-test-objects\".  I tried appending it to the the command line in Ubuntu, but that didn't seem to make any difference.  Should it go in one of the MOOSE input file kernels, or one of the files on my PC actually running MOOSE?  Thanks again!",
+                  "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1138024",
+                  "updatedAt": "2022-06-24T21:10:35Z",
+                  "publishedAt": "2021-08-06T07:59:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This goes on the command line after you call your application executable.\nSo ./yourapp-opt -i input_file.i --allow-test-objects",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1140969",
+                          "updatedAt": "2022-06-24T21:10:56Z",
+                          "publishedAt": "2021-08-06T20:50:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Thanks.  That's exactly what I had tried, but it doesn't run and gives the following error message:\n\n*** ERROR ***\nA 'InterfaceDiffusion' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\n\nSo what exactly is it I need to have in one of those \"library_path\" options, and where do I do this?  (Again, apologies for my ignorance in how to get the computer science aspects of MOOSE to work.)\nIn the meantime, I'll maybe go back to seeing if I can adapt the example file to use the InterfaceDiffusionBoundaryTerm kernel instead.",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1147757",
+                          "updatedAt": "2022-06-24T21:10:57Z",
+                          "publishedAt": "2021-08-09T07:36:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah you are not using moose but your application. Ok you do not have access to moose test objects then. You would need to move InterfaceDiffusion from moose/test/(src/include) to your application to use it",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1150063",
+                          "updatedAt": "2022-06-24T21:10:57Z",
+                          "publishedAt": "2021-08-09T15:28:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "OR\nuse app_type = MooseTestApp and specify the library_path to the MOOSE test library",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-1150071",
+                          "updatedAt": "2022-07-13T18:10:05Z",
+                          "publishedAt": "2021-08-09T15:29:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "EdSheltonUKAEA"
+                  },
+                  "bodyText": "Hello!\nI'm following up on this thread from a couple of years ago to ask further questions about the InterfaceReaction interface kernel which we're now trying to use again.\nI think there might be an error with how the maths of the forwards and backwards reactions is presented on the website documentation page here: [https://mooseframework.inl.gov/source/interfacekernels/InterfaceReaction.html]\nShould it be: dC_2/dt = - dC_1/dt = k_f * C_1 - k_b * C_2\nAs it is written (dC_1/dt = k_f * C_1 - k_b * C_2) this means that for k_b=0, then the maths says a positive value of k_f results in C_1 getting bigger and C_2 getting smaller, which is the opposite of physically what should happen.\nRelated to this I have looked at the source file for the kernel to see how the equation is implemented there. I'm not a C++ coder, but from what I can see, the relevant equations are implemented as shown on the documentation page:\nReal\nInterfaceReaction::computeQpResidual(Moose::DGResidualType type)\n{\nReal r = 0;\nswitch (type)\n{\n// Move all the terms to the LHS to get residual, for primary domain\n// Residual = kfu - kbv = kfu - kbv\n// Weak form for primary domain is: (test, kfu - kbv)\ncase Moose::Element:\nr = _test[_i][_qp] * (_kf * _u[_qp] - _kb * _neighbor_value[_qp]);\nbreak;\n\n// Similarly, weak form for secondary domain is: -(test, kf*u - kb*v),\n// flip the sign because the direction is opposite.\ncase Moose::Neighbor:\n  r = -_test_neighbor[_i][_qp] * (_kf * _u[_qp] - _kb * _neighbor_value[_qp]);\n  break;\n\n}\nreturn r;\n}\n\nA negative sign is included in the second half of this block of code, but this is explicity to capture that the secondary domain concentration goes the opposite direction to the primary domain concentration.\nHowever, in spite of the \"missing\" negative sign for the forward reaction, when I run it in a model, the solution seems to be physically right. With k_f positive and k_b = 0, the concentration of C_1 in the primary domain side of the interface decreases and the concentration of C_2 in the secondary domain on the \"neighbour\" side increases.\nCan anyone explain what's going on here and why it works?",
+                  "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-7599736",
+                  "updatedAt": "2023-11-17T14:07:29Z",
+                  "publishedAt": "2023-11-17T14:07:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nEverything gets moved to the left hand side when we implement computeQpResidual.\nso this dC1/dt = k_f * C_1 - k_b * C_2 is really dC1/dt  -  k_f * C_1 + k_b * C_2= 0\nthis causes a few sign changes depending on how people were writing their equations.\nBut yes here the documentation is wrong comparing to what's implemented.\nThe doc says\ndC1/dt  -  k_f * C_1 + k_b * C_2= 0\n\nand what's implemented (and what we actually want) is\ndC1/dt  +  k_f * C_1 - k_b * C_2= 0\n\nThanks for reaching out! I ll put up a patch\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-7600079",
+                          "updatedAt": "2023-11-17T14:38:18Z",
+                          "publishedAt": "2023-11-17T14:38:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Ah, thank you.  Suddenly it all becomes clear!\nSo now I know that the interface kernel with positive values for k_f and k_b works as expected, and why it works!\nIncidentally, we find that running models with just InterfaceReaction seem to give sensible results, and it doesn't seem absolutely necessary to include the InterfaceDiffusion interface kernel as well.  In fact including InterfaceDiffusion can cause problems.  Is it OK to do this?",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-7600226",
+                          "updatedAt": "2023-11-17T14:51:22Z",
+                          "publishedAt": "2023-11-17T14:51:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Well what is physically happening in the system you are modeling?\nIs the diffusive flux supposed to be continuous across the interface? Or is there a reaction? Or both",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-7602693",
+                          "updatedAt": "2023-11-17T19:36:50Z",
+                          "publishedAt": "2023-11-17T19:36:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If your only term that is integrated by parts is a diffusion term, then this interface kernel is weakly enforcing the conditions\n- Du \\nabla u * n = kf * u - kb * v = Dv * \\nabla v * n\nwhere u is the variable on one half of the domain, v is the variable on the other half, and Du and Dv are the respective diffusion coefficients, and n is the normal vector pointing out of the u domain",
+                          "url": "https://github.com/idaholab/moose/discussions/18533#discussioncomment-7604237",
+                          "updatedAt": "2023-11-18T00:55:40Z",
+                          "publishedAt": "2023-11-18T00:55:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Divergence approaching steady-state",
+          "author": {
+            "login": "Khaksarkn"
+          },
+          "bodyText": "Hi,\nI have written a custom MOOSE code to solve a THM problem. It works well while it is transient.\nI use -lu preconditioning and manual or automatic scaling.\nHowever, when the solution is approaching a steady state, it starts to diverge. Using automatic scaling is more effective and the solution goes further and sometimes actually reaches a steady state. But I assume when it reaches steady conditions, it is supposed to go on, not diverge.\nI would appreciate it if you could help me figure out this issue.\nThank you.",
+          "url": "https://github.com/idaholab/moose/discussions/26094",
+          "updatedAt": "2023-11-21T23:10:51Z",
+          "publishedAt": "2023-11-17T19:51:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you please paste the console log here?\nCould you please add Executioner/verbose=true or some other option to get the scaling factors to be output to console?\nAutomatic scaling could get tricky next to steady state. Make sure to NOT set compute_scaling_once = false\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7602826",
+                  "updatedAt": "2023-11-17T20:00:26Z",
+                  "publishedAt": "2023-11-17T20:00:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "I also need to mention this. When I set the BCs such that the model is already at a steady state, it struggles to proceed and diverges (which is the same as when it reaches a steady state from a transient procedure).\nThanks, This is not set as false.\ncompute_scaling_once = false\nThis is a part of the console:\nTime Step 65, time = 49950\nold time = 49800\ndt = 150\nold dt = 300\n0 Nonlinear |R| = 1.848899e-04\n1 Nonlinear |R| = 1.804325e-12\nSolve Converged!\nOutlier Variable Residual Norms:\nporePressure: 1.622165e-12\nTime Step 66, time = 50250\nold time = 49950\ndt = 300\nold dt = 150\n0 Nonlinear |R| = 1.844882e-04\n1 Nonlinear |R| = 1.888366e-12\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\nSolve Did NOT Converge!\nAborting as solve did not converge",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603155",
+                          "updatedAt": "2023-11-17T20:52:07Z",
+                          "publishedAt": "2023-11-17T20:52:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it must be:\ncompute_scaling_once = true\nfalse will cause issues",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603190",
+                          "updatedAt": "2023-11-17T20:59:03Z",
+                          "publishedAt": "2023-11-17T20:59:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "Yes, it is set as \"true\". I double-checked.",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603217",
+                          "updatedAt": "2023-11-17T21:05:02Z",
+                          "publishedAt": "2023-11-17T21:05:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "1 Nonlinear |R| = 1.804325e-12\nis converged\nat this point you just need to adapt the tolerance to avoid trying to over-converge beyond what the numerical errors will allow",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603329",
+                          "updatedAt": "2023-11-17T21:29:16Z",
+                          "publishedAt": "2023-11-17T21:29:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "Thank you for the input.\nYes, the 1.888366e-12 value when it says it has not converged also looks like it has converged.\nCan you please tell me how I should do that?\nWhen I used to solve simple diffusion problems, even if I had already steady state BC, it just carried on with 1 nonlinear iteration untill end_time occured.",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603356",
+                          "updatedAt": "2023-11-17T21:33:10Z",
+                          "publishedAt": "2023-11-17T21:33:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "nl_abs_tol = 2e-12 will let it accept a solution with an error that is below that. You would be fine for this time step.",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603374",
+                          "updatedAt": "2023-11-17T21:35:24Z",
+                          "publishedAt": "2023-11-17T21:35:24Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "I just have one other question,\nHow can I put a distributed load on my mesh?\nI want a 1000 N/m load on a 2D model on one of the boundaries. Is it through NeumanBC for disp_y (y component of the displacement) and setting the value to the load? It seems a bit strange looking at the formulation of the NeumannBC.\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603384",
+                          "updatedAt": "2023-11-17T21:37:02Z",
+                          "publishedAt": "2023-11-17T21:37:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think the Pressure action can be used too.\nhttps://mooseframework.inl.gov/syntax/BCs/Pressure/index.html\nNeumannBC should be fine. Just make sure the load is normalized to the surface, I see N/m I think it should be N/m2?",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603398",
+                          "updatedAt": "2023-11-17T21:40:07Z",
+                          "publishedAt": "2023-11-17T21:40:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "Thank you Guillaume for the help. I also needed to set -snes_atol to resolve the issue. Now I can reach the steady-state solution.\nIs the pressure kernel a part of the TensorMechanics Module? I activated TensorMechanics in my app but I'm still getting errors:\n[load]\ntype = Pressure\nvariable = disp_y\nboundary = loadBC\nfactor = -1\ndisplacements = 'disp_x disp_y'\n[]\n*** ERROR ***\nA 'Pressure' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603669",
+                          "updatedAt": "2023-11-17T22:31:43Z",
+                          "publishedAt": "2023-11-17T22:30:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It is.\nYou ll have to double check the syntax maybe?\nI think it's like this [Pressure]",
+                          "url": "https://github.com/idaholab/moose/discussions/26094#discussioncomment-7603769",
+                          "updatedAt": "2023-11-17T22:53:44Z",
+                          "publishedAt": "2023-11-17T22:53:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Specifying distributed load / moment in input file",
+          "author": {
+            "login": "andrey1887"
+          },
+          "bodyText": "Hello. I would like to be able specify a distributed load for beam element in input file. How it can be done? For a nodal load it looks:\n[NodalKernels]\n  [./force_y2]\n    type = ConstantRate\n    variable = disp_y\n    boundary = right\n    rate = 1.0e-4\n  [../]\n[]\n\nBut what i should do with distributed load?",
+          "url": "https://github.com/idaholab/moose/discussions/26077",
+          "updatedAt": "2023-11-17T21:54:16Z",
+          "publishedAt": "2023-11-16T09:43:31Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWell the right boundary could be a nodeset, and the load is then distributed on each node of the nodeset\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26077#discussioncomment-7589468",
+                  "updatedAt": "2023-11-16T15:24:20Z",
+                  "publishedAt": "2023-11-16T15:24:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "andrey1887"
+                          },
+                          "bodyText": "Ok, thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/26077#discussioncomment-7589715",
+                          "updatedAt": "2023-11-16T15:46:03Z",
+                          "publishedAt": "2023-11-16T15:46:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "andrey1887"
+                          },
+                          "bodyText": "Hello, @GiudGiud. This is acceptable solution, but is there a possibility to assign a load directly to element, not to nodes? I mean, that in this case there is possibility to define one value of load independently of elements length unlike in nodes variant.",
+                          "url": "https://github.com/idaholab/moose/discussions/26077#discussioncomment-7603247",
+                          "updatedAt": "2023-11-17T21:17:44Z",
+                          "publishedAt": "2023-11-17T21:10:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can use BodyForce kernels for volume forces\nor DiracKernels for point forces inside elements",
+                          "url": "https://github.com/idaholab/moose/discussions/26077#discussioncomment-7603334",
+                          "updatedAt": "2023-11-17T21:30:11Z",
+                          "publishedAt": "2023-11-17T21:30:11Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "andrey1887"
+                          },
+                          "bodyText": "Thank you, @GiudGiud .",
+                          "url": "https://github.com/idaholab/moose/discussions/26077#discussioncomment-7603487",
+                          "updatedAt": "2023-11-17T21:54:11Z",
+                          "publishedAt": "2023-11-17T21:54:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "SolutionUserObject and getMaterialPropertyOldByName",
+          "author": {
+            "login": "TheGreatCid"
+          },
+          "bodyText": "Hi all,\nI am using a SolutionUserObject to populate variables/materials and start a simulation. I have a material that requires both the current and old value.\nSo it is declared as:\n_ep(declareADProperty<Real>(prependBaseName(\"effective_plastic_strain\"))),\n_ep_old(getMaterialPropertyOldByName<Real>(prependBaseName(\"effective_plastic_strain\")))\n\nI have the timestep I want to load the primary data from and the previous one.\nIs it possible to populate both fields and restart the simulation as usual?\nI remember looking into this long ago and finding that MOOSE didn't have this capability, but I wanted to see if anything new has been developed for this application.\nAlso, in general, if a material property is declared in the source code rather than in the input file, is it possible to populate the field from a SolutionUserObject, or will I need to rewrite the code to getMaterialPropertyByName and define the material in the input file?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/26065",
+          "updatedAt": "2023-11-17T20:26:25Z",
+          "publishedAt": "2023-11-14T23:15:40Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Can you use checkpoint restart instead?",
+                  "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7579328",
+                  "updatedAt": "2023-11-15T16:54:49Z",
+                  "publishedAt": "2023-11-15T16:54:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "I cannot because I am applying a re-meshing algorithm outside of moose. So the new mesh will not match what is in the checkpoint",
+                          "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7579459",
+                          "updatedAt": "2023-11-15T17:07:58Z",
+                          "publishedAt": "2023-11-15T17:07:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If you've investigated this in the past, then I suspect you know SolutionUserObject capabilities better than I do. I can tell you that there have been no recent developments in that class related to materials",
+                          "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7579710",
+                          "updatedAt": "2023-11-15T17:34:24Z",
+                          "publishedAt": "2023-11-15T17:34:23Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Got it, thanks",
+                          "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7579746",
+                          "updatedAt": "2023-11-15T17:38:56Z",
+                          "publishedAt": "2023-11-15T17:38:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo the SolutionUO can be used for ICs, functions, variables etc but we have not made a SolutionMaterial or an interface that lets you get the values of a stateful material from a solution file (even though they are definitely in there, as we need them when we do checkpoint restart).\nYou would definitely need to change the code in the material. The 'getMaterialPropertyOld' will not know to query the solutionUO for those values.\nIf that is acceptable to you then there's two tasks to do :\n\nmake a SolutionFileMaterial\ncreate an API to load an 'old' value for a material property from another material property\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7590221",
+                  "updatedAt": "2023-11-16T16:35:02Z",
+                  "publishedAt": "2023-11-16T16:35:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I can create a feature request for you, please let me know\nHowever we do not have any available resources at the time so the delay would be significant if we implemented it",
+                          "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7590227",
+                          "updatedAt": "2023-11-16T16:35:35Z",
+                          "publishedAt": "2023-11-16T16:35:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "This would be quite a useful feature to have, so a feature request would be much appreciated!\nIn the meantime, I have an idea of how to implement this feature in an inelegant way to suit what I need to do.",
+                          "url": "https://github.com/idaholab/moose/discussions/26065#discussioncomment-7602990",
+                          "updatedAt": "2023-11-17T20:26:26Z",
+                          "publishedAt": "2023-11-17T20:26:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "error while loading shared library",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "i was trying to run the step1.i file in MOOSE repository and below is the error message I get.\n[emmanuel324@tinkercliffs1 problems]$ ../darcy_thermo_mech-opt -i step1.i\n../darcy_thermo_mech-opt: error while loading shared libraries: libcombined-opt.so.0: cannot open shared object file: No such file or directory",
+          "url": "https://github.com/idaholab/moose/discussions/26090",
+          "updatedAt": "2023-11-17T19:37:34Z",
+          "publishedAt": "2023-11-17T14:48:21Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou should clean the repo then recompile.\nThe executable was compiled (and linked to) with that library but then it was deleted seemingly\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26090#discussioncomment-7602696",
+                  "updatedAt": "2023-11-17T19:37:34Z",
+                  "publishedAt": "2023-11-17T19:37:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "warning when using MultiAppGeneralFieldNearestLocationTransfer from element to nodes",
+          "author": {
+            "login": "mcacace"
+          },
+          "bodyText": "Dear all,\nI'm trying to map an elemental auxvariables (subapp) to a nodal auxvariable (master app) but keep receiveing the following warning - multiple centroids (see below).\n\"Transfer is projecting from nearest-centroids to nodes. This is likely causing floating point indetermination in the results because multiple centroids are 'nearest' to a node. Please consider using a ProjectionAux to build a nodal source variable (for example linear Lagrange) before transferring\"\nHowever, when I use the ProjectionAux inside the master app to do the mapping the nodal variable to which I map returns zeroes. I tried to force the computation of the elemental Auxvariables during nonlinear and linear iteration while having the projection only at timestep_end but I keep receiving zeroes.\nDoes anone have any idea how to best project an elemental auxvariable to a nodal auxvariable?\nThanks,\nMauro",
+          "url": "https://github.com/idaholab/moose/discussions/26093",
+          "updatedAt": "2023-11-17T19:34:04Z",
+          "publishedAt": "2023-11-17T18:51:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI added this warning.\nProjectionAux should have been the way.\nCan you project in the subapp to a nodal variable instead?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26093#discussioncomment-7602677",
+                  "updatedAt": "2023-11-17T19:34:04Z",
+                  "publishedAt": "2023-11-17T19:34:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "permission for external user on HPC",
+          "author": {
+            "login": "mcacace"
+          },
+          "bodyText": "Dear all,\nI am facing some issues while trying to open my moose installation to other users on a HPC cluster (each having their own working directory). My (bad, I know ...) idea is to let them building our moose-based app without (I know it is not the right way, but ... ) requiring them to go through the libmesh installation (I also provide my own petsc installation to them).\nSo, now the issue. All works fine if the other users are linking to my installation and \"making\" the app without loading any external module available in the framework. However, whenever they try to link any additional module (via the makefile input of the app) they are getting errors (i.e. permission denied - see below).\nIs there any way I can free all dependencies to any other user? And, out of curiosity, why is it working if no module are loaded?\nThanks for any help,\nmauro\nThis is the template of the error they receive --> the user is running inside (/home/bloech) while linking to the framework compiled inside (/home/cacace).\nCreating Unity /storage/vast-gfz-hpc-01/home/bloech/projects/golem/build/unity_src/userobjects_Unity.C\n/home/cacace/projects/moose_petsc_3_20_0/modules/module_loader/src/ModulesApp.C:504:1: f**atal error: opening dependency file /home/cacace/projects/moose_petsc_3_20_0/modules/module_loader/src/ModulesApp_with_fp_ray_rdg_ht_ns.x86_64-pc-linux-gnu.opt.lo.d: Permission denied**\n  504 |",
+          "url": "https://github.com/idaholab/moose/discussions/26024",
+          "updatedAt": "2023-11-17T18:52:13Z",
+          "publishedAt": "2023-11-10T16:59:05Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat are the permissions for\n/home/cacace/projects/moose_petsc_3_20_0/modules/module_loader/src/ModulesApp_with_fp_ray_rdg_ht_ns.x86_64-pc-linux-gnu.opt.lo.d\n\nls -l will report on those.\nand could you just set (recursively) open permissions (read at least) for the whole folder?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26024#discussioncomment-7589806",
+                  "updatedAt": "2023-11-17T14:28:05Z",
+                  "publishedAt": "2023-11-16T15:54:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "Thanks I will give it a try and report back.\nMauro",
+                          "url": "https://github.com/idaholab/moose/discussions/26024#discussioncomment-7599207",
+                          "updatedAt": "2023-11-17T13:15:15Z",
+                          "publishedAt": "2023-11-17T13:15:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mcacace"
+                  },
+                  "bodyText": "After opening some additional permissions it worked. Thanks!",
+                  "url": "https://github.com/idaholab/moose/discussions/26024#discussioncomment-7602379",
+                  "updatedAt": "2023-11-17T18:52:14Z",
+                  "publishedAt": "2023-11-17T18:52:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

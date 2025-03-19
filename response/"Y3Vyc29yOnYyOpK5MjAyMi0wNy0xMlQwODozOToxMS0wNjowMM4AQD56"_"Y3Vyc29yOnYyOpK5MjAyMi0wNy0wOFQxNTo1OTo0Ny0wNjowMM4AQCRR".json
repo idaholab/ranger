@@ -1,0 +1,795 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wNy0wOFQxNTo1OTo0Ny0wNjowMM4AQCRR"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Issues with solid element - shell element bending comparison",
+          "author": {
+            "login": "Edward-Eth"
+          },
+          "bodyText": "I have been attempting to compare bending performance of shell and solid elements in MOOSE (and comparing against FEMAP in addition) but have been having issues with my solid element model.\nBoth models are 20mm x 20mm x 1mm plates fixed on the x = 0 (left) edge and subjected to a 2N per unit area/length von neumann load on the right edge in the Z direction.\nThe shell model agrees closely with the result I get from Femap-Nastran, but the result from the solid model is much lower. When the out of plane load is replaced with a load in the x direction, the resulting displacements are very similar for both models which indicates the issue is more with how bending is being handled by the solid elements? The solid element results from femap-nastran are very comparable to the shell element results from both programs. I have implemented the same test using two different load application methods (this Neumann approach but also a NodalKernal method) with the same difference in displacement observed, indicating this is not a load application issue.\nWhen higher degree solid elements are used, the discrepancy reduces, however Femap is able to produce good results with linear elements at the same resolution as the MOOSE model, so something is going wrong it would seem.\nShell Models, MOOSE and femap, with X direction stress (shell underside) plotted as contour. These images show that the displacements agree to a good tolerance level (6.11mm for Femap and 6.08 for MOOSE) but the stress magnitudes differ significantly.\n\n\nSolid Models: MOOSE and femap, with von mises stress plotted as contour. These images show that while the femap solid model agrees closely with both shell models, the moose solid model is generating incorrect results, with a displacement of 2.39 instead of the expected ~6. Additionally, the stress values are much lower in the MOOSE model.\n\n\n\n  Shell Element Model\n# Shell element version of a shell vs solid bending comparison.\n# The model is a cantilevered plate, 20mm x 20mm x 1mm.\n# The left edge (x = 0) is fixed in X, Z and rotation about Y.\n# The front edge is fixed in y.\n# The right side of the plate is subject to a 2N per unit area load in the Z direction.\n\n[Mesh]\n  [Generator]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmax = 20\n    ymax = 20\n    nx = 10\n    ny = 10\n  []\n  [SampleXCenterline]\n    type = ParsedGenerateSideset\n    input = Generator\n    new_sideset_name = Centerline\n    combinatorial_geometry = 'y=10'\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [disp_z]\n  []\n  [rot_x]\n  []\n  [rot_y]\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n[Kernels]\n  [solid_disp_x]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 0\n    variable = disp_x\n    through_thickness_order = SECOND\n  []\n  [solid_disp_y]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 1\n    variable = disp_y\n    through_thickness_order = SECOND\n  []\n  [solid_disp_z]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 2\n    variable = disp_z\n    through_thickness_order = SECOND\n  []\n  [solid_rot_x]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 3\n    variable = rot_x\n    through_thickness_order = SECOND\n  []\n  [solid_rot_y]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 4\n    variable = rot_y\n    through_thickness_order = SECOND\n  []\n[]\n\n[Materials]\n  [stress]\n    type = ADComputeShellStress\n    through_thickness_order = SECOND\n  []\n  [elasticity]\n    type = ADComputeIsotropicElasticityTensorShell\n    youngs_modulus = 10000\n    poissons_ratio = 0.3\n    through_thickness_order = SECOND\n  []\n  [strain]\n    type = ADComputeIncrementalShellStrain\n    displacements = 'disp_x disp_y disp_z'\n    rotations = 'rot_x rot_y'\n    thickness = 1\n    through_thickness_order = THIRD\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = Centerline\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_z\n  []\n  [Fixed_rot_y]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = rot_y\n  []\n  [Load]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n[]\n\n[AuxVariables]\n  [stress_00]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[AuxKernels]\n  [stress_00]\n    type = RankTwoAux\n    variable = stress_00\n    rank_two_tensor = global_stress_t_points_0\n    index_i = 0\n    index_j = 0\n    execute_on = TIMESTEP_END\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = false\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = TRUE\n  solve_type = 'NEWTON'\n  line_search = 'default'\n  petsc_options_iname = '-pc_type  -snes_linesearch_type -pc_factor_shift_type -snes_max_it  '\n                        '-ksp_max_it'\n  petsc_options_value = 'lu        basic                 NONZERO               20            30'\n[]\n\n[Postprocessors]\n  [Point_Displacement_X]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_x\n  []\n  [Point_Displacement_Y]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_y\n  []\n  [Point_Displacement_Z]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_z\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n    file_base = 'IsotropicShellBending'\n  []\n[]\n\n\n\nSolid Element Model\n# Solid element version of a shell vs solid bending stress comparison.\n# The model is a cantilevered plate, 20mm x 20mm x 1mm.\n# There are 4 elements through thickness.\n# The left edge (x = 0) is fixed in X and Z, this also prevents rotation about Y.\n# The front edge (y = 0) is fixed in Y.\n# The right side of the plate is subject to a 2N per unit area load in the Z direction.\n\n[Mesh]\n  [Generator]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmax = 20\n    ymax = 20\n    zmin = -0.5\n    zmax = 0.5\n    nx = 10\n    ny = 10\n    nz = 4\n  []\n  [SampleXCenterline]\n    type = ParsedGenerateSideset\n    input = Generator\n    new_sideset_name = Centerline\n    combinatorial_geometry = 'y=10'\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    incremental = true\n    add_variables = true\n    use_finite_deform_jacobian = true\n    volumetric_locking_correction = false\n    use_automatic_differentiation = true\n    generate_output = vonmises_stress\n  []\n[]\n\n[Materials]\n  [StandardElasticityTensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = 10000\n    poissons_ratio = 0.3\n  []\n  [Stress]\n    type = ADComputeLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = Centerline\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_z\n  []\n  [Load]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = True\n  solve_type = 'NEWTON'\n  line_search = 'default'\n  petsc_options_iname = '-pc_type  -snes_linesearch_type -pc_factor_shift_type -snes_max_it  '\n                        '-ksp_max_it'\n  petsc_options_value = 'lu        basic                 NONZERO               20            30'\n  nl_abs_tol = 1e-50\n  # nl_rel_tol = 1e-10\n[]\n\n[Postprocessors]\n  [Point_Displacement_X]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_x\n  []\n  [Point_Displacement_Y]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_y\n  []\n  [Point_Displacement_Z]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_z\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n    file_base = 'IsotropicSolidBending'\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/21501",
+          "updatedAt": "2022-07-12T13:52:22Z",
+          "publishedAt": "2022-07-05T14:41:23Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre you using this branch?\n#21385\nIt fixed an issue with those elements iirc\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3086085",
+                  "updatedAt": "2022-07-05T15:32:49Z",
+                  "publishedAt": "2022-07-05T15:32:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Edward-Eth"
+                  },
+                  "bodyText": "The model I am having an issue with is the solid element model, the shells are behaving correctly here.",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3086177",
+                  "updatedAt": "2022-07-05T15:47:03Z",
+                  "publishedAt": "2022-07-05T15:47:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh my bad, read too fast.\n@dschwen @jiangwen84  who works on solid elements?",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3086266",
+                          "updatedAt": "2022-07-05T15:58:38Z",
+                          "publishedAt": "2022-07-05T15:58:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Edward-Eth"
+                  },
+                  "bodyText": "The plot thickens: When I use hex20 or hex28 elements, the solid model displacement is a lot closer to the shell element displacement (and the 'correct' value) however it is still significantly different, and femap is able to produce correct solid element results using linear solid elements (hex8). This should mean that more linear elements through thickness would improve the result, however it does not, no quantity of linear elements through thickness seems to change the result which to me implies there's something going wrong here.",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3099116",
+                  "updatedAt": "2022-07-07T09:59:54Z",
+                  "publishedAt": "2022-07-07T09:59:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I think the load is applied differently\nIs the centerline supposed to traverse the width of the beam? Or is it supposed to just be on top of it?",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3101350",
+                  "updatedAt": "2022-07-07T23:21:33Z",
+                  "publishedAt": "2022-07-07T15:35:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "The centerline passes through the middle of the beam (in the y direction), through the full thickness, as shown in this image. This is just used to enforce a y=0 constraint which is purely a stability feature, there are no loads in the y direction.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3101391",
+                          "updatedAt": "2022-07-07T15:40:27Z",
+                          "publishedAt": "2022-07-07T15:40:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok not that one then\nthis one maybe?\n  [Load]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n\nyou have the same thing for shell elements,  but the area of application of this flux is different",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3101587",
+                          "updatedAt": "2022-07-07T16:09:28Z",
+                          "publishedAt": "2022-07-07T16:09:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "neuphris"
+                  },
+                  "bodyText": "Regarding the difference in stress one of the possible reason can be that stresses are calculated at each quadrature point, the output from the MOOSE that you are seeing is the average of the stresses in the qps of the element unless you have used \"selected_qp = \" in the AuxKernel. I am not sure what stress NASTRAN gives as output.",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3102000",
+                  "updatedAt": "2022-07-07T17:17:01Z",
+                  "publishedAt": "2022-07-07T17:16:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "I took a brief look at the NASTRAN theory. It seems to me that NASTRAN uses hyperelasticity for large deformation. If you can confirm this, then the results won't be reproducible using the tensor_mechanics module unfortunately.\nBut I am not saying MOOSE cannot do hyperelasticity, it's just that the tensor_mechanics module cannot.",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3103740",
+                  "updatedAt": "2022-07-07T23:00:55Z",
+                  "publishedAt": "2022-07-07T23:00:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Better yet, if you tell me which hyperelastic material you are using in NASTRAN, I can give you a MOOSE-equivalent to try.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3103747",
+                          "updatedAt": "2022-07-07T23:06:05Z",
+                          "publishedAt": "2022-07-07T23:06:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Also, let's try not to get to the topic of which large deformation formulation is better... I'm a hyperelasticity person, but I still use hypoelasticity (tensor_mechanics) very often.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3103758",
+                          "updatedAt": "2022-07-07T23:10:29Z",
+                          "publishedAt": "2022-07-07T23:10:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Edward-Eth"
+                  },
+                  "bodyText": "Going to go through these responses one by one because I don't think any of them actual address the issue I'm seeing here.\n\n@GiudGiud\n\n\nok not that one then this one maybe?\n  [Load]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n\nyou have the same thing for shell elements, but the area of application of this flux is different\n\nThis was a concern of mine originally, but when I apply the Neumann BC to disp_x instead, the resulting in plane displacements are identical, which to me implies that applying to a line edge is equivalent to applying to a face of unit width and the same length as the line. To verify that the method of force application is not the issue, I ran models using a constant rate nodal kernel instead, with the load applied to the nodes on the loaded edge of the shell, and the mid-thickness nodes of the loaded edge in the solid. The images below show the nodes used, showing that each model applies a load to the same number of nodes (11) in the same locations.\n\n\n\n  Shell Element Model Using Nodal Kernel\n# Shell element version of a shell vs solid bending comparison.\n# The model is a cantilevered plate, 20mm x 20mm x 1mm.\n# The left edge (x = 0) is fixed in X, Z and rotation about Y.\n# The front edge is fixed in y.\n# The right side of the plate is subject to a 2N per unit area load in the Z direction.\n\n[Mesh]\n  [Generator]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmax = 20\n    ymax = 20\n    nx = 10\n    ny = 10\n  []\n  [SampleXCenterline]\n    type = ParsedGenerateSideset\n    input = Generator\n    new_sideset_name = Centerline\n    combinatorial_geometry = 'y=10'\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [disp_z]\n  []\n  [rot_x]\n  []\n  [rot_y]\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n[Kernels]\n  [solid_disp_x]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 0\n    variable = disp_x\n    through_thickness_order = FOURTH\n  []\n  [solid_disp_y]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 1\n    variable = disp_y\n    through_thickness_order = FOURTH\n  []\n  [solid_disp_z]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 2\n    variable = disp_z\n    through_thickness_order = FOURTH\n  []\n  [solid_rot_x]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 3\n    variable = rot_x\n    through_thickness_order = FOURTH\n  []\n  [solid_rot_y]\n    type = ADStressDivergenceShell\n    block = 0\n    component = 4\n    variable = rot_y\n    through_thickness_order = FOURTH\n  []\n[]\n\n[Materials]\n  [stress]\n    type = ADComputeShellStress\n    through_thickness_order = FOURTH\n  []\n  [elasticity]\n    type = ADComputeIsotropicElasticityTensorShell\n    youngs_modulus = 10000\n    poissons_ratio = 0.3\n    through_thickness_order = FOURTH\n  []\n  [strain]\n    type = ADComputeIncrementalShellStrain\n    displacements = 'disp_x disp_y disp_z'\n    rotations = 'rot_x rot_y'\n    thickness = 1\n    through_thickness_order = FOURTH\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = Centerline\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_z\n  []\n  [Fixed_rot_y]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = rot_y\n  []\n  [Load_Z]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n  # [Load_X]\n  #   type = ADNeumannBC\n  #   boundary = right\n  #   value = 2\n  #   variable = disp_x\n  # []\n[]\n\n[NodalKernels]\n  [Z_Load]\n    type = ConstantRate\n    rate = 2\n    variable = disp_z\n    boundary = right\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = false\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = TRUE\n  solve_type = 'NEWTON'\n  line_search = 'default'\n  petsc_options_iname = '-pc_type  -snes_linesearch_type -pc_factor_shift_type -snes_max_it  '\n                        '-ksp_max_it'\n  petsc_options_value = 'lu        basic                 NONZERO               20            30'\n[]\n\n[Postprocessors]\n  [Point_Displacement_X]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_x\n  []\n  [Point_Displacement_Y]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_y\n  []\n  [Point_Displacement_Z]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_z\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n    file_base = 'IsotropicShellBending'\n  []\n[]\n\n\n\n\n  Solid Element Model Using Nodal Kernel\n# Solid element version of a shell vs solid bending stress comparison.\n# The model is a cantilevered plate, 20mm x 20mm x 1mm.\n# There are 4 elements through thickness.\n# The left edge (x = 0) is fixed in X and Z, this also prevents rotation about Y.\n# The front edge (y = 0) is fixed in Y.\n# The right side of the plate is subject to a 2N per unit area load in the Z direction.\n\n[Mesh]\n  [Generator]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmax = 20\n    ymax = 20\n    zmin = -0.5\n    zmax = 0.5\n    nx = 10\n    ny = 10\n    nz = 4\n  []\n  [SampleXCenterline]\n    type = ParsedGenerateSideset\n    input = Generator\n    new_sideset_name = Centerline\n    combinatorial_geometry = 'y=10'\n  []\n  [Right_Edge_Center_Nodes]\n    type = BoundingBoxNodeSetGenerator\n    input = SampleXCenterline\n    new_boundary = Right_Mid_Nodes\n    bottom_left = '19.99 -0.01 -0.01'\n    top_right = '20.01 20.01 0.01'\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    incremental = true\n    add_variables = true\n    use_finite_deform_jacobian = true\n    volumetric_locking_correction = false\n    use_automatic_differentiation = true\n    generate_output = vonmises_stress\n  []\n[]\n\n[Materials]\n  [StandardElasticityTensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = 10000\n    poissons_ratio = 0.3\n  []\n  [Stress]\n    type = ADComputeLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = Centerline\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_z\n  []\n  # [Load]\n  #   type = ADNeumannBC\n  #   boundary = right\n  #   value = 2\n  #   variable = disp_z\n  # []\n[]\n\n[NodalKernels]\n  [Z_Load]\n    type = ConstantRate\n    rate = 2\n    variable = disp_z\n    boundary = Right_Mid_Nodes\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = True\n  solve_type = 'NEWTON'\n  line_search = 'default'\n  petsc_options_iname = '-pc_type  -snes_linesearch_type -pc_factor_shift_type -snes_max_it  '\n                        '-ksp_max_it'\n  petsc_options_value = 'lu        basic                 NONZERO               20            30'\n  nl_abs_tol = 1e-50\n  # nl_rel_tol = 1e-10\n[]\n\n[Postprocessors]\n  [Point_Displacement_X]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_x\n  []\n  [Point_Displacement_Y]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_y\n  []\n  [Point_Displacement_Z]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_z\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n    file_base = 'IsotropicSolidBending'\n  []\n[]\n\n\nIn this case, the disparity when loaded in the z direction is still present (and is in fact greater), but again, when loaded in x the displacements are equal, indicating that the issue does not lie in the magnitude of applied forces.\n\n@neuphris\n\n\nRegarding the difference in stress one of the possible reason can be that stresses are calculated at each quadrature point, the output from the MOOSE that you are seeing is the average of the stresses in the qps of the element unless you have used \"selected_qp = \" in the AuxKernel. I am not sure what stress NASTRAN gives as output.\n\nYeah I'm not comparing apples to apples here necessarily, so I would disregard this for now, I'm likely making an error in comparison.\n\n@hugary1995\n\n\nI took a brief look at the NASTRAN theory. It seems to me that NASTRAN uses hyperelasticity for large deformation. If you can confirm this, then the results won't be reproducible using the tensor_mechanics module unfortunately.\nBut I am not saying MOOSE cannot do hyperelasticity, it's just that the tensor_mechanics module cannot.\n\nI'm not using an hyperelasticity in the Nastran model. I can only assume you got that impression from the use of finite strain in the solid input file. That was an edit I made to attempt to get the results to agree, but it actually makes a negligble difference. With strain = FINITE, I get a displacement in the solid model of 2.39mm, with strain = SMALL I get a displacement of 2.43mm, both compared to the correct result of around 6mm. The material property used in Nastran is a simple linear elastic the same as implemented in moose using the isotropic elasticity tensor.\n\n\n\n\nThe plot thickens: When I use hex20 or hex28 elements, the solid model displacement is a lot closer to the shell element displacement (and the 'correct' value) however it is still significantly different, and femap is able to produce correct solid element results using linear solid elements (hex8). This should mean that more linear elements through thickness would improve the result, however it does not, no quantity of linear elements through thickness seems to change the result which to me implies there's something going wrong here.\n\nThis comment seems to have slipped under the radar somewhat so I'll mention it again here. Using this input file (NOTE: Small strain so hyperelasticty is not a factor here):\n\n  Solid Element Model With Neumann Load\n# Solid element version of a shell vs solid bending stress comparison.\n# The model is a cantilevered plate, 20mm x 20mm x 1mm.\n# There are 4 elements through thickness.\n# The left edge (x = 0) is fixed in X and Z, this also prevents rotation about Y.\n# The front edge (y = 0) is fixed in Y.\n# The right side of the plate is subject to a 2N per unit area load in the Z direction.\n\n[Mesh]\n  [Generator]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmax = 20\n    ymax = 20\n    zmin = -0.5\n    zmax = 0.5\n    nx = 10\n    ny = 10\n    nz = 4\n    elem_type = HEX8\n  []\n  [SampleXCenterline]\n    type = ParsedGenerateSideset\n    input = Generator\n    new_sideset_name = Centerline\n    combinatorial_geometry = 'y=10'\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = SMALL\n    incremental = true\n    add_variables = true\n    use_finite_deform_jacobian = true\n    volumetric_locking_correction = false\n    use_automatic_differentiation = true\n    generate_output = vonmises_stress\n  []\n[]\n\n[Materials]\n  [StandardElasticityTensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = 10000\n    poissons_ratio = 0.3\n  []\n  [Stress]\n    type = ADComputeLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = Centerline\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = left\n    value = 0\n    variable = disp_z\n  []\n  [Load]\n    type = ADNeumannBC\n    boundary = right\n    value = 2\n    variable = disp_z\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = True\n  solve_type = 'NEWTON'\n  line_search = 'default'\n  petsc_options_iname = '-pc_type  -snes_linesearch_type -pc_factor_shift_type -snes_max_it  '\n                        '-ksp_max_it'\n  petsc_options_value = 'lu        basic                 NONZERO               20            30'\n  nl_abs_tol = 1e-50\n  # nl_rel_tol = 1e-10\n[]\n\n[Postprocessors]\n  [Point_Displacement_X]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_x\n  []\n  [Point_Displacement_Y]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_y\n  []\n  [Point_Displacement_Z]\n    type = PointValue\n    point = '20 10 0'\n    variable = disp_z\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n    file_base = 'IsotropicSolidBending'\n  []\n[]\n\n\nWhen run as is, I get a displacement of 2.43mm. If I change Mesh/Generator/elem_type to HEX20 I get a displacement of 6.05mm. If I change it to HEX27 I get a displacement of 6.05mm, all of these compared to the correct result of around 6mm. This indicates to me that the HEX8 element type in MOOSE is performing very inaccurately in bending loads.\nIf instead of changing the element type (therefore using HEX8 again), I change the number of elements through the thickness of the model, the variable most commonly associated with bending accuracy using solid elements, I get the following: Baseline 4 elements: 2.43mm, 6 elements: 2.43mm, 8 elements: 2.44mm, 10 elements: 2.44mm.\nThis seems to indicate that no amount of HEX8 elements can capture bending correctly, whereas in Nastran, the 4 elements through thickness gives near perfect results, and in fact 2 elements through thickness gives almost identical results as well.\nI'm quite concerned that I've stumbled upon another implementation bug here (as with the shell element stress bug I discovered) so would be keen for someone with more knowledge of the back end of tensor_mechanics to investigate.",
+                  "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3127416",
+                  "updatedAt": "2022-07-12T08:35:45Z",
+                  "publishedAt": "2022-07-12T08:35:43Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I'm quite concerned that I've stumbled upon another implementation bug here (as with the shell element stress bug I discovered) so would be keen for someone with more knowledge of the back end of tensor_mechanics to investigate.\n\nInstead of figuring out whether there's a bug on the tensor_mechanics side, we really need more information on the Nastran side. I can guarantee that in tensor_mechanics if you do linear elasticity, it really is just linear elastcity... It's not a matter of element implementation, and it's impossible to get it wrong. However, Nastran might be doing some sort of stablization behind the scenes.\nWhen you try to benchmark software B to an existing model in software A, and especially you are opening this discussion in B's forum, the first logical step is to provide as much information as you can regarding the model in A, instead of asking what's wrong with B. Hope this makes sense to you.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129041",
+                          "updatedAt": "2022-07-12T12:50:05Z",
+                          "publishedAt": "2022-07-12T12:50:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Regardless of what Nastran is doing I don't see how changing the element type from HEX8 to HEX20 should lead to a change of almost 3x in displacement?",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129070",
+                          "updatedAt": "2022-07-12T12:55:28Z",
+                          "publishedAt": "2022-07-12T12:55:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "To be more clear, all I can gather from your previous posts about the Nastran elasticity model is it is some sort of solid element with linear elasticity. We will need a Nastran expert to tell us more about its formulation so that we can do our best to set up the same thing in tensor_mechanics.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129102",
+                          "updatedAt": "2022-07-12T12:57:37Z",
+                          "publishedAt": "2022-07-12T12:57:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Regardless of what Nastran is doing I don't see how changing the element type from HEX8 to HEX20 should lead to a change of almost 3x in displacement?\n\nThe geometry and arrangement of elements you have is subject to shear locking, among other stability issues.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129114",
+                          "updatedAt": "2022-07-12T12:58:55Z",
+                          "publishedAt": "2022-07-12T12:58:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Okay, apologies. I've done some digging and you're absolutely correct, Nastran uses 'Reduced Shear Integration with bubble functions' to reduce shear locking. I had enabled volumetric locking in my input and in my mind gotten that swapped around with shear locking, leading me to think that MOOSE had a similar feature that 'wasn't working' when I now realise that it's obviously a different feature. How this reduced shear integration method works seems to be a bit of a secret sauce method. An obvious solution to my issue is the use of higher order elements, so I'll go ahead with that approach.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129373",
+                          "updatedAt": "2022-07-12T13:31:48Z",
+                          "publishedAt": "2022-07-12T13:30:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "No problem. Glad you figured it out. And yes, bubble function is the first guess I would make as well. We don't have bubble function enriched Lagrange shape functions in libMesh yet. This is actually the second time the need for bubble function comes up, the first one being #17569.",
+                          "url": "https://github.com/idaholab/moose/discussions/21501#discussioncomment-3129478",
+                          "updatedAt": "2022-07-12T13:42:23Z",
+                          "publishedAt": "2022-07-12T13:42:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "about recover",
+          "author": {
+            "login": "Salma-Mao"
+          },
+          "bodyText": "When recovering my model I get the following error:\n*** Info ***\nUsing stress_copper_out_cp/7249 for recovery.\n\n*** ERROR ***\n/usr/local/workspace/stress_copper/stress_copper.i:136: (BCs/convention_surfcae/boundary):\n    the following side sets (ids) do not exist on the mesh: powder_top (9)\n\n    MOOSE distinguishes between \"node sets\" and \"side sets\" depending on whether\n    you are using \"Nodal\" or \"Integrated\" BCs respectively. Node sets corresponding\n    to your side sets are constructed for you by default.\n\n    Try setting \"Mesh/construct_side_list_from_node_list=true\" if you see this error.\n    Note: If you are running with adaptivity you should prefer using side sets.\n\n\nI added the ''construct_side_list_from_node_list=true\" in mesh. However, get the same error? what is the wrong?\n[Outputs]\nfile_base = stress_copper_out\nexecute_on = 'timestep_end'\ncsv = true\nexodus = true\ntype = Checkpoint\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/21465",
+          "updatedAt": "2022-07-22T00:05:21Z",
+          "publishedAt": "2022-06-30T11:52:15Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Did you have this side set in the initial simulation?\nWhat does your Mesh block look like?\nYou can use the mesh in the _cp folder of the checkpoint to restart btw\n\u2026\n Le 30 juin 2022 \u00e0 05:52, Salma Mao ***@***.***> a \u00e9crit :\n\n \ufeff\n When recovering my model I get the following error:\n\n *** Info ***\n Using stress_copper_out_cp/7249 for recovery.\n\n *** ERROR ***\n /usr/local/workspace/stress_copper/stress_copper.i:136: (BCs/convention_surfcae/boundary):\n the following side sets (ids) do not exist on the mesh: powder_top (9)\n\n MOOSE distinguishes between \"node sets\" and \"side sets\" depending on whether\n you are using \"Nodal\" or \"Integrated\" BCs respectively. Node sets corresponding\n to your side sets are constructed for you by default.\n\n Try setting \"Mesh/construct_side_list_from_node_list=true\" if you see this error.\n Note: If you are running with adaptivity you should prefer using side sets.\n I added the ''construct_side_list_from_node_list=true\" in mesh. However, get the same error? what is the wrong?\n\n [Outputs]\n file_base = stress_copper_out\n execute_on = 'timestep_end'\n csv = true\n exodus = true\n type = Checkpoint\n []\n\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n You are receiving this because you are subscribed to this thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3056628",
+                  "updatedAt": "2022-06-30T13:49:17Z",
+                  "publishedAt": "2022-06-30T13:49:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "1.0 Did you have this side set in the initial simulation?\nWhat does your Mesh block look like?\n[Mesh]\n[./total]\n  type = GeneratedMeshGenerator\n  dim = 3\n  xmin = 0\n  xmax =8.0e-4\n  nx = 40\n\n ymin = 0\n ymax = 6.0e-4\n ny = 30\n\n  zmin =0\n  zmax = 3.3e-4\n  nz = 22\n\n[../]\n[./substrate]\n  type = SubdomainBoundingBoxGenerator\n  input = total\n  block_id = 1\n  bottom_left = '0 0 0'\n  top_right = '8.0e-4 6.0e-4 1.5e-4'\n[../]\n[./substrate_1]\n  type = SubdomainBoundingBoxGenerator\n  input = substrate\n  block_id = 2\n  bottom_left = '0 0 1.5e-4'\n  top_right = '8.0e-4 6.0e-4 3.0e-4'\n[../]\n[./powder]\n type = SubdomainBoundingBoxGenerator\n input = substrate_1\n block_id = 3\nbottom_left = '0 0 3.0e-4'\ntop_right = '8.0e-4 6.0e-4 3.3e-4'\n[../]\n[./powder_re]\n type = RefineBlockGenerator\n  input = powder\n  block ='2 3'\n  refinement = 1\n  enable_neighbor_refinement = false\n\n[../]\n[./powder_boundary_top]\n      type = SideSetsAroundSubdomainGenerator\n      input = powder_re\n     block = 3\n     normal = '0 0 1'\n     new_boundary = 'powder_top'\n [../]\n []\n\n2.0 You can use the mesh in the _cp folder of the checkpoint to restart btw\nWhen I use the mesh in the _cp folder, I get the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3060540",
+                          "updatedAt": "2022-07-01T04:31:15Z",
+                          "publishedAt": "2022-07-01T02:17:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The sideset generates fine for me so that isnt the problem.\nThe mesh restart should keep it. I just tried and it worked fine.\nThis syntax is wrong btw:\n[Outputs]\nfile_base = stress_copper_out\nexecute_on = 'timestep_end'\ncsv = true\nexodus = true\ntype = Checkpoint\n[]\n\nmaybe you mean\n[Outputs]\n  file_base = stress_copper_out\n  execute_on = 'timestep_end'\n  csv = true\n  exodus = true\n  checkpoint = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3061250",
+                          "updatedAt": "2022-07-01T05:26:51Z",
+                          "publishedAt": "2022-07-01T05:26:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what I ran to check:\n[Mesh]\n    [./total]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmin = 0\n    xmax =8.0e-4\n    nx = 40\n  \n    ymin = 0\n    ymax = 6.0e-4\n    ny = 30\n  \n    zmin =0\n    zmax = 3.3e-4\n    nz = 22\n  [../]\n  [./substrate]\n    type = SubdomainBoundingBoxGenerator\n    input = total\n    block_id = 1\n    bottom_left = '0 0 0'\n    top_right = '8.0e-4 6.0e-4 1.5e-4'\n  [../]\n  [./substrate_1]\n    type = SubdomainBoundingBoxGenerator\n    input = substrate\n    block_id = 2\n    bottom_left = '0 0 1.5e-4'\n    top_right = '8.0e-4 6.0e-4 3.0e-4'\n  [../]\n  [./powder]\n    type = SubdomainBoundingBoxGenerator\n    input = substrate_1\n    block_id = 3\n    bottom_left = '0 0 3.0e-4'\n    top_right = '8.0e-4 6.0e-4 3.3e-4'\n  [../]\n  [./powder_re]\n    type = RefineBlockGenerator\n    input = powder\n    block ='2 3'\n    refinement = 1\n    enable_neighbor_refinement = false\n  [../]\n  [./powder_boundary_top]\n    type = SideSetsAroundSubdomainGenerator\n    input = powder_re\n    block = 3\n    normal = '0 0 1'\n    new_boundary = 'powder_top'\n  [../]\n[]\n\n[BCs]\n  [test]\n    type = DirichletBC\n    boundary = powder_top\n    variable = u\n    value = 1\n  []\n[]\n\n[Variables]\n  [u]\n  []\n[]\n\n[Kernels]\n  [d]\n    type = Diffusion\n    variable = u\n  []\n[]\n\n[Executioner]\n  type = Steady\n[]\n\n[Outputs]\n  checkpoint = true\n[]\n\n\nTHEN for the checkpoint:\n[Mesh]\n  [fmg]\n    type = FileMeshGenerator\n    file = 'test_out_cp/0001_mesh.cpr'\n  []\n[]\n\n[BCs]\n  [test]\n    type = DirichletBC\n    boundary = powder_top\n    variable = u\n    value = 1\n  []\n[]\n\n[Variables]\n  [u]\n  []\n[]\n\n[Kernels]\n  [d]\n    type = Diffusion\n    variable = u\n  []\n[]\n\n[Problem]\n  restart_file_base = 'test_out_cp/LATEST'\n[]\n\n[Executioner]\n  type = Steady\n  nl_abs_tol = 1e-4'\n  l_tol = 1e-1 # just an example!\n[]\n\n[Outputs]\n  checkpoint = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3061262",
+                          "updatedAt": "2022-07-01T05:31:34Z",
+                          "publishedAt": "2022-07-01T05:31:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "I find the problem is BCs.\nI run the case.\n[Mesh]\n[./total]\ntype = GeneratedMeshGenerator\ndim = 3\nxmin = 0\nxmax =8.0e-4\nnx = 40\nymin = 0\nymax = 6.0e-4\nny = 30\nzmin =0\nzmax = 3.3e-4\nnz = 22\n[../]\n[./substrate]\ntype = SubdomainBoundingBoxGenerator\ninput = total\nblock_id = 1\nbottom_left = '0 0 0'\ntop_right = '8.0e-4 6.0e-4 1.5e-4'\n[../]\n[./substrate_1]\ntype = SubdomainBoundingBoxGenerator\ninput = substrate\nblock_id = 2\nbottom_left = '0 0 1.5e-4'\ntop_right = '8.0e-4 6.0e-4 3.0e-4'\n[../]\n[./powder]\ntype = SubdomainBoundingBoxGenerator\ninput = substrate_1\nblock_id = 3\nbottom_left = '0 0 3.0e-4'\ntop_right = '8.0e-4 6.0e-4 3.3e-4'\n[../]\n[./powder_re]\ntype = RefineBlockGenerator\ninput = powder\nblock ='2 3'\nrefinement = 1\nenable_neighbor_refinement = false\n[../]\n[./powder_boundary_top]\ntype = SideSetsAroundSubdomainGenerator\ninput = powder_re\nblock = 3\nnormal = '0 0 1'\nnew_boundary = 'powder_top'\n[../]\n[]\n[Kernels]\n[./time]\ntype = ADHeatConductionTimeDerivative\nblock = '1 2 3'\nvariable = temp\n[../]\n[./heat_conduct]\ntype = ADHeatConduction\nvariable = temp\nblock = '1 2 3'\nthermal_conductivity = thermal_conductivity\n[../]\n[./heat_source]\ntype = ADMatHeatSource\nblock = '2 3'\nmaterial_property = volumetric_heat\nvariable = temp\n[../]\n[]\n[BCs]\n[./convention_surfcae]\ntype = ADConvectiveHeatFluxBC\nvariable = temp\nboundary = 'powder_top'\nT_infinity = 300.0\nheat_transfer_coefficient = 110\n[../]\n[]\n[Materials]\n[./heat]\ntype = ADHeatConductionMaterial\nspecific_heat = 603\nthermal_conductivity = 1000\n[../]\n[./density]\ntype = ADGenericConstantMaterial\nprop_names = 'density'\nprop_values = '4430'\n[../]\n[./volumetric_heat]\ntype = FunctionPathEllipsoidHeatSource\nrx = 1\nry = 1\nrz = 1\npower = 1000\nefficiency = 0.5\nfactor = 2\nfunction_x= path_x\nfunction_y= path_y\nfunction_z= path_z\n[../]\n[]\n[Functions]\n[./path_x]\ntype = ParsedFunction\nvalue = 0.7*t+1.0e-4\n[../]\n[./path_y]\ntype = ParsedFunction\nvalue = 3.0e-4\n[../]\n[./path_z]\ntype = ParsedFunction\nvalue = 3.3e-4\n[../]\n[]\n[Postprocessors]\n[temp_max]\ntype = ElementExtremeValue\nvariable = temp\n[]\n[temp_min]\ntype = ElementExtremeValue\nvariable = temp\nvalue_type = min\n[]\n[temp_avg]\ntype = ElementAverageValue\nvariable = temp\n[]\n[]\n[Preconditioning]\n[./full]\ntype = SMP\nfull = true\n[../]\n[]\n[Executioner]\ntype = Transient\nsolve_type = PJFNK\nnl_rel_tol = 1e-6\nnl_abs_tol = 1e-6\npetsc_options_iname = '-ksp_type -pc_type -pc_factor_mat_solver_package'\npetsc_options_value = 'preonly lu superlu_dist'\nl_max_its = 100\nend_time = 1\ndt = 1e-4\ndtmin = 1e-5\n[]\n[Outputs]\nexecute_on = 'timestep_end'\ncsv = true\nexodus = true\ncheckpoint = true\n[]\nThe recover\n[Problem]\nrestart_file_base = 'test_recover_out_cp/LATEST'\n[]\n[Mesh]\n[./gm]\ntype = FileMeshGenerator\nfile = 'test_recover_out_cp/0017_mesh.cpr'\n[../]\n[]\n[Variables]\n[./temp]\ninitial_condition = 300\n[]\n[]\n[Kernels]\n[./time]\ntype = ADHeatConductionTimeDerivative\nblock = '1 2 3'\nvariable = temp\n[../]\n[./heat_conduct]\ntype = ADHeatConduction\nvariable = temp\nblock = '1 2 3'\nthermal_conductivity = thermal_conductivity\n[../]\n[./heat_source]\ntype = ADMatHeatSource\nblock = '2 3'\nmaterial_property = volumetric_heat\nvariable = temp\n[../]\n[]\n[BCs]\n[./convention_surfcae]\ntype = ADConvectiveHeatFluxBC\nvariable = temp\nboundary = 'powder_top'\nT_infinity = 300.0\nheat_transfer_coefficient = 110\n[../]\n[]\n[Materials]\n[./heat]\ntype = ADHeatConductionMaterial\nspecific_heat = 603\nthermal_conductivity = 1000\n[../]\n[./density]\ntype = ADGenericConstantMaterial\nprop_names = 'density'\nprop_values = '4430\n[../]\n[./volumetric_heat]\ntype = FunctionPathEllipsoidHeatSource\nrx = 1\nry = 1\nrz = 1\npower = 1000\nefficiency = 0.5\nfactor = 2\nfunction_x= path_x\nfunction_y= path_y\nfunction_z= path_z\n[../]\n[]\n[Functions]\n[./path_x]\ntype = ParsedFunction\nvalue = 0.7*t+1.0e-4\n[../]\n[./path_y]\ntype = ParsedFunction\nvalue = 3.0e-4\n[../]\n[./path_z]\ntype = ParsedFunction\nvalue = 3.3e-4\n[../]\n[]\n[Postprocessors]\n[temp_max]\ntype = ElementExtremeValue\nvariable = temp\n[]\n[temp_min]\ntype = ElementExtremeValue\nvariable = temp\nvalue_type = min\n[]\n[temp_avg]\ntype = ElementAverageValue\nvariable = temp\n[]\n[]\n[Preconditioning]\n[./full]\ntype = SMP\nfull = true\n[../]\n[]\n[Executioner]\ntype = Transient\nsolve_type = PJFNK\nnl_rel_tol = 1e-6\nnl_abs_tol = 1e-6\npetsc_options_iname = '-ksp_type -pc_type -pc_factor_mat_solver_package'\npetsc_options_value = 'preonly lu superlu_dist'\nl_max_its = 100\nend_time = 1\ndt = 1e-4\ndtmin = 1e-5\n[]\n[Outputs]\nexecute_on = 'timestep_end'\ncsv = true\nexodus = true\ncheckpoint = true\n[]\nI get the same error.\n*** ERROR ***\n/usr/local/workspace/test_recover/test_recover.i:41: (BCs/convention_surfcae/boundary):\nthe following side sets (ids) do not exist on the mesh: powder_top (7)\nMOOSE distinguishes between \"node sets\" and \"side sets\" depending on whether\nyou are using \"Nodal\" or \"Integrated\" BCs respectively. Node sets corresponding\nto your side sets are constructed for you by default.\nTry setting \"Mesh/construct_side_list_from_node_list=true\" if you see this error.\nNote: If you are running with adaptivity you should prefer using side sets.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3061936",
+                          "updatedAt": "2022-07-01T07:46:10Z",
+                          "publishedAt": "2022-07-01T07:46:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I just run your input file and it ran fine.\nYou must be using either an old MOOSE or you have an old mesh file in the checkpoint folder.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3064378",
+                          "updatedAt": "2022-07-01T13:45:14Z",
+                          "publishedAt": "2022-07-01T13:45:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "I can't understand the 'You must be using either an old MOOSE or you have an old mesh file in the checkpoint folder.'\nIn my case, I create test_recover_1.i for recovering and the test_recover.i is original file. The case is shown\n#21465 (reply in thread).\n\nThe checkpoint folder is shown below.\n\nWhen I run to vrecover using  mpirun -n 10 ./test_recover-opt -i test_recover_1.i --recover, I get the error.\n*** ERROR ***\nERROR: Neither one of the following files can be located:\n'_mesh.cpr/1/header.cpr' nor\n'_mesh.cpr'\nIf you are running a parallel job, double check that you've created a split for 1 ranks.\nNote: One of paths above may refer to a valid directory on your system, however we are attempting to read a valid header file.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3090114",
+                          "updatedAt": "2022-07-06T07:23:58Z",
+                          "publishedAt": "2022-07-06T07:23:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think you ll want to pass the name of the filebase for the recover file, because the name of the input file changed between your two runs\n  --recover [file_base]                             Continue the calculation.  If file_base is omitted then the most recent recovery file will be utilized",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3094998",
+                          "updatedAt": "2022-07-06T19:54:18Z",
+                          "publishedAt": "2022-07-06T19:54:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "Based on the recover , it can recover and run fine without SideSetsAroundSubdomainGenerator . However, when SideSetsAroundSubdomainGenerator or SideSetsBetweenSubdomainsGenerator is added, I get the error.\n*** Info ***\nUsing ex_12_dir_dir_cp/0006 for recovery.\n*** ERROR ***\n/usr/local/workspace/ex_12/ex_12_recover.i:116: (BCs/convention_surfcae_bottom/boundary):\nthe following side sets (ids) do not exist on the mesh: powder_bottom (8)\nMOOSE distinguishes between \"node sets\" and \"side sets\" depending on whether\nyou are using \"Nodal\" or \"Integrated\" BCs respectively. Node sets corresponding\nto your side sets are constructed for you by default.\nTry setting \"Mesh/construct_side_list_from_node_list=true\" if you see this error.\nNote: If you are running with adaptivity you should prefer using side sets.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3118132",
+                          "updatedAt": "2022-07-11T03:27:52Z",
+                          "publishedAt": "2022-07-11T03:27:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Did you delete the recover files in between those tries? If the code tries to recover off of a run without that generator, then the sideset is not included.\nWhen I ran your input files earlier this month, it worked well with SideSetsAroundSubdomainGenerator.",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3118337",
+                          "updatedAt": "2022-07-11T04:28:59Z",
+                          "publishedAt": "2022-07-11T04:28:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "When I run my input file with SideSetsAroundSubdomainGenerator, I get a lot of error. I don't solve the problem. Could you please share with me the complete file you run runtime instructions?",
+                          "url": "https://github.com/idaholab/moose/discussions/21465#discussioncomment-3118497",
+                          "updatedAt": "2022-07-11T05:19:19Z",
+                          "publishedAt": "2022-07-11T05:19:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using TabulatedFluidProperties with FlowChannel1Phase",
+          "author": {
+            "login": "jcstonehillAMA"
+          },
+          "bodyText": "Hello all,\nHopefully this is a simple fix: I'm attempting to build a simulation that uses many components from the Thermal Hydraulics module include the FlowChannel1Phase. In addition, I have some flow properties that I have saved in a CSV file (completely separate from MOOSE) that I would like to use instead of an IdealGasFluidProperties object.\nAs soon as I set everything up and run, I get this error:\n*** ERROR ***\nThe following error occurred in the object \"tabulated_fluid_data\", of type \"TabulatedFluidProperties\".\n\ntabulated_fluid_data: virtual libMesh::Real SinglePhaseFluidProperties::e_from_p_rho(libMesh::Real, libMesh::Real) const not implemented.\n\nHere is the portion of the input file where I set up my fluid properties:\n[Modules]\n  [./FluidProperties]\n    [./original]\n                       type = IdealGasFluidProperties\n\t\t\tgamma = 1.3845\n\t\t\tk = 0.19158\n\t\t\tmolar_mass = 0.00201588\n\t\t\tmu = 8.9154e-5\n    [../]\n    [./tabulated_fluid_data]\n\t\t\ttype = TabulatedFluidProperties\n\t\t\tfluid_property_file = fluid_properties.csv\n\t\t\tfp = original\n\t\t\tpressure_min = 1\n\t\t\tpressure_max = 100000000\n\t\t\ttemperature_min = 1\n\t\t\ttemperature_max = 6000\n     []\n   []\n[]\n\nAnd here's my flow channel component:\n[fch]\n\t\ttype = FlowChannel1Phase\n\t\tposition = '0 0 0'\n\t\torientation = '0 0 1'\n\t\tfp = tabulated_fluid_data\n\t\tn_elems = 6\n\t\tlength = ${L}\n\t\tinitial_T = 1000\n\t\tinitial_p = 2.3e6\n\t\tinitial_vel = 0\n\t\tclosures = simple_closures\n\t\tA = 0.000005309\n\t\tf = 0\n[]\n\nIs it possible to load in this custom fluid properties data? and if so, how?\nMany thanks ahead of time!\nEDIT: Sorry for the terribly formatted code, my IDE did not like that copy and paste for some reason.",
+          "url": "https://github.com/idaholab/moose/discussions/21552",
+          "updatedAt": "2022-07-22T00:05:10Z",
+          "publishedAt": "2022-07-11T17:59:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt is possible in a pull request, but not in the current version of MOOSE. @spaubt2  and I are actively working on making this work.\ne_from_p_rho is currently not implemented for this fluid property in MOOSE, but we have it working well in this pull request\n#21301\n@spaubt2 can you please upload the latest working version to the PR so @jcstonehillAMA may try it\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21552#discussioncomment-3125047",
+                  "updatedAt": "2022-07-12T00:14:39Z",
+                  "publishedAt": "2022-07-12T00:14:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Area information of the cells",
+          "author": {
+            "login": "hhy2022"
+          },
+          "bodyText": "Hi,\nI would like to know the area information of each cells. I would used this to couple with some variable. Is there any kernel I can used for those cell areas?\nThank you so much.",
+          "url": "https://github.com/idaholab/moose/discussions/21556",
+          "updatedAt": "2022-07-22T00:05:03Z",
+          "publishedAt": "2022-07-11T19:02:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou may save the volume information in an auxvariable using a VolumeAux. In 2D it gives the area\nhttps://mooseframework.inl.gov/source/auxkernels/VolumeAux.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21556#discussioncomment-3125036",
+                  "updatedAt": "2022-07-12T00:10:06Z",
+                  "publishedAt": "2022-07-12T00:10:04Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Issue with outputting artificial Euler angle by OutputEulerAngles object",
+          "author": {
+            "login": "Linwitness"
+          },
+          "bodyText": "Hello everyone,\nWhen I import the EBSD data into MOOSE as IC, I will use OutputEulerAngles to output the necessary data from EBSD file, like the EBSD id and Euler angle.\nHowever, when I use the the object read the artificial Euler angle (only phi1 has value, other are 0) from the EBSD file I build, the object will only output 180\u02da instead of the right value. I list the input lines about OutputEulerAngles, the EBSD file examples I use and the Euler angle I output below:\n\ninput\n\n[./aphi1]\n    type = OutputEulerAngles\n    variable = aphi1\n    euler_angle_provider = ebsd_reader\n    grain_tracker = grain_tracker\n    output_euler_angle = 'phi1'\n    execute_on = 'INITIAL TIMESTEP_END'\n[../]\n\n\nEBSD file\n\nOutputted EBSD id and Euler angle\n  \n\nAlso, I found if Phi and phi2 are a tiny value instead of 0, the OutputEulerAngles can output the correct Euler angle, which is shown as below.\n \nOnly if there is a zero in Phi or phi2, the output will only be 180\u02da:\n \nI guess the reason is that 0 become denominator when MOOSE convert the Euler angle into Quaternion value. Do you have any idea about it? Also, I would like to know is there a better way to solve the issue in OutputEulerAngles? Like outputting the Euler angle it read directly instead of converting into Quaternion? Thank you so much!\nThe input file I used and the result are attached here. Just let me know if you need more information.\nEulerAngleOutputDiscussion.zip",
+          "url": "https://github.com/idaholab/moose/discussions/21557",
+          "updatedAt": "2022-07-11T22:27:41Z",
+          "publishedAt": "2022-07-11T22:27:41Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Terminator][Subapp]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Hi moose users,\nRecently, I am using a Terminator.C to finish my subapp in a multiapp.\nHowever, if I use the Terminator.C, my subapp does not calculate anything after the first timestep of my mainapp.\nIt seems like the Terminator.C turn off the subapp for whole timesteps for mainapp after the subapp reached the criteria.\nI checked this issue with put the following print line in the execute class of Terminator.C:\nstd::cout << \"Time Execute Terminator Test :\" << _t << std::endl;\nHere I attached the output results during the calculation:\n--------------------------------------------------------------------\nsub_app0: Time Step 41, time = 41, dt = 1\nsub_app0:\nsub_app0: Performing automatic scaling calculation\nsub_app0:\nsub_app0:  0 Nonlinear |R| = 0.000000e+00\nsub_app0:  Solve Converged!\ncurrents: 29.6614 Older currents:92.9853\nchanged potential difference: 1e-07\n**Time Execute Terminator Test :41**\nsub_app0:\nsub_app0: Postprocessor Values:\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: | time           | EcorrPostCal   | Isum           | SideAverageO2  | SideAverageTTT |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: :                :                :                :                :                :\nsub_app0: |   2.700000e+01 |  -2.918000e-01 |  -2.135603e+04 |   2.500000e-01 |  -2.919000e-01 |\nsub_app0: |   2.800000e+01 |  -2.918100e-01 |   1.029218e+04 |   2.500000e-01 |  -2.918000e-01 |\nsub_app0: |   2.900000e+01 |  -2.918200e-01 |   7.123863e+03 |   2.500000e-01 |  -2.918100e-01 |\nsub_app0: |   3.000000e+01 |  -2.918300e-01 |   3.956327e+03 |   2.500000e-01 |  -2.918200e-01 |\nsub_app0: |   3.100000e+01 |  -2.918400e-01 |   7.895681e+02 |   2.500000e-01 |  -2.918300e-01 |\nsub_app0: |   3.200000e+01 |  -2.918300e-01 |  -2.376415e+03 |   2.500000e-01 |  -2.918400e-01 |\nsub_app0: |   3.300000e+01 |  -2.918310e-01 |   7.895681e+02 |   2.500000e-01 |  -2.918300e-01 |\nsub_app0: |   3.400000e+01 |  -2.918320e-01 |   4.729349e+02 |   2.500000e-01 |  -2.918310e-01 |\nsub_app0: |   3.500000e+01 |  -2.918330e-01 |   1.563094e+02 |   2.500000e-01 |  -2.918320e-01 |\nsub_app0: |   3.600000e+01 |  -2.918320e-01 |  -1.603082e+02 |   2.500000e-01 |  -2.918330e-01 |\nsub_app0: |   3.700000e+01 |  -2.918321e-01 |   1.563094e+02 |   2.500000e-01 |  -2.918320e-01 |\nsub_app0: |   3.800000e+01 |  -2.918322e-01 |   1.246473e+02 |   2.500000e-01 |  -2.918321e-01 |\nsub_app0: |   3.900000e+01 |  -2.918323e-01 |   9.298528e+01 |   2.500000e-01 |  -2.918322e-01 |\nsub_app0: |   4.000000e+01 |  -2.918324e-01 |   6.132331e+01 |   2.500000e-01 |  -2.918323e-01 |\nsub_app0: |   4.100000e+01 |  -2.918325e-01 |   2.966143e+01 |   2.500000e-01 |  -2.918324e-01 |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0:\nsub_app0:\nsub_app0: Time Step 42, time = 42, dt = 1\nsub_app0:\nsub_app0: Performing automatic scaling calculation\nsub_app0:\nsub_app0:  0 Nonlinear |R| = 0.000000e+00\nsub_app0:  Solve Converged!\ncurrents: -2.00038 Older currents:61.3233\nchanged potential difference: 1e-07\n**Time Execute Terminator Test :42**\nTime :42\nsub_app0:\nsub_app0: Postprocessor Values:\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: | time           | EcorrPostCal   | Isum           | SideAverageO2  | SideAverageTTT |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: :                :                :                :                :                :\nsub_app0: |   2.800000e+01 |  -2.918100e-01 |   1.029218e+04 |   2.500000e-01 |  -2.918000e-01 |\nsub_app0: |   2.900000e+01 |  -2.918200e-01 |   7.123863e+03 |   2.500000e-01 |  -2.918100e-01 |\nsub_app0: |   3.000000e+01 |  -2.918300e-01 |   3.956327e+03 |   2.500000e-01 |  -2.918200e-01 |\nsub_app0: |   3.100000e+01 |  -2.918400e-01 |   7.895681e+02 |   2.500000e-01 |  -2.918300e-01 |\nsub_app0: |   3.200000e+01 |  -2.918300e-01 |  -2.376415e+03 |   2.500000e-01 |  -2.918400e-01 |\nsub_app0: |   3.300000e+01 |  -2.918310e-01 |   7.895681e+02 |   2.500000e-01 |  -2.918300e-01 |\nsub_app0: |   3.400000e+01 |  -2.918320e-01 |   4.729349e+02 |   2.500000e-01 |  -2.918310e-01 |\nsub_app0: |   3.500000e+01 |  -2.918330e-01 |   1.563094e+02 |   2.500000e-01 |  -2.918320e-01 |\nsub_app0: |   3.600000e+01 |  -2.918320e-01 |  -1.603082e+02 |   2.500000e-01 |  -2.918330e-01 |\nsub_app0: |   3.700000e+01 |  -2.918321e-01 |   1.563094e+02 |   2.500000e-01 |  -2.918320e-01 |\nsub_app0: |   3.800000e+01 |  -2.918322e-01 |   1.246473e+02 |   2.500000e-01 |  -2.918321e-01 |\nsub_app0: |   3.900000e+01 |  -2.918323e-01 |   9.298528e+01 |   2.500000e-01 |  -2.918322e-01 |\nsub_app0: |   4.000000e+01 |  -2.918324e-01 |   6.132331e+01 |   2.500000e-01 |  -2.918323e-01 |\nsub_app0: |   4.100000e+01 |  -2.918325e-01 |   2.966143e+01 |   2.500000e-01 |  -2.918324e-01 |\nsub_app0: |   4.200000e+01 |  -2.918325e-01 |  -2.000378e+00 |   2.500000e-01 |  -2.918325e-01 |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0:\nCopyTransfer: TTT\nCopyTransfer: TTT\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 8.472638e-02\n      0 Linear |R| = 3.680385e+00\n      1 Linear |R| = 1.804670e-15\n 1 Nonlinear |R| = 8.309315e-02\n      0 Linear |R| = 3.588376e+00\n      1 Linear |R| = 7.778159e-15\n 2 Nonlinear |R| = 2.241028e-03\n Solve Converged!\n\nOutlier Variable Residual Norms:\n  HS-: 2.241028e-03\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | Ecorr          | FClm           | FCu2p          | FCuCl2m        | FHSm           | FO2            | IA             | IC             | ID             | IE             | IS             | O2             |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   1.000000e-09 |  -2.918325e-01 |  -6.539886e+00 |   0.000000e+00 |   3.269943e+00 |  -2.214755e+09 |  -8.978969e-01 |   3.155004e+05 |  -3.465343e+05 |   0.000000e+00 |   2.961443e-07 |   2.136907e+14 |   2.499999e-01 |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n\n\nTime Step 2, time = 2.1e-09, dt = 1.1e-09\nCopyTransfer: O2\nCopyTransfer: O2\nsub_app0:\nsub_app0: Time Step 0, time = 0\nsub_app0:\nsub_app0: Postprocessor Values:\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: | time           | EcorrPostCal   | Isum           | SideAverageO2  | SideAverageTTT |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: |   0.000000e+00 |  -2.918325e-01 |  -2.000378e+00 |   2.500000e-01 |  -2.918325e-01 |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0:\nCopyTransfer: TTT\nCopyTransfer: TTT\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 2.465074e-03\n\n      0 Linear |R| = 8.524832e-04\n      1 Linear |R| = 1.886083e-19\n 1 Nonlinear |R| = 6.162670e-04\n      0 Linear |R| = 3.013980e-04\n      1 Linear |R| = 3.515695e-19\n 2 Nonlinear |R| = 1.540669e-04\n Solve Converged!\n\nOutlier Variable Residual Norms:\n  HS-: 1.540669e-04\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | Ecorr          | FClm           | FCu2p          | FCuCl2m        | FHSm           | FO2            | IA             | IC             | ID             | IE             | IS             | O2             |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   1.000000e-09 |  -2.918325e-01 |  -6.539886e+00 |   0.000000e+00 |   3.269943e+00 |  -2.214755e+09 |  -8.978969e-01 |   3.155004e+05 |  -3.465343e+05 |   0.000000e+00 |   2.961443e-07 |   2.136907e+14 |   2.499999e-01 |\n|   2.100000e-09 |  -2.918325e-01 |  -6.535205e+00 |   0.000000e+00 |   3.267602e+00 |  -1.384216e+08 |  -8.978960e-01 |   3.152746e+05 |  -3.465340e+05 |   0.000000e+00 |   7.403611e-08 |   1.335560e+13 |   2.499998e-01 |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n\n\nTime Step 3, time = 3.31e-09, dt = 1.21e-09\nCopyTransfer: O2\nCopyTransfer: O2\nsub_app0:\nsub_app0: Time Step 0, time = 0\nsub_app0:\nsub_app0: Postprocessor Values:\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: | time           | EcorrPostCal   | Isum           | SideAverageO2  | SideAverageTTT |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0: |   0.000000e+00 |  -2.918325e-01 |  -2.000378e+00 |   2.500000e-01 |  -2.918325e-01 |\nsub_app0: +----------------+----------------+----------------+----------------+----------------+\nsub_app0:\nCopyTransfer: TTT\nCopyTransfer: TTT\n\n------------------------------------------------------------------------------------------------\n\nSo, as you can see in the above results. The Terminator does not participate in the subapp calculation after the first timestep of mainapp.\nIs it a bug?\nKind regards,\nNakkyu",
+          "url": "https://github.com/idaholab/moose/discussions/21546",
+          "updatedAt": "2022-07-11T08:54:45Z",
+          "publishedAt": "2022-07-10T05:39:48Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "coskrrb2002"
+                  },
+                  "bodyText": "I used postprocessorDT to overcome this issue.\nBut I am still wondering about this issue.",
+                  "url": "https://github.com/idaholab/moose/discussions/21546#discussioncomment-3118251",
+                  "updatedAt": "2022-07-11T04:03:58Z",
+                  "publishedAt": "2022-07-11T04:03:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis isnt necessarily a bug. The Terminator was thought as a tool to end a simulation, and therefore to be used in the main app more likely. There isnt really anything in its documentation that lets you think it can be used in a subapp, reset and re-used on the next time step.\nI agree it would be a convenient feature.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21546#discussioncomment-3118331",
+                  "updatedAt": "2022-07-11T04:27:10Z",
+                  "publishedAt": "2022-07-11T04:27:09Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to realize fully coupled simulation through MultiApps system in MOOSE",
+          "author": {
+            "login": "sychang2021"
+          },
+          "bodyText": "I have a problem coupled by two systems which have twenty variables. When the number of mesh is large, solving the equations of the two systems simultaneously will face the limitation of solution speed and memory. So I think it is possible to solve the two problems separately (in two input files) and pass the information through the MultiApps system. But in doing so, is the solution method tightly coupled instead of fully coupled ? Can I achieve full coupling through the MultiApps system?",
+          "url": "https://github.com/idaholab/moose/discussions/21545",
+          "updatedAt": "2022-07-11T04:18:50Z",
+          "publishedAt": "2022-07-09T17:25:10Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "We refer to full coupling as the single-matrix approach, where all variables are solved for in the same system.\nYou can only achieve tight or loose coupling using MultiApps. At convergence, the results from full and tight coupling should be the same",
+                  "url": "https://github.com/idaholab/moose/discussions/21545#discussioncomment-3113911",
+                  "updatedAt": "2022-07-09T23:04:20Z",
+                  "publishedAt": "2022-07-09T23:04:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sychang2021"
+                          },
+                          "bodyText": "On my computer, I'm using Newton's method to solve a problem with 20 variables, 20,000 grids, which is a coupling of two different problems. Below is my setup in Executioner.\n  solve_type = 'NEWTON'\n  petsc_options = '-snes_converged_reason -ksp_converged_reason -snes_linesearch_monitor'\n\n  #petsc_options_iname = '-pc_type -sub_pc_type -ksp_gmres_restart -pc_gasm_overlap -sub_pc_factor_shift_type -pc_gasm_blocks -sub_pc_factor_mat_solver_type'\n  #petsc_options_value = 'gasm     lu           200                1                NONZERO                   16             superlu_dist'\n\n  petsc_options_iname = '-pc_type -pc_factor_shift_type'\n  petsc_options_value = 'lu       NONZERO'\n\nAt the beginning, it takes 1000s to solve each step. When the solution reaches more than 30 steps, it takes more than 1 hour to solve each step. But when I solve the two subproblems separately, the total time to solve one step is about 200 seconds. So I thought it would be more feasible to solve them separately. But I'm also worried about the accuracy of the solution. Do you think fully coupled and tightly coupled results are the same when converging?\nI would very much like to use the single-matrix approach to solving the problem, which looks wonderful and ideal. But limited by solving time and memory, maybe I have to take another approach.\nI have tried other petsc setups like the other petsc setup above. The solution time of each step is about 1/3 of the direct lu method. But still too slow for a large problem. Do you have any suggestions?",
+                          "url": "https://github.com/idaholab/moose/discussions/21545#discussioncomment-3114183",
+                          "updatedAt": "2022-07-10T02:57:25Z",
+                          "publishedAt": "2022-07-10T02:52:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It takes 200s with fixed point iterations? Or did you just run one solve then the other (loose coupling).\nYes at convergence fully and tightly coupled match. I have yet to see a case where they dont.\nThe single matrix approach is simple but is not the most common method. Numerically, it's more often than not beneficial to separate solves to reduce the size of the system.",
+                          "url": "https://github.com/idaholab/moose/discussions/21545#discussioncomment-3114225",
+                          "updatedAt": "2022-07-10T03:26:57Z",
+                          "publishedAt": "2022-07-10T03:26:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sychang2021"
+                          },
+                          "bodyText": "I have split a coupling problem into two separate problems. One of the problems took 130 seconds to solve in one step, and the other took 70 seconds to solve in one step. It looks like I need to use the MultiApps system for tight coupling. Thanks for your suggestion and reply.",
+                          "url": "https://github.com/idaholab/moose/discussions/21545#discussioncomment-3114248",
+                          "updatedAt": "2022-07-10T03:41:45Z",
+                          "publishedAt": "2022-07-10T03:41:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you need to iterate the coupling though. Like both problems need to run several times for each time step, exchanging information using Transfers.\nSee the fixed point parameters in the dropdown here:\nhttps://mooseframework.inl.gov/source/multiapps/FullSolveMultiApp.html",
+                          "url": "https://github.com/idaholab/moose/discussions/21545#discussioncomment-3118306",
+                          "updatedAt": "2022-07-11T04:18:50Z",
+                          "publishedAt": "2022-07-11T04:18:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Multiapp][Transfer]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Dear Users,\nI am trying to make the following multi-app:\n\nI am trying to use FullSolveMultiApp and MultiAppCopyTransfer, however, it doesn't work very well.\nWhen I was trying, Subapp doesn't update value B from the main app after timestep 1.\nThe following lines are the multiapps and transfer I used.\nDid I make any mistake here?\n\nCode\n[MultiApps]\n  [sub_app]\n    type = FullSolveMultiApp\n    app_type = corrosionApp\n    input_files = 'FakeTest2.i'\n    clone_master_mesh = true # Use mesh of master.i in sub.i file\n  []\n[]\n[Transfers]\n  [pull]\n    type = MultiAppCopyTransfer\n    from_multi_app = sub_app\n    variable = 'B'\n    source_variable = 'B'\n    execute_on = 'TIMESTEP_BEGIN'\n  []\n  [push]\n    type = MultiAppCopyTransfer\n    to_multi_app = sub_app\n    source_variable = 'A'\n    variable = 'A'\n    execute_on = 'INITIAL TIMESTEP_END'\n  []\n[]\n\n\nBest regards,\nnakkyu",
+          "url": "https://github.com/idaholab/moose/discussions/21536",
+          "updatedAt": "2022-07-10T05:44:56Z",
+          "publishedAt": "2022-07-08T08:32:45Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I think you may want to execute all the transfers and the multiapp on timestep_end.\nThe ordering goes like this then:\nmain app executes\ntransfer to subapp of B\nsubapp executes\ntransfer to main app of A\nthen repeats if you have fixed point coupling iterations turned on",
+                  "url": "https://github.com/idaholab/moose/discussions/21536#discussioncomment-3110117",
+                  "updatedAt": "2022-07-08T20:02:54Z",
+                  "publishedAt": "2022-07-08T20:02:53Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "coskrrb2002"
+                          },
+                          "bodyText": "Thank you for your advice!\nBut I found I have an issue with the Terminator object.",
+                          "url": "https://github.com/idaholab/moose/discussions/21536#discussioncomment-3114429",
+                          "updatedAt": "2022-07-10T05:44:55Z",
+                          "publishedAt": "2022-07-10T05:44:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Nonlinear solve did not converge in phase filed simulation",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Dear MOOSE experts,\nRecently I used GrainTracker to simulate grain growth, but I found that the calculation did not converge directly to Time Step 195. The useful information was extracted by outputting the interrupted information is Couldn't find a matching grain while working on variable index: 7 and Nonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 0. Its feature is that Nonlinear solve did not converge is displayed without calculation directly after creating a new grain ID. How should this problem be solved please?\nFinally, the contents of the executioner and the output terminal that I set in the .i file are as follows,\n[Executioner]\n  type = Transient\n  scheme = bdf2\n  solve_type = PJFNK\n  petsc_options_iname = '-pc_type -pc_hypre_type -ksp_gmres_restart -pc_hypre_boomeramg_strong_threshold'\n  petsc_options_value = 'hypre boomeramg 31 0.7'\n\n  l_max_its = 20 # Max number of linear iterations\n  l_tol = 1e-4 # Relative tolerance for linear solves\n  nl_max_its = 12 # Max number of nonlinear iterations\n  nl_abs_tol = 1e-8 #1e-11 # Relative tolerance for nonlinear solves\n  nl_rel_tol = 1e-10 # Absolute tolerance for nonlinear solves\n  dtmim = 1e-15\n  start_time = 0.0\n  end_time = ${my_end_time}\n  # num_steps = 3\n\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1.0\n    growth_factor = 1.2\n    cutback_factor = 0.8\n    optimal_iterations = 8\n  [../]\n  [./Adaptivity]\n    # Block that turns on mesh adaptivity. Note that mesh will never coarsen beyond initial mesh (before uniform refinement)\n    initial_adaptivity = ${my_num_initial_adaptivity} # Number of times mesh is adapted to initial condition\n    refine_fraction = 0.7 # Fraction of high error that will be refined\n    coarsen_fraction = 0.2 # Fraction of low error that will coarsened\n    max_h_level = ${my_num_adaptivity} # Max number of refinements used, starting from initial mesh (before uniform refinement)\n  [../]\n[]\n...\nTime Step 194, time = 310.643, dt = 1.40896\n\nGrain Tracker Status:\nGrains active index 0: 50 -> 50\nGrains active index 1: 60 -> 60\nGrains active index 2: 44 -> 44\nGrains active index 3: 47 -> 46--\nGrains active index 4: 38 -> 38\nGrains active index 5: 33 -> 32--\nGrains active index 6: 22 -> 22\nGrains active index 7: 16 -> 15--\nGrains active index 8: 17 -> 17\nGrains active index 9: 13 -> 13\nGrains active index 10: 18 -> 18\nGrains active index 11: 9 -> 9\nGrains active index 12: 12 -> 12\nGrains active index 13: 9 -> 9\nGrains active index 14: 12 -> 12\nGrains active index 15: 10 -> 10\n\nMarking Grain 846 as INACTIVE (variable index: 7)\nMarking Grain 453 as INACTIVE (variable index: 3)\nMarking Grain 707 as INACTIVE (variable index: 5)\nFinished inside of GrainTracker\n\n 0 Nonlinear |R| = 4.989953e+04\n 1 Nonlinear |R| = 9.701443e+03\n 2 Nonlinear |R| = 2.306064e+03\n 3 Nonlinear |R| = 3.248389e+02\n 4 Nonlinear |R| = 1.227843e+01\n 5 Nonlinear |R| = 2.200736e-02\n 6 Nonlinear |R| = 1.479065e-06\n  Finished Solving                                                                       [218.64 s] [   41 MB]\n Solve Converged!\nOutlier Variable Residual Norms:\n  gr1: 6.540621e-07\n  gr3: 6.823711e-07\n  gr5: 5.629546e-07\n  gr7: 7.498556e-07\n\nPostprocessor Values:\n+----------------+-------------------+----------------+----------------+----------------+----------------+\n| time           | avg_grain_volumes | dofs           | dt             | ngrains        | run_time       |\n+----------------+-------------------+----------------+----------------+----------------+----------------+\n:                :                   :                :                :                :                :\n|   2.909175e+02 |      4.142835e+06 |   1.764217e+07 |   1.408964e+00 |   4.270000e+02 |   5.617250e+04 |\n|   2.923264e+02 |      4.171643e+06 |   2.244227e+07 |   1.408964e+00 |   4.260000e+02 |   5.643598e+04 |\n|   2.937354e+02 |      4.181437e+06 |   1.693335e+07 |   1.408964e+00 |   4.260000e+02 |   5.664712e+04 |\n|   2.951444e+02 |      4.181266e+06 |   2.459606e+07 |   1.408964e+00 |   4.240000e+02 |   5.695084e+04 |\n|   2.965533e+02 |      4.220649e+06 |   2.331995e+07 |   1.408964e+00 |   4.240000e+02 |   5.721412e+04 |\n|   2.979623e+02 |      4.230544e+06 |   2.818122e+07 |   1.408964e+00 |   4.220000e+02 |   5.752029e+04 |\n|   2.993713e+02 |      4.240552e+06 |   1.961283e+07 |   1.408964e+00 |   4.180000e+02 |   5.779650e+04 |\n|   3.007802e+02 |      4.240566e+06 |   2.103417e+07 |   1.408964e+00 |   4.150000e+02 |   5.802086e+04 |\n|   3.021892e+02 |      4.270750e+06 |   1.967925e+07 |   1.408964e+00 |   4.110000e+02 |   5.824107e+04 |\n|   3.035981e+02 |      4.301435e+06 |   1.990094e+07 |   1.408964e+00 |   4.110000e+02 |   5.844750e+04 |\n|   3.050071e+02 |      4.322091e+06 |   2.152884e+07 |   1.408964e+00 |   4.100000e+02 |   5.873865e+04 |\n|   3.064161e+02 |      4.364004e+06 |   2.330024e+07 |   1.408964e+00 |   4.090000e+02 |   5.905024e+04 |\n|   3.078250e+02 |      4.385324e+06 |   1.979170e+07 |   1.408964e+00 |   4.070000e+02 |   5.930594e+04 |\n|   3.092340e+02 |      4.385290e+06 |   2.462248e+07 |   1.408964e+00 |   4.060000e+02 |   5.958971e+04 |\n|   3.106430e+02 |      4.417731e+06 |   2.470678e+07 |   1.408964e+00 |   4.050000e+02 |   5.982335e+04 |\n+----------------+-------------------+----------------+----------------+----------------+----------------+\n\n  Finished Adapting Mesh                                                                 [  8.24 s] [  -45 MB]\n\nTime Step 195, time = 312.052, dt = 1.40896\n\nGrain Tracker Status:\nGrains active index 0: 50 -> 50\nGrains active index 1: 60 -> 60\nGrains active index 2: 44 -> 44\nGrains active index 3: 46 -> 46\nGrains active index 4: 38 -> 38\nGrains active index 5: 32 -> 32\nGrains active index 6: 22 -> 22\nGrains active index 7: 15 -> 16++\nGrains active index 8: 17 -> 15--\nGrains active index 9: 13 -> 13\nGrains active index 10: 18 -> 18\nGrains active index 11: 9 -> 9\nGrains active index 12: 12 -> 12\nGrains active index 13: 9 -> 9\nGrains active index 14: 12 -> 12\nGrains active index 15: 10 -> 10\n\nNucleating Grain Detected  (variable index: 7)\nMarking Grain 921 as INACTIVE (variable index: 8)\nMarking Grain 947 as INACTIVE (variable index: 8)\n*****************************************************************************\nCouldn't find a matching grain while working on variable index: 7\nCreating new unique grain: 1125\nGrain ID: 1125\nGhosted Entities: 718474 718490 718496 718497 718500 718821 720098 720115 720204 720479 720517 720851 721240 721241 722700 722\n701 722712 722713 722716 722717 722812 722813 722940 722941 722944 722945 723724 723725 723756 723757 723844 723845 723872 723\n873 1036082 1036094 1036095 1036100 1036101 1036216 1036217 1036353 1036923 1036924 1037019 1037020 1037027 1037028 1037207 10\n37208 1037211 1037212 1038525 1039116 1039117 1041963 1041964 1041967 1041968 1042067 1042068 1042283 1042284 1042287 1042288 \nLocal Entities: \nHalo Entities: 718648 718649 718650 718651 718652 718653 718667 718668 718669 718670 718671 718672 718700 718701 718781 718783\n 718848 718890 718891 718900 718943 718981 718982 718983 719079 719080 719081 719122 719123 719124 720014 720015 720017 720038\n 720070 720071 720073 720074 720075 720076 720077 720082 720083 720084 720085 720090 720092 720093 720100 720519 720520 720521\n 720522 720523 720524 722784 722785 722786 722787 722848 722849 722850 722851 722852 722853 722854 722855 722900 722901 722927\n 722928 722929 722930 722931 722947 722996 722997 722998 723700 723701 723703 723710 723716 723717 723718 723719 1036170 10361\n72 1036245 1036249 1036260 1036262 1036263 1036264 1036265 1036266 1036280 1036291 1036292 1036294 1036305 1036307 1036314 103\n6316 1036343 1036344 1036345 1036353 1036354 1036358 1036359 1036360 1036361 1036362 1036456 1036509 1036532 1036534 1036653 1\n036654 1036655 1036656 1036677 1036678 1036679 1036680 1036685 1036687 1036717 1036718 1036719 1036720 1036721 1036722 1036723\n 1036724 1036735 1036736 1036773 1036782 1036790 1036792 1036867 1036868 1036869 1036870 1036871 1036872 1036873 1036874 10368\n77 1036879 1036880 1036881 1036882 1036901 1036902 1036903 1036904 1036905 1036907 1036908 1036909 1036910 1036911 1036925 103\n6926 1036927 1037240 1037244 1037245 1037246 1037247 1037330 1037366 1037477 1037479 1037509 1037510 1037511 1037512 1037513 1\n037514 1037515 1037516 1037537 1037538 1037540 1037573 1037574 1037575 1037576 1037582 1037584 1038118 1038119 1038121 1038125\n 1038202 1038204 1038246 1038247 1038248 1038249 1038250 1038251 1038252 1038253 1038269 1038270 1038271 1038272 1038281 10382\n82 1038283 1038284 1038293 1038294 1038295 1038296 1038305 1038306 1038307 1038308 1038313 1038315 1038316 1038317 1038320 103\n8322 1038323 1038326 1038330 1038382 1038390 1038391 1038392 1038393 1038401 1038403 1038404 1038409 1038411 1038422 1038424 1\n038426 1038428 1038433 1038434 1038435 1038436 1038438 1038440 1038450 1038451 1038452 1038453 1038482 1038483 1038484 1038485\n 1038510 1038511 1038512 1038513 1038576 1038578 1038579 1038612 1038614 1038651 1038963 1038967 1038969 1039041 1039126 10391\n27 1042209 1042211 1042213 1042215 1042219 1042220 1042222 1042223 1042224 1042705 1042709 1042711 1042713 1042715 1042770 104\n2772 1042773 1042775 1042777 1042779 1042826 1042828 1042829 1042831 \nPeriodic Node IDs: \nBBoxes:\nMax: (x,y,z)=( 23535.2,  5859.38,        0) Min: (x,y,z)=( 22578.1,  4828.12,        0)\nStatus:  MARKED\nOrig IDs (rank, index): (107, 3) (74, 9) \nVar_index: 7\nMin Entity ID: 718458\n*****************************************************************************\nFinished inside of GrainTracker\n\nNonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nTime Step 195, time = 311.77, dt = 1.12717\n\nGrain Tracker Status:\nGrains active index 0: 50 -> 50\nGrains active index 1: 60 -> 60\nGrains active index 2: 44 -> 44\nGrains active index 3: 46 -> 46\nGrains active index 4: 38 -> 38\nGrains active index 5: 32 -> 32\nGrains active index 6: 22 -> 22\nGrains active index 7: 16 -> 16\nGrains active index 8: 15 -> 15\nGrains active index 9: 13 -> 13\nGrains active index 10: 18 -> 18\nGrains active index 11: 9 -> 9\nGrains active index 12: 12 -> 12\nGrains active index 13: 9 -> 9\nGrains active index 14: 12 -> 12\nGrains active index 15: 10 -> 10\n\nFinished inside of GrainTracker\n\nNonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nTime Step 195, time = 311.545, dt = 0.901737\n...\nAny suggestions or recommendations to fix the problem would be greatly appreciated.\nThank you\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/21516",
+          "updatedAt": "2022-07-09T12:53:22Z",
+          "publishedAt": "2022-07-06T15:53:57Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf there is truly a NAN you can use the --trap-fpe command line option to track it down.\nThere is also a breakpoint you can set in the debugger. I think it's break libmesh_handle_FPE\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21516#discussioncomment-3094442",
+                  "updatedAt": "2022-07-06T18:15:29Z",
+                  "publishedAt": "2022-07-06T18:15:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Thanks for your reply. @GiudGiud\n\nThere is also a breakpoint you can set in the debugger. I think it's break libmesh_handle_FPE\n\nYeah, I also tried to use the debug mode to find my bug, but due to the large size of this example, the debug mode loading mesh is very slow, so I still use the *-opt file to try to modify my code.\nNow I also found my problem, but don't know how to solve it.\nSpecifically, I tried to use the grain size information obtained by GrainDataVectorPostprocessor to determine the GB energy in the grain growth model, so I added such a piece of code to the class GNGsGrainGrowth based on GBAnisotropy,\n  auto grainEnergy = getVectorPostprocessorValueByName(\"grain_volumes\", \"gb_energy\"); // _fe_problem vector<Real>\n  unsigned int size_grainEnergy = grainEnergy.size();\n\n  // calculate the GB energy and mobility based on grain size\n\n  // if (*max_element(grainID.begin(), grainID.end()) < size_grainEnergy)\n  //   std::cout << \"done\" << std::endl;\n\n  if (grainEnergy.size() != 0  && *max_element(grainID.begin(), grainID.end()) < size_grainEnergy ) // not initial step and the max grain ID is less than the size of grainEnergy vector by Postprocessorvector\n  {\n    if (grainID.size() == 1) // inside the grain \n    {\n      std::vector<std::vector<Real>> inter_GBenergy(_op_num, std::vector<Real>(_op_num, grainEnergy[grainID[0]]));\n      _sigma =  inter_GBenergy;\n    }\n    if (grainID.size() > 1) // at GB boundary\n    {\n      for (unsigned int i = 0; i < grainID.size()-1; ++i)\n        for(unsigned int j = i+1; j < grainID.size(); ++j)\n        { \n          _sigma[variableIndex[i]][variableIndex[j]] = (grainEnergy[grainID[i]] + grainEnergy[grainID[j]])/2;      \n          _sigma[variableIndex[j]][variableIndex[i]] = _sigma[variableIndex[i]][variableIndex[j]];\n        }\n    }\n  }\nIf I comment out this code in GNGsGrainGrowth, use recover to run normally. And if I add it, I will report the non-convergence error mentioned above.\nSo I think the non-convergence is caused by the fact that the GrainTracker creates a new grain ID, considering that the new grain ID does not have an old value _feature_volumes_old after it is created.\nIn general, my question is how to better initialize the volume value of each grain or feature, if the GrainTracker creates a new grain ID during the calculation process, and ensure that before calling the material class GNGsGrainGrowth .\nAny suggestions or recommendations to fix the problem would be greatly appreciated.\nThank you\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/21516#discussioncomment-3105017",
+                          "updatedAt": "2022-07-08T05:33:43Z",
+                          "publishedAt": "2022-07-08T05:33:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYou may want to try the devel version then, it's intermediate between opt and dbg. METHOD=devel make to make it.\nso looking at this code, what jumps to my mind is: is the vector of the vector postprocessor containing information for the new grain or are we accessing it out of bounds?\nIf not you may need to rework this workflow to either fix the VPP output or not use a VPP\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/21516#discussioncomment-3109746",
+                          "updatedAt": "2022-07-08T18:28:26Z",
+                          "publishedAt": "2022-07-08T18:28:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Oh, thank you so mech.  You ara right, this problem has been resolved by modifying GrainDataVectorPostprocessor. Specifically, the problem is that the GrainDataVectorPostprocessor cannot get the old value, when the  GrainTracker creates a Grain ID during the calculation process.\nwei",
+                          "url": "https://github.com/idaholab/moose/discussions/21516#discussioncomment-3112459",
+                          "updatedAt": "2022-07-09T12:54:04Z",
+                          "publishedAt": "2022-07-09T12:53:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to implement time dependent velocity field",
+          "author": {
+            "login": "brandon-barclay"
+          },
+          "bodyText": "Hello, I am trying to implement a time dependent velocity field for an outdoor airflow simulation and I was looking for some advice regarding the best way to go about this. I found .csv data which contains wind velocity at given x,y,z locations and t.\nThe only object I was able to find which appears to allow interpolation of data like this was the \" PiecewiseMulticonstant \" object, however it was not clear to me how to implement different function values at the different times. If anyone has any advice regarding this object, or a better way to interpolate the velocity data, it would be greatly appreciated.",
+          "url": "https://github.com/idaholab/moose/discussions/21542",
+          "updatedAt": "2022-07-21T23:52:31Z",
+          "publishedAt": "2022-07-08T20:46:47Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs the time dependence fully separable from the space dependence? (eg is it v(x,t) = f(t) g(x) ) ?\nThis would make it easy.\nIf not:\nIs there an analytical equation for the data?\nthen you could use a parsed expression instead of a tabulation\nand if not:\nPiecewiseMultiConstant and PiecewiseMultiLinear are what you want to use. It is tabulated along X Y Z and T axis. There are example files in:\nhttps://github.com/idaholab/moose/tree/next/test/tests/functions/piecewise_multilinear\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21542#discussioncomment-3110506",
+                  "updatedAt": "2022-07-08T21:59:47Z",
+                  "publishedAt": "2022-07-08T21:59:46Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

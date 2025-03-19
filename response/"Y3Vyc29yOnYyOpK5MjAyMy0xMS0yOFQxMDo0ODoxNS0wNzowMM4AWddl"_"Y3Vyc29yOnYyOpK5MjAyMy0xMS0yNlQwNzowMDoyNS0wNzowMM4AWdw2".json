@@ -1,0 +1,1019 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMS0yNlQwNzowMDoyNS0wNzowMM4AWdw2"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "computeqpproperties for noobs",
+          "author": {
+            "login": "marinsiebert"
+          },
+          "bodyText": "Hi,\nfollowing up on #26116 I have now (hopefully correctly) finished the .C file with the derivative, however compiling gives several errors, which to my understanding point to issues with the number formats required from and given to functions used.\nterminal_output.txt\nAny insights on this?\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"PorousFlowThermalConductivityBrakelmann.h\"\n\nregisterMooseObject(\"PorousFlowApp\", PorousFlowThermalConductivityBrakelmann);\n\nInputParameters\nPorousFlowThermalConductivityBrakelmann::validParams()\n{\n  InputParameters params = PorousFlowThermalConductivityBase::validParams();\n  params.addRequiredParam<Real>(\"lambda_s\",\n                             \"The thermal conductivity of the porous medium\");\n  params.addRequiredParam<Real>(\"lambda_w\",\n                             \"The thermal conductivity of water\");\n  params.addParam<unsigned>(\"aqueous_phase_number\",\n                             0,\n                             \"The phase number of the aqueous phase.\");\n  params.addClassDescription(\"This Material calculates rock-fluid combined thermal conductivity \"\n                             \"for the unsaturated porous medium using a empirical\"\n                             \"non-linear whole-range function from Brakelmann (2015).\"\n                             \"Thermal conductivity = lambda_w^(phi)*lambda_b^(1-phi)*exp(-3.08*phi*(1-S)^2)) \"\n                             \"where phi is porosity, lambda_w, lambda_b are \"\n                             \"thermal conductivities of the fluid and solid\"\n                             \"(approximated from grain size distribution)\"\n                              \"and S is the degree of saturation. This Material requires the thermal conductivity of\"\n                              \"water from the GeneralFluidProps object and the thermal conductivity of soil from a rank_two_tensor\"\n                            );\n  return params;\n}\n\nPorousFlowThermalConductivityBrakelmann::PorousFlowThermalConductivityBrakelmann(\n    const InputParameters & parameters)\n  : PorousFlowThermalConductivityBase(parameters),\n    _la_b(getParam<RealTensorValue>(\"lambda_s\")),\n    _la_w(getParam<Real>(\"lambda_w\")),\n    _porosity_qp(getMaterialProperty<Real>(\"PorousFlow_porosity_qp\")),\n    _dporosity_qp_dvar(getMaterialProperty<std::vector<Real>>(\"dPorousFlow_porosity_qp_dvar\")),\n    _aqueous_phase(_num_phases > 0),\n    _aqueous_phase_number(getParam<unsigned>(\"aqueous_phase_number\")),\n    _saturation_qp(_aqueous_phase\n                       ? &getMaterialProperty<std::vector<Real>>(\"PorousFlow_saturation_qp\")\n                       : nullptr),\n    _dsaturation_qp_dvar(_aqueous_phase ? &getMaterialProperty<std::vector<std::vector<Real>>>(\n                                              \"dPorousFlow_saturation_qp_dvar\")\n                                        : nullptr)\n{\n  if (_num_phases != 1)\n    paramError(\"fluid_phase\",\n               \"The Dictator proclaims that the number of phases is \",\n               _dictator.numPhases(),\n               \" whereas this material can only be used for single phase \"\n               \"simulations.  Be aware that the Dictator has noted your mistake.\");\n}\n\nvoid\nPorousFlowThermalConductivityBrakelmann::computeQpProperties()\n{\n  _la_qp[_qp] =\n    std::pow(_la_w, _porosity_qp[_qp]) * std::pow(_la_b, 1-_porosity_qp[_qp]) * std::exp(-3.08*_porosity_qp[_qp] * std::pow((1-((*_saturation_qp)[_qp][_aqueous_phase_number])/_porosity_qp[_qp]),2));\n\n  _dla_qp_dvar[_qp].assign(_num_var, RealTensorValue());\n  for (unsigned v = 0; v < _num_var; ++v)\n    _dla_qp_dvar[_qp][v] =\n      std::pow(_la_w, _porosity_qp[)*std::pow(_la_b, 1-_porosity_qp[_qp])*\n      std::exp(-3.08*_porosity_qp[_qp]*std::pow((1-((*_saturation_qp)[_qp][_aqueous_phase_number])/_porosity_qp[_qp]), 2))*(std::log(_la_w)-std::log(_la_b))*_dporosity_qp_dvar[_qp][v]-\n      6.16*_porosity_qp[_qp]*(1-((*_saturation_qp)[_qp][_aqueous_phase_number])/_porosity_qp[_qp])*std::pow(_la_w, _porosity_qp[_qp])*std::pow(_la_b, 1-_porosity_qp[_qp])*\n      std::exp(-3.08*_porosity_qp[_qp]*std::pow((1-((*_saturation_qp)[_qp][_aqueous_phase_number])/_porosity_qp[_qp]), 2))*(*_dsaturation_qp_dvar)[_qp][_aqueous_phase_number][v];\n}",
+          "url": "https://github.com/idaholab/moose/discussions/26158",
+          "updatedAt": "2023-11-28T08:01:01Z",
+          "publishedAt": "2023-11-27T14:26:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nyou forgot to access the material propery at the quadrature point index\nyou have\n_porosity_qp[\n\ninstead of\n_porosity_qp[_qp]",
+                  "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7681571",
+                  "updatedAt": "2023-11-27T14:28:26Z",
+                  "publishedAt": "2023-11-27T14:28:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "Quick as ever!\nThe errors do persist, though.\nOne example:\n error: no matching function for call to 'pow(const MaterialProperty<double>&, MooseADWrapper<double, false>&)'\n   66 |     std::pow(_la_w, _porosity_qp[_qp]) * std::pow(_la_b, 1-_porosity_qp[_qp]) * std::exp(-3.08*_porosity_qp[_qp] * std::pow((1-((*_saturation_qp)[_qp][_aqueous_phase_number])/_porosity_qp[_qp]),2));",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7681669",
+                          "updatedAt": "2023-11-27T14:35:31Z",
+                          "publishedAt": "2023-11-27T14:35:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think you need to take the value of the AD numbers before using them as exponents\nnot sure if this is the right line, I dont see any AD number in the exponents there?\nComment out each part to find which pow is the problem",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7681851",
+                          "updatedAt": "2023-11-27T14:52:32Z",
+                          "publishedAt": "2023-11-27T14:52:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "Apparently the issue lies with _la_w and _la_b, if I substitute those with generic int's it compiles without issues.\nBoth are called as RealTensorValue in the header, similar to thos in ideal.C",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7682363",
+                          "updatedAt": "2023-11-27T15:27:45Z",
+                          "publishedAt": "2023-11-27T15:27:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The error is not pointing to them though. It s pointing to something like:\npow(MaterialProperty, ADReal)",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7682405",
+                          "updatedAt": "2023-11-27T15:30:46Z",
+                          "publishedAt": "2023-11-27T15:30:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "could it be the porosity, which is declared in the basefile as <Real, is_ad>?\nif I let just the first pow active this would be the only thing left",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7682497",
+                          "updatedAt": "2023-11-27T15:39:15Z",
+                          "publishedAt": "2023-11-27T15:37:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah yes.\nWhen the template is compiled with is_ad = true for the AD version, you end up with an AD material property.\nWrap the material property like this\nMetaPhysicL::raw_value(_porosity_qp[_qp])\n\nin all the pow( ... , porosity) calls",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7682597",
+                          "updatedAt": "2023-11-27T15:52:07Z",
+                          "publishedAt": "2023-11-27T15:48:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "The error stays the same, even after doing so. I was able to fix it by declaring la_w and la_b as Real,  it compiles without errors now but yields several errors in the input file, which I am currently looking at.",
+                          "url": "https://github.com/idaholab/moose/discussions/26158#discussioncomment-7689305",
+                          "updatedAt": "2023-11-28T08:01:34Z",
+                          "publishedAt": "2023-11-28T08:01:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Is it possible to use MOOSE to optimize a variable?",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Say, there exists a simulation which outputs data and you have nearly similar data you want to compare it to, does MOOSE have any built in functionality to optimize a parameter, or multiple parameters (e.g material properties) to keep re-running the simulations until the outputs are close to the existing data?\nThat is, functionality to:\n-provide an initial guess for the parameters to be optimized\n-compare the error between the output data of the MOOSE simulation (from a PostProcessor) and the existing data, possibly restart the simulation early if the errors diverge too much in the beginning. For comparing transient simulations, it would be nice to have functionality to also tell it when to begin comparing.\n-continue to optimize the parameters until the error is below a defined tolerance.\n-output the optimized parameters.\nAn added bonus would be the ability to optimize the desired parameters/material properties over multiple pairs of simulations (same equations for all, just different setups) through some kind of least squares fitting, getting back a single value for each of those parameters that's the closest fit for all pairs.\nI felt like this was a huge ask just writing it, so I was also wondering if there was any way I could make MOOSE interact directly with python (so I could implement this myself) without using a bash script to jump back and forth.",
+          "url": "https://github.com/idaholab/moose/discussions/26135",
+          "updatedAt": "2023-11-27T23:11:42Z",
+          "publishedAt": "2023-11-23T07:35:55Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ABallisat"
+                  },
+                  "bodyText": "Interacting MOOSE with Python is surprisingly easy. You can use the SEACAS library (https://github.com/sandialabs/seacas) which has an EXODUSII reader in it for Python. We use this to read data into Python for analysis and doing exactly this (design space mapping, optimisation, sensitivity analysis, Monte Carlo integrals, etc.). I can't comment on doing this directly in MOOSE but its quite easy to do in Python. I run system calls to MOOSE from Python scripts, as MOOSE input files are just text files its trivial to automate writing these in Python with different input variables, or set them on the command line and automate the call generation. Depending on what hardware you are running on (laptop/desktop vs HPC cluster) you will want to choose your parallelism appropriately. If you are going on a cluster its not too hard to set up parallel execution of models. There are different approaches to this, e.g. Python's built in Multiprocessing or MPI. We have internal libraries for using the latter on clusters to run arbitrary numbers in parallel. All in all, if you can get the results into Python using SEACAS then you can do what you like!",
+                  "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7649696",
+                  "updatedAt": "2023-11-23T08:57:20Z",
+                  "publishedAt": "2023-11-23T08:57:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thanks for sharing, an exodus reader would be very useful!\n\nI run system calls to MOOSE from Python scripts, as MOOSE input files are just text files its trivial to automate writing these in Python with different input variables, or set them on the command line and automate the call generation.\n\nCould you expand a little bit more on this? What do you mean by running system calls to MOOSE and can you give an example? And what do you mean by writing MOOSE input files in python? Do you not use .i files?",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7649876",
+                          "updatedAt": "2023-11-23T09:15:12Z",
+                          "publishedAt": "2023-11-23T09:15:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ABallisat"
+                          },
+                          "bodyText": "use the os module in python, e.g.:\nimport os\nos.system(\"mpirun -np 4  myapp-opt -i myinputfile.i\")\nas for the input files they are just text files with a .i extension so something along the lines of:\nwith open(\"myinputfile.i\", w) as f:\n    f.write(\"[my input file as a string]\")\nand then format the string with the values of your variables",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7652010",
+                          "updatedAt": "2023-11-23T13:31:09Z",
+                          "publishedAt": "2023-11-23T13:31:08Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Ahh I think I get what you're doing now. Yeah that makes a lot of sense. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7657643",
+                          "updatedAt": "2023-11-24T07:08:55Z",
+                          "publishedAt": "2023-11-24T07:08:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "josebastiase"
+                  },
+                  "bodyText": "Hi,\nYou can do inverse modeling to fit parameters with isopod. Is based in pest\nhttps://github.com/idaholab/isopod",
+                  "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7650566",
+                  "updatedAt": "2023-11-23T10:28:17Z",
+                  "publishedAt": "2023-11-23T10:28:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Much of isopod was merged into the optimization module too. Things like material property optimization are in the module",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7656706",
+                          "updatedAt": "2023-11-24T03:40:04Z",
+                          "publishedAt": "2023-11-24T03:40:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Interesting! I'll look into that thanks for sharing",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7657646",
+                          "updatedAt": "2023-11-24T07:09:32Z",
+                          "publishedAt": "2023-11-24T07:09:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@lynnmunday @maxnezdyur",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7683587",
+                          "updatedAt": "2023-11-27T17:22:48Z",
+                          "publishedAt": "2023-11-27T17:22:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "@richmondodufisan Most of what you are wanting to do would be covered by the optimization module:   https://mooseframework.inl.gov/moose/modules/optimization/\nWe mostly focused on gradient based optimization using the adjoint method.  It can handle transient and steady state problems although transient problems are more difficult.  There are several steady state examples in the test and examples directory of the module.  Here is an example for transient material inversion that hasn't been merged yet:\n#25668",
+                          "url": "https://github.com/idaholab/moose/discussions/26135#discussioncomment-7686343",
+                          "updatedAt": "2023-11-27T23:11:43Z",
+                          "publishedAt": "2023-11-27T23:11:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Advice to help with small dt with crystal plasticity",
+          "author": {
+            "login": "HiltyF"
+          },
+          "bodyText": "Hello all,\nI am working on a problem using the crystal plasticity module with high strain rates, as a result the time step size stays ~2.5e-6. For my application this is about two orders of magnitude smaller than needed to complete in a reasonable time. I have tried many preconditioning and executioner configurations as well as tried various time steppers, the best I reached is the input file below. It converges very well but anytime it tries a higher time step size it will cut back with:\nComputeMultipleCrystalPlasticityStress: Constitutive failure\n\nA MooseException was raised during Auxiliary variable computation.\nThe next solve will fail, the timestep will be reduced, and we will try again.\n\nNonlinear solve did not converge due to DIVERGED_FUNCTION_DOMAIN iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nCan anyone explain what this is means? Are there any options or parameters I can tweak within crystal plasticity that might improve performance?\nThanks,\nFloyd\n[Mesh]\n  parallel_type = 'REPLICATED'\n  [mesh]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    xmax = 0.1\n    ymin = 0\n    ymax = 0.1\n    nx = 125\n    ny = 125\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  C_ijkl = '1.965e5 1.245e5 1.245e5 1.965e5 1.245e5 1.965e5 1.22e5 1.22e5 1.22e5'\n  fill_method = symmetric9\n[]\n\n#Displacement function over time\n[Functions]\n  [ShearStrainRate]\n    type = ParsedFunction\n    expression = 'rate*t'\n    symbol_names = 'rate'\n    symbol_values = '10'\n  []\n[]\n\n[UserObjects]\n  [Euler_Read]\n    type = PropertyReadFile\n    prop_file_name = 'Sample_Grains_100um.txt'\n    nprop = 3\n    read_type = element\n  []\n[]\n\n[Variables]\n  [disp_x]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [disp_y]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[BCs]\n  [top_shear]\n    type = ADFunctionDirichletBC\n    variable = disp_x\n    boundary = 'top'\n    function = ShearStrainRate\n  []\n  [top_compression]\n    type = Pressure\n    variable = disp_y\n    boundary = 'top'\n    factor = 20\n  []\n  [x_anchor]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'bottom'\n    value = 0.0\n  []\n  [y_anchor]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'bottom'\n    value = 0.0\n  []\n[]\n\n[Kernels]\n  [TensorMechanics]\n    displacements = 'disp_x disp_y'\n    # use_displaced_mesh = true\n    # incremental = true\n  []\n[]\n\n[AuxVariables]\n  [aphi1]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [bPhi]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [cphi2]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [TLS_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [TLS_xy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [TLS_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [sxx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [syy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [szz]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [sxy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [syz]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [szx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[AuxKernels]\n  [aphi1]\n    type = MaterialRealVectorValueAux\n    variable = aphi1\n    property = Euler_angles\n    component = 0\n    execute_on = timestep_end\n  []\n  [bPhi]\n    type = MaterialRealVectorValueAux\n    variable = bPhi\n    property = Euler_angles\n    component = 1\n    execute_on = timestep_end\n  []\n  [cphi2]\n    type = MaterialRealVectorValueAux\n    variable = cphi2\n    property = Euler_angles\n    component = 2\n    execute_on = timestep_end\n  []\n  [TLS_xx]\n    type = RankTwoAux\n    variable = TLS_xx\n    rank_two_tensor = total_lagrangian_strain\n    index_i = 0\n    index_j = 0\n  []\n  [TLS_xy]\n    type = RankTwoAux\n    variable = TLS_xy\n    rank_two_tensor = total_lagrangian_strain\n    index_i = 0\n    index_j = 1\n  []\n  [TLS_yy]\n    type = RankTwoAux\n    variable = TLS_yy\n    rank_two_tensor = total_lagrangian_strain\n    index_i = 1\n    index_j = 1\n  []\n  [sxx]\n    type = RankTwoAux\n    variable = sxx\n    rank_two_tensor = stress\n    index_i = 0\n    index_j = 0\n  []\n  [syy]\n    type = RankTwoAux\n    variable = syy\n    rank_two_tensor = stress\n    index_i = 1\n    index_j = 1\n  []\n  [Stress_zz]\n    type = RankTwoAux\n    variable = szz\n    rank_two_tensor = stress\n    index_i = 2\n    index_j = 2\n  []\n  [sxy]\n    type = RankTwoAux\n    variable = sxy\n    rank_two_tensor = stress\n    index_i = 0\n    index_j = 1\n  []\n  [syz]\n    type = RankTwoAux\n    variable = syz\n    rank_two_tensor = stress\n    index_i = 1\n    index_j = 2\n  []\n  [szx]\n    type = RankTwoAux\n    variable = szx\n    rank_two_tensor = stress\n    index_i = 2\n    index_j = 0\n  []\n[]\n\n[Materials]\n  #### Crystal Plasticity ####\n  [elasticity_tensor]\n    type = ComputeElasticityTensorCP\n    read_prop_user_object = Euler_Read\n  []\n  [xtal_stress]\n    type = ComputeMultipleCrystalPlasticityStress\n    crystal_plasticity_models = 'trial_xtalpl'\n    tan_mod_type = exact\n    # outputs = 'exodus'\n    # output_properties = 'total_lagrangian_strain stress'\n  []\n  [trial_xtalpl]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 12\n    slip_sys_file_name = input_slip_sys_FCC.txt\n\n    ao = 0.001 ## Slip rate coefficient = Reference Shear strain rate\n    xm = 0.05 ## Exponent for slip rate = Rate sensitivity coefficient\n    gss_a = 4 ## Hardening coefficient\n    gss_initial = 102 ## Initial lattice friction strength = Initial slip resistance\n    t_sat = 360 #Saturated slip strength = saturated slip resistance\n    h = 2500 ## Hardening constnat = hardening parameter\n    r = 1.4 ## Latent hardening coefficient\n\n    resistance_tol = 0.01 ## Resistance Tolerance\n    slip_increment_tolerance = 0.2 ## Maximum allowable slip increment\n    stol = 0.01 ## Constitutive internal rate variable relative change tolerance\n    crystal_lattice_type = FCC\n\n  []\n  [strain]\n    type = ComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n  []\n[]\n\n[Preconditioning]\n  [mumps]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package '\n    petsc_options_value = ' lu       mumps                        '\n  []\n[]\n\n[Executioner]\n  type = Transient\n  scheme = explicit-euler\n  solve_type = NEWTON\n  line_search = none\n  l_tol = 1.0e-4\n  l_max_its = 30\n  nl_max_its = 40\n  nl_rel_tol = 1.0e-5\n  start_time = 0.0\n  end_time = 0.04\n  num_steps = 20\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 5e-7\n    growth_factor = 1.1\n    cutback_factor = 0.9\n    cutback_factor_at_failure = 0.9\n    optimal_iterations = 4\n  []\n[]\n\n[Postprocessors]\n  [0_dt]\n    type = TimestepSize\n  []\n  [0_run_time]\n    type = PerfGraphData\n    section_name = \"Root\"\n    data_type = total\n  []\n  [1_dofs]\n    type = NumDOFs\n  []\n  [1_mem_total]\n    type = MemoryUsage\n    mem_type = physical_memory\n    mem_units = megabytes\n    value_type = total\n    outputs = 'csv'\n  []\n  [1_mem_proc_max]\n    type = MemoryUsage\n    mem_type = physical_memory\n    mem_units = megabytes\n    value_type = max_process\n    outputs = 'csv'\n  []\n  [syy] ## Stress MPa\n    type = ElementAverageValue\n    variable = syy\n    outputs = 'csv'\n  []\n  [TLS_yy] ## Strain\n    type = ElementAverageValue\n    variable = TLS_yy\n    outputs = 'csv'\n  []\n[]\n\nfile = 'XP_simplified'\n[Outputs]\n  perf_graph = true\n  [exodus]\n    type = Exodus\n    interval = 1\n    file_base = Exodus/${file}\n    execute_on = 'INITIAL TIMESTEP_END FINAL'\n  []\n  [csv]\n    type = CSV\n    file_base = CSV/${file}\n    interval = 1\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/26133",
+          "updatedAt": "2023-11-27T22:58:56Z",
+          "publishedAt": "2023-11-22T23:08:04Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "sapitts"
+                  },
+                  "bodyText": "Hi Floyd,\nIn addition to loosening the tolerance values you have listed in your input file (resistance_tol, slip_increment_tolerance, and stol) in the trial_xtalpl block, you might also explore loosening rtol and abs_tol in the xtal_stress. Of all these options, I would recommend starting with loosening the slip tolerance parameter and leave the stress residual tolerances as the default values.\nAdditionally, the substepping option within the ComputeMultipleCrystalPlasticityStress may help keep the timestep larger, although the simulation will take longer because of substepping within the crystal plasticity stress residual calculation, see the example here: \n  \n    \n      moose/modules/tensor_mechanics/test/tests/crystal_plasticity/stress_update_material_based/substep.i\n    \n    \n         Line 95\n      in\n      d62c3f0\n    \n  \n  \n    \n\n        \n          \n               maximum_substep_iteration = 10 \n        \n    \n  \n\n\nIt might also be worth checking if the crystal plasticity model(s) you are using in your simulation can handle the high strain rate. Some models have assumptions about the maximum strain rate that are used in the model derivation--that information will be available in the journal articles cited on the documentation page.\nFinally, please double check with the tensor mechanics documentation system that you are using a consistent set of kernels and strain calculators. I strongly recommend the use of the TensorMechanics/MasterAction to ensure the use of consistent kernels and strain calculators.\nHope this helps,\nStephanie",
+                  "url": "https://github.com/idaholab/moose/discussions/26133#discussioncomment-7683147",
+                  "updatedAt": "2023-11-27T16:37:14Z",
+                  "publishedAt": "2023-11-27T16:37:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HiltyF"
+                          },
+                          "bodyText": "Hi Stephanie,\nThank you for your suggestions! I added the TensorMechanics/MasterAction to the model and tweaked the other parameters you listed. The biggest improvement came from maximum_supstep_iteration = 5, slight changes to the defaults for the other tolerances had a positive effect, larger changes were detrimental. All said I got ~2x speed up (larger dt, slower time steps) over the first 20 steps of the simulation.\nHopefully, once the simulation gets away from the starting conditions it will improve more, we will see!\nFloyd",
+                          "url": "https://github.com/idaholab/moose/discussions/26133#discussioncomment-7686278",
+                          "updatedAt": "2023-11-27T22:58:43Z",
+                          "publishedAt": "2023-11-27T22:58:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Assign OP to selective phase from EBSD file",
+          "author": {
+            "login": "ashishdhole"
+          },
+          "bodyText": "Hi, I am Ashish, and I am very new to MOOSE. I am trying to study abnormal grain growth in the presence of insoluble particles in the micro structure. If I generate a synthetic micro structure EBSD file with phase ID as 1 for matrix and 2 for the particles. How can I assign my OP selectively to these two phases. Say a set of OP to phase 1 and a set of OP to phase 2. Thank you",
+          "url": "https://github.com/idaholab/moose/discussions/26100",
+          "updatedAt": "2023-11-27T21:51:48Z",
+          "publishedAt": "2023-11-19T06:31:08Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@laagesen @amjokisaari",
+                  "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7611569",
+                  "updatedAt": "2023-11-19T14:53:17Z",
+                  "publishedAt": "2023-11-19T14:53:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi Ashish, welcome to the MOOSE framework! Have a look at this documentation site for information on how to do this:\nhttps://mooseframework.inl.gov/modules/phase_field/ICs/EBSD.html",
+                  "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7645736",
+                  "updatedAt": "2023-11-22T19:23:50Z",
+                  "publishedAt": "2023-11-22T19:23:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "In the example files provided in the above link. Case 2. gives 1 OP per phase. That means if I have 10 grain of phase 1 and 10 grains of phase 2, I will have 2 OP associated with each phase. in Case 3. I can assign a set of OP to phase 1 and one single OP to phase 2. I think the PolycrystalICs action takes only one user-objects. If there was a way in which we can include two PolycrystalICs  corresponding to each phase, it will solve the issue. I want to know if it is possible? Is there any example file that uses such method. Looking forward to hearing from you. Thank you",
+                          "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7655243",
+                          "updatedAt": "2023-11-23T21:30:28Z",
+                          "publishedAt": "2023-11-23T21:30:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "As long as the individual particles in the particle phase are separated from each other, you won't need separate order parameters for each one. A single order parameter should suffice for the particle phase.",
+                          "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7661614",
+                          "updatedAt": "2023-11-24T15:33:46Z",
+                          "publishedAt": "2023-11-24T15:33:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Thank you @laagesen for your reply. And that is true, separate particles can be assigned one order parameter. But lets say we have two phases and some insoluble particles. in assigning the order parameter for grains of each phase (which most of the time are adjacent to each other unlike insoluble particles which are separate). In simple words, my question is can we use PolycrystalICs action 'twice' in a single code with different conditions? If not, is there another way to do it? Also if you can provide a literature connected to materials/DeformedGrainMaterial, that will be great. Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7663333",
+                          "updatedAt": "2023-11-24T19:58:04Z",
+                          "publishedAt": "2023-11-24T19:58:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "I am not sure if it's possible to use 2 different PolycrystalICs for different types of grains, @permcody do you know if this is possible?",
+                  "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7681503",
+                  "updatedAt": "2023-11-27T14:20:43Z",
+                  "publishedAt": "2023-11-27T14:20:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "permcody"
+                          },
+                          "bodyText": "You aren't going to want two PolycrystalICs for the separate phases. The data needed for each grain should be available in a single pass. This should be a function of the existing EBSD reader. @dschwen may know if this is possible already. If it's not, it shouldn't be too difficult to add this capability.",
+                          "url": "https://github.com/idaholab/moose/discussions/26100#discussioncomment-7685891",
+                          "updatedAt": "2023-11-27T21:51:49Z",
+                          "publishedAt": "2023-11-27T21:51:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "What are some things I can do to improve simulation speed?",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "I am running a simulation with 8 coupled variables, and it is incredibly slow. Compared to a similar setup which only has two variables (same equations as the former, but the former uses a mixed formulation hence each component of the flux is an independent variable), the time difference is staggering.\nWith the current mesh and temporal refinement the standard formulation can run ~400 timesteps in an hour or two, but the mixed formulation has been running for an hour and only completed 5 timesteps. Both are being run on the same HPC and are run in parallel with 25 CPUs per simulation with 4GB of RAM per CPU.\nI wanted to know what suggestions you might have that could potentially reduce simulation time. The first thing I thought of was to hand-code the Jacobians (I'm currently using AD). Is there a tutorial that explains the MOOSE syntax for doing so in detail with an example? I'm having trouble finding one.\nAlso, this is the executioner block of the mixed formulation:\n[Executioner]\n  type = Transient\n  solve_type = 'PJFNK'\n\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-8\n  l_tol = 1e-5\n  l_max_its = 300\n  nl_max_its = 20\n\n  dtmin = ${dt_val_min}\n  dtmax= ${dt_val}\n  \n  start_time = ${start_val}\n  end_time = ${t_val}\n   \n  [TimeStepper]\n    type = IterationAdaptiveDT\n    optimal_iterations = 15\n    iteration_window = 3\n    linear_iteration_ratio = 100\n    growth_factor=1.5\n    cutback_factor=0.5\n    dt = ${dt_val}\n  []\n  [Predictor]\n    type = SimplePredictor\n    scale = 1.0\n    skip_after_failed_timestep = true\n  []\n[]\n\nIs PJFNK or NEWTON a better choice in this situation? I thought that since I didn't hand-code the Jacobians, that NEWTON wouldn't work. But while searching I saw an older post suggesting to use NEWTON if using AD. I guess I'm not fully sure what AD does/how it works.\nThe details of the problem I'm attempting to solve are here: #26021\nI was also wondering what petsc options might help and where I can learn about them.\nI also wanted to ask about MPI- it seems that in this case the parallelization is not working as intended, as I'm getting this while it's solving:\n\nWhich seems like it's using a lot of memory and/or splitting it is actually making it slower. It is taking way much more time to run than on my local computer (which is also very, very slow, but not as slow as this) which obviously has way less computational resources.",
+          "url": "https://github.com/idaholab/moose/discussions/26115",
+          "updatedAt": "2023-11-27T17:11:59Z",
+          "publishedAt": "2023-11-21T09:41:04Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf you use AD it s better to use Newton s method. Convergence rate is usually faster. I don't think there is a guarantee that this is true for all cases.\nThe first thing to do here is to print the nonlinear and linear residuals and see which iteration is taking longer to converge now that there are 8 variables instead of 2.\nThen I would look at automatic scaling to see if it improves convergence.\nThen I would redo the preconditioning using a field split. With 8 variables you have to think which ones can be grouped and which ones can solved nearly on their own\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7629912",
+                  "updatedAt": "2023-11-21T12:11:40Z",
+                  "publishedAt": "2023-11-21T12:11:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In fact you should print the residual on a per equation basis using the show_var_residual_norms in the Debug block to learn more",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7630311",
+                          "updatedAt": "2023-11-21T12:52:56Z",
+                          "publishedAt": "2023-11-21T12:52:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "NEWTON is appropriate when your Jacobian is perfect, and the idea behind AD is that it makes the Jacobian perfect for you with the con that it is more expensive to run AD than if all your Jacobians were hand-coded.\nThe combination of AD and PJFNK can result in slow simulations because even though we circumvent most of the AD machinery when doing residual evaluations, we can't circumvent all of it. So you are getting some AD machinery for every single linear (and nonlinear) residual evaluation with PJFNK. With NEWTON, there are no residual function evaluations during the linear solve so you don't incur that cost.\nIf one is somehow forced to use PJFNK (which you shouldn't be) with AD, then you should try to use a powerful preconditioner that limits the number of linear residual evaluations. You are using the default parallel preconditioner which is block Jacobi with ILU on the sub-blocks; this is a weak preconditioner that will lead to lots of linear residual evaluations.",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7633418",
+                          "updatedAt": "2023-11-21T17:28:27Z",
+                          "publishedAt": "2023-11-21T17:28:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "TLDR ... if you are using AD, definitely use NEWTON",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7633428",
+                          "updatedAt": "2023-11-21T17:29:14Z",
+                          "publishedAt": "2023-11-21T17:29:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "I see. Thanks for the explanation. I switched to NEWTON and reduced the mesh refinement a bit so it would run faster, and here is what I got:\nTime Step 1, time = 2.77778e-09, dt = 2.77778e-09\n\n\n    Computing Initial Residual\n      Finished Computing Residual                                                        [  5.15 s] [ 1248 MB]\n\n  Skipping predictor this step\n\n    Finished Computing Initial Residual                                                  [  5.15 s] [ 1248 MB]\n    Finished Computing Residual                                                          [  5.03 s] [ 1248 MB]\n\n    |residual|_2 of individual variables:\n                 q_samp_x:   4.48827e-16\n                 q_samp_y:   4.51781e-16\n                 q_samp_z:   4.55923e-16\n                 q_trans_x:  5.69263e-18\n                 q_trans_y:  5.80489e-18\n                 q_trans_z:  1.61914e-16\n                 temp_samp:  1.11441e-17\n                 temp_trans: 5.31787e-08\n\n 0 Nonlinear |R| = 5.317868e-08\n\n    Computing Jacobian.....                                                              [ 31.57 s] [ 1602 MB]\n\n      0 Linear |R| = 5.317868e-08\n      1 Linear |R| = 3.338002e-08\n      2 Linear |R| = 1.965342e-08\n      3 Linear |R| = 6.880915e-09\n      4 Linear |R| = 6.663254e-09\n      5 Linear |R| = 4.066381e-09\n      6 Linear |R| = 4.056322e-09\n      ...\n    289 Linear |R| = 2.624816e-12\n    290 Linear |R| = 2.624813e-12\n    291 Linear |R| = 2.616900e-12\n    292 Linear |R| = 2.600068e-12\n    293 Linear |R| = 2.592508e-12\n    294 Linear |R| = 2.591624e-12\n    295 Linear |R| = 2.576122e-12\n    296 Linear |R| = 2.565855e-12\n    297 Linear |R| = 2.565026e-12\n    298 Linear |R| = 2.529349e-12\n    299 Linear |R| = 2.514333e-12\n    300 Linear |R| = 2.504718e-12\n  Linear solve did not converge due to DIVERGED_ITS iterations 300\n\n    Finished Computing Residual                                                          [  5.34 s] [ 1920 MB]\n\n    |residual|_2 of individual variables:\n                 q_samp_x:   1.16411e-14\n                 q_samp_y:   1.15637e-14\n                 q_samp_z:   2.67838e-14\n                 q_trans_x:  1.88732e-14\n                 q_trans_y:  1.72999e-14\n                 q_trans_z:  1.44232e-13\n                 temp_samp:  3.04183e-14\n                 temp_trans: 2.50005e-12\n\n 1 Nonlinear |R| = 2.504720e-12\n\n Solve Converged!\n\n  Finished Solving                                                                       [ 80.28 s] [ 1603 MB]\n\n\nOutlier Variable Residual Norms:\n  temp_trans: 2.500051e-12\n\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | integral_samp  | integral_trans |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   2.777778e-09 |   9.846154e-05 |   4.840187e-04 |\n+----------------+----------------+----------------+\n\nI'm guessing the temp_trans value being different could potentially be due to the elements there being less than optimal so I expect that (it's a thin layer).\nThe linear residuals are coming out to be on the order of 1e-12, and even then it still isn't \"converging\". I thought that I set the linear tolerance to 1e-5 with the statement\nl_tol = 1e-5\nin the executioner, but that clearly isn't being applied somehow. How can I fix that?\nAlso, what are the linear and nonlinear residuals even? By my understanding the equation system setup is of the format Ax = b where A is the Jacobian, and the residuals are calculated by Ax(guess) - b. So the closer that is to zero, the closer x is to the solution. And using NEWTON is the method by which the residuals are approximated. Where do the linear/nonlinear parts come in? And should the linear tolerance be greater or less than the nonlinear tolerance?",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7633855",
+                          "updatedAt": "2023-11-21T18:39:18Z",
+                          "publishedAt": "2023-11-21T18:12:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "The linear tolerance should be less than the nonlinear tolerance\nNewton's method is a way to linearize a nonlinear problem. Both NEWTON and PJFNK are different implementations of Newton's method. With NEWTON, the A matrix is explicitly formed. With PJFNK, the action of A on vectors (which is all that is needed for a Krylov method) is approximated using finite differences. This is why residual evaluations are performed during the linear solve: for computing those finite differences\nBoth PJFNK and NEWTON require preconditioning during the linear solve. The stronger your preconditioner, the fewer linear iterations you will take. But also the stronger your preconditioner, generally the more costly each linear iteration will be. In your case, it looks like the default preconditioner is totally ineffective. How many degrees of freedom are in your reduced problem? Is this 3D or 2D or 1D?",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7634493",
+                          "updatedAt": "2023-11-21T19:27:54Z",
+                          "publishedAt": "2023-11-21T19:27:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Just to confirm, do you mean the linear tolerance should literally be a smaller number, or that it should be less restrictive (and so higher)?\nAlso figured out through trial and error that the relative linear tolerance is probably a better way to check for convergence than an absolute one (which I found to be set by l_abs_tol), at least for this problem.\nIt's a 3D problem. Even with a coarser mesh it's still relatively large:\nNonlinear System:\n  Num DOFs:                240607\n  Num Local DOFs:          63148\n  Variables:               { \"q_samp_x\" \"q_samp_y\" \"q_samp_z\" } { \"q_trans_x\" \"q_trans_y\" \"q_trans_z\"\n                             } \"temp_samp\" \"temp_trans\"\n  Finite Element Types:    \"LAGRANGE\" \"LAGRANGE\" \"LAGRANGE\" \"LAGRANGE\"\n  Approximation Orders:    \"SECOND\" \"SECOND\" \"FIRST\" \"FIRST\"\n\nAuxiliary System:\n  Num DOFs:                223544\n  Num Local DOFs:          56132\n  Variables:               { \"avg_surf_temp\" \"sample_avg_surf_temp\" } \"bulk_gb_dist\"\n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\"\n  Approximation Orders:    \"FIRST\" \"FIRST\"",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7634910",
+                          "updatedAt": "2023-11-21T20:14:06Z",
+                          "publishedAt": "2023-11-21T20:14:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Just to confirm, do you mean the linear tolerance should literally be a smaller number, or that it should be less restrictive (and so higher)?\n\nGood clarification \ud83d\ude04 The linear tolerance should be looser than the nonlinear tolerance; it should be a larger number than for the nonlinear\n\nAlso figured out through trial and error that the relative linear tolerance is probably a better way to check for convergence than an absolute one (which I found to be set by l_abs_tol), at least for this problem.\n\nYea I'm not sure I've every employed an absolute linear tolerance\n\nIt's a 3D problem. Even with a coarser mesh it's still relatively large\n\nHmm yea this is pretty big. So for 3D calculations with 8 variables, the Jacobian evaluation done by AD probably will be pretty expensive because the sparsity pattern is large. For your linear preconditioning ... you could try LU and see what happens but the dense sparsity pattern and largish system size will likely be a problem. Exploring field split as @GiudGiud suggested is probably a good idea if LU is too expensive.",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7635461",
+                          "updatedAt": "2023-11-21T21:22:29Z",
+                          "publishedAt": "2023-11-21T21:22:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Great thanks!! I'll go tinker around with it",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7636204",
+                          "updatedAt": "2023-11-21T23:12:34Z",
+                          "publishedAt": "2023-11-21T23:12:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "The matrix structure you get from your mixed formulation is identical to what you get in Navier-Stokes. You may want to look at some field split examples in that module in that vein. There is additional work on field split for navier-stokes in #24883 as well",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7644363",
+                          "updatedAt": "2023-11-22T16:29:06Z",
+                          "publishedAt": "2023-11-22T16:29:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thanks, will look into that! I also got significant improvement in simulation speed by switching to newton and using automatic scaling. I will definitely be checking out the field split and also seeing if I can reduce to a 2D model. Thanks!!",
+                          "url": "https://github.com/idaholab/moose/discussions/26115#discussioncomment-7648775",
+                          "updatedAt": "2023-11-23T06:49:51Z",
+                          "publishedAt": "2023-11-23T06:49:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "conjugate heat transfer interface",
+          "author": {
+            "login": "Krystalbbling"
+          },
+          "bodyText": "Dear Expert\uff0c\nPlease what operations are required for the conjugate heat transfer interface using the e-file generated by the cubit software so that the grids of the fluid side and the solid side interface can be combined into one, because I have now encountered a problem, that is, the solid domain and the fluid domain run separately. It went smoothly, but it seems from the results that the temperature of the solid domain is not effectively transferred to the fluid domain. The fluid domain is constant temperature. I suspect that the interface on both sides is independent (but it seems that the nodes on both sides are corresponding) , which bothers me very much. I would like to ask you how to deal with the fluid-structure interaction interface when dealing with complex models (which cannot be automatically generated with Moose) to obtain effective solutions.\nLooking forward to your reply.\nKRYSTAL",
+          "url": "https://github.com/idaholab/moose/discussions/26159",
+          "updatedAt": "2023-11-27T15:00:29Z",
+          "publishedAt": "2023-11-27T14:26:42Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you merge the two surfaces with the 'aligned nodes'? This is a common miss when using externally generated mesh file.\nCan you please run the mesh diagnostics generator on your mesh?\nhttps://mooseframework.inl.gov/moose/source/meshgenerators/MeshDiagnosticsGenerator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26159#discussioncomment-7682012",
+                  "updatedAt": "2023-11-27T15:00:30Z",
+                  "publishedAt": "2023-11-27T15:00:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Peacock-Could not import vtk error",
+          "author": {
+            "login": "412120052"
+          },
+          "bodyText": "While running peacock the following error is showing\n(moose) [sankarganesh.mme.nitt@login02 peacock]$ peacock\n\nError starting peacock: Could not import vtk\n\nYou may need to either create or load an environment providing PyQt, VTK, etc.\nThe MOOSE development team provides a conda package with the required dependencies:\n\n        mamba create -n peacock moose-peacock python=3.10\n        mamba activate peacock\n\nThen run peacock again\n\n**(moose) [sankarganesh.mme.nitt@login02 peacock]$ mamba create -n peacock moose-peacock python=3.10**\n\nhttps://conda.software.inl.gov/public/linux-64      ??.?MB @  ??.?MB/s 0 failed 10.0s\nDownload error (28) Timeout was reached [https://conda.software.inl.gov/public/noarch/repodata.json]\nCould not resolve host: conda.software.inl.gov",
+          "url": "https://github.com/idaholab/moose/discussions/22577",
+          "updatedAt": "2023-11-27T14:10:29Z",
+          "publishedAt": "2022-11-03T07:02:09Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "Clicking on that link in your post seems to work... The machine you are on may be blocking access to that server? Or, perhaps that server was down for maintenance, or some other network hiccup. Can you try again? Can you verify when you click on the link you generated in your discussion does it work?",
+                  "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4046800",
+                  "updatedAt": "2022-11-03T12:55:55Z",
+                  "publishedAt": "2022-11-03T12:55:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "412120052"
+                          },
+                          "bodyText": "whille running peacock having this error\n(moose) [sankarganesh.mme.nitt@login02 grain_growth]$ ~/projects/moose/python/peacock/peacock -i constant_mobility.i\nTraceback (most recent call last):\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 36, in <module>\n    run_peacock()\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 28, in run_peacock\n    sys.exit(main(sys.argv))\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 12, in main\n    from peacock.CheckRequirements import has_requirements\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/__init__.py\", line 11, in <module>\n    from . import base\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/base/__init__.py\", line 10, in <module>\n    from .MooseWidget import MooseWidget\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/base/MooseWidget.py\", line 10, in <module>\n    from PyQt5 import QtCore\nModuleNotFoundError: No module named 'PyQt5'",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4056251",
+                          "updatedAt": "2022-11-04T12:55:51Z",
+                          "publishedAt": "2022-11-04T12:07:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "412120052"
+                  },
+                  "bodyText": "(moose) [sankarganesh.mme.nitt@login02 moose]$ mamba create -n peacock moose-peacock\n\n                  __    __    __    __\n                 /  \\  /  \\  /  \\  /  \\\n                /    \\/    \\/    \\/    \\\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588/  /\u2588\u2588/  /\u2588\u2588/  /\u2588\u2588/  /\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n              /  / \\   / \\   / \\   / \\  \\____\n             /  /   \\_/   \\_/   \\_/   \\    o \\__,\n            / _/                       \\_____/  `\n            |/\n        \u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2557   \u2588\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2557  \u2588\u2588\u2588\u2588\u2588\u2557\n        \u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2557 \u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\n        \u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\u2588\u2588\u2554\u2588\u2588\u2588\u2588\u2554\u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2551\n        \u2588\u2588\u2551\u255a\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\u2588\u2588\u2551\u255a\u2588\u2588\u2554\u255d\u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2557\u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2551\n        \u2588\u2588\u2551 \u255a\u2550\u255d \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2551\u2588\u2588\u2551 \u255a\u2550\u255d \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551  \u2588\u2588\u2551\n        \u255a\u2550\u255d     \u255a\u2550\u255d\u255a\u2550\u255d  \u255a\u2550\u255d\u255a\u2550\u255d     \u255a\u2550\u255d\u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u255d  \u255a\u2550\u255d\n\n        mamba (0.27.0) supported by @QuantStack\n\n        GitHub:  https://github.com/mamba-org/mamba\n        Twitter: https://twitter.com/QuantStack\n\n\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\n\n\nLooking for: ['moose-peacock']\n\nidaholab/linux-64                                             No change\nidaholab/noarch                                               No change\npkgs/r/linux-64                                               No change\npkgs/r/noarch                                                 No change\npkgs/main/linux-64                                   4.9MB @   1.1MB/s  1.4s\npkgs/main/noarch                                              No change\nconda-forge/noarch                                  10.1MB @   1.7MB/s  2.8s\nhttps://conda.software.inl.gov/public/linux-64      ??.?MB @  ??.?MB/s 0 failed 10.0s\nconda-forge/linux-64                                27.3MB @   2.6MB/s 11.4s\nhttps://conda.software.inl.gov/public/noarch         8.6kB @   3.0kB/s 14.9s\nEncountered problems while solving:\n  - nothing provides requested moose-peacock",
+                  "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4056267",
+                  "updatedAt": "2022-11-09T13:03:26Z",
+                  "publishedAt": "2022-11-04T12:09:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "412120052"
+                  },
+                  "bodyText": "While using peacock command\n(moose) [sankarganesh.mme.nitt@login02 actions]$ ~/projects/moose/python/peacock/peacock -i grain_growth.i\nTraceback (most recent call last):\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 36, in <module>\n    run_peacock()\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 28, in run_peacock\n    sys.exit(main(sys.argv))\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/peacock\", line 12, in main\n    from peacock.CheckRequirements import has_requirements\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/__init__.py\", line 11, in <module>\n    from . import base\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/base/__init__.py\", line 10, in <module>\n    from .MooseWidget import MooseWidget\n  File \"/home/sankarganesh.mme.nitt/projects/moose/python/peacock/base/MooseWidget.py\", line 10, in <module>\n    from PyQt5 import QtCore\nModuleNotFoundError: No module named 'PyQt5'",
+                  "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4095113",
+                  "updatedAt": "2022-11-09T13:13:31Z",
+                  "publishedAt": "2022-11-09T09:28:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Somehow, the machine you are on is not able to communicate with https://conda.software.inl.gov/public. Therefore any attempts to run peacock are going to fail until that issue is solved.\nThe server is up and running, and in use by our continuous integration machines. We would know if they were offline, so this is something on your end preventing access.\nconda-forge/noarch                                  10.1MB @   1.7MB/s  2.8s\nhttps://conda.software.inl.gov/public/linux-64      ??.?MB @  ??.?MB/s 0 failed 10.0s       <----- this failed\nconda-forge/linux-64                                27.3MB @   2.6MB/s 11.4s\n\nCan you confirm the following command works:\n(moose) [sankarganesh.mme.nitt@login02 actions]$ curl https://conda.software.inl.gov/public/linux-64\n(I'm including your shell prompt to indicate I want you to try this curl command in the same environment where you are receiving the failure)\nRunning that curl command, you should receive exactly this:\n\u276f curl https://conda.software.inl.gov/public/linux-64\n<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>301 Moved Permanently</title>\n</head><body>\n<h1>Moved Permanently</h1>\n<p>The document has moved <a href=\"http://conda.software.inl.gov/public/linux-64/\">here</a>.</p>\n</body></html>\nIf you do, then it might be that your institution does not trust conda.software.inl.gov. There are ways around this in Conda, but I would like to see the results of that curl command before we continue.",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4096920",
+                          "updatedAt": "2022-11-09T13:26:14Z",
+                          "publishedAt": "2022-11-09T13:09:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "412120052"
+                          },
+                          "bodyText": "(moose) [sankarganesh.mme.nitt@login02 ~]$ curl https://conda.software.inl.gov/public/linux-64\ncurl: (6) Could not resolve host: conda.software.inl.gov; Unknown error\n(moose) [sankarganesh.mme.nitt@login02 ~]$ curl https://conda.software.inl.gov/public/linux-64\ncurl: (6) Could not resolve host: conda.software.inl.gov; Unknown error\n(moose) [sankarganesh.mme.nitt@login02 ~]$",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4106140",
+                          "updatedAt": "2022-11-10T10:25:14Z",
+                          "publishedAt": "2022-11-10T10:25:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Well this sort of error I can not help with... I was hoping it was a certificate issue. But this is something else. You'll want to work with your system admins on this one. DNS is not resolving conda.software.inl.gov",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-4107719",
+                          "updatedAt": "2022-11-10T13:53:57Z",
+                          "publishedAt": "2022-11-10T13:53:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Ogugua99"
+                  },
+                  "bodyText": "Hello, I am having the same issue.\n(moose) unokiwep@Patrick:~/MOOSE/moose/tutorials/darcy_thermo_mech/step01_diffusion/problems$ ~/MOOSE/moose/python/peacock/peacock -i step1.i\n\nError starting peacock: Could not import vtk\n\nYou may need to either create or load an environment providing PyQt, VTK, etc.\nThe MOOSE development team provides a conda package with the required dependencies:\n\n        mamba create -n peacock moose-peacock python=3.10\n        mamba activate peacock\n\nThen run peacock again",
+                  "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7635370",
+                  "updatedAt": "2023-11-21T21:18:33Z",
+                  "publishedAt": "2023-11-21T21:10:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "did you try doing what the prompt said?",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7635434",
+                          "updatedAt": "2023-11-21T21:18:46Z",
+                          "publishedAt": "2023-11-21T21:18:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ogugua99"
+                          },
+                          "bodyText": "Yes, I did exactly that but when I tried to run it again and it seemed successful. I tried running the peacock application again but still, I ended up getting the same error message",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7635541",
+                          "updatedAt": "2023-11-21T21:30:37Z",
+                          "publishedAt": "2023-11-21T21:30:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what does which python return?",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7635907",
+                          "updatedAt": "2023-11-21T22:24:21Z",
+                          "publishedAt": "2023-11-21T22:24:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ogugua99"
+                          },
+                          "bodyText": "/home/unokiwep/mambaforge3/envs/moose/bin/python",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7636261",
+                          "updatedAt": "2023-11-21T23:25:27Z",
+                          "publishedAt": "2023-11-21T23:25:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The following:\n        mamba create -n peacock moose-peacock python=3.10\n        mamba activate peacock\nShould have created a separate environment/path to python:\n/home/unokiwep/mambaforge3/envs/peacock/bin/python\n                                ^^^^^^^ instead of 'moose'\n\nCan you verify that you are in the (peacock) environment before running ~/MOOSE/moose/python/peacock/peacock?",
+                          "url": "https://github.com/idaholab/moose/discussions/22577#discussioncomment-7681372",
+                          "updatedAt": "2023-11-27T14:10:30Z",
+                          "publishedAt": "2023-11-27T14:10:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Petsc build check not running correctly",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Hi,\nI was trying to build Petsc with the recent set of sources and end up with a failed check as given below.\nInstall complete.\nNow to check if the libraries are working do (in current directory):\nmake SLEPC_DIR=/home/ir-bala2/moose_dev/moose/petsc/arch-moose PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc PETSC_ARCH=arch-moose check\n====================================\n/home/ir-bala2/moose_dev/moose/petsc/arch-moose/bin/make  --no-print-directory -f makefile PETSC_ARCH=arch-moose PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc SLEPC_DIR=/home/ir-bala2/moose_dev/moose/petsc/arch-moose/externalpackages/slepc-v3.16.2 slepc4py-install\nmake[5]: Nothing to be done for 'slepc4py-install'.\n=========================================\nNow to check if the libraries are working do:\nmake PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc PETSC_ARCH=arch-moose check\n=========================================\n[ir-bala2@login-q-4 moose]$ cd petsc/\n[ir-bala2@login-q-4 petsc]$ make PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc PETSC_ARCH=arch-moose check\nRunning check examples to verify correct installation\nUsing PETSC_DIR=/home/ir-bala2/moose_dev/moose/scripts/../petsc and PETSC_ARCH=arch-moose\nPossible error running C/C++ src/snes/tutorials/ex19 with 1 MPI process\nSee http://www.mcs.anl.gov/petsc/documentation/faq.html\n[login-q-4:1890149] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n[login-q-4:1890149] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n[login-q-4:1890149] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\nlid velocity = 0.0016, prandtl # = 1., grashof # = 1.\nNumber of SNES iterations = 2\nPossible error running C/C++ src/snes/tutorials/ex19 with 2 MPI processes\nSee http://www.mcs.anl.gov/petsc/documentation/faq.html\n[login-q-4:1890158] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n[login-q-4:1890158] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n[login-q-4:1890158] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n[login-q-4:1890159] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n[login-q-4:1890159] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n[login-q-4:1890159] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\nlid velocity = 0.0016, prandtl # = 1., grashof # = 1.\nNumber of SNES iterations = 2\n0a1,6\n> [login-q-4:1890176] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n> [login-q-4:1890176] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n> [login-q-4:1890176] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n> [login-q-4:1890177] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n> [login-q-4:1890177] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n> [login-q-4:1890177] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n3,4c9,10\n<   1 SNES Function norm 4.12227e-06\n<   2 SNES Function norm 6.098e-11\n---\n>   1 SNES Function norm 3.32882e-06\n>   2 SNES Function norm < 1.e-11\n/home/ir-bala2/moose_dev/moose/petsc/src/snes/tutorials\nPossible problem with ex19 running with hypre, diffs above\n=========================================\n0a1,6\n> [login-q-4:1890207] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n> [login-q-4:1890207] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n> [login-q-4:1890207] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n> [login-q-4:1890208] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n> [login-q-4:1890208] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n> [login-q-4:1890208] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n/home/ir-bala2/moose_dev/moose/petsc/src/snes/tutorials\nPossible problem with ex19 running with mumps, diffs above\n=========================================\n0a1,3\n> [login-q-4:1890288] mca_base_component_repository_open: unable to open mca_btl_openib: libosmcomp.so.4: cannot open shared object file: No such file or directory (ignored)\n> [login-q-4:1890288] mca_base_component_repository_open: unable to open mca_btl_usnic: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_btl_usnic.so) (ignored)\n> [login-q-4:1890288] mca_base_component_repository_open: unable to open mca_mtl_ofi: /usr/local/software/spack/spack-0.11.2/opt/spack/linux-rhel7-x86_64/gcc-5.4.0/libfabric-1.5.0-dvlgzfa3fxmfqbgx7l4x2mfctdwwetgh/lib/libfabric.so.1: version `FABRIC_1.2' not found (required by /usr/local/Cluster-Apps/openmpi/gcc/9.3/4.0.4/lib/openmpi/mca_mtl_ofi.so) (ignored)\n/home/ir-bala2/moose_dev/moose/petsc/src/vec/vec/tests\nPossible problem with ex47 running with hdf5, diffs above\n=========================================\nCompleted test examples\n\nThe module environment is am using is listed here. Not sure whether i am missing any thing, but if this is something i should be taking up with my cluster admin, i would be happy to give a try.\n[ir-bala2@login-q-4 petsc]$ module list\nCurrently Loaded Modulefiles:\n 1) slurm          3) gcc/9                   5) python/3.8     7) libfabric-1.5.0-gcc-5.4.0-dvlgzfa\n 2) rhel7/global   4) openmpi/gcc/9.3/4.0.4   6) cmake/latest\n\nThanks and regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/26154",
+          "updatedAt": "2023-11-27T13:34:04Z",
+          "publishedAt": "2023-11-27T10:39:54Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "I would expect an error like this, if the Cluster underwent some sort of upgrade, and they (the admins) have yet to repopulate the Spack stack with updated changes. As you suggested, I would indeed bring this up with them.",
+                  "url": "https://github.com/idaholab/moose/discussions/26154#discussioncomment-7680955",
+                  "updatedAt": "2023-11-27T13:34:04Z",
+                  "publishedAt": "2023-11-27T13:34:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to run tests after building MOOSE with singularity?",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi all, I'm trying to build MOOSE with singularity on the cluster, it builds successfully by pulling out docker image:\nsingularity build moose.sif docker://idaholab/moose:latest\nThen I would like to run tests to verify the build, I try to search a similar command as given in MOOSE docker install page:\ndocker run -ti idaholab/moose:latest /bin/bash -c 'cd test; ./run_tests'\nBut I'm unable to find a similar command to get access to the executable. I wonder if anyone has experience? Thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/26101",
+          "updatedAt": "2023-11-26T22:02:12Z",
+          "publishedAt": "2023-11-19T18:44:04Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "@chunhuizhao478 we are in the slow process of phasing out our docker images in lieu of our apptainer images, and the documentation has not been updated accordingly.\nIf you run:\nsingularity build moose.sif docker://idaholab/moose-dev:latest\n\nyou'll build the latest moose environment (this is a WIP, but is nearly done). You can then enter that environment, clone, and then build moose.\nWhat is your use case here? I'm glad to help if you provide more context.",
+                  "url": "https://github.com/idaholab/moose/discussions/26101#discussioncomment-7613579",
+                  "updatedAt": "2023-11-19T21:45:09Z",
+                  "publishedAt": "2023-11-19T21:45:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Thanks @loganharbour. We would like to build singularity container of MOOSE and combine my own application on HPC cluter (Expanse in UCSD) for a project (Quakeworx). Since I'm new to singularity, it's quite confusing at this stage. The ultimate goal is to have MOOSE (with tensormechanics modulus) + my own application as a singularity container that the example code can be executed on Expanse.\nSo far I'm able to build moose.sif (I will try the dev you mentioned soon) on the cluster, now I would like to\n(1) test the build (use ./run_tests)\n(2) combine my own application (available on GitHub)\n(3) run an example code on the cluster\nI'm really appreciating if you could highlight the necessary commands for achieving this. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/26101#discussioncomment-7613610",
+                          "updatedAt": "2023-11-19T21:56:32Z",
+                          "publishedAt": "2023-11-19T21:56:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "I'm sorry for the delay on this; the answer to your questions depends quite a bit on your HPC setup.\nThe most important question is that are you tying to run MOOSE across multiple nodes on your cluster? If so, the configuration for using the container is a bit more detailed.",
+                          "url": "https://github.com/idaholab/moose/discussions/26101#discussioncomment-7674921",
+                          "updatedAt": "2023-11-26T22:02:13Z",
+                          "publishedAt": "2023-11-26T22:02:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "chunhuizhao478"
+                  },
+                  "bodyText": "It builds successfully with moose-dev:latest:\n[czhao1@exp-1-21 ~]$ singularity build moose_dev.sif docker://idaholab/moose-dev:latest\nWARNING: 'nodev' mount option set on /tmp, it could be a source of failure during build process\nINFO:    Starting build...\nGetting image source signatures\nCopying blob 02038a90d4b6 skipped: already exists  \nCopying config 3beeea92be done  \nWriting manifest to image destination\nStoring signatures\n2023/11/20 07:20:45  info unpack layer: sha256:02038a90d4b68c7c5a4918742e510bdf1aa554dd1a6e8de29f9c3719d6a97c11\nINFO:    Creating SIF file...\nINFO:    Build complete: moose_dev.sif\n\nIf I do singularity shell moose_dev.sif; ls \\:\n[moose_dev][~]> ls /\nbin   dev\t  environment  home  lib64\t media\tnone  proc  run\t\t\t       sbin\t    srv  tmp  var\nboot  Dockerfile  etc\t       lib   lost+found  mnt\topt   root  run_singularity2docker.sh  singularity  sys  usr\n\nBut there is no moose, so the next step is to build moose inside, how should i achieve it?",
+                  "url": "https://github.com/idaholab/moose/discussions/26101#discussioncomment-7620887",
+                  "updatedAt": "2023-11-20T16:27:11Z",
+                  "publishedAt": "2023-11-20T15:31:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "collect flux for the coarse mesh of a subapp from the results of the main app",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "I would like to realize CMFD (Coarse Mesh Finite Difference method) for transport calculations. It's an acceleration technique akin to multigrid. This method involves spatially weighted averaging of fine-grid iteration results from the main app to derive coarse-grid material properties. Is there a technique available for conducting flux statistics on cell faces and to obtain the flow on coarse-grid faces through area-weighting the flux values on fine-grid faces.\nIn the introduction to the transfer system, it is mentioned that spatial mapping between different grids can be accomplished using the transfer functionality. Consequently, is it possible to execute the entire statistical process of fine-grid iteration results and the weighted averaging process between coarse and fine grids within the transfer system? Or is it necessary to initially leverage AuxKernels or Postprocessors to conduct relevant statistics on the main app's results, followed by the spatial mapping (i.e., weighting and averaging of cells and cell faces) within the transfer system?\nI acknowledge that my query may be intricate and extensive. Any guidance on any aspect of this matter would be highly appreciated.",
+          "url": "https://github.com/idaholab/moose/discussions/26144",
+          "updatedAt": "2023-11-26T14:00:25Z",
+          "publishedAt": "2023-11-25T13:40:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou ll have to make a user object derived from InternalSideUserObject or DomainUserObject to perform this accumulation in the internalSide routine\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7666362",
+                  "updatedAt": "2023-11-25T14:09:35Z",
+                  "publishedAt": "2023-11-25T14:09:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Thank you for your guidance. Based on my understanding, InternalSideUserObject is designed for internal faces. Considering this, should I also create a SideUserObject derived class for handling boundary faces? Additionally, regarding the data transfer between coarse-mesh and fine-mesh, is there an existing transfer object in moose that facilitates the weighting and averaging process?",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7666450",
+                          "updatedAt": "2023-11-25T14:31:46Z",
+                          "publishedAt": "2023-11-25T14:31:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Indeed. You could do that and have an internalSide object, a boundary side object etc\nThat s why we introduced the DomainUO that can do both sides, internal sides and elements",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7667839",
+                          "updatedAt": "2023-11-25T18:11:55Z",
+                          "publishedAt": "2023-11-25T18:11:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "None of the transfers in moose do the averaging and weighting for you.\nWhat we do is use UserObjects for that part then use the UOTransfer classes to get the user object values in the other application",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7667843",
+                          "updatedAt": "2023-11-25T18:12:54Z",
+                          "publishedAt": "2023-11-25T18:12:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "But how can we retain the averaged values for a coarse mesh? If we define a variable in the transport app to store these values, the DOFs of this variable will be significantly larger than necessary, as it is defined on the fine-mesh. For instance, with 1000 elements on the fine mesh and only 10 on the coarse mesh, the variables in the transport app might store DOFs for all 1000 elements, while we actually require only 10 DOFs for the 10 coarse elements. Am I misunderstanding this? Is it possible to define a variable based on the coarse mesh in the transport app, allowing the app to handle the fine mesh as its computational mesh?",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7669581",
+                          "updatedAt": "2023-11-26T03:53:00Z",
+                          "publishedAt": "2023-11-26T03:52:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So yes, you would not use a variable on the fine mesh to hold any CMFD quantity.\nYou can either use a multiapp and have a coarse mesh there\nOr define your own arrays, like standard C++ vectors, in the user object. Not everything in a moose app has to be using moose objects, this is what user objects are for",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7671167",
+                          "updatedAt": "2023-11-26T12:05:03Z",
+                          "publishedAt": "2023-11-26T12:05:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "I understand, thank you very much.",
+                          "url": "https://github.com/idaholab/moose/discussions/26144#discussioncomment-7671899",
+                          "updatedAt": "2023-11-26T14:00:26Z",
+                          "publishedAt": "2023-11-26T14:00:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,542 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMS0yMVQxMDowMjoyOC0wNzowMM4AWZcR"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Conduction in Porous Flow from lava lamp example",
+          "author": {
+            "login": "aikubo"
+          },
+          "bodyText": "Hello, I'm trying to set up a simple convection problem using the PorousFlow module. I've modified the example problem '/moose_projects/moose/modules/porous_flow/examples/lava_lamp/1phase_convection.i'\nbut to simply use water and to \"convect\" from the bottom. I'm working on this simple problem as a validation and learning exercise before I move onto more complex stuff.\nI'm feeling confused because it seems to me that the heat isn't advecting through the timesteps.\nI did some simple scaling analysis to see if it should look like this:\n$$ t = \\frac{L^{2}\\rho c_{p}}{k} $$\nwhere $t$ is the timescale for pure heat diffusion and $L$ is the size of the domain $rho$ is the mixture density, $c_{p}$ is mixture heat capacity, $k$ is the mixture thermal conductivity all as function of porosity.\nThe timescale for this domain size (2m) is $7x10e6$ s. After running the simulation for $10e7$ seconds, it doesn't appear to have changed at all. I did some other scaling of the porous flow Rayleigh number and it isn't high enough for there to be active convection but their still should be conduction I think.\n\nThe simulation seems to be running correctly and does converge appropriately.\nI've been working on it for a while now and don't understand what is wrong.\nI think it could be:\n\nRelated to scaling\nNot using the right kernals\nBoundary conditions\n\nI'm sure that this is some error that I've made in the input file. Thank you for your help.\nFor context, my goal is to work up to modeling a 5km domain around a dike intrusion at 800C with hydrothermal circulation and phase change.\nHere is the input file:\n\n\n[Adaptivity]\n  max_h_level = 2\n  marker = marker\n  initial_marker = initial\n  initial_steps = 2\n  [Indicators]\n    [indicator]\n      type = GradientJumpIndicator\n      variable = temperature\n    []\n  []\n  [Markers]\n    [marker]\n      type = ErrorFractionMarker\n      indicator = indicator\n      refine = 0.8\n    []\n    [initial]\n      type = BoxMarker\n      bottom_left = '0 1.95 0'\n      top_right = '2 2 0'\n      inside = REFINE\n      outside = DO_NOTHING\n    []\n  []\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    ymin = 0\n    ymax = 20\n    xmax = 20\n    ny = 100\n    nx = 100\n  []\n\n  [dike]\n    type = SubdomainBoundingBoxGenerator\n    block_id = 1\n    bottom_left = '0 0 0'\n    top_right = '20 5 0'\n    block_name = dike\n    input = gen\n  []\n[]\n\n[AuxVariables]\n  [porosity]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n[]\n\n[Variables]\n  [porepressure]\n\n  []\n  [temperature]\n    scaling = 1E-8\n  []\n[]\n\n[PorousFlowBasicTHM]\n  porepressure = porepressure\n  temperature = temperature\n  coupling_type = ThermoHydro\n  gravity = '0 -9.81 0'\n  fp = true_water\n[]\n\n\n[ICs]\n  [porosity]\n    type = RandomIC\n    variable = porosity\n    min = 0.25\n    max = 0.350\n    seed = 0\n  []\n  [pressure]\n    type = ConstantIC\n    variable = porepressure\n    value = 10e6\n  []\n  [temperature1]\n    type= ConstantIC\n    variable = temperature\n    value = 300\n    block = 0\n  []\n  [temperature2]\n    type= ConstantIC\n    variable = temperature\n    value = 372\n    block = 'dike'\n  []\n[]\n\n[BCs]\n  [insulaing]\n    type = NeumannBC\n    value = 0\n    variable = temperature\n    boundary = 'right left top bottom'\n  []\n[]\n\n\n[FluidProperties]\n  [true_water]\n    type = Water97FluidProperties\n  []\n[]\n\n[Materials]\n  [porosity]\n    type = PorousFlowPorosity\n    porosity_zero = 0.1\n  []\n  [biot_modulus]\n    type = PorousFlowConstantBiotModulus\n    biot_coefficient = 0.8\n    solid_bulk_compliance = 2E-7\n    fluid_bulk_modulus = 1E7\n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '1E-14 0 0   0 1E-14 0   0 0 1E-14'\n  []\n\n  [thermal_expansion]\n    type = PorousFlowConstantThermalExpansionCoefficient\n    biot_coefficient = 0.8\n    drained_coefficient = 0.003\n    fluid_coefficient = 0.0002\n  []\n  [rock_internal_energy]\n    type = PorousFlowMatrixInternalEnergy\n    density = 2500.0\n    specific_heat_capacity = 1200.\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '2.5 0 0  0 2.5 0  0 0 2.5'\n  []\n[]\n\n[Preconditioning]\n  active = mumps\n  [mumps]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO      2'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  end_time = 10e7\n  nl_max_its = 25\n  l_max_its = 100\n  dtmax = 1e4\n  nl_abs_tol = 1e-4\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 100\n  []\n  line_search = 'none'\n[]\n\n[Outputs]\n  print_linear_residuals = true\n  perf_graph = true\n  exodus = true\n  csv = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/26122",
+          "updatedAt": "2023-11-23T00:05:12Z",
+          "publishedAt": "2023-11-21T23:50:01Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "Your tolerance is too loose, so no solving takes place. When I run your input file, the output looks like\nTime Step 0, time = 0\n\nTime Step 1, time = 100, dt = 100\n 0 Nonlinear |R| = 2.589940e-05\n Solve Converged!\n\nTime Step 2, time = 300, dt = 200\n 0 Nonlinear |R| = 2.589940e-05\n Solve Converged!\n\nTime Step 3, time = 700, dt = 400\n 0 Nonlinear |R| = 2.589940e-05\n Solve Converged!\n\nIn this case, the initial residual is less than your tolerance, so no solve takes place. Therefore, nothing evolves.\nWhen I comment out the scaling for temperature and change nl_abs_tol to 1e-8, then the output looks like\nTime Step 0, time = 0\n\nTime Step 1, time = 100, dt = 100\n 0 Nonlinear |R| = 2.588833e+03\n      0 Linear |R| = 2.588833e+03\n      1 Linear |R| = 1.482230e-11\n 1 Nonlinear |R| = 2.693752e-01\n      0 Linear |R| = 2.693752e-01\n      1 Linear |R| = 2.806349e-15\n 2 Nonlinear |R| = 6.235825e-09\n Solve Converged!\n  Finished Solving         \n\nIn this case, something is happening!",
+                  "url": "https://github.com/idaholab/moose/discussions/26122#discussioncomment-7636859",
+                  "updatedAt": "2023-11-22T01:20:55Z",
+                  "publishedAt": "2023-11-22T01:20:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aikubo"
+                          },
+                          "bodyText": "Thank you! I ran it for a short time and it does appear to be diffusing now.",
+                          "url": "https://github.com/idaholab/moose/discussions/26122#discussioncomment-7646491",
+                          "updatedAt": "2023-11-22T21:35:59Z",
+                          "publishedAt": "2023-11-22T21:35:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Trouble with ParameterStudy",
+          "author": {
+            "login": "cameronmcelfresh"
+          },
+          "bodyText": "Hi, I've been having issues getting the \"ParameterStudy\" to run a simple parameter study using the Heat Conduction module. I have been able to successfully run the test cases provided in the Stochastic Tools directory and my input file works using the Heat Conduction Module.\nThe error that I am getting is :\n*** ERROR ***\nA 'ADHeatConductionTimeDerivative' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.`\n\nI seem to be running into the same issue discussed here: #24393 - but have not found a good solution.\nI've copied my ParameterStudy input file below (parameter_study_v1.i) and copied the attached the physics input file as well.\n[ParameterStudy]\n  input = therm_step_elliptical_v8_paramSweep.i\n  parameters = 'BCs/radiation_condition/boundary_emissivity'\n  quantities_of_interest = 'temp_max/value temp_avg/value'\n\n  sampling_type = lhs\n  num_samples = 3\n  distributions = 'uniform'\n  uniform_lower_bound = 0.2\n  uniform_upper_bound = 0.5\n  multiapp_mode = batch-reset\n[]\n\nFor further context, I am using Docker and built all of the modules using make -j 6 in the moose/modules directory. To submit the simulation I am using ../modules/stochastic_tools-opt -i thermal_step_elliptical_v8_paramSweep.i\nAny suggestions would be appreciated! Thanks!\ntherm_step_elliptical_v8_paramSweep.txt",
+          "url": "https://github.com/idaholab/moose/discussions/26126",
+          "updatedAt": "2023-11-22T21:12:56Z",
+          "publishedAt": "2023-11-22T18:47:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nTo use the heat transfer (it has been renamed) module you cannot use the stochastic tools executable.\nYou have to use either:\n\nthe combined module executable\nan application executable that include both heat transfer and stochastic tools\n\nSo if you are already building all modules, you should be able to go in moose/modules and build there. A combined executable will be in modules/combined or in modules/ I dont recall\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26126#discussioncomment-7645569",
+                  "updatedAt": "2023-11-22T18:59:40Z",
+                  "publishedAt": "2023-11-22T18:59:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cameronmcelfresh"
+                          },
+                          "bodyText": "Solved using the executable in moose/modules/combined\nThank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/26126#discussioncomment-7646358",
+                          "updatedAt": "2023-11-22T21:12:57Z",
+                          "publishedAt": "2023-11-22T21:12:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to implement a temperature-dependent rank 2 tensor.",
+          "author": {
+            "login": "marinsiebert"
+          },
+          "bodyText": "Hi,\nso basically what the titel says, I want to have a rank 2 tensor with a temperature dependent value along the diagonal for the thermal conductivity. What would be the easiest way to achieve this?\nThe goal would be to have an additional PorousFlowThermalConductivity Material that can calculate the thermal conductivity of a porous material depending on the porosity, saturation and the temperature-depending thermal conductivities of the porefluid (water) and the granular matrix. Find below the current state my .C file is in\n`//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n#include \"PorousFlowThermalConductivityBrakelmann.h\"\nregisterMooseObject(\"PorousFlowApp\", PorousFlowThermalConductivityBrakelmann);\nInputParameters\nPorousFlowThermalConductivityFromPorosity::validParams()\n{\nInputParameters params = PorousFlowThermalConductivityBase::validParams();\nparas.addRequiredCoupledVar(\"temperature\");\nparams.addRequiredParam\"rho_s\",2650,\n\"The density of the soil mineral solids\");\nparams.addRequiredParam(\"lambda_b\",\n\"The thermal conductivity of soil mineral solids approximated by\"\n\"0.0812sand_content+0.054silt_content+0.02*clay_content\");\nparams.addRequiredParam(\"lambda_w,\"\n\"The approximated temperature-depending thermal conductivity of water\"\n\"(e.g. Kays et al.,2005): -8.354e-6T^2+6.53e-3T-0.5981\");\nparams.addParam(\"aqueous_phase_number\",\n0,\n\"The phase number of the aqueous phase.\");\nparams.addClassDescription(\"This Material calculates rock-fluid combined thermal conductivity \"\n\"for the unsaturated porous medium using a empirical\"\n\"non-linear whole-range function from Brakelmann (2015).\"\n\"Thermal conductivity = lambda_w^(phi)lambda_b^(1-phi)exp(-3.08phi(1-S)^2)) \"\n\"where phi is porosity, lambda_w, lambda_b are \"\n\"thermal conductivities of the fluid and solid\"\n\"(approximated from grain size distribution)\"\n\"and S is the degree of saturation\"\n););\nreturn params;\n}\nPorousFlowThermalConductivityBrakelmann::PorousFlowThermalConductivityBrakelmann(\nconst InputParameters & parameters)\n: PorousFlowThermalConductivityBase(parameters),\n_la_b(getParam)(\"lambda_b\")),\n_la_w(getParam)(\"lamda_w\")),\n_rho_s(getParam(\"rho_s\")),\n_rho_b(getParam(\"rho_b\")),\n_porosity_qp(getMaterialProperty(\"PorousFlow_porosity_qp\")),\n_dporosity_qp_dvar(getMaterialProperty<std::vector>(\"dPorousFlow_porosity_qp_dvar\"))\n_aqueous_phase(_num_phases > 0),\n_aqueous_phase_number(getParam(\"aqueous_phase_number\")),\n_saturation_qp(_aqueous_phase\n? &getMaterialProperty<std::vector>(\"PorousFlow_saturation_qp\")\n: nullptr),\n_dsaturation_qp_dvar(_aqueous_phase ? &getMaterialProperty<std::vector<std::vector>>(\n\"dPorousFlow_saturation_qp_dvar\")\n: nullptr)\n{\nif (_num_phases != 1)\nparamError(\"fluid_phase\",\n\"The Dictator proclaims that the number of phases is \",\n_dictator.numPhases(),\n\" whereas this material can only be used for single phase \"\n\"simulations.  Be aware that the Dictator has noted your mistake.\");\n}\nvoid\nPorousFlowThermalConductivityBrakelmann::computeQpProperties()\n{\n_la_qp[_qp] =\nstd::pow(_la_w, _porosity_qp)pow(_la_b, 1-_porosity_qp)\nexp(-3.08*_porosity_qppow((1-((_saturation_qp)[_qp][_aqeous_phase_number])/_porosity_qp),2))\n}\n`",
+          "url": "https://github.com/idaholab/moose/discussions/26116",
+          "updatedAt": "2023-11-22T08:21:26Z",
+          "publishedAt": "2023-11-21T13:17:09Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre the two diagonal coefficients going to have the same temperature dependence?\nDo you want to hard code the dependence of the coefficients or do you want to be able to change it from user input file?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26116#discussioncomment-7630555",
+                  "updatedAt": "2023-11-21T13:19:56Z",
+                  "publishedAt": "2023-11-21T13:19:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "For now I am fine if the diagonal has the same results.\nThe thermal conductivity for water will be calculated by  -8.354e-6T^2+6.53e-3T-0.5981, this doesnt necessarily have to be subject to user input, however now thinking about it it probably wont hurt in the long term to either allow users to be able to change the approximation in the input file or, even better, let the material consume the thermal conductivities as calculated by the Water97FluidProperties object.\nThe thermal conductivity for the solid material will be 0.0812sand_content+0.054silt_content+0.02*clay_content - this does not necessarily have to be calculated in the material, as the users could just calculate it themselves and enter it into a Parameter like has been done in the PorousFlowThermalConductivityIdeal.",
+                          "url": "https://github.com/idaholab/moose/discussions/26116#discussioncomment-7630660",
+                          "updatedAt": "2023-11-21T13:31:30Z",
+                          "publishedAt": "2023-11-21T13:31:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you are planning to use a FluidProperties user object you should look at how the\nhttps://mooseframework.inl.gov/source/materials/GeneralFluidProps.html\nmaterial is implemented.\nIt will be very similar for you except you ll need to define a tensor material property.\nAn example of this is this one:\nhttps://mooseframework.inl.gov/source/materials/ADGenericFunctionRankTwoTensor.html",
+                          "url": "https://github.com/idaholab/moose/discussions/26116#discussioncomment-7631153",
+                          "updatedAt": "2023-11-21T14:18:19Z",
+                          "publishedAt": "2023-11-21T14:18:19Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "marinsiebert"
+                          },
+                          "bodyText": "Tank you, that is exactly what I was looking for!",
+                          "url": "https://github.com/idaholab/moose/discussions/26116#discussioncomment-7639333",
+                          "updatedAt": "2023-11-22T08:21:24Z",
+                          "publishedAt": "2023-11-22T08:21:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "whether to consider the rotation of grains when loading in the crystal plasticity model",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Dear @sapitts and @jiangwen84,\nI hope this message finds you well. I have been studying the code in ComputeElasticityTensorCP, specifically in code block,\nvoid\nComputeElasticityTensorCP::computeQpElasticityTensor()\n{\n  // Properties assigned at the beginning of every call to material calculation\n  // is required by the monolithic and user object versions. If those classes\n  // are deprecated, these update can be removed and save time\n  if (!_user_provided_rotation_matrix)\n  {\n    assignEulerAngles();\n    _crysrot[_qp] = _R.transpose();\n  }\n  else\n    _crysrot[_qp] = _rotation_matrix.transpose();\n\n  _elasticity_tensor[_qp] = _Cijkl;\n  _elasticity_tensor[_qp].rotate(_crysrot[_qp]);\n}\nand it appears that the _elasticity_tensor[_qp] is computed based on the initial input Euler angles, which represent the rotation matrix. In other words, it seems that throughout the computation, the _crysrot[_qp] remains constant. Could you please confirm if my understanding is accurate?\nI am interested in knowing if grains' rotation is considered during the application of loading in crystal plasticity models.\nThank you for your time and assistance.\nBest regards,\nwei peng",
+          "url": "https://github.com/idaholab/moose/discussions/25849",
+          "updatedAt": "2023-11-22T07:40:39Z",
+          "publishedAt": "2023-10-25T14:19:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "sapitts"
+                  },
+                  "bodyText": "Hi Wei Peng,\nPlease accept my apologies for my late reply. In case you haven't already worked through this issue, the grain's rotation is not used in the calculation of crystal plasticity values. The stress and strain measures for the crystal plasticity capability (the PK2 stress and the Almansi-Hemel strain measures, respectively) are chosen to refer to the reference configuration. Because the crystal plasticity calculations are performed in the reference configuration, the updated rotation is not needed and thus is not calculated in the elasticity tensor class.\nThe updated rotation is, however, calculated and tracked by the ComputeMultipleCrystalPlasticityStress class, see \n  \n    \n      moose/modules/tensor_mechanics/src/materials/crystal_plasticity/ComputeMultipleCrystalPlasticityStress.C\n    \n    \n         Line 312\n      in\n      6ce5723\n    \n  \n  \n    \n\n        \n          \n           _updated_rotation[_qp] = rot * _crysrot[_qp]; \n        \n    \n  \n\n  This updated rotation can also be tracked and output by the ComputeUpdatedEulerAngle class.\nHope this helps,\nStephanie",
+                  "url": "https://github.com/idaholab/moose/discussions/25849#discussioncomment-7621423",
+                  "updatedAt": "2023-11-20T16:23:29Z",
+                  "publishedAt": "2023-11-20T16:23:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "No problem at all! Thank you for your answer. I got it.",
+                          "url": "https://github.com/idaholab/moose/discussions/25849#discussioncomment-7639007",
+                          "updatedAt": "2023-11-22T07:40:36Z",
+                          "publishedAt": "2023-11-22T07:40:35Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Global Parameters",
+          "author": {
+            "login": "styyokuda"
+          },
+          "bodyText": "All,\nIn order to switch DirichletBC to NeumannBC at t = 100 [sec], I am using the [Controls] block (please see [BCs] and [Controls] below).  Also, in a class in the [Materials] block, I need switch vis = 1e-4 to vis = 5e-4 at t = 100 [sec] (please see CalculateMaterial.C below).\nIt is nice if I can set a global parameter, e.g., t_switch = 100, and use it for both in the [Controls] block and CalculateMaterial.C as shown below (also, I can change the value for t_switch in the input file).\nPlease let me know whether [GlobalParams] in MOOSE does it and please help me where I can find examples to use it.\nPlease help. S. Thomas\n[BCs]\n    [./TT_ DirichletBC_BC]\n    type = DirichletBC\n    boundary = 'outer_boundary'\n    variable = TT\n    value = 0.0\n   enable = false\n  [../]\n  [./TT_ NeumannBC _BC]\n    type = NeumannBC\n    boundary = = 'outer_boundary'\n    variable = TTemp\n    value = 0.0\n   enable = false\n  [../]\n[ ]\n\n[Controls]\n   [./TT_DirchletBC_cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ DirichletBC_BC\u2019\n    start_time = 0.0\n    end_time = 100.0\n  [../]\n   [./TT_= NeumannBC _cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ NeumannBC _BC\u2019\n    start_time = 100.0\n    end_time = 1000.0\n  [../]\n[ ]\n\n[Materials]\n  [./mat_CalculateMaterial]\n    type = CalculateMaterial\n    variable = U\n    block = '1 '\n  [../]\n[ ]\n\nCalculateMaterial.C\nIf ( _t < 100.0 )\n{ vis = 1e-4 }\nelse\n{ vis = 5e-4}\n\n\n[Controls]\n   [./TT_DirchletBC_cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ DirichletBC_BC\u2019\n    start_time = 0.0\n    end_time = t_switch\n  [../]\n   [./TT_= NeumannBC _cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ NeumannBC _BC\u2019\n    start_time = t_switch\n    end_time = 1000.0\n  [../]\n\nCalculateMaterial.C\nIf ( _t < t_switch )\n{ vis = 1e-4 }\nelse\n{ vis = 5e-4}",
+          "url": "https://github.com/idaholab/moose/discussions/26121",
+          "updatedAt": "2023-11-22T00:15:32Z",
+          "publishedAt": "2023-11-21T23:27:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Can you do this, with input parameter substitution?\nt_switch = 100\n[Controls]\n   [./TT_DirchletBC_cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ DirichletBC_BC\u2019\n    start_time = 0.0\n    end_time = ${t_switch}\n  [../]\n   [./TT_= NeumannBC _cont]\n    type = TimePeriod\n    enable_objects = 'BCs::TT_ NeumannBC _BC\u2019\n    start_time = ${t_switch}\n    end_time = 1000.0\n  [../]\n[ ]",
+                  "url": "https://github.com/idaholab/moose/discussions/26121#discussioncomment-7636352",
+                  "updatedAt": "2023-11-21T23:43:37Z",
+                  "publishedAt": "2023-11-21T23:43:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Thank you, Guillaume.\nDo you think this can also be applied for t_switch in the class of CalculateMaterial.C where\nIf ( _t < t_switch )\n{ vis = 1e-4 }\nelse\n{ vis = 5e-4}\nPlease let me know.\nS. Thomas",
+                          "url": "https://github.com/idaholab/moose/discussions/26121#discussioncomment-7636502",
+                          "updatedAt": "2023-11-22T00:08:06Z",
+                          "publishedAt": "2023-11-22T00:08:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Absolutely\nJust make it to be a parameter (Real for the type) and set it from the input file",
+                          "url": "https://github.com/idaholab/moose/discussions/26121#discussioncomment-7636532",
+                          "updatedAt": "2023-11-22T00:15:33Z",
+                          "publishedAt": "2023-11-22T00:15:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Nonlinear solve did not converge due to DIVERGED_FNORM_NAN",
+          "author": {
+            "login": "anupkgeos"
+          },
+          "bodyText": "Hi all,\nI am trying to simulate a hydromechanical problem, it runs okay but when I add initial in-situ stress then it doesn't converge\nTime Step 1, time = 10, dt = 10\nPressure 86664.6 is outside the range of tabulated pressure (100000, 1e+08).\nNonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 6\n\n\nIn-situ stress is implemented as:\n  [sxx0]\n    type = ParsedFunction\n    expression = '-0.7*${gravity} * y * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force\n  []\n  [syy0]\n    type = ParsedFunction\n    expression = '-${gravity} * y * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force\n  []\n\n\n   [ini_strain]\n     type = ComputeEigenstrainFromInitialStress\n     initial_stress = 'sxx0 0 0  0 syy0 0  0 0 sxx0'\n     eigenstrain_name = 'ini_strain'\n   []\n\nPlease find my input file here.  I don't know how to fix it. Any help is appreciated. Thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/26103",
+          "updatedAt": "2023-11-21T21:44:04Z",
+          "publishedAt": "2023-11-20T04:12:15Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "This error message\n\nPressure 86664.6 is outside the range of tabulated pressure (100000, 1e+08).\n\nseems pretty clear. I would try to fix that",
+                  "url": "https://github.com/idaholab/moose/discussions/26103#discussioncomment-7621634",
+                  "updatedAt": "2023-11-20T16:42:19Z",
+                  "publishedAt": "2023-11-20T16:42:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "anupkgeos"
+                          },
+                          "bodyText": "I fixed the issue. It was due to the wrong(low) initial stress.",
+                          "url": "https://github.com/idaholab/moose/discussions/26103#discussioncomment-7635628",
+                          "updatedAt": "2023-11-21T21:43:48Z",
+                          "publishedAt": "2023-11-21T21:43:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "combined [Porous Flow] and [Geochemistry] modules",
+          "author": {
+            "login": "Bearunner"
+          },
+          "bodyText": "Dear all,\nI want to simulate the chemical scaling process ([Geochemistry] module) within the wellbore (porostity=1 and initial Calcite = 0 in [Porous Flow] module). The input files are here.\nThe Species Concentration in injected water at 14\u00b0C are shown as follows.\nCa++ : 26.6 mg/L\nCl-:: 30.8 mg/L\nSO4--:: 22.5 mg/L\nHCO3-:12.2 mg/L\nph= 8.05 => H+ : 8.91E-09 mol/L\n1st: I run the aquifer_equilibrium.i file to get the bulk composition of H+: 2.6136e-06 moles.\n2nd: Insert the ulk composition of H+ into aquifer_geochemistry.i to run the combined  [Porous Flow] and [Geochemistry] modules.\nBut I get zero Calcite.\nCould you please help me with this? Thanks.\nB",
+          "url": "https://github.com/idaholab/moose/discussions/26114",
+          "updatedAt": "2023-11-21T19:25:12Z",
+          "publishedAt": "2023-11-21T01:09:56Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Bearunner"
+                  },
+                  "bodyText": "Hello @cpgr  ,could you please help me with this? Thank you.",
+                  "url": "https://github.com/idaholab/moose/discussions/26114#discussioncomment-7625071",
+                  "updatedAt": "2023-11-21T01:18:27Z",
+                  "publishedAt": "2023-11-21T01:18:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "josebastiase"
+                  },
+                  "bodyText": "Hi, can you also share your json files?",
+                  "url": "https://github.com/idaholab/moose/discussions/26114#discussioncomment-7633526",
+                  "updatedAt": "2023-11-21T17:37:59Z",
+                  "publishedAt": "2023-11-21T17:37:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Bearunner"
+                          },
+                          "bodyText": "hello. I use the defaulted json files of [Geochemistry] modules",
+                          "url": "https://github.com/idaholab/moose/discussions/26114#discussioncomment-7634476",
+                          "updatedAt": "2023-11-21T19:25:13Z",
+                          "publishedAt": "2023-11-21T19:25:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Element output to csv file",
+          "author": {
+            "login": "maugis62"
+          },
+          "bodyText": "How would I export the maximum principal strain for every element to a csv file?",
+          "url": "https://github.com/idaholab/moose/discussions/26118",
+          "updatedAt": "2023-11-21T18:27:39Z",
+          "publishedAt": "2023-11-21T17:55:07Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I m not sure but I would start with the output parameters of the TensorMechanics action\nThen if that only gets you output to exodus, you can go output to CSV instead using this on the created auxiliary variables\nhttps://mooseframework.inl.gov/source/vectorpostprocessors/ElementValueSampler.html",
+                  "url": "https://github.com/idaholab/moose/discussions/26118#discussioncomment-7633737",
+                  "updatedAt": "2023-11-21T17:59:59Z",
+                  "publishedAt": "2023-11-21T17:59:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maugis62"
+                          },
+                          "bodyText": "That worked!  thanks so much!\nJust included the following:\n[VectorPostprocessors]\n  [vpp]\n    type = ElementValueSampler\n    variable = 'max_principal_strain'\n    sort_by = id\n    execute_on = 'TIMESTEP_END'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26118#discussioncomment-7633889",
+                          "updatedAt": "2023-11-21T18:20:25Z",
+                          "publishedAt": "2023-11-21T18:16:06Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Variable depends on faces",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "Hello everyone,\nI am currently working on a project where I need to compute the flow on specific faces of the mesh. However, it seems that in MOOSE, the solution is primarily stored at quadrature points (qp) or nodal locations.I am wondering if there is a way to define a variable related to faces, allowing me to store information about each face, such as its area, etc. I am open to using auxvariables or postprocessors to achieve this.\nI have explored InternalSideUserObject and its subclass ElementSidesL2Norm. However, it appears that ElementSidesL2Norm performs a cumulative calculation over all faces, and other subclasses seem to perform cumulative calculations on interfaces. What I need is an individual calculation for each face, not a cumulative result.\nMoreover, I have questions about how InternalSideUserObject traverses the mesh for computations. I noticed that both elem and side references in InternalSideUserObject are const.\n/// pointer to the current element object\n  const Elem * const & _current_elem;\n\n  /// the volume of the current element\n  const Real & _current_elem_volume;\n\n  /// current side of the current element\n  const unsigned int & _current_side;\n\nBy tracing the code, I suspect that MOOSE performs the mesh traversal through the loop in ThreadedElementLoopBase::operator()(const RangeType & range, bool bypass_threading), which repeatedly calls ComputeUserObjectsThread::onInternalSide(const Elem * elem, unsigned int side).However, I couldn't find in ComputeUserObjectsThread::onInternalSide() how MOOSE invokes the relevant InternalSideUserObject for computation based on the input parameters elem and side. Instead, it seems MOOSE repeatedly calls a batch of InternalSideUserObject objects.\nvoid\nComputeUserObjectsThread::onInternalSide(const Elem * elem, unsigned int side)\n{\n  // Pointer to the neighbor we are currently working on.\n  const Elem * neighbor = elem->neighbor_ptr(side);\n\n  // Get the global id of the element and the neighbor\n  const dof_id_type elem_id = elem->id(), neighbor_id = neighbor->id();\n\n  if (_internal_side_objs.size() == 0 && _domain_objs.size() == 0)\n    return;\n  if (!((neighbor->active() && (neighbor->level() == elem->level()) && (elem_id < neighbor_id)) ||\n        (neighbor->level() < elem->level())))\n    return;\n\n  _fe_problem.prepareFace(elem, _tid);\n  _fe_problem.reinitNeighbor(elem, side, _tid);\n\n  // Set up Sentinels so that, even if one of the reinitMaterialsXXX() calls throws, we\n  // still remember to swap back during stack unwinding.\n  SwapBackSentinel face_sentinel(_fe_problem, &FEProblem::swapBackMaterialsFace, _tid);\n  _fe_problem.reinitMaterialsFace(elem->subdomain_id(), _tid);\n\n  SwapBackSentinel neighbor_sentinel(_fe_problem, &FEProblem::swapBackMaterialsNeighbor, _tid);\n  _fe_problem.reinitMaterialsNeighbor(neighbor->subdomain_id(), _tid);\n\n  for (const auto & uo : _internal_side_objs)\n    if (!uo->blockRestricted() || uo->hasBlocks(neighbor->subdomain_id()))\n      uo->execute();\n\n  for (auto & uo : _domain_objs)\n    if (!uo->blockRestricted() || uo->hasBlocks(neighbor->subdomain_id()))\n    {\n      uo->preExecuteOnInternalSide();\n      uo->executeOnInternalSide();\n    }\n}\n\nAny guidance or insights on how to define a face-related variable and efficiently perform calculations on each face individually in MOOSE would be greatly appreciated.\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/26106",
+          "updatedAt": "2023-11-21T17:48:10Z",
+          "publishedAt": "2023-11-20T12:52:40Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe have not worked with face variables yet in MOOSE but they were added to libmesh.\n@roystgnr or @lindsayad do you have a roadmap for face variable use in MOOSE somewhere? From the discussions with Yaqi\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26106#discussioncomment-7621659",
+                  "updatedAt": "2023-11-20T16:45:19Z",
+                  "publishedAt": "2023-11-20T16:45:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@roystgnr has a demonstration of their use in https://github.com/idaholab/moose/blob/next/test/tests/dgkernels/hfem/hfem_jacobian.i",
+                          "url": "https://github.com/idaholab/moose/discussions/26106#discussioncomment-7621824",
+                          "updatedAt": "2023-11-20T17:02:49Z",
+                          "publishedAt": "2023-11-20T17:02:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Thank you very much for your and your friend's responses. I will carefully study this demonstration.",
+                          "url": "https://github.com/idaholab/moose/discussions/26106#discussioncomment-7625771",
+                          "updatedAt": "2023-11-21T03:15:27Z",
+                          "publishedAt": "2023-11-21T03:15:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "The one thing that worries me is: \"specific faces of the mesh\".  The SIDE_HIERARCHIC variables will have DoFs on every face of every element in the subdomains where they're defined.  There are ways around this (if you have an Auxilliary system variable you might just ignore the faces you don't care about; if you have a Nonlinear system variable you might just add a constraint to those faces), but if you really only care about a small subset of faces then the solution may be to add lower-D elements (e.g. a Quad9 attached to the side of a Hex27 on those specific face.",
+                          "url": "https://github.com/idaholab/moose/discussions/26106#discussioncomment-7633618",
+                          "updatedAt": "2023-11-21T17:48:11Z",
+                          "publishedAt": "2023-11-21T17:48:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Initial stresss and boundary condition implementation - PorousFlow",
+          "author": {
+            "login": "anupkgeos"
+          },
+          "bodyText": "Hi,\nConsidering the following scenario (Top and RIght BCs),\n\n\n\nhow to implement a free-to-move boundary on top?  2)  initial stress and right boundary for displacement variable are implemented as:\n\nInitial Stress Condition :\nMaterial:\n   [ini_strain]\n     type = ComputeEigenstrainFromInitialStress\n     initial_stress = 'sxx0 0 0  0 syy0 0  0 0 0'\n     eigenstrain_name = 'ini_strain'\n   []\n\nBoundary:\n  [right_u]\n   type = Pressure\n   boundary = right\n   variable = disp_x\n   component = 0\n   function = '0.7*2260*10*y'  # sigma_h = 0.7*sigma_v (total stress, compressive)\n   use_displaced_mesh = false\n []\n\nFunctions:\ngravity = -9.81\nsolid_density = 2260\nfluid_density = 1059\nporosity0 = 0.1\n[Functions]\n  [p0]\n    type = ParsedFunction\n    expression = '0.1e6 - 9.81e3 * y' # -ve y 9.81 MPa/km = 9.81e6/1000m = 9.81e3Pa/m\n    execute_on = INITIAL\n  []\n  [sxx0]\n    type = ParsedFunction\n    expression = '-0.7*${gravity} * y * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force\n  []\n  [syy0]\n    type = ParsedFunction\n    expression = '-${gravity} * y * (${solid_density} - ${fluid_density}) * (1.0 - ${porosity0})'  # initial effective stress that should result from weight force\n  []\n[]\n\nwith this implementation, I am getting a very high displacement value. Can someone please help me with what is wrong here? thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/26104",
+          "updatedAt": "2023-11-23T01:03:55Z",
+          "publishedAt": "2023-11-20T09:30:52Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "josebastiase"
+                  },
+                  "bodyText": "Hi,\nFor me at least, is easier if you link a minimal example.\nYou can set a free displacement boundary just not setting any mechanical condition in that boundary.\nI would set the load at the boundaries as total stress\n  [load]\n    type = FunctionNeumannBC\n    variable = disp_x\n    function = whatever\n    boundary = right\n  []\n\nhope it helps...",
+                  "url": "https://github.com/idaholab/moose/discussions/26104#discussioncomment-7633164",
+                  "updatedAt": "2023-11-21T17:02:28Z",
+                  "publishedAt": "2023-11-21T17:02:27Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

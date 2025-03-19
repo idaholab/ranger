@@ -1,0 +1,640 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wOC0xOFQwOTozNTo0Ny0wNjowMM4AVHLA"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Slow convergence in frictional contact",
+          "author": {
+            "login": "npurwar93"
+          },
+          "bodyText": "I am interested in frictional contact problem. I have create a very simple example, which should at least converge. Here is the input file for it. Problem description: a soft cube is pressed against a hard block through displacement BC at top and then moved horizontally. Penalty method is applied.\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  patch_update_strategy = 'iteration'\n  volumetric_locking_correction = true\n[]\n\n[Mesh]\n  [rectangle_body]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmin= 20\n    xmax = 50\n    ymin = 6\n    ymax = 36\n    zmin = -15\n    zmax = 15\n    nx = 2\n    ny = 2\n    nz = 2\n    elem_type = HEX\n    boundary_name_prefix = 'box'\n  []\n\n  [plane_rigid]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmin= 0\n    xmax = 100\n    ymin = 0\n    ymax = 5\n    zmin = -50\n    zmax = 50\n    nx = 1\n    ny = 1\n    nz = 1\n    elem_type = HEX\n    boundary_name_prefix = 'plane'\n    boundary_id_offset = 6\n    subdomain_ids = 1\n  []\n\n  [cmbn]\n    type = CombinerGenerator\n    inputs = 'rectangle_body plane_rigid'\n  []\n\n  [cmbn_new]\n    type = RenameBlockGenerator\n    input = cmbn\n    old_block = '0 1'\n    new_block = 'box plane'\n  []\n[]\n\n[Variables]\n    [disp_x]\n    []\n    [disp_y]\n    []\n    [disp_z]\n    []\n[]\n\n[Functions]\n  [ydisp]\n    type = ParsedFunction\n    vars = 't0   t_end  disp'\n    vals = '10.0  20.0    -4'\n    value = 'if (t<t0, 0.0, if (t<t_end, disp*(t-t0)/(t_end-t0), disp))'\n  []\n  [xdisp]\n    type = ParsedFunction\n    vars = 't0   t_end  disp'\n    vals = '20.0  30.0    5'\n    value = 'if (t<t0, 0.0, disp*(t-t0)/(t_end-t0))'\n  []\n[]\n\n[AuxVariables]\n  [./norm_force_x]\n  [../]\n  [./norm_force_y]\n  [../]  \n  [./norm_force_z]\n  [../]  \n  [./tang_force_x]\n  [../]\n  [./tang_force_y]\n  [../]\n  [./tang_force_z]\n  [../]\n[]\n\n[AuxKernels]\n  [./normal_force_x]\n    type = PenetrationAux\n    variable = norm_force_x\n    execute_on = timestep_end\n    quantity = normal_force_x\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n  [./normal_force_y]\n    type = PenetrationAux\n    variable = norm_force_y\n    execute_on = timestep_end\n    quantity = normal_force_y\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n  [./normal_force_z]\n    type = PenetrationAux\n    variable = norm_force_z\n    execute_on = timestep_end\n    quantity = normal_force_z\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n  [./tangential_force_x]\n    type = PenetrationAux\n    variable = tang_force_x\n    execute_on = timestep_end\n    quantity = tangential_force_x\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n  [./tangential_force_y]\n    type = PenetrationAux\n    variable = tang_force_y\n    execute_on = timestep_end\n    quantity = tangential_force_y\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n  [./tangential_force_z]\n    type = PenetrationAux\n    variable = tang_force_z\n    execute_on = timestep_end\n    quantity = tangential_force_z\n    boundary = box_bottom\n    paired_boundary = plane_top\n  [../]\n[]\n\n[Modules/TensorMechanics/Master]\n  [./all]\n    add_variables = true\n    strain = FINITE\n  [../]\n[]\n\n[BCs]\n  [xfixed]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'plane_top plane_bottom'\n    value = 0\n  []\n  [yfixed]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'plane_top plane_bottom'\n    value = 0\n  []\n  [zfixed]\n    type = DirichletBC\n    variable = disp_z\n    boundary = 'plane_top plane_bottom box_top'\n    value = 0\n  []\n  [ydisp]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = box_top\n    function = ydisp\n    preset = 0\n  []\n  [xdisp]\n    type = FunctionDirichletBC\n    variable = disp_x\n    boundary = box_top\n    function = xdisp\n    preset = 0\n  []\n[]\n\n[Materials]\n  [strain_all]\n    type = ComputeFiniteStrainElasticStress\n    block = 'box plane'\n  []\n\n  [Top]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 5\n    poissons_ratio = 0.49\n    block = 'box'\n  []\n  [Bottom]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 1e6\n    poissons_ratio = 0.3\n    block = 'plane'\n  []\n\n[]\n\n[Contact]\n  [contact_interface]\n    primary = plane_top\n    secondary = box_bottom\n    formulation = penalty\n    model = coulomb\n    friction_coefficient = 0.4\n    normalize_penalty = true\n    penalty = 1e+2\n    normal_smoothing_distance = 0.1\n  []\n[]\n\n[Dampers]\n  [contact_slip]\n    type = ContactSlipDamper\n    secondary = box_bottom\n    primary = plane_top\n    min_damping_factor = 1e-5\n  []\n[]\n[Preconditioning]\n  [SMP]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  \n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type'\n  petsc_options_value = 'lu        mumps'\n  line_search = contact\n  automatic_scaling = false\n  contact_line_search_ltol = 1e-3\n  nl_max_its = 100\n  l_max_its = 40\n  start_time = 0.0\n  dt = 1\n  dtmin = 1e-5\n  end_time = 30.0\n\n  verbose = true\n  nl_rel_tol = 1e-4\n  nl_abs_tol = 1e-4\n[] # Executioner\n\n[Outputs]\n  color = false\n  [out]\n    type = Exodus\n  []\n  [pgraph]\n    type = PerfGraphOutput\n    level = 6                     # Default is 1\n    heaviest_branch = true        # Default is false\n    heaviest_sections = 10        # Default is 0\n  []\n[] # Outputs\n\nAs it is a very simple problem, I would expect convergence and that too in reasonable number of newton iterations. However, the convergence is really slow, with the cumulative number of nl iterations in the range of 200+ for some values of friction coefficients, i.e. high values (>0.7) and very low values (<0.05). However, for intermediate values, it does not even converge.\nFurther investigation in the code of Jacobian computation, I found that the Jacobian for penalty formulation for frictionless and friction case are same. It seems that there is no contribution to the tangent matrix due to frictional contact.\n\\\\\\ in MechanicalContactConstraint::computeQpJacobian()\ncase ContactFormulation::PENALTY:\n{\n      if (pinfo->_mech_status == PenetrationInfo::MS_SLIPPING ||\n          pinfo->_mech_status == PenetrationInfo::MS_SLIPPING_FRICTION)\n        return _phi_secondary[_j][_qp] * penalty * _test_secondary[_i][_qp] *\n               pinfo->_normal(_component) * pinfo->_normal(_component);\n      else\n        return _phi_secondary[_j][_qp] * penalty * _test_secondary[_i][_qp];\n}\n\nCan this be the reason for slow convergence? Can you please also provide the reference from where this formulation for Jacobian is taken?",
+          "url": "https://github.com/idaholab/moose/discussions/25256",
+          "updatedAt": "2023-08-21T20:29:16Z",
+          "publishedAt": "2023-08-21T15:36:46Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "You should use solve_type = PJFNK instead of solve_type = NEWTON. The Jacobian functions are only approximate and pure NEWTON requires that the Jacobian be (nearly) perfect in order to get the standard second order convergence of Newton when in the basis of convervence.\nI would also recommend a penalty on the order of your Young's modulus. 100 seems a little small.\n@recuero @bwspenc may have other recommendations",
+                  "url": "https://github.com/idaholab/moose/discussions/25256#discussioncomment-6785028",
+                  "updatedAt": "2023-08-21T20:24:11Z",
+                  "publishedAt": "2023-08-21T20:24:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "An augmented Lagrange approach to node-face is available. You could also give that a try. But I don't think AL has been extensively used.\nI am not familiar with the form of the Jacobian that was implemented for that frictional case. Maybe @bwspenc can help there.",
+                  "url": "https://github.com/idaholab/moose/discussions/25256#discussioncomment-6785059",
+                  "updatedAt": "2023-08-21T20:29:16Z",
+                  "publishedAt": "2023-08-21T20:29:15Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "\"Truly\" Global Parameters in MOOSE input file for parsed functions",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Is there a way to define truly global parameters in the input file? Say I have a parameter that is included in several locations e.g used in parsed functions, is it possible to define it in one location?\nIn the Pasred Functions block, you need to define \"symbol_names\" and \"symbol_values\" below it with the value. In some other blocks that use parsed functions (e.g ParsedGenerateSideset, you need to define \"constant_names\" and \"constant_expressions\".\nInstead of needing to specify for each block, is there a way to specify a 1 to 1 \"replacement\"? That is, wherever the input file sees \"x0\" it automatically replaces it with some value you define? This would be useful for other blocks too, say, within the executioner, you define the dtmin and dtmax at the top of the file as some kind of parameter, say \"dtmin_val = 0.2\", so you can write:\n\"dtmin = dtmin_val\" in the executioner block and the input file automatically replaces it with 0.2? Even though, originally, the executioner has no \"constant_values\"/\"constant_expressions\" option.\nI tried using the \"GlobalParams\" system but that didn't work.\nThe purpose for this is that I want to write a bash script to loop over several values of a parameter and run the simulation each time, but that's kinda hard to do when you have to go looking through the whole file for the various places you define the parameter.",
+          "url": "https://github.com/idaholab/moose/discussions/25259",
+          "updatedAt": "2023-08-21T19:10:27Z",
+          "publishedAt": "2023-08-21T17:27:33Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "You can define parameters at the top of the input file then refer to them in each parameter:\nabc = 3\n\n[Auxkernels]\n  [p]\n    type = ParsedAux\n    expression = 'a + efg'\n    symbol_names = 'efg'\n    symbol_values = '${abc}'\n[][]\n\nfor example",
+                  "url": "https://github.com/idaholab/moose/discussions/25259#discussioncomment-6783993",
+                  "updatedAt": "2023-08-21T17:51:59Z",
+                  "publishedAt": "2023-08-21T17:51:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "This is what I was looking for. Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/25259#discussioncomment-6784036",
+                          "updatedAt": "2023-08-21T17:57:04Z",
+                          "publishedAt": "2023-08-21T17:57:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "@GiudGiud quick question, do parsed functions also work? I'm trying to define the simulation time at the top of the file as well. Following syntax in https://mooseframework.inl.gov/application_usage/input_syntax.html, I have:\nt_val = ${fparse 2.2*${period}*${tp} }\ngives the error\ninvalid character '}' - did you leave a field value blank after a previous '='?\nusing quotes i.e\nt_val = ${fparse '2.2*${period}*${tp}' }\ngives the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/25259#discussioncomment-6784465",
+                          "updatedAt": "2023-08-21T18:57:21Z",
+                          "publishedAt": "2023-08-21T18:57:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "use this\n${fparse 2.2*period*tp }",
+                          "url": "https://github.com/idaholab/moose/discussions/25259#discussioncomment-6784506",
+                          "updatedAt": "2023-08-21T19:04:40Z",
+                          "publishedAt": "2023-08-21T19:04:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "perfect. thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/25259#discussioncomment-6784543",
+                          "updatedAt": "2023-08-21T19:10:28Z",
+                          "publishedAt": "2023-08-21T19:10:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Initialization of dynamic simulations",
+          "author": {
+            "login": "lyyc199586"
+          },
+          "bodyText": "In timeintegrator (for example CentralDifferece), if I don't explicitly specify the initial velocities, does MOOSE treat the initial velocities as zero?\nI know you can set inactive_tsteps=1 to switch off the velocity and acceleration calculation at the first time step, my question is if I don't do that, what value did MOOSE assign to the initial velocities?",
+          "url": "https://github.com/idaholab/moose/discussions/25257",
+          "updatedAt": "2023-08-21T16:08:20Z",
+          "publishedAt": "2023-08-21T16:03:17Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Variables are initialized to 0 if they are not otherwise initialized.",
+                  "url": "https://github.com/idaholab/moose/discussions/25257#discussioncomment-6782726",
+                  "updatedAt": "2023-08-21T16:06:35Z",
+                  "publishedAt": "2023-08-21T16:06:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lyyc199586"
+                          },
+                          "bodyText": "great, got it",
+                          "url": "https://github.com/idaholab/moose/discussions/25257#discussioncomment-6782744",
+                          "updatedAt": "2023-08-21T16:08:21Z",
+                          "publishedAt": "2023-08-21T16:08:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "'RankTwoAux' is not a registered object",
+          "author": {
+            "login": "pshen20127"
+          },
+          "bodyText": "Hello\nI submitted a job but there was an error like below. Do you know what's wrong with it?\n\nThanks\nPengfei",
+          "url": "https://github.com/idaholab/moose/discussions/25246",
+          "updatedAt": "2023-08-21T15:22:15Z",
+          "publishedAt": "2023-08-18T17:55:36Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe RankTwoAux is in the tensor mechanics module. You need to include this module in the Makefile of the app you are using and re-compile before you can use it\nPlease consult the guidelines before posting:\n\nplease copy paste text instead of screenshots.\nplease search other threads before creating your own. This was asked last week",
+                  "url": "https://github.com/idaholab/moose/discussions/25246#discussioncomment-6769318",
+                  "updatedAt": "2023-08-19T16:18:23Z",
+                  "publishedAt": "2023-08-19T16:18:22Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "pshen20127"
+                          },
+                          "bodyText": "I did include tensor mechanics module. But it still has that error.",
+                          "url": "https://github.com/idaholab/moose/discussions/25246#discussioncomment-6770543",
+                          "updatedAt": "2023-08-19T21:39:23Z",
+                          "publishedAt": "2023-08-19T21:39:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "make clobberall\nthen\nmake -j6\nagain",
+                          "url": "https://github.com/idaholab/moose/discussions/25246#discussioncomment-6771040",
+                          "updatedAt": "2023-08-20T01:44:16Z",
+                          "publishedAt": "2023-08-20T01:44:15Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "pshen20127"
+                          },
+                          "bodyText": "Thank you. It's fixed.",
+                          "url": "https://github.com/idaholab/moose/discussions/25246#discussioncomment-6782232",
+                          "updatedAt": "2023-08-21T15:22:15Z",
+                          "publishedAt": "2023-08-21T15:22:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to pick a function type for my data",
+          "author": {
+            "login": "amna-ukaea"
+          },
+          "bodyText": "Hi all,\nI have data that is heat at different x points at different times to inform a boundary condition. So if I were to put it in columns it would looks like:\ntime x heat\n0 x0 heat 1\n0 x1 heat 2\n0 x2 heat 3\n1 x0 heat 4\n1 x1 heat 5\n1 x2 heat 6\nAt the moment I'm using a vector processor of type CSVreader to read the data and a function of type NearestReporterFunction and a BC of type FunctionDirichletBC to use the funnction. It isn't working and the error is \"No valid AXIS lines found by GriddedData\"\nAny ideas on how I can fix this either changing the data structure or the input file?\nThanks in advnace",
+          "url": "https://github.com/idaholab/moose/discussions/25254",
+          "updatedAt": "2023-08-21T14:36:58Z",
+          "publishedAt": "2023-08-21T08:11:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor data depending on time and a spatial position, we can also use either of these two\nhttps://mooseframework.inl.gov/source/functions/PiecewiseMulticonstant.html\nhttps://mooseframework.inl.gov/source/functions/PiecewiseMultilinear.html\nThey will require some modification to the data structure to add some of these AXIS X Y Z T columns\nI m puzzled by your error\nNo valid AXIS lines found by GriddedData is returned by GriddedData which is used by the functions I linked to but not by any of the objects you mention.\nAre you sure it doesnt come from some extraneous object in your input file?\nalso what is NearestReporterFunction? I see a NearestReporterCoordinatesFunction in the optimization module\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25254#discussioncomment-6781734",
+                  "updatedAt": "2023-08-21T14:36:59Z",
+                  "publishedAt": "2023-08-21T14:36:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mesh Refinement for nuclei insertion in phase field mode;",
+          "author": {
+            "login": "vermaprk"
+          },
+          "bodyText": "I am trying to model the nucleation followed by growth by inserting nuclei at a surface. The nuclei are inserted only at a single time step (instantaneous nucleation). However, the maximum number of nuclei that I can insert is only twice the number of mesh elements at a particular time step. I tried to refine the mesh using nucleation marker but this is not resulting into increase in number of nuclei. Please suggest some method to increase the number of nuclei without increasing the number of mesh elements for the phase field model as this results in huge computation cost.\n@dschwen @laagesen\nThanks",
+          "url": "https://github.com/idaholab/moose/discussions/25220",
+          "updatedAt": "2023-08-28T06:19:07Z",
+          "publishedAt": "2023-08-16T05:35:43Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi, thanks for your question. If you are inserting all the nuclei at the same time, I don't think there is a good reason to use the nucleation system. Can't you just add them in the initial conditions for your simulation?\nMaybe you are doing this because need to simulate the evolution of your system for some time prior to the instantaneous nucleation event? Even if you need to do this, there is probably a better way than using the nucleation system. For example you could run one simulation for pre-nucleation, then start another simulation where you read in all the other necessary fields from the pre-nucleation simulation (i.e. concentrations) using a SolutionUserObject, and initialize the order parameter field with all the nuclei you want. SolutionUserObject documentation is below, with links to other necessary objects and examples.\nhttps://mooseframework.inl.gov/source/userobjects/SolutionUserObject.html\nAlso be aware that no matter what you do, you are going to need to use an adequate number of elements to properly resolve each nucleus. Probably at an absolute minimum 3 elements across the interface and 5-7 across the interior of the nucleus. This is an inherent limitation of the phase-field method. So there isn't really a way to add a bunch of nuclei in to your system without also adding the mesh elements necessary to resolve them adequately.",
+                  "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6740855",
+                  "updatedAt": "2023-08-16T13:21:28Z",
+                  "publishedAt": "2023-08-16T13:21:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "vermaprk"
+                          },
+                          "bodyText": "So if my system is 100 um x 100 um and I am going to place a 0.1 um nuclei as a initial condition. Will I need around 5000 x 5000 mesh elements. That is computationally very expensive. Can't I have non uniform mesh elements being concentrated only at the nuclei ? Can I execute this using the targeted mesh refinement prior to nucleus insertion.",
+                          "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6768007",
+                          "updatedAt": "2023-08-19T10:56:33Z",
+                          "publishedAt": "2023-08-19T10:56:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no you wont. @laagesen gave you criteria near and inside the nucleus, not everywhere else.\nMOOSE can handle non-uniform meshes, it can perform adaptive mesh refinement (AMR), and it can generate non-uniform meshes (this one for example: https://mooseframework.inl.gov/source/meshgenerators/CartesianMeshGenerator.html)\nI think you may find in the phase field modules examples of resolving a nucleaus using AMR",
+                          "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6768771",
+                          "updatedAt": "2023-08-19T14:22:55Z",
+                          "publishedAt": "2023-08-19T14:22:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "vermaprk"
+                          },
+                          "bodyText": "Thanks for the reply. Can you suggest some mesh generator in which I can refine mesh along y-axis at a specific interval in x only. The CartesianMeshGenerator is refining the mesh along y-axis independently from the x-axis as per my understanding.\nMy system requires x intervals as 18 4 78 (xmax = 100)\nwith grids ix 18 40 78 (concentrated grids for the 4 interval)\nBut now I will require y grids for x=18 interval as iy=100 (my is ymax=100)\nx= 4 interval as iy= 400 (concentrated grids along y)\nx= 78 interval as iy =100\nThank you",
+                          "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6771958",
+                          "updatedAt": "2023-08-20T08:10:43Z",
+                          "publishedAt": "2023-08-20T08:10:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "CMG is usually good but I can see how that doesnt work for you here.\nOk so let's do a regular or near regular grid in the CMG\nthen\na SubdomainBoundingBoxGenerator around the nucleus location\nthen\na RefineBlockGenerator on the new block, which will locally increase the mesh density",
+                          "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6772841",
+                          "updatedAt": "2023-08-20T12:21:48Z",
+                          "publishedAt": "2023-08-20T12:21:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Before you do anything with large meshes, I would suggest running a simple 2-nucleus problem to make sure all your model parameters are settings are correct if you haven't already done so. Create 2 particles with one smaller than the other using a uniform mesh fine enough to resolve the interface, and verify that you have about 3 elements through the interface throughout the simulation, and that the small particle coarsens away and transfers its mass to the larger one. This is will allow you identify any issues prior to spending a lot of time waiting for larger simulations to run.\nFor a phase-field simulation, I'd recommend using the adaptivity system and letting it choose where to refine the mesh, rather than relying on specifying using a SubdomainBoundingBoxGenerator and RefineBlockGenerator - the issue is that as the microstructure changes, the initial nuclei will coarsen, so the positions where you need a finer mesh may change.\nI'd recommending creating the mesh using a GeneratedMesh generator and using the adaptivity system to refine where needed. You can see an example of adaptivity using a two-order parameter model\n/Users/aagelk/projects/moose/modules/phase_field/examples/anisotropic_interfaces/GrandPotentialPlanarGrowth.i\nPlease have a look at the documentation for the adaptivity system here:\nhttps://mooseframework.inl.gov/syntax/Adaptivity/",
+                          "url": "https://github.com/idaholab/moose/discussions/25220#discussioncomment-6781281",
+                          "updatedAt": "2023-08-21T13:54:42Z",
+                          "publishedAt": "2023-08-21T13:54:41Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Shape functions in FV Elemental Kernel",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "Hi,\nHow can I access shape functions _phi[_j] and _grad_phi[_j] in an FV elemental kernel?",
+          "url": "https://github.com/idaholab/moose/discussions/25248",
+          "updatedAt": "2023-08-20T15:25:18Z",
+          "publishedAt": "2023-08-18T18:41:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont think you can, they're both unnecessary at this point in time where we only do constant monomial FV variable.\ngrad is 0, phi is constant.\nwhat are you planning to do?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25248#discussioncomment-6769279",
+                  "updatedAt": "2023-08-19T16:15:46Z",
+                  "publishedAt": "2023-08-19T16:10:19Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "Oh right. I was thinking of an approximation to the functional derivative of an energy term that has the square of the gradient. That is a term that leads to a flux kernel in FV and if I could replace the functional derivative with terms that only has first-order derivatives and lead to Elemental terms, I could see what the difference in timing is. There is a \"Box\" approximation for that functional derivative (used in the old Magpar code) but the price is a gradient of the shape function. But I'll drop that thought.",
+                          "url": "https://github.com/idaholab/moose/discussions/25248#discussioncomment-6769595",
+                          "updatedAt": "2023-08-19T17:30:57Z",
+                          "publishedAt": "2023-08-19T17:30:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "See my comment on the other thread.\nAre you coding the weak form in FV?\nWe can do variable.gradient(elem_arg) to get an elemental gradient btw",
+                          "url": "https://github.com/idaholab/moose/discussions/25248#discussioncomment-6772900",
+                          "updatedAt": "2023-08-20T12:37:49Z",
+                          "publishedAt": "2023-08-20T12:37:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "I am doing strong form of FV. Yes I've seen (and used) the elemental gradient form. I have to think a little bit more about how to use the \"Box\" approximation sensibly.",
+                          "url": "https://github.com/idaholab/moose/discussions/25248#discussioncomment-6773553",
+                          "updatedAt": "2023-08-20T15:25:18Z",
+                          "publishedAt": "2023-08-20T15:25:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Articial Viscosity / Diffusion based stabilisation",
+          "author": {
+            "login": "j-bowhay"
+          },
+          "bodyText": "Hi All\nI am modelling a problem in MOOSE that involves solving a hyperbolic PDE. I have been having good success at stabilizing the solution by adding an artificial diffusion / viscosity term $\\nu \\Delta u$. Currently, I am applying this indiscriminately to the whole domain but I want to make this method more refined. Specifically, I want the viscosity term to be a function of the residual ie:\n\nwhere the residual for the 1d transport eq would be $r(x)=u_t(x)+u_x(x)$. I am unsure how best to implement this in MOOSE, should I just calculate $r(x)$ directly or can I use the tagging system?\nMany Thanks\nJake",
+          "url": "https://github.com/idaholab/moose/discussions/25237",
+          "updatedAt": "2023-08-24T07:50:41Z",
+          "publishedAt": "2023-08-17T16:02:51Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI would calculate r directly.\nWe don\u2019t compute the residual in two steps so on paper we would not have access to the residual when computing a term of the residual.\nHowever,\nYou could either:\n\ntry to use a projection of the previous residual by tagging it then copying it at the end of a time step in an aux variable. That might not be great\nUsing the show_exeucution_order Boolean option in the Debug block you could make sure this kernel is calculated last. This is iffy but could work. There s no r\u00e9al guarantee on the order of execution of kernels\n\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25237#discussioncomment-6753506",
+                  "updatedAt": "2023-08-17T16:53:28Z",
+                  "publishedAt": "2023-08-17T16:53:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "Thank @GiudGiud, I will proceed with calculating r directly. Is there a way to access old values of $\\nabla u$ like there is for $\\dot{u}$ (_var.uDotOld())?\nEdit: believe I can use _var.gradSlnOld()",
+                          "url": "https://github.com/idaholab/moose/discussions/25237#discussioncomment-6761879",
+                          "updatedAt": "2023-08-18T14:19:15Z",
+                          "publishedAt": "2023-08-18T13:54:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can use this too:\nhttps://mooseframework.inl.gov/docs/doxygen/moose/classCoupleable.html#aafe7b956f1dbe65960e5b6620f6a1236\nIt relies on the coupleable interface, which requires you to add your variable in the coupled variable parameters and also initialize a member variable of the class with coupledGradientOld",
+                          "url": "https://github.com/idaholab/moose/discussions/25237#discussioncomment-6769350",
+                          "updatedAt": "2023-08-19T16:24:09Z",
+                          "publishedAt": "2023-08-19T16:23:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "In the Navier Stokes SUPG implementation we compute strong form residuals in materials and reuse those in 1) terms that are not integrated by parts and 2) the kernel that adds the SUPG stabilization. Perhaps you could consider a similar design",
+                  "url": "https://github.com/idaholab/moose/discussions/25237#discussioncomment-6770029",
+                  "updatedAt": "2023-08-19T19:09:48Z",
+                  "publishedAt": "2023-08-19T19:09:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "compiling issues",
+          "author": {
+            "login": "ZoeyChen1993"
+          },
+          "bodyText": "I can compile my application previously and didn't face a problem, but this time I just got this error\n(moose) [zchen@mercury army_ants]$ make -j 6\nCreating Unity Directory /data/zchen/projects/army_ants/build/unity_src\nCreating Unity /data/zchen/projects/army_ants/build/unity_src/kernels_Unity.C\nCompiling C++ (in opt mode) /data/zchen/projects/army_ants/build/unity_src/kernels_Unity.C...\nLinking Library /data/zchen/projects/army_ants/lib/libarmy_ants-opt.la...\nLinking Executable /data/zchen/projects/army_ants/army_ants-opt...\n/data/zchen/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /data/zchen/projects/army_ants/lib/libarmy_ants-opt.so: undefined reference to `InputParameters validParams<Diffusion>()'\n/data/zchen/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /data/zchen/projects/army_ants/lib/libarmy_ants-opt.so: undefined reference to `InputParameters validParams<Kernel>()'\ncollect2: error: ld returned 1 exit status\nmake: *** [/data/zchen/projects/moose/framework/app.mk:445: /data/zchen/projects/army_ants/army_ants-opt] Error 1",
+          "url": "https://github.com/idaholab/moose/discussions/25230",
+          "updatedAt": "2023-08-19T14:46:40Z",
+          "publishedAt": "2023-08-17T14:38:43Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis seems to a refer to a very old deprecation (2 years ago). Do you have templated validParams method declarations in your headers?\nIs army_ants an application? How old is it? Can you please paste the header for one of its Diffusion kernel here?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25230#discussioncomment-6752221",
+                  "updatedAt": "2023-08-17T14:49:07Z",
+                  "publishedAt": "2023-08-17T14:49:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZoeyChen1993"
+                          },
+                          "bodyText": "TempDiffusion.h.tar.gz\nhi this is the header of the temp diffusion.",
+                          "url": "https://github.com/idaholab/moose/discussions/25230#discussioncomment-6763937",
+                          "updatedAt": "2023-08-18T17:55:48Z",
+                          "publishedAt": "2023-08-18T17:55:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yeah this is exactly what I was talking about\nsee the page I linked on the other post\ntemplate<>\nInputParameters validParams<TempDiffusion>();\n\nthis is totally deprecated and removed syntax",
+                          "url": "https://github.com/idaholab/moose/discussions/25230#discussioncomment-6768899",
+                          "updatedAt": "2023-08-19T14:46:40Z",
+                          "publishedAt": "2023-08-19T14:46:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error using mpiexec",
+          "author": {
+            "login": "Khaksarkn"
+          },
+          "bodyText": "Hi,\nI wrote a coupled THM code using MOOSE and it works fine on a single core, but when I want to run it in multicore using \"mpiexec\", I get this error:\nmpiexec -n 4 ./frozen_soil_thm -i ./problems/THMTests4_coupled_verification/input.i\n[proxy:0:0@Kians-MacBook-Air.local] HYDU_create_process (utils/launch/launch.c:73): execvp error on file ./frozen_soil_thm (No such file or directory)\n[proxy:0:0@Kians-MacBook-Air.local] HYDU_create_process (utils/launch/launch.c:73): execvp error on file ./frozen_soil_thm (No such file or directory)\n[proxy:0:0@Kians-MacBook-Air.local] HYDU_create_process (utils/launch/launch.c:73): execvp error on file ./frozen_soil_thm (No such file or directory)\n[proxy:0:0@Kians-MacBook-Air.local] HYDU_create_process (utils/launch/launch.c:73): execvp error on file ./frozen_soil_thm (No such file or directory)\nThis is a THM code and it wasn't an issue before adding the mechanical codes (when it was just a TH code) but now I'm getting this.\nI would appreciate it if you could let me know what the problem might be.\nThanks.",
+          "url": "https://github.com/idaholab/moose/discussions/25243",
+          "updatedAt": "2023-08-18T15:42:08Z",
+          "publishedAt": "2023-08-18T15:04:17Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "You're getting this error because frozen_soil_thm does not exist. It shouldn't work in serial without mpi either.\nMake sure you're in the right directory and make sure your application is compiled.",
+                  "url": "https://github.com/idaholab/moose/discussions/25243#discussioncomment-6762601",
+                  "updatedAt": "2023-08-18T15:05:56Z",
+                  "publishedAt": "2023-08-18T15:05:55Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Khaksarkn"
+                          },
+                          "bodyText": "Thank you. Yes, it was a silly mistake!",
+                          "url": "https://github.com/idaholab/moose/discussions/25243#discussioncomment-6762859",
+                          "updatedAt": "2023-08-18T15:35:48Z",
+                          "publishedAt": "2023-08-18T15:35:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

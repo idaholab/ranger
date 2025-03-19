@@ -1,0 +1,1450 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0xMC0xMFQxMToyNDo0Mi0wNjowMM4AQ_4N"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Multiapp Restoring Problem",
+          "author": {
+            "login": "maxnezdyur"
+          },
+          "bodyText": "I have two input files below that are a minimal working example of an error I am running into. The error occurs with multiapp restoring. I am a child multiapp that changes the subdomain depending on the current location of the parent multiapp. I have a block restricted auxvariable and auxkernel that changes based on a CoupledVarThresholdElementSubdomainModifier. This is causing the restoring problem. The restore will hang on me for hours even with small meshes until I stop it, so I can't get a backtrace. Using a debugger, I found that within Multiapp.C line 627 the restore is called and it seems to get hung up at SystemBase.C  at line 94 within that for loop. All that occurs in the terminal is\n\"Restoring Application............................................................................\" with the dots ever increasing. Let me know if there are any questions I can answer.\nfluid.i\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = -1.0\n    xmax = 3.0\n    ymin = 0.0\n    ymax = 1.0\n    nx = 100\n    ny = 25\n    elem_type = QUAD4\n  []\n  [create_subdomain_1]\n    type = SubdomainBoundingBoxGenerator\n    block_id = 1\n    input = gen\n    bottom_left = ' 0 0 0'\n    top_right = '1 1 1 '\n  []\n\n[]\n[Problem]\n  verbose_multiapps = true\n[]\n\n[AuxVariables]\n  [indicator]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 0.0\n  []\n  [this_is_the_cause]\n    block = 0\n    [AuxKernel]\n      type = ConstantAux\n      variable = this_is_the_cause\n      block = 0\n    []\n  []\n\n[]\n\n[Variables]\n  [velocity]\n    family = LAGRANGE_VEC\n  []\n  [p]\n  []\n[]\n[Kernels]\n  [mass]\n    type = INSADMass\n    variable = p\n  []\n  [mass_pspg]\n    type = INSADMassPSPG\n    variable = p\n  []\n  [momentum_convection]\n    type = INSADMomentumAdvection\n    variable = velocity\n    block = 0\n  []\n  [momentum_time]\n    type = INSADMomentumTimeDerivative\n    variable = velocity\n    block = 0\n  []\n  [momentum_viscous]\n    type = INSADMomentumViscous\n    variable = velocity\n    viscous_form = traction\n    block = 0\n  []\n  [momentum_pressure]\n    type = INSADMomentumPressure\n    variable = velocity\n    pressure = p\n    integrate_p_by_parts = true\n    block = 0\n  []\n  [momentum_supg]\n    type = INSADMomentumSUPG\n    variable = velocity\n    velocity = velocity\n    block = 0\n  []\n[]\n\n[BCs]\n\n  [noslip]\n    type = ADVectorFunctionDirichletBC\n    variable = velocity\n    boundary = 'top bottom'\n    function_x = 0\n    function_y = 0\n  []\n  [bc]\n    type = ADVectorFunctionDirichletBC\n    variable = velocity\n    boundary = 'left'\n    function_x = 10\n    function_y = 0\n  []\n[]\n[Materials]\n  [mu]\n    type = ADGenericConstantMaterial\n    prop_names = 'mu rho'\n    prop_values = '2.0e-4 0.001225'\n  []\n  [ins_mat]\n    type = INSADTauMaterial\n    velocity = velocity\n    pressure = p\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = 'NEWTON'\n  # Run for 100+ timesteps to reach stey state.\n\n  dt = 1e-2\n  end_time = 1\n  dtmin = 1.0e-7\n  # Note: -snes_ksp_ew seems to le to more nonlinear iterations, which isn't ideal\n  # when compute_jacobian() is so expensive for this problem.\n  petsc_options = '-snes_converged_reason -ksp_converged_reason'\n\n\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n  # residual_and_jacobian_together = true\n  line_search = 'bt'\n  nl_rel_tol = 1e-6\n  nl_abs_tol = 2e-7\n  nl_max_its = 1\n  l_max_its = 1\n\n[]\n\n[Outputs]\n  [exo]\n    type = Exodus\n    file_base = test_results/parent\n  []\n  print_linear_residuals = false\n[]\n\n[UserObjects]\n  [indicator]\n    type = CoupledVarThresholdElementSubdomainModifier\n    coupled_var = indicator\n    criterion_type = ABOVE\n    threshold = 0.95\n    subdomain_id = 1\n    complement_subdomain_id = 0\n    execute_on = \"INITIAL TIMESTEP_BEGIN\"\n    apply_initial_conditions = false\n  []\n[]\n\n\nparent.i\nbeta = 0.25\ngamma = 0.5\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    ymin = 0\n    xmax = 0.2\n    ymax = 0.5\n    nx = 50\n    ny = 150\n    elem_type = QUAD4\n  []\n[]\n[Variables]\n  [disp_x]\n    order = FIRST\n  []\n  [disp_y]\n    order = FIRST\n  []\n[]\n\n[AuxVariables] # variables that are calculated for output\n\n  [solid_indicator]\n    order = FIRST\n    family = LAGRANGE\n    [AuxKernel]\n      type = ConstantAux\n      variable = solid_indicator\n      value = 0.0\n      boundary = 'left right top'\n      execute_on = 'INITIAL TIMESTEP_END'\n    []\n    initial_condition = 1.0\n  []\n[]\n\n[Modules/TensorMechanics/DynamicMaster]\n  [all]\n    # displacements = 'disp_x disp_y'\n    add_variables = true\n    # new_system = true\n    incremental = true\n    strain = FINITE\n    decomposition_method = EigenSolution\n    # hht_alpha = 0.25\n  []\n[]\n\n[Materials]\n  [elastic_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 10000.0\n    poissons_ratio = 0.3\n    use_displaced_mesh = true\n  []\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n  [density]\n    type = GenericConstantMaterial\n    prop_names = 'density'\n    prop_values = '1'\n    use_displaced_mesh = true\n  []\n  [constant_stress]\n    type = GenericConstantRankTwoTensor\n    tensor_values = '100'\n    tensor_name = test_tensor\n  []\n[]\n\n[BCs]\n  [hold_x]\n    type = DirichletBC\n    boundary = bottom\n    variable = disp_x\n    value = 0\n    use_displaced_mesh = true\n  []\n  [hold_y]\n    type = DirichletBC\n    boundary = bottom\n    variable = disp_y\n    value = 0\n    use_displaced_mesh = true\n  []\n  [Pressure]\n    [push_left]\n      boundary = left\n      factor = 100\n    []\n  []\n[]\n\n[Preconditioning]\n  [SMP]\n    type = SMP\n    full = true\n  []\n[]\n[Executioner]\n  type = Transient\n  end_time = 10\n  dt = 1e-2\n  solve_type = 'NEWTON'\n  petsc_options = '-snes_converged_reason -ksp_converged_reason -snes_ksp_ew'\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type -pc_factor_shift_type -pc_factor_shift_amount'\n  petsc_options_value = 'lu       superlu_dist                  NONZERO               1e-15'\n  nl_max_its = 2\n  l_max_its = 15\n  line_search = 'none'\n  nl_abs_tol = 1e-5\n  nl_rel_tol = 1e-4\n  automatic_scaling = true\n  fixed_point_max_its = 10\n  [TimeIntegrator]\n    type = NewmarkBeta\n    beta = ${beta}\n    gamma = ${gamma}\n  []\n[]\n\n[Outputs]\n  # exodus = true\n  [exo]\n  type = Exodus\n  file_base = test_results/child\n  []\n  print_linear_residuals = false\n  print_linear_converged_reason = false\n[]\n\n[MultiApps]\n  [fluid_domain]\n    type = TransientMultiApp\n    execute_on = \"INITIAL TIMESTEP_END\"\n    positions = '0 0 0'\n    input_files = fluid.i\n    use_displaced_mesh = true\n  []\n[]\n\n[Transfers]\n  [push_indicator]\n    type = MultiAppGeometricInterpolationTransfer\n    # Transfer from the sub-app from this app\n    to_multi_app = fluid_domain\n    # The name of the variable in this app\n    source_variable = solid_indicator\n    # The name of the auxiliary variable in the sub-app\n    variable = indicator\n    displaced_source_mesh = true\n    use_displaced_mesh = true\n    num_points = 1\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/22330",
+          "updatedAt": "2022-10-11T15:08:32Z",
+          "publishedAt": "2022-10-07T18:32:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Are you loading this in parallel?",
+                  "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3826205",
+                  "updatedAt": "2022-10-07T22:14:16Z",
+                  "publishedAt": "2022-10-07T22:14:16Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "I had this problem in serial too IIRC. I had to use the debugger in serial, but I don't remember how long I would allow the restoring app to go, but during one run at night it must have been stuck for hours, running in parallel.",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3826222",
+                          "updatedAt": "2022-10-07T22:18:57Z",
+                          "publishedAt": "2022-10-07T22:18:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "how are you restoring the app? I dont see a checkpoint parameter in the [Problem] block",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3826291",
+                          "updatedAt": "2022-10-07T22:46:10Z",
+                          "publishedAt": "2022-10-07T22:46:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Oh, I may be using the incorrect terms. During a multiapp run, when the current timestep fails and the system has to cut the time step, this is when it has the problem above.",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3826295",
+                          "updatedAt": "2022-10-07T22:49:57Z",
+                          "publishedAt": "2022-10-07T22:49:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Seems like a bug then\nI can see how modifying element subdomains would be an issue for loading files. Can you please try without the submodain modifier to confirm?\n@friedmud how s the ETA on checkpoint rework?",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3829074",
+                          "updatedAt": "2022-10-08T14:30:47Z",
+                          "publishedAt": "2022-10-08T14:30:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "I already tested it without the subdomain modifier and without block restricting the aux variable. I believe you need both together for this error to occur.",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3829577",
+                          "updatedAt": "2022-10-08T16:28:50Z",
+                          "publishedAt": "2022-10-08T16:28:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'll create an issue and see if we can get someone to work on this",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3839939",
+                          "updatedAt": "2022-10-10T14:24:46Z",
+                          "publishedAt": "2022-10-10T14:24:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We should make a minimal (non)working example first to attach it to the issue. Do you have one ready?",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3839949",
+                          "updatedAt": "2022-10-10T14:25:26Z",
+                          "publishedAt": "2022-10-10T14:25:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "I can create one now. Is there a simple command in MOOSE input file to cause a nonlinear solve to fail, or do I just need to force it some way.",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3839970",
+                          "updatedAt": "2022-10-10T14:29:11Z",
+                          "publishedAt": "2022-10-10T14:29:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There is a test object (a Problem) in moose/test that fails on demand. It's called the FailingProblem in moose/test/src/problems and there are examples in moose/test/tests/multiapps/catch_up/failing_sub.i",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3839988",
+                          "updatedAt": "2022-10-10T14:30:59Z",
+                          "publishedAt": "2022-10-10T14:30:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "I can't seem to run it because of A 'FailingProblem' is not a registered object. I am running with --allow-test-objects . Is there something I am missing?",
+                          "url": "https://github.com/idaholab/moose/discussions/22330#discussioncomment-3840037",
+                          "updatedAt": "2022-10-10T14:36:46Z",
+                          "publishedAt": "2022-10-10T14:36:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "tests fail after HPC build",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "I am building MOOSE on Ubuntu20.04 with newly installed c, g++, gfortran compilers and openmpi wrappers. Because of restrictions at work, I cannot access the inl.gov domain for downloads, but pulled the dist from github and followed the HPC install instructions. After PETSc and libmesh builds I built moose but the test goes wrong: ModuleNotFoundError: No module named \"hit\". There is also an undefined symbol (_ZSt28__throw_bad_array_new_lengthv). Not sure what is going on here - do I need to install the moose-tools (mamba) to get the test harness work OK? Looks like things go wonky at the various init.py",
+          "url": "https://github.com/idaholab/moose/discussions/21218",
+          "updatedAt": "2022-10-11T12:31:31Z",
+          "publishedAt": "2022-06-06T22:30:41Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\ninstalling moose-tools will solve the first one.\nthe undefined symbol is more problematic. It s likely the compiler suite was not consistent during the whole build process. Or that there are conflicts between several compilers available\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2893932",
+                  "updatedAt": "2022-06-06T23:17:05Z",
+                  "publishedAt": "2022-06-06T23:17:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mangerij"
+                  },
+                  "bodyText": "@heinono1  what version of python is that build using? I have noticed that sometimes with older python versions the new moose can compile just fine (with little to no error) but then when you try to run the executables then you get hit errors.",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2896471",
+                  "updatedAt": "2022-06-07T09:13:48Z",
+                  "publishedAt": "2022-06-07T09:13:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "If you are building from scratch (that is you are using system compilers), then you will need to install the python-dev package (or maybe it is called python3-dev). Hit requires Python Headers to build. Also, I would refrain from installing the moose-tools package, that package is tied to moose-mpich, which would cause a conflict between your OpenMPI and our package providing MPICH.",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2897584",
+                          "updatedAt": "2022-06-07T12:16:25Z",
+                          "publishedAt": "2022-06-07T12:16:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Thanks for responses. I am using python 3-9.12 but I did not install the\ndev package - I'll do that.\n\nCheers,\nOlle\n\u2026\nOn Tue, Jun 7, 2022 at 7:16 AM Jason Miller ***@***.***> wrote:\n If you are building from scratch (that is you are using system compilers),\n then you will need to install the python-dev package (or maybe it is called\n python3-dev). Hit requires Python Headers to build. Also, I would refrain\n from installing the moose-tools package, that package is tied to\n moose-mpich, which would cause a conflict between your OpenMPI and our\n package providing MPICH.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21218 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF5NSE2GGZUPJBKF35LVN44SFANCNFSM5YA4YKWA>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2897999",
+                  "updatedAt": "2022-06-07T13:19:14Z",
+                  "publishedAt": "2022-06-07T13:19:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Installing python3-dev did not help. Note that I have deactivated conda env\nto try to avoid conflicts with conda packages (I did not install\nmoose-tools). The problem now is that run_tests is looking for python in\n/usr/bin/env and that directory is empty. Not sure how to make the test\nharness point to the right executables.\n\nOn Tue, Jun 7, 2022 at 8:18 AM Olle Heinonen ***@***.***>\nwrote:\n\u2026\n Thanks for responses. I am using python 3-9.12 but I did not install the\n dev package - I'll do that.\n\n Cheers,\n Olle\n\n On Tue, Jun 7, 2022 at 7:16 AM Jason Miller ***@***.***>\n wrote:\n\n> If you are building from scratch (that is you are using system\n> compilers), then you will need to install the python-dev package (or maybe\n> it is called python3-dev). Hit requires Python Headers to build. Also, I\n> would refrain from installing the moose-tools package, that package is tied\n> to moose-mpich, which would cause a conflict between your OpenMPI and our\n> package providing MPICH.\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#21218 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/AEKZEF5NSE2GGZUPJBKF35LVN44SFANCNFSM5YA4YKWA>\n> .\n> You are receiving this because you were mentioned.Message ID:\n> ***@***.***>\n>\n\n\n --\n Olle Heinonen\n ***@***.***\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898107",
+                  "updatedAt": "2022-06-07T13:31:56Z",
+                  "publishedAt": "2022-06-07T13:31:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "/usr/bin/env does not exist? Can you find out where it is?\nwhich env\nwhatever that returns, I'd like you to make a manual edit to the moose/test/run_tests script. And modify the shebang to match the path returned by the above command.",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898189",
+                          "updatedAt": "2022-06-07T13:42:09Z",
+                          "publishedAt": "2022-06-07T13:42:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "It could also be that your OS defaults to Python2? This has been something of debate in our group (and on the global stage) as to what a script should do... to run the correct interpreter. My vote is:\n#!/usr/bin/env python3\nIf you can make that additional change to moose/test/run_test and try again.?.",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898212",
+                          "updatedAt": "2022-06-07T13:45:00Z",
+                          "publishedAt": "2022-06-07T13:45:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "Hi. /usr/bin/env does exist, and which env returns /usr/bin/env. The edit you suggested seems to work (the tests are running so far).\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898262",
+                          "updatedAt": "2022-06-07T13:52:58Z",
+                          "publishedAt": "2022-06-07T13:52:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "THere are some crashes because /bin/sh cannot find python",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898280",
+                          "updatedAt": "2022-06-07T13:55:27Z",
+                          "publishedAt": "2022-06-07T13:55:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I am betting there are more instances of the shebang in our scripts which is causing you grief. I have not tried this myself, but perhaps you can create your own symlink to python3 and call it python...\nwhich python3\nwhatever that returns try this:\nmkdir ~/bin; cd ~/bin\nln -s `which python3` python\nexport PATH=~/bin:$PATH\nand re-run the tests? Basically we're tricking our scripts into using python which will be mapped to python3.",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898328",
+                          "updatedAt": "2022-06-07T14:03:44Z",
+                          "publishedAt": "2022-06-07T14:03:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Yeah I was thinking of doing that....\n\u2026\nOn Tue, Jun 7, 2022 at 9:03 AM Jason Miller ***@***.***> wrote:\n I am betting there are more instances of the shebang in our scripts which\n is causing you grief. I have not tried this myself, but perhaps you can\n create you own symlink to python3 and call it python...\n\n which python3\n\n whatever that returns try this:\n\n mkdir ~/bin; cd ~/bin\n ln -s `which python3` pythonexport PATH=~/bin:$PATH\n\n and re-run the tests? Basically we're tricking our scripts into using\n python which will be mapped to python3.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21218 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEFYWEEKRV6JOIGIQ37LVN5JDHANCNFSM5YA4YKWA>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898337",
+                  "updatedAt": "2022-06-07T14:04:43Z",
+                  "publishedAt": "2022-06-07T14:04:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "If that works, I think its time we change our shebangs...\n@dschwen\n@permcody",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898350",
+                          "updatedAt": "2022-06-07T14:07:00Z",
+                          "publishedAt": "2022-06-07T14:06:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "\ud83d\udc4d\n\u2026\nOn Tue, Jun 7, 2022 at 9:07 AM Jason Miller ***@***.***> wrote:\n If that works, I think its time we change our shebangs...\n @dschwen <https://github.com/dschwen>\n @permcody <https://github.com/permcody>\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21218 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF6TLJPTL2Y4VVSX3SDVN5JQ7ANCNFSM5YA4YKWA>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898374",
+                  "updatedAt": "2022-06-07T14:10:35Z",
+                  "publishedAt": "2022-06-07T14:10:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "THere are some other issues as well (SKIP, not CRASH) - missing pandas,\ndeepdiff\n\nOn Tue, Jun 7, 2022 at 9:10 AM Olle Heinonen ***@***.***>\nwrote:\n\u2026\n \ud83d\udc4d\n\n On Tue, Jun 7, 2022 at 9:07 AM Jason Miller ***@***.***>\n wrote:\n\n> If that works, I think its time we change our shebangs...\n> @dschwen <https://github.com/dschwen>\n> @permcody <https://github.com/permcody>\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#21218 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/AEKZEF6TLJPTL2Y4VVSX3SDVN5JQ7ANCNFSM5YA4YKWA>\n> .\n> You are receiving this because you were mentioned.Message ID:\n> ***@***.***>\n>\n\n\n --\n Olle Heinonen\n ***@***.***\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898403",
+                  "updatedAt": "2022-06-07T14:14:23Z",
+                  "publishedAt": "2022-06-07T14:14:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "install those libraries and it will stop skipping",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2909873",
+                          "updatedAt": "2022-06-09T01:51:48Z",
+                          "publishedAt": "2022-06-09T01:51:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "The symlink to python3 causes crashes - too many levels of symbolic links\n\u2026\nOn Tue, Jun 7, 2022 at 9:03 AM Jason Miller ***@***.***> wrote:\n I am betting there are more instances of the shebang in our scripts which\n is causing you grief. I have not tried this myself, but perhaps you can\n create you own symlink to python3 and call it python...\n\n which python3\n\n whatever that returns try this:\n\n mkdir ~/bin; cd ~/bin\n ln -s `which python3` pythonexport PATH=~/bin:$PATH\n\n and re-run the tests? Basically we're tricking our scripts into using\n python which will be mapped to python3.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21218 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEFYWEEKRV6JOIGIQ37LVN5JDHANCNFSM5YA4YKWA>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898415",
+                  "updatedAt": "2022-06-07T14:15:46Z",
+                  "publishedAt": "2022-06-07T14:15:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "I think making symlink directly to /usr/bin/python3.10 may have worked\n\nOn Tue, Jun 7, 2022 at 9:15 AM Olle Heinonen ***@***.***>\nwrote:\n\u2026\n The symlink to python3 causes crashes - too many levels of symbolic links\n\n On Tue, Jun 7, 2022 at 9:03 AM Jason Miller ***@***.***>\n wrote:\n\n> I am betting there are more instances of the shebang in our scripts which\n> is causing you grief. I have not tried this myself, but perhaps you can\n> create you own symlink to python3 and call it python...\n>\n> which python3\n>\n> whatever that returns try this:\n>\n> mkdir ~/bin; cd ~/bin\n> ln -s `which python3` pythonexport PATH=~/bin:$PATH\n>\n> and re-run the tests? Basically we're tricking our scripts into using\n> python which will be mapped to python3.\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#21218 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/AEKZEFYWEEKRV6JOIGIQ37LVN5JDHANCNFSM5YA4YKWA>\n> .\n> You are receiving this because you were mentioned.Message ID:\n> ***@***.***>\n>\n\n\n --\n Olle Heinonen\n ***@***.***\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2898489",
+                  "updatedAt": "2022-06-07T14:26:07Z",
+                  "publishedAt": "2022-06-07T14:26:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Good to know! I have created an issue I plan on implementing soon: #21235",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-2913234",
+                          "updatedAt": "2022-06-09T12:29:36Z",
+                          "publishedAt": "2022-06-09T12:29:35Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Hi Guillaume,\n\nThanks. I do not think there are inconsistencies in the compiler suite or\nthat there are competing compilers - I had just installed compilers and\nwrappers, and I also made sure to set environment variables (FC, CPP, CC\netc) to point unambiguously to the compilers and wrappers. I'll fiddle with\nthe moose-tools to see if I can get at least most of them.\n\nCheers,\nOlle\n\u2026\nOn Mon, Jun 6, 2022 at 6:17 PM Guillaume Giudicelli < ***@***.***> wrote:\n Hello\n\n installing moose-tools will solve the first one.\n the undefined symbol is more problematic. It s likely the compiler suite\n was not consistent during the whole build process. Or that there are\n conflicts between several compilers available\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21218 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEFYIHBRHS6BBMKZH2GLVN2BHXANCNFSM5YA4YKWA>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-3848203",
+                  "updatedAt": "2022-10-11T09:08:47Z",
+                  "publishedAt": "2022-10-11T09:08:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Looks like I let this shebang PR slip my mind. I'll start on that right now...",
+                          "url": "https://github.com/idaholab/moose/discussions/21218#discussioncomment-3850103",
+                          "updatedAt": "2022-10-11T12:31:32Z",
+                          "publishedAt": "2022-10-11T12:31:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "libmesh hashing.h",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "Hi. I am bulding libmesh from a new dist using update_and_rebuild_libmesh.sh. The build crashes at ~/contrib/fparser_ad.cc: fatal error: libmesh/hashing.h: No such file or directory #include<libmesh/hashing.h>\nThe hashing.h file does exist in ./libmesh/inlcude/utils and ./libmesh/include/libmeh (reckoned from the moose directory). It is not clear to me where the build is looking for hashing.h and/or how I should set paths to fix this.",
+          "url": "https://github.com/idaholab/moose/discussions/21310",
+          "updatedAt": "2022-10-11T08:49:00Z",
+          "publishedAt": "2022-06-15T16:21:45Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCould you please attach the config.log in the scripts folder?\nAlso there is a diagnostics script in moose/scripts you may run to understand the environment\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2957535",
+                  "updatedAt": "2022-06-15T16:31:27Z",
+                  "publishedAt": "2022-06-15T16:31:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "Hi Guillaume. config.log is attached.\nconfig.log",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2957658",
+                          "updatedAt": "2022-06-15T16:47:04Z",
+                          "publishedAt": "2022-06-15T16:47:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nYou are partially using the intel oneapi compilers.\nWe dont support intel compilers anymore as they had a bug, we dropped support for them and we havent come back to trying them.\nYou also have some gcc compilers active there. Please just unload the modules / remove from the path the intel compilers and stick with GNU compilers and openmpi or similar.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958010",
+                          "updatedAt": "2022-06-15T17:36:59Z",
+                          "publishedAt": "2022-06-15T17:36:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "OK, thanks. Will do.\n\u2026\n-Olle\nOn Wed, Jun 15, 2022 at 12:37 PM Guillaume Giudicelli < ***@***.***> wrote:\n hello\n\n You are partially using the intel oneapi compilers.\n We dont support intel compilers anymore as they had a bug, we dropped\n support for them and we havent come back to trying them.\n\n You also have some gcc compilers active there. Please just unload the\n modules / remove from the path the intel compilers and stick with GNU\n compilers and openmpi or similar.\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21310 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF7OSI5BNKWLZ3ZFCXLVPIIELANCNFSM5Y34ZAQQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958026",
+                  "updatedAt": "2022-06-15T17:40:07Z",
+                  "publishedAt": "2022-06-15T17:40:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "It does not fix the problem. Still the same error re. hashing.h\n\u2026\nOn Wed, Jun 15, 2022 at 12:37 PM Guillaume Giudicelli < ***@***.***> wrote:\n hello\n\n You are partially using the intel oneapi compilers.\n We dont support intel compilers anymore as they had a bug, we dropped\n support for them and we havent come back to trying them.\n\n You also have some gcc compilers active there. Please just unload the\n modules / remove from the path the intel compilers and stick with GNU\n compilers and openmpi or similar.\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21310 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF7OSI5BNKWLZ3ZFCXLVPIIELANCNFSM5Y34ZAQQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958152",
+                  "updatedAt": "2022-06-15T18:01:54Z",
+                  "publishedAt": "2022-06-15T18:01:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what's the config log now",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958276",
+                          "updatedAt": "2022-06-15T18:21:09Z",
+                          "publishedAt": "2022-06-15T18:21:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Attached. There s a whole slew of header files that codes in ./contrib/fparser (fparser_ad.cc, as well as header files here looking for header files) cannot find.\nconfig.log",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958349",
+                  "updatedAt": "2022-06-15T18:30:26Z",
+                  "publishedAt": "2022-06-15T18:30:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "It looks like the problem originates in\n./libmesh/contrib/fparser/fparser_ad.cc - it looks for some headerfile that\nit cannot find, and that headerfile in turn is looking for other header\nfiles in the same directory\n#include <libmesh/some_header_file.h>\n\u2026\nOn Wed, Jun 15, 2022 at 1:21 PM Guillaume Giudicelli < ***@***.***> wrote:\n what's the config log now\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21310 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF33NSCR7GDQGT3DMILVPINJ3ANCNFSM5Y34ZAQQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2958523",
+                  "updatedAt": "2022-06-15T18:53:44Z",
+                  "publishedAt": "2022-06-15T18:53:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "seems like the same problem @aruybalid was hitting",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2959857",
+                          "updatedAt": "2022-06-15T23:50:13Z",
+                          "publishedAt": "2022-06-15T23:50:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "The problem seems to be a few programs:\n./libmesh/contrib/fparser/fparser_ad.cc and ./libmesh/scr/apps/fparser.C\nwhere the paths to header files, which all involve \"libmesh/foo.h\" or\n<libmesh.foo.h>, fail. I am doing the stupid thing to fix this: edit\nfparser.C and fparser_ad.cc to look for the header files in the same\ndirectory as the cc or C file - and also edit header files that look for\nheader files. I copied the relevant header files (which live in ./libmesh I\nthink) to those two directories. This is obviously a coarse hack but I was\nnot going to go in end spend more time trying to figure out why the paths\ngot screwed up.\n\u2026\n-Olle\nOn Wed, Jun 15, 2022 at 6:50 PM Guillaume Giudicelli < ***@***.***> wrote:\n seems like the same problem @aruybalid <https://github.com/aruybalid> was\n hitting\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21310 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF3N474RZMA7OXRYXCTVPJT37ANCNFSM5Y34ZAQQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2964318",
+                  "updatedAt": "2022-06-16T13:32:08Z",
+                  "publishedAt": "2022-06-16T13:32:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "So I just pulled a completely fresh dist, made sure I had loaded only GNU\ncompilers and compatible openmpi, cmake, have python linked to python3.\nNow petsc and libmesh both built - no problem (!!). But when I build moose\n(cd ./test && make -j 4) I get the message right away \"make: python-config:\nCommand not found\". Any ideas???\n\nOn Thu, Jun 16, 2022 at 8:31 AM Olle Heinonen ***@***.***>\nwrote:\n\u2026\n The problem seems to be a few programs:\n ./libmesh/contrib/fparser/fparser_ad.cc and ./libmesh/scr/apps/fparser.C\n where the paths to header files, which all involve \"libmesh/foo.h\" or\n <libmesh.foo.h>, fail. I am doing the stupid thing to fix this: edit\n fparser.C and fparser_ad.cc to look for the header files in the same\n directory as the cc or C file - and also edit header files that look for\n header files. I copied the relevant header files (which live in ./libmesh I\n think) to those two directories. This is obviously a coarse hack but I was\n not going to go in end spend more time trying to figure out why the paths\n got screwed up.\n\n -Olle\n\n On Wed, Jun 15, 2022 at 6:50 PM Guillaume Giudicelli <\n ***@***.***> wrote:\n\n> seems like the same problem @aruybalid <https://github.com/aruybalid>\n> was hitting\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#21310 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/AEKZEF3N474RZMA7OXRYXCTVPJT37ANCNFSM5Y34ZAQQ>\n> .\n> You are receiving this because you authored the thread.Message ID:\n> ***@***.***>\n>\n\n\n --\n Olle Heinonen\n ***@***.***\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2967462",
+                  "updatedAt": "2022-06-16T22:46:11Z",
+                  "publishedAt": "2022-06-16T22:46:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "by linking python to python3, it (MOOSE) expects to find python-config also linked... Basically do this:\nln -s /path/to/python3-config /some/path/within PATH/python-config",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2986151",
+                          "updatedAt": "2022-06-20T13:53:10Z",
+                          "publishedAt": "2022-06-20T13:53:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Thanks. The problem is that python-config is not installed. I am talking to\nour system manager to get that done (I cannot use a conda install for\nmyself for complicated reasons).\n\nCheers,\nOlle\n\u2026\nOn Mon, Jun 20, 2022 at 8:53 AM Jason Miller ***@***.***> wrote:\n by linking python to python3, it (MOOSE) expects to find python-config\n also linked... Basically do this:\n\n ln -s /path/to/python3-config /some/path/within PATH/python-config\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#21310 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEFY6JYCP57CLFRV6PQTVQBZVBANCNFSM5Y34ZAQQ>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2986381",
+                  "updatedAt": "2022-06-20T14:21:35Z",
+                  "publishedAt": "2022-06-20T14:21:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Got links to python3 and python3-config. Compilation works. Linking fails:\n\nThe linker shows a problem: it is \u201cskipping incompatible libraries\n/ib/libpthread.so when searching for -lpthread\u201d\n\nSame for -lrt, -ldl, -lm, and -lc.\n\n\nThat is usually because of a compatibility issue - trying to link a 64-bit\nbuild with 32-bit library binaries. But that should not be the case. And\nthe only modules I have loaded are the GNU compiler (64-bit) and associated\nlibraries. Any thoughts?\n\u2026\n-Olle\n\nOn Mon, Jun 20, 2022 at 9:21 AM Olle Heinonen ***@***.***>\nwrote:\n Thanks. The problem is that python-config is not installed. I am talking\n to our system manager to get that done (I cannot use a conda install for\n myself for complicated reasons).\n\n Cheers,\n Olle\n\n On Mon, Jun 20, 2022 at 8:53 AM Jason Miller ***@***.***>\n wrote:\n\n> by linking python to python3, it (MOOSE) expects to find python-config\n> also linked... Basically do this:\n>\n> ln -s /path/to/python3-config /some/path/within PATH/python-config\n>\n> \u2014\n> Reply to this email directly, view it on GitHub\n> <#21310 (reply in thread)>,\n> or unsubscribe\n> <https://github.com/notifications/unsubscribe-auth/AEKZEFY6JYCP57CLFRV6PQTVQBZVBANCNFSM5Y34ZAQQ>\n> .\n> You are receiving this because you authored the thread.Message ID:\n> ***@***.***>\n>\n\n\n --\n Olle Heinonen\n ***@***.***\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-2988577",
+                  "updatedAt": "2022-06-20T19:50:28Z",
+                  "publishedAt": "2022-06-20T19:50:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "where is this ib/libpthread coming from? Is this your system one?\n@milljm does it come with the compilers?",
+                          "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-3021470",
+                          "updatedAt": "2022-06-25T05:52:51Z",
+                          "publishedAt": "2022-06-25T05:52:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Is this fixed?\nAnd if not could we please see the latest results for the diagnostics script",
+                  "url": "https://github.com/idaholab/moose/discussions/21310#discussioncomment-3201973",
+                  "updatedAt": "2022-07-21T23:46:36Z",
+                  "publishedAt": "2022-07-21T23:46:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Time dependence from csv file",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "I have a vector field (Hx,Hy,Hz) read in as auxiliary variables using the UO PropertyReadFile, then passed to Function node_Hx, node_Hy, node_Hz using PieceWiseConstantFromCSV, and then seed the (Hx,Hy,Hz) field from that function. What I then need to do is to multiply the field (Hx,Hy,Hz) with a time dependence that cannot be parameterized but is read into a PiecewiseMultilinearfunction that is used to define an auxiliary variable \"coil_current\". What I'd like to do is then to use an AuxKernel that multiplies \"coil_current\" (which is the value of a current given by times t from the PiecewiseMultilinear function) with the field (Hx,Hy,Hz) to get a field time-dependent field (Hext_x_time, Hext_y_time,Hext_z_time). I am not sure about the syntax in the AuxKernel. Right now I have\n[AuxKernels]\n[./Hext_x_time]\ntype = FunctionAux\nvariable = Hext_x\nfunction = 'coil_current*node_Hx'\n[../]\nand similarly for the y and z components. But this is not working (garbled syntax, I think). What is the correct syntax for multiplying together a time-dependent variable (coil_current) with a function (node_Hx)?\nThanks,\nOlle",
+          "url": "https://github.com/idaholab/moose/discussions/22184",
+          "updatedAt": "2022-10-11T08:16:13Z",
+          "publishedAt": "2022-09-23T21:26:25Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "It seems I can use CompositeFunction to multiply the two functions together to generate a new function that can be read in as a FunctionAux. At least running with --check-input throws no error.....",
+                  "url": "https://github.com/idaholab/moose/discussions/22184#discussioncomment-3720446",
+                  "updatedAt": "2022-09-23T21:51:54Z",
+                  "publishedAt": "2022-09-23T21:51:53Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThat is one option. The other is to use the ParsedAux, that should let you multiply two functions together.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22184#discussioncomment-3725611",
+                          "updatedAt": "2022-09-25T01:43:24Z",
+                          "publishedAt": "2022-09-25T01:43:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Thanks, Guillaume.\n\u2026\nOn Sat, Sep 24, 2022 at 8:43 PM Guillaume Giudicelli < ***@***.***> wrote:\n Hello\n\n That is one option. The other is to use the ParsedAux, that should let you\n multiply two functions together.\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22184 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEFY4U45L6CDDYMCZFITV76U4NANCNFSM6AAAAAAQUKJYBA>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/22184#discussioncomment-3847168",
+                  "updatedAt": "2022-10-11T08:16:13Z",
+                  "publishedAt": "2022-10-11T08:16:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Poisson Nernst Planck Model",
+          "author": {
+            "login": "nishant1785"
+          },
+          "bodyText": "Hello all,\nI want to simulate ion transportation through an electrolyte for that I am using Poisson-Nernst-Planck model as shown below.\n\nI have used \"soretDiffusion\" module to formulate effect of electromigration effect (2nd term in Nernst-Planck equation). Initially linear potential profile is developed and it remains linear and also concentration of cation and anion doesn't change while residual keeps on increasing continuosly.\nPlz help me i have to complete project by end of september.\nThank you very much,\nNishant Gaikwad",
+          "url": "https://github.com/idaholab/moose/discussions/22144",
+          "updatedAt": "2022-10-11T07:42:30Z",
+          "publishedAt": "2022-09-19T05:58:41Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI converted your post into a discussions as this is where we usually talk about these subjects\n@tonkmr could you please help with this? Seems you are the author of Soret Diffusion in moose\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3685690",
+                  "updatedAt": "2022-09-20T01:16:43Z",
+                  "publishedAt": "2022-09-20T01:16:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@nishant1785 you should make sure to follow the application development tutorial if you have not. It s very likely you will need to implement some new kernels to achieve this",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3685694",
+                          "updatedAt": "2022-09-20T01:17:18Z",
+                          "publishedAt": "2022-09-20T01:17:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "Thank you very much Guillaume for your response I have followed application\ndevelopment tutorial.  But I will recheck again.\n\nNishant Gaikwad-7972836355\nM. Tech student\nMaterials Department\nDIAT, DRDO,Girinagar\n411025-Pune\n\u2026\nOn Tue, 20 Sep, 2022, 6:47 am Guillaume Giudicelli, < ***@***.***> wrote:\n @nishant1785 <https://github.com/nishant1785> you should make sure to\n follow the application development tutorial if you have not. It s very\n likely you will need to implement some new kernels to achieve this\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22144 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A3ER5T4FIN6U47Z3F3FVSZLV7EGCTANCNFSM6AAAAAAQQTDZHQ>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3685932",
+                  "updatedAt": "2022-09-20T02:04:49Z",
+                  "publishedAt": "2022-09-20T02:04:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "tonkmr"
+                  },
+                  "bodyText": "I am happy to look at input files and discuss. You could also try to use the MatDiffusion kernel, where you use a coupled variable. That may be more flexible than SoretDiffusion.",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3693078",
+                  "updatedAt": "2022-09-20T17:58:53Z",
+                  "publishedAt": "2022-09-20T17:58:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "Thank you Michael, instead of MatDiffusion I have used simple diffusion\nmodule because I have to couple variables and I don't know how to do it in\nMatDiffusion module. Now input files which I am attaching here are for\nnon-dimensional formulation of PNP model I mentioned earlier.\n\n*FOR NON-DIMENSIONALISED CASE PERMITTIVITY,DIFFUSIVITY VANISHES FROM\nEQUATION HENCE WE ARE ONLY LEFT WITH VARIABLES NO CONSTANTS OR 'EQUATING\nALL CONSTANTS EQUAL TO 1.*\nI am doing this for symmetric binary electrolyte meaning* 'CATION VALENCY =\n1, ANION VALENCY = -1'.*\n\nI have also attached* boundary** conditions file.*",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3699851",
+                  "updatedAt": "2022-09-21T18:45:12Z",
+                  "publishedAt": "2022-09-21T12:54:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hi @nishant1785\nthe file did not paste from your email. You ll have to upload it from the github discussion page.\nIf I were you I'd list each term in the equation and say how you implemented it.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3703218",
+                          "updatedAt": "2022-09-21T18:46:00Z",
+                          "publishedAt": "2022-09-21T18:45:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "@GiudGiud  is the provided information enough. Also @tonkmr i have used DIFFUSION KERNEL to code every part of PNP equation (i.e. for voltage/potential difference, diffusion of ions (separate equation for cation and anion) , electromigration effect)",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3723298",
+                          "updatedAt": "2022-09-24T13:17:13Z",
+                          "publishedAt": "2022-09-24T13:17:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "include.zip\nsrc.zip\ninputfile.zip\nsorry,Here are program files, in bounday condition image C\u2081 is cation concentration while C\u2082 is anion concentration. N is flux of ions which should be zero on every wall of a cube (kernel takes care of this boundary condition). More thoroughly my problem is to model ion flow in a cube by application of potential difference at left and right side of cube +1V and -1V.\nThank you.",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3705903",
+                  "updatedAt": "2022-09-22T04:24:40Z",
+                  "publishedAt": "2022-09-22T04:24:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So in Diffusiona and c,\n\nyou are missing the diffusion coefficient in both residual and jacobian\nyou add a ca and a cc parameter, but arent you using these kernels in the same equation as the diffusion term uses (eg ca = u or cc = u)\nAre you even using them? in the input file you are using Diffusion, not Diffusiona or Diffusionc",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3725548",
+                          "updatedAt": "2022-09-25T01:20:54Z",
+                          "publishedAt": "2022-09-25T01:20:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "@GiudGiud  as I made equation dimensionless no need of diffusion coefficients as I mentioned before. Also \"diffusiona and c\" are for corresponding \"electroa and c\" because here I have to couple variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3725643",
+                          "updatedAt": "2022-09-25T02:02:14Z",
+                          "publishedAt": "2022-09-25T02:02:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok but diffusiona and c are not used in the input file. You have the regular Diffusion there.\nif the equation is dimensionless don\u2019t you need to have a factor on the time derivative ?",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3725669",
+                          "updatedAt": "2022-09-25T02:14:26Z",
+                          "publishedAt": "2022-09-25T02:14:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "Earlier I used openFoam software in it program didn't run unless I gave\nfactor for time derivative but here it ran so i thought no need. Diffusiona\nand c both of them are present in \"electroa and c\" Therefore I didn't put\nit in input file.\n\nNishant Gaikwad-7972836355\nM. Tech student\nMaterials Department\nDIAT, DRDO,Girinagar\n411025-Pune\n\u2026\nOn Sun, 25 Sep, 2022, 7:44 am Guillaume Giudicelli, < ***@***.***> wrote:\n Ok but diffusiona and c are not used in the input file. You have the\n regular Diffusion there.\n\n if the equation is dimensionless don\u2019t you need to have a factor on the\n time derivative ?\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22144 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A3ER5T6O5JDXFCIGOKNVBZ3V76YQZANCNFSM6AAAAAAQQTDZHQ>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3725693",
+                  "updatedAt": "2022-09-25T02:24:53Z",
+                  "publishedAt": "2022-09-25T02:24:53Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "well if you want the right time evolution you will need to have the right coefficient in front the time derivatives. If you only care about the steady state, then it does not matter.\nOk I had not looked at the electroa and c terms. In those:\n\nI also dont see all the coefficients in front of the gradient_psi term. This is once again because the equation is dimensionless I guess, but the factor is not the same as for the diffusion term\nI dont think the Jacobian term is right. There should be an off-diagonal contribution given the involvement of psi, and the on-diagonal contribution should include grad_psi as well ?\nIf you want to post the derivation here we could discuss it",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3726217",
+                          "updatedAt": "2022-09-25T06:51:36Z",
+                          "publishedAt": "2022-09-25T06:51:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "Thank you so much @GiudGiud  can i attach a paper in it on a particular page there is derivation of it and all. I don't have much idea about off-diagonal and on-diagonal terms. Please forgive me for 1 mistake I made \"input file which I sent u is for uncoupled variables for diffusion terms in NERNST-PlANCK equation\" Because I already tried coupling them & result was not converging anyway.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3726230",
+                          "updatedAt": "2022-09-25T06:59:18Z",
+                          "publishedAt": "2022-09-25T06:59:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Sure I can take a look",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3726285",
+                          "updatedAt": "2022-09-25T07:15:49Z",
+                          "publishedAt": "2022-09-25T07:15:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "jp402181e (2).pdf\nTake a look at page number 4 and 5.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3726882",
+                          "updatedAt": "2022-09-25T10:11:56Z",
+                          "publishedAt": "2022-09-25T10:11:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "For electromigration term \ud83d\udc46 I tried soret wherein off-diagonal elements were computed.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3726917",
+                          "updatedAt": "2022-09-25T10:22:28Z",
+                          "publishedAt": "2022-09-25T10:22:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "Uploading VID_20220925_163421.mp4\u2026\nThis linear profile should change & become more like exponentially decreasing but it doesn't change at all.",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3727057",
+                          "updatedAt": "2022-09-25T11:05:16Z",
+                          "publishedAt": "2022-09-25T11:05:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nthe video didnt load. and please avoid pictures of text, they are not searchable by others.\nThe paper does not contain a derivation of the weak form, and of the Jacobian, so it's not helpful for debugging this.\nIf you want to check your Jacobian you can use the jacobian_analyzer python script.\nhttps://mooseframework.inl.gov/help/development/analyze_jacobian.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3728250",
+                          "updatedAt": "2022-09-25T16:37:33Z",
+                          "publishedAt": "2022-09-25T16:37:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nishant1785"
+                          },
+                          "bodyText": "Okk I will do so for weak form see equation (22) in following paper. But this paper doesn't contain any information about jacobian.\nlu2010.pdf\nHere is the video...\n\n  \n    \n    \n\n    VID_20220925_163421.mp4",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3728313",
+                          "updatedAt": "2022-09-25T16:48:54Z",
+                          "publishedAt": "2022-09-25T16:48:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Well exactly. The derivation of the Jacobian is the hard part, and it s likely where the mistake is.\nWould you consider using automatic differentiation?\nIt's a lot easier to write the kernels that way\nsee this: https://mooseframework.inl.gov/moose/modules/phase_field/FunctionMaterials/AutomaticDifferentiation.html",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3729045",
+                          "updatedAt": "2022-09-25T20:10:50Z",
+                          "publishedAt": "2022-09-25T20:10:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is probably a better documentation page for AD\nhttps://mooseframework.inl.gov/automatic_differentiation/#!\nI d really advise it to get the Jacobian right",
+                          "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3730458",
+                          "updatedAt": "2022-09-26T04:06:42Z",
+                          "publishedAt": "2022-09-26T04:06:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "Yeah will go through this too if this works.\n\nNishant Gaikwad-7972836355\nM. Tech student\nMaterials Department\nDIAT, DRDO,Girinagar\n411025-Pune\n\u2026\nOn Mon, 26 Sep, 2022, 1:41 am Guillaume Giudicelli, < ***@***.***> wrote:\n Well exactly. The derivation of the Jacobian is the hard part, and it s\n likely where the mistake is.\n\n Would you consider using automatic differentiation?\n It's a lot easier to write the kernels that way\n see this:\n https://mooseframework.inl.gov/moose/modules/phase_field/FunctionMaterials/AutomaticDifferentiation.html\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22144 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A3ER5T6NFGP4EBMZM3W6F7TWACWVLANCNFSM6AAAAAAQQTDZHQ>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3729435",
+                  "updatedAt": "2022-09-25T22:45:55Z",
+                  "publishedAt": "2022-09-25T22:45:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nishant1785"
+                  },
+                  "bodyText": "Sure I will go through it.\n\nNishant Gaikwad-7972836355\nM. Tech student\nMaterials Department\nDIAT, DRDO,Girinagar\n411025-Pune\n\u2026\nOn Mon, 26 Sep, 2022, 9:36 am Guillaume Giudicelli, < ***@***.***> wrote:\n This is probably a better documentation page for AD\n https://mooseframework.inl.gov/automatic_differentiation/#!\n I d really advise it to get the Jacobian right\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22144 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A3ER5T2BAT2JVIMLMNNQHWLWAEONZANCNFSM6AAAAAAQQTDZHQ>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22144#discussioncomment-3846578",
+                  "updatedAt": "2022-10-11T07:42:30Z",
+                  "publishedAt": "2022-10-11T07:42:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Problem about compiling the application",
+          "author": {
+            "login": "tangweinuaa"
+          },
+          "bodyText": "I get the following error in my application when I try to use make.\nStrangely enough, I made it successfully at the first time. Then the following error occurs at the second compile.\n(moose) wtang@tangw:~/project1/sma_eps$ make\n10:01:29.201352 git.c:439               trace: built-in: git rev-parse --show-toplevel\n10:01:29.440353 git.c:439               trace: built-in: git rev-parse --show-toplevel\n10:01:29.479332 git.c:439               trace: built-in: git rev-parse --show-toplevel\nChecking if header needs updating: /home/wtang/project1/moose/framework/include/base/MooseRevision.h...\nCompiling C++ (in opt mode) /home/wtang/project1/sma_eps/src/sma_eps_eieps2.C...\nLinking Library /home/wtang/project1/sma_eps/lib/libsma_eps-opt.la...\n/home/wtang/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: cannot find -ltcmalloc_and_profiler\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/wtang/project1/moose/framework/app.mk:345: /home/wtang/project1/sma_eps/lib/libsma_eps-opt.la] Error 1",
+          "url": "https://github.com/idaholab/moose/discussions/22304",
+          "updatedAt": "2022-10-11T03:54:23Z",
+          "publishedAt": "2022-10-05T02:38:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you run the diagnostics script in moose/scripts and report the output here please\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22304#discussioncomment-3801086",
+                  "updatedAt": "2022-10-05T02:58:59Z",
+                  "publishedAt": "2022-10-05T02:58:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tangweinuaa"
+                          },
+                          "bodyText": "Ok, the error is solved by modifying the format of #include to meet the new moose.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/22304#discussioncomment-3844419",
+                          "updatedAt": "2022-10-11T02:55:44Z",
+                          "publishedAt": "2022-10-11T02:55:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about the PETSc options",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "I used a strange method to write a PDE which contains the variables of different blocks in Kernel.\nBut it shows Linear solve did not converge due to DIVERGED_BREAKDOWN in terminal. I'm trying to figure out where the problem is.\nI guess maybe the method is wrong or the form of the PDE is wrong.\nI noticed there is a PETSc options -pc_type svd -pc_svd_monitor in NonlinearSystemBase. And it says \"You can inspect the condition number of your preconditioning matrix for small problems (should be less than 1000 degrees of freedom) by running it\". I'm wondering if this option can show the form of the PDE is true or false. I want to know if this can do what I want and how to use this PETSc option?",
+          "url": "https://github.com/idaholab/moose/discussions/22344",
+          "updatedAt": "2022-10-11T01:16:38Z",
+          "publishedAt": "2022-10-10T08:27:21Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou pass these parameters to petsc_options_iname and petsc_options_ivalue in the Executioner block.\nThis wont tell you if the PDE is written properly or not, but it will roughly tell you if it's solvable. If the conditioning is decent, PETSc has generally no trouble solving the linear problems.\nIf you want to test if you implemented the PDE right you need to perform a verification procedure.\nI ll paste here @hugary1995 's excellent suggestions from another post:\n In FEM code, typically two methods are used for the verification stage in code development\n\nPatch test: You'll need to setup a problem that is as simple as possible in which the analytical solution is known, and the solution can\nbe exactly matched by the basis function of your choice. For example, you can create a single-element cube, apply Dirichlet BC on\n one side, and apply Neumann BC on the opposite side. By applying your kernels one at a time, you can easily match the numerical\n solution (given by MOOSE) with the analytical solution.\n\nMethod of manufactured solution: This method is documented here https://mooseframework.inl.gov/python/mms.html. In essence, you\n will first manufacture an arbitrary, non-homogeneous solution, and then work your way back to derive the corresponding \"body force\"\n that would result in the manufactured solution. Even if the manufactured solution can't be exactly represented on the basis function\n of your choice, you should still see optimal order of convergence by looking at the appropriate error measure.\n\nAnother concern is whether you implemented the jacobian right (did you use AD? If so dont worry about that part).\nThis page has resources for checking this:\nhttps://mooseframework.inl.gov/help/development/analyze_jacobian.html",
+                  "url": "https://github.com/idaholab/moose/discussions/22344#discussioncomment-3839872",
+                  "updatedAt": "2022-10-10T14:19:19Z",
+                  "publishedAt": "2022-10-10T14:17:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Yes I've used AD. Thank you!\nI think I should test if I implemented the PDE right first.",
+                          "url": "https://github.com/idaholab/moose/discussions/22344#discussioncomment-3843922",
+                          "updatedAt": "2022-10-11T01:16:36Z",
+                          "publishedAt": "2022-10-11T01:16:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Materials in FV volume kernel",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "I am setting up some kernels for a FV problem. In one kernel, I need to access materials properties for a volume contribution to the residual. So I have InputParameters:\nInputParameters\nMyFVVolumeKernel::validParams()\n{\nInputParameters params = FVElementalKernel::validParams();\n..\nparams.addRequired<MooseFunctorName>(\"Km\", \"materials property\");\n....\nreturn params;\n}\n\nand later\n\nMyFVVolumeKernel::MyFVVolumeKernel(const inputParameters & parameters):FVElementalKernel(parameters),\n...\n_Km(getFunctor<ADRreal>(\"Km\"),\n..\n\nand for the residual\nADReal\nMyFVVolumeKernel::computeQPResidual()\n{\nreturn _Km[_qp]*u[_qp];\n}\n\nThe problem I have seems to be that I cannot evaluate _Km at quadrature points - the error when I compile is\n\"no match for 'operator[]'\"\nHow can I fix this?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/22350",
+          "updatedAt": "2022-10-10T23:13:16Z",
+          "publishedAt": "2022-10-10T19:34:22Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFunctions and functors cant be access with []. Functions use .value(), functors use ()\nWe access functors by passing arguments, see some examples in Navier Stokes or in the framework.\nA Qp, a face, an element or a position are all accepted arguments\nhttps://github.com/idaholab/moose/blob/next/framework/src/auxkernels/FunctorElementalAux.C\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22350#discussioncomment-3842472",
+                  "updatedAt": "2022-10-10T21:28:59Z",
+                  "publishedAt": "2022-10-10T20:07:45Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Ah, got you.\n\nThanks, Guillaume!\n\u2026\nOn Mon, Oct 10, 2022 at 3:07 PM Guillaume Giudicelli < ***@***.***> wrote:\n Hello\n\n Functions cant be access with [].\n We access functors by passing arguments, see some examples in Navier\n Stokes or in the framework.\n A Qp, a face, an element or a position are all accepted arguments\n\n\n https://github.com/idaholab/moose/blob/next/framework/src/auxkernels/FunctorElementalAux.C\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22350 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AEKZEF4KAT2B4PCZN6JVZNDWCRZRZANCNFSM6AAAAAARBT3F2Q>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \nOlle Heinonen\n***@***.***",
+                  "url": "https://github.com/idaholab/moose/discussions/22350#discussioncomment-3842918",
+                  "updatedAt": "2022-10-10T21:19:59Z",
+                  "publishedAt": "2022-10-10T21:19:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error in ThreadedElementLoopBase dependent on number of nodes",
+          "author": {
+            "login": "czadeh"
+          },
+          "bodyText": "Hi,\nSorry for all the posts recently about this issue, but I need to figure out why my program runs sometimes but fails other times.\nPosts: #22033 #22287\nI have no problems with compiling my project with a derivative size of 400.\nI have a minimal input file that I use for testing.\n\n3D rectangular mesh\nThe main variable, temperature, is set according to a parsed function to create a linear range across the x-axis.\nI use NullKernel for temperature so there is no change.\nMy custom material property is coupled to temperature.\n\nIf I run the input file with\n\nnx = 10\nny = 5\nnz = 3\n\neverything runs fine.\nIf I change it to\n\nnx = 100\nny = 50\nnz = 25\n\nthen I get\n*** ERROR ***\nWe caught a MetaPhysicL error in ThreadedElementLoopBase. This is very likely due to AD not having a sufficiently large derivative container size. Please run MOOSE configure with the '--with-derivative-size=' option\n\nI compiled the debugging executable and ran gdb with a breakpoint set on MPI_Abort. gdb returns this:\nStack frames: 21\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const (&) [219]>(char const (&) [219])\n3: ThreadedElementLoopBase<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> >::operator()(libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> const&, bool)\n4: /home/cameron/projects/moose/framework/libmoose-dbg.so.0(+0x1002bd9) [0x7ffff55dbbd9]\n5: void AuxiliarySystem::computeElementalVarsHelper<AuxKernelTempl<double> >(MooseObjectWarehouse<AuxKernelTempl<double> > const&, std::vector<std::vector<MooseVariableFieldBase*, std::allocator<MooseVariableFieldBase*> >, std::allocator<std::vector<MooseVariableFieldBase*, std::allocator<MooseVariableFieldBase*> > > > const&)\n6: AuxiliarySystem::computeElementalVars(MooseEnumItem)\n7: AuxiliarySystem::compute(MooseEnumItem)\n8: FEProblemBase::computeAuxiliaryKernels(MooseEnumItem const&)\n9: FEProblemBase::execute(MooseEnumItem const&)\n10: FixedPointSolve::solveStep(double&, double&, std::set<unsigned long, std::less<unsigned long>, std::allocator<unsigned long> > const&)\n11: FixedPointSolve::solve()\n12: TimeStepper::step()\n13: Transient::takeStep(double)\n14: Transient::execute()\n15: MooseApp::executeExecutioner()\n16: MooseApp::run()\n17: main\n18: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fffeb699d90]\n19: __libc_start_main\n20: /home/cameron/projects/turtle/turtle-dbg(+0x3079) [0x555555557079]\n\nThread 1 \"turtle-dbg\" hit Breakpoint 1, 0x00007fffeba89820 in PMPI_Abort () from /home/cameron/mambaforge3/envs/moose/lib/libmpi.so.12\n\nI also got the back trace, copied below:\n#0  0x00007fffeba89820 in PMPI_Abort ()\n   from /home/cameron/mambaforge3/envs/moose/lib/libmpi.so.12\n#1  0x00007ffff67ecffe in moose::internal::mooseErrorRaw (msg=..., prefix=...)\n    at /home/cameron/projects/moose/framework/src/base/MooseError.C:83\n#2  0x00007ffff55742c1 in mooseError<char const (&) [219]> ()\n    at /home/cameron/projects/moose/framework/build/header_symlinks/MooseError.h:256\n#3  0x00007ffff556ef90 in ThreadedElementLoopBase<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> >::operator() (this=0x7fffffffb050, range=..., \n    bypass_threading=false)\n    at /home/cameron/projects/moose/framework/build/header_symlinks/ThreadedElementLoopBase.h:283\n#4  0x00007ffff55dbbd9 in libMesh::Threads::parallel_reduce<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*>, ComputeElemAuxVarsThread<AuxKernelTempl<double> > > (range=..., body=...)\n    at /home/cameron/mambaforge3/envs/moose/libmesh/include/libmesh/threads_pthread.h:380\n#5  0x00007ffff557f4c9 in AuxiliarySystem::computeElementalVarsHelper<AuxKernelTempl<double> > (this=0x55555a006fa0, warehouse=..., vars=...)\n    at /home/cameron/projects/moose/framework/src/systems/AuxiliarySystem.C:863\n#6  0x00007ffff557eb20 in AuxiliarySystem::computeElementalVars (this=0x55555a006fa0, \n    type=...) at /home/cameron/projects/moose/framework/src/systems/AuxiliarySystem.C:789\n#7  0x00007ffff557b4fc in AuxiliarySystem::compute (this=0x55555a006fa0, type=...)\n    at /home/cameron/projects/moose/framework/src/systems/AuxiliarySystem.C:463\n#8  0x00007ffff5e03fe2 in FEProblemBase::computeAuxiliaryKernels (this=0x5555597fd1d0, \n    type=...) at /home/cameron/projects/moose/framework/src/problems/FEProblemBase.C:3852\n#9  0x00007ffff5e03f23 in FEProblemBase::execute (this=0x5555597fd1d0, exec_type=...)\n    at /home/cameron/projects/moose/framework/src/problems/FEProblemBase.C:3840\n#10 0x00007ffff5467d83 in FixedPointSolve::solveStep (this=0x5555559004a0, \n    begin_norm=@0x555559ec02d0: 0, end_norm=@0x55555f3ddc60: 0, transformed_dofs=...)\n    at /home/cameron/projects/moose/framework/src/executioners/FixedPointSolve.C:424\n#11 0x00007ffff5466ec4 in FixedPointSolve::solve (this=0x5555559004a0)\n    at /home/cameron/projects/moose/framework/src/executioners/FixedPointSolve.C:274\n#12 0x00007ffff4f9cf68 in TimeStepper::step (this=0x555559db7510)\n    at /home/cameron/projects/moose/framework/src/timesteppers/TimeStepper.C:162\n#13 0x00007ffff547643c in Transient::takeStep (this=0x55555a046bb0, input_dt=-1)\n    at /home/cameron/projects/moose/framework/src/executioners/Transient.C:444\n#14 0x00007ffff547576c in Transient::execute (this=0x55555a046bb0)\n    at /home/cameron/projects/moose/framework/src/executioners/Transient.C:329\n#15 0x00007ffff68884e8 in MooseApp::executeExecutioner (this=0x5555556ec970)\n    at /home/cameron/projects/moose/framework/src/base/MooseApp.C:1097\n#16 0x00007ffff688b4d0 in MooseApp::run (this=0x5555556ec970)\n    at /home/cameron/projects/moose/framework/src/base/MooseApp.C:1402\n#17 0x0000555555557745 in main (argc=3, argv=0x7fffffffc288)\n    at /home/cameron/projects/turtle/src/main.C:33\n\nI tried to figure out what the error was caused by, but I had difficulty in understanding the back trace output. Do you know what it could mean?\nThanks,\nCameron",
+          "url": "https://github.com/idaholab/moose/discussions/22313",
+          "updatedAt": "2022-10-10T18:51:02Z",
+          "publishedAt": "2022-10-05T19:59:48Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Attaching the input file would help.\nSounds like you'd want to define temperature as an aux variable. Then removing the null kernel should fix this issue.",
+                  "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3810227",
+                  "updatedAt": "2022-10-06T02:00:23Z",
+                  "publishedAt": "2022-10-06T02:00:22Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "I could attach the input file, but it is dependent on a custom material property I created. Could I send you both privately?\nI did that and it can run with those settings, but I need it to be able to run when temperature is a Variable being solved with PJFNK.",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3816318",
+                          "updatedAt": "2022-10-06T16:49:03Z",
+                          "publishedAt": "2022-10-06T16:48:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "So you said\n\nI have a minimal input file that I use for testing.\n\nI think we need to first make sure this \"minimal input file\" is a faithful representation of the actual model you will be running. For example, in your real model, you won't be using NullKernel for the temperature, and the NullKernel is probably the exact thing that causes the errors you see using your \"minimal input file\". In other words, do you see the same errors when you run the actual model? If not, there is no point in debugging this minimal input file.\n\nI could attach the input file, but it is dependent on a custom material property I created. Could I send you both privately?\n\nYou can just attach the \"minimal input file\" and remove anything that you want to keep private.",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3816565",
+                          "updatedAt": "2022-10-06T17:19:21Z",
+                          "publishedAt": "2022-10-06T17:19:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "In my full input file, I have:\n\nTemperature with ADHeatConduction and ADHeatConductionTimeDerivative kernels.\nADMatHeatSource working with FunctionPathEllipsoidHeatSource and some parsed functions\na custom material property that provides specific heat, thermal conductivity, and density\na custom material property for crystallinity fraction - this is the part that causes problems\nA porosity variable solved by a custom kernel\nADNeumannBC and ADDirichletBC\nFull SMP preconditioning\nTransient executioner\n\nAnd when the mesh has 100 * 50 * 25 nodes, it gives me the error.\nIf I run it with 10 * 5 * 5 nodes, I get low resolution results that qualitatively appear correct.\nIf I try to run it without the crystallinity material property and with a high number of nodes, it runs fine. So that seems to narrow it down to this material property, which is why I thought I could isolate it into a more minimal file.\nMy minimal input file is not a faithful representation of the full model I will need. But I see the same error occur in the full model and the minimal model.\nHowever, I can go through the debugging and back trace steps with my full model if you think that would be better.",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3816812",
+                          "updatedAt": "2022-10-06T17:58:56Z",
+                          "publishedAt": "2022-10-06T17:58:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Okay, thanks for the detailed information. Yeah, this is an odd one -- the MetaPhysicL exception is only thrown when the mesh gets large...\nThe only possibility I can think of is when your mesh gets more refined, the temperature and porosity variables get more resolution, and at certain quadrature point their values trigger the MetaPhysicL exception. You probably have log of a negative number or something like that somewhere in your material. Does that ring a bell?",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3817670",
+                          "updatedAt": "2022-10-06T20:21:22Z",
+                          "publishedAt": "2022-10-06T20:21:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Errr, now I see you got the same answer from @lindsayad in #22033\nI don't think opening a duplicate post is a wise choice.",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3817685",
+                          "updatedAt": "2022-10-06T20:24:09Z",
+                          "publishedAt": "2022-10-06T20:24:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "why is the auxiliary system returning an AD error though? in the backtrace\nAuxiliarySystem::computeElementalVarsHelper<AuxKernelTempl<double> > (this=0x55555a006fa0, warehouse=..., vars=...) at /home/cameron/projects/moose/framework/src/systems/AuxiliarySystem.C:863\nI d like to see smallest input file that fails",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3818116",
+                          "updatedAt": "2022-10-06T21:50:41Z",
+                          "publishedAt": "2022-10-06T21:50:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "You probably have log of a negative number or something like that somewhere in your material. Does that ring a bell?\n\nLog of a negative number and divide by zero were problems that I had before. But now I have bounds on my functions to prevent that from happening. Also, the debugger told me when I had those errors. Now, the back trace is more opaque.\n\nI don't think opening a duplicate post is a wise choice.\n\nI apologize, I wasn't sure if I should add to a thread after it had been answered. And I thought this may have been different enough to warrant a new post.\nI did try what @lindsayad suggested and I got this:\nThread 1 \"turtle-dbg\" hit Catchpoint 2 (exception thrown), __cxxabiv1::__cxa_throw (obj=0x555562267210, tinfo=0x7ffff7f97190 <typeinfo for MetaPhysicL::LogicError>, dest=0x7ffff7f015dc <MetaPhysicL::LogicError::~LogicError()>) at ../../../../libstdc++-v3/libsupc++/eh_throw.cc:80\n80\t../../../../libstdc++-v3/libsupc++/eh_throw.cc: No such file or directory.\n\n\nI d like to see smallest input file that fails\n\nHere is what I can provide apart from the custom material property. I just don't want to post it publicly at this point, but I don't mind sharing it privately.\n[Mesh]\n  type = GeneratedMesh\n  dim = 3\n  nx = 100\n  ny = 50\n  nz = 30\n  xmax = 1e-3 #meters\n  ymax = 0.5e-3\n  zmax = 0.25e-3\n[]\n[Variables]\n  [T]\n  []\n[]\n[ICs]\n  [functionIC]\n    type = FunctionIC\n    variable = T\n    function = parsedFunc\n  []\n[]\n[Functions]\n  [parsedFunc]\n    type = ParsedFunction\n    value = '430 + 20000*x'\n  []\n[]\n[Materials]\n  [CrystallinityModel]\n  (removed)\n  []\n[]\n[Kernels]\n  [nothing]\n    type = NullKernel\n    variable = T\n  []\n[]\n[Preconditioning]\n  [full]\n    type = SMP\n    full = true\n  []\n[]\n[Executioner]\n  type = Transient\n  solve_type = PJFNK\n  num_steps = 1e3\n  dt = 1e-5\n[]\n[Outputs]\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3818196",
+                          "updatedAt": "2022-10-06T22:11:22Z",
+                          "publishedAt": "2022-10-06T22:11:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "why is the auxiliary system returning an AD error though?\n\nCould be material property aux.",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3818199",
+                          "updatedAt": "2022-10-06T22:12:46Z",
+                          "publishedAt": "2022-10-06T22:12:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I did try what @lindsayad suggested and I got this:\n\nIt looks like you were on the right track. You just need to print a backtrace and go up your stack to where the exception is being thrown",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3818249",
+                          "updatedAt": "2022-10-06T22:21:57Z",
+                          "publishedAt": "2022-10-06T22:21:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Don't worry about the No such file or directory warning",
+                          "url": "https://github.com/idaholab/moose/discussions/22313#discussioncomment-3818254",
+                          "updatedAt": "2022-10-06T22:22:40Z",
+                          "publishedAt": "2022-10-06T22:22:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Feasibility in Random Vibration Analysis",
+          "author": {
+            "login": "Krystalfang"
+          },
+          "bodyText": "Dear experts\uff0c\nI've been trying to do random vibration analysis with moose recently\uff0cspecific description is\uff1aapply an acceleration power spectral density function to the sample, under given conditions, through the acceleration PSD response curve of the test sample at its typical position.\nI would like to ask, can MOOSE fulfill this requirement?\nThanks,\nKrystal",
+          "url": "https://github.com/idaholab/moose/discussions/22335",
+          "updatedAt": "2022-10-11T21:38:04Z",
+          "publishedAt": "2022-10-08T11:55:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@bwspenc  @cbolisetti",
+                  "url": "https://github.com/idaholab/moose/discussions/22335#discussioncomment-3829051",
+                  "updatedAt": "2022-10-08T14:25:55Z",
+                  "publishedAt": "2022-10-08T14:25:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cbolisetti"
+                  },
+                  "bodyText": "Hi @Krystalfang, currently, we can only perform response history analyses in MOOSE. Unfortunately, we cannot perform frequency-domain simulations (or eigen value analysis), which would be needed for RVA.",
+                  "url": "https://github.com/idaholab/moose/discussions/22335#discussioncomment-3841479",
+                  "updatedAt": "2022-10-10T17:24:42Z",
+                  "publishedAt": "2022-10-10T17:24:41Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,693 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMy0wNFQwNzozNzo1NS0wNzowMM4ASlAo"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Vectorial material property from input",
+          "author": {
+            "login": "gabburgio"
+          },
+          "bodyText": "Hello everybody\nI am trying to define a material that provides as a property a vector of diffusivity values for a set of n coupled reaction-diffusion equation, n determined by the input file.\nThese values should be inserted as a parameter in the material declaration.\nThe way I have been trying to implement this is:\n\n#pragma once\n\n#include \"ADMaterial.h\"\n\n\nclass othermaterial : public ADMaterial\n{\npublic:\n  static InputParameters validParams();\n\n  othermaterial(const InputParameters & parameters);\n\nprotected:\n  virtual void computeQpProperties() override;\n\n  const std::vector<Real> & _vettore;\n\n  ADMaterialProperty<std::vector<Real>> & _diff_vector;\n\n};\n\nfor the header file and:\n\n#include \"othermaterial.h\"\n\nregisterMooseObject(\"pertyApp\", othermaterial);\n\nInputParameters\nothermaterial::validParams()\n{\n  InputParameters params = ADMaterial::validParams();\n  params.addRequiredParam<std::vector<Real>>(\n      \"vettore\", \"The vector of diffusivity values\");\n  return params;\n}\n\nothermaterial::othermaterial(const InputParameters & parameters)\n  : ADMaterial(parameters),\n    _diff_vector(declareADProperty<std::vector<Real>>(\"diff_vector\")),\n    _vettore(getParam<std::vector<Real>>(\"vettore\"))\n\n{\n}\n\nvoid\nothermaterial::computeQpProperties()\n{\n\n  for (int i = 0; i < _vettore.size(); ++i) {\n    _diff_vector[_qp][i] = _vettore[i];\n  }\n}\n\nFor the source file. However by declaring for example:\n  [Materials]\n    [./example]\n      type = othermaterial\n      vettore = '1 100'\n      block = 'domain'\n    [../]\n  []  [Materials]\n    [./example]\n      type = othermaterial\n      vettore = '1 100'\n      block = 'domain'\n    [../]\n  []\n\nin my input file I get a segfault with the following backtrace:\nThread 1 \"perty-dbg\" received signal SIGSEGV, Segmentation fault. 0x00007ffff7f3e1cf in MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, unsigned long, MetaPhysicL::NWrapper<53ul> >, true>::operator=<double> (this=0x0, scalar=@0x5555559bf050: 1) at /home/gburgio/mambaforge3/envs/moose/libmesh/include/metaphysicl/dualnumber.h:195 195\t  _val = scalar; (gdb) bt #0  0x00007ffff7f3e1cf in MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, unsigned long, MetaPhysicL::NWrapper<53ul> >, true>::operator=<double> (this=0x0, scalar=@0x5555559bf050: 1) at /home/gburgio/mambaforge3/envs/moose/libmesh/include/metaphysicl/dualnumber.h:195 #1  0x00007ffff7f4fb65 in othermaterial::computeQpProperties (this=0x5555559dac80) at /home/gburgio/projects/perty/src/materials/othermaterial.C:27 #2  0x00007ffff64f4034 in Material::computeProperties (this=0x5555559dac80) at /home/gburgio/projects/moose/framework/src/materials/Material.C:132 #3  0x00007ffff52c6d9f in MaterialData::reinit<std::vector<std::shared_ptr<MaterialBase>, std::allocator<std::shared_ptr<MaterialBase> > > > (this=0x5555559353d0, mats=...) at /home/gburgio/projects/moose/framework/build/header_symlinks/MaterialData.h:454 #4  0x00007ffff526b677 in FEProblemBase::reinitMaterials (this=0x555555949050, blk_id=2, tid=0, swap_stateful=true) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:3430 #5  0x00007ffff5df8df9 in NonlinearThread::onElement (this=0x7fffffffa5a0, elem=0x555555888ed0) at /home/gburgio/projects/moose/framework/src/loops/NonlinearThread.C:107 #6  0x00007ffff52d70f5 in ThreadedElementLoopBase<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> >::operator() (this=0x7fffffffa5a0,  range=..., bypass_threading=false) at /home/gburgio/projects/moose/framework/build/header_symlinks/ThreadedElementLoopBase.h:226 #7  0x00007ffff63cd30b in libMesh::Threads::parallel_reduce<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*>, ComputeResidualThread> ( range=..., body=...) at /home/gburgio/mambaforge3/envs/moose/libmesh/include/libmesh/threads_pthread.h:380 #8  0x00007ffff63a0592 in NonlinearSystemBase::computeResidualInternal (this=0x555555969e10, tags=...) at /home/gburgio/projects/moose/framework/src/systems/NonlinearSystemBase.C:1567 #9  0x00007ffff639a78f in NonlinearSystemBase::computeResidualTags (this=0x555555969e10, tags=...) at /home/gburgio/projects/moose/framework/src/systems/NonlinearSystemBase.C:789 #10 0x00007ffff5286ac6 in FEProblemBase::computeResidualTags (this=0x555555949050, tags=...) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:6174 #11 0x00007ffff5285966 in FEProblemBase::computeResidualInternal (this=0x555555949050, soln=..., residual=..., tags=...) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:6030 #12 0x00007ffff52842fc in FEProblemBase::computeResidual (this=0x555555949050, soln=..., residual=..., nl_sys_num=0) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:5806 #13 0x00007ffff5284001 in FEProblemBase::computeResidualSys (this=0x555555949050, sys=..., soln=..., residual=...) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:5771 #14 0x00007ffff6393431 in NonlinearSystem::solve (this=0x555555969e10) at /home/gburgio/projects/moose/framework/src/systems/NonlinearSystem.C:145 #15 0x00007ffff527fce6 in FEProblemBase::solve (this=0x555555949050, nl_sys_num=0) at /home/gburgio/projects/moose/framework/src/problems/FEProblemBase.C:5489 #16 0x00007ffff5db5f68 in FEProblemSolve::solve (this=0x5555559abbe8) at /home/gburgio/projects/moose/framework/src/executioners/FEProblemSolve.C:281 #17 0x00007ffff5dba910 in FixedPointSolve::solveStep (this=0x5555555f86b0, begin_norm=@0x555555abf5b0: 0, end_norm=@0x555555ab8740: 0, transformed_dofs=...) at /home/gburgio/projects/moose/framework/src/executioners/FixedPointSolve.C:426 #18 0x00007ffff5db98fa in FixedPointSolve::solve (this=0x5555555f86b0) at /home/gburgio/projects/moose/framework/src/executioners/FixedPointSolve.C:278 #19 0x00007ffff5dc1d0b in Steady::execute (this=0x5555559ab8c0) at /home/gburgio/projects/moose/framework/src/executioners/Steady.C:82 #20 0x00007ffff692f7e8 in MooseApp::executeExecutioner (this=0x5555556e3700) at /home/gburgio/projects/moose/framework/src/base/MooseApp.C:1113 #21 0x00007ffff693283e in MooseApp::run (this=0x5555556e3700) at /home/gburgio/projects/moose/framework/src/base/MooseApp.C:1418 #22 0x00005555555576a9 in main (argc=3, argv=0x7fffffffc288) at /home/gburgio/projects/perty/src/main.C:33 \nWhat is the cause of this? Do I need to somehow declare the number of equations as a global parameter in the input file to then initialize the vector parameter?",
+          "url": "https://github.com/idaholab/moose/discussions/23612",
+          "updatedAt": "2023-03-07T11:25:51Z",
+          "publishedAt": "2023-03-06T13:56:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "gabburgio"
+                  },
+                  "bodyText": "(I have also tried with\n std::vector<Real> _vettore;\nin the header instead of\nconst std::vector<Real> & _vettore;\nto no avail)",
+                  "url": "https://github.com/idaholab/moose/discussions/23612#discussioncomment-5216658",
+                  "updatedAt": "2023-03-06T14:39:07Z",
+                  "publishedAt": "2023-03-06T14:39:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is fine:\nconst std::vector<Real> & _vettore;\n\nWhat's erroring is this\n    _diff_vector[_qp][i] = _vettore[i];\n\nbecause there's nowhere in the code where you resize this vector so that you can insert at this position.\nYou should add something like:\n_diff_vector[_qp].resize(_vettore.size());\n\nbefore the for loop.\nOne note:\nA \"vector\" in MOOSE, such as a vector material or a vector variable, is a LIBMESH_DIM (usually 3) sized vector.\nA general sized vector is called an array instead. So you should look at array materials for example.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23612#discussioncomment-5223002",
+                  "updatedAt": "2023-03-07T03:26:26Z",
+                  "publishedAt": "2023-03-07T03:24:45Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gabburgio"
+                          },
+                          "bodyText": "Perfect, thanks for the answer and the pointers",
+                          "url": "https://github.com/idaholab/moose/discussions/23612#discussioncomment-5226929",
+                          "updatedAt": "2023-03-07T11:25:51Z",
+                          "publishedAt": "2023-03-07T11:25:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow: EOS for water, air, with vapor pressure lowering capability",
+          "author": {
+            "login": "batodon"
+          },
+          "bodyText": "Hello,\nI\u2019m looking to simulate a multiphase (liquid and gas) and multicomponent flow with water and air as the components. I\u2019d like to know which fluid EOS in PorousFlow is appropriate for this simulation. My search results reveal several fluid EOS, including that of water, but I don\u2019t see any EOS relating to the fluid properties of air. This simulation is, however, possible using the EOS4 module of TOUGH2. Is there an alternative for the TOUGH2 EOS4 module in PorousFlow? Thanks.",
+          "url": "https://github.com/idaholab/moose/discussions/23280",
+          "updatedAt": "2023-04-29T03:45:45Z",
+          "publishedAt": "2023-01-30T20:18:44Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I don't believe that there is an air EOS yet, and I don't think that we have vapor pressure lowering like in TOUGH2's EOS4. I think from memory that EOS4 just uses an ideal gas for air.",
+                  "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4823920",
+                  "updatedAt": "2023-01-30T22:43:23Z",
+                  "publishedAt": "2023-01-30T22:43:22Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Thanks a lot, @cpgr. It\u2019s been a minute. Very refreshing to get feedback from you again! In my intended simulation, the liquid phase contains water and dissolved air as components, while the gaseous phase comprises air and water vapor as components. Please:\n\nDo you believe I can achieve this simulation in PorousFlow using the fluid properties of water and ideal gas?\nWill you advise that I implement/add the TOUGH2 EOS4 Module in PorousFlow? Or will this implementation take a while?\n\nThanks again!",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4824121",
+                          "updatedAt": "2023-01-30T23:20:32Z",
+                          "publishedAt": "2023-01-30T23:19:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I think that you could do 1 with only a very small amount of coding (basically making an AirFluidProperties that is an ideal gas but with Henry's law coefficients supplied, which IdealGasFluidProperties doesn't have) if an ideal gas representation is ok for your conditions. If not, it would be a bit more effort to implement an air EOS - not difficult, but tedious.\nTo add vapour pressure lowering will require another bit of code, but it probably wouldn't take too much effort either.\nBoth would be useful additions to MOOSE. If you are happy to have a go at this I'm happy to help.",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4825217",
+                          "updatedAt": "2023-01-31T02:24:24Z",
+                          "publishedAt": "2023-01-31T02:24:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Thanks, @cpgr.\nI\u2019ll go with option 1. I\u2019m keeping this ticket open while I work on it. I\u2019ll get back to you shortly.",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4825576",
+                          "updatedAt": "2023-01-31T03:31:54Z",
+                          "publishedAt": "2023-01-31T03:31:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Hello @cpgr,\nI supplied the Henry coefficient to the Ideal gas fluid property (I call this new fluid property the IdealgasHenry). I also created a PorousflowWaterAir fluid-state object based on the PorousflowWaterNCG object using this fluid property. The model ran well after I tested it on the waterncg.i. I\u2019m, however, not entirely convinced about my implementation. Could you please offer a second pair of eyes on it for me? The code is here:\nhttps://github.com/iyevugah/ERGS/tree/main/src/userobjects\nThe only minor addition to the PorousflowWaterAir is from lines 130 to 136, where I included the vapour pressure-lowering capability as follows (not sure if it is entirely correct):\n// Vapor pressure (with lowering capability)\n DualReal numer = _Mh2o *_pc.capillaryPressure(liquid.saturation, qp) * liquid.saturation;\n DualReal deno  = liquid.density * _R * (T + 273.15);\n DualReal f_vpl = std::exp(numer/deno);\n DualReal pv = f_vpl * psat;\n\n // Save pressures to FluidStateProperties object\n gas.pressure = p + pv;\n\n\nPlease, see the problem folder for the input file. Also, the formula for the vapour pressure lowering effect is available on page 145 in the TOUGH2 Manual as equation A.7. You can get it from the link below:\nhttps://drive.google.com/file/d/1nFowvaOJTImLmsScGu3mB5p-6khVexsn/view?usp=share_link\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4843712",
+                          "updatedAt": "2023-02-01T18:26:42Z",
+                          "publishedAt": "2023-02-01T18:23:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "It looks ok at first glance. One thing to check is that I think T is in Kelvin once it gets to PorousflowWaterAir, so you probably don't want to add 273.15 to it.\nYou could also dramatically reduce the amount of code by inheriting from IdealGasFluidProperties and PorousFlowWaterNCG and only overriding the bits you added. For example, IdealGasHenryFluidProperties.h could be something like\n#pragma once\n\n#include \"IdealGasFluidProperties.h\"\n\n#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored \"-Woverloaded-virtual\"\n\n/**\n * Ideal gas fluid properties\n * Default parameters are for air at atmospheric pressure and temperature\n */\nclass IdealGasHenryFluidProperties : public IdealGasFluidProperties, public NaNInterface\n{\npublic:\n  static InputParameters validParams();\n\n  IdealGasHenryFluidProperties(const InputParameters & parameters);\n\n  virtual std::vector<Real> henryCoefficients() const override;\n};\n\n#pragma GCC diagnostic pop\n\nand similarly IdealGasHenryFluidProperties.C\n#include \"IdealGasHenryFluidProperties.h\"\n\nregisterMooseObject(\"FluidPropertiesApp\", IdealGasHenryFluidProperties);\n\nInputParameters\nIdealGasHenryFluidProperties::validParams()\n{\n  InputParameters params = IdealGasFluidProperties::validParams();\n\n  return params;\n}\n\nIdealGasHenryFluidProperties::IdealGasHenryFluidProperties(const InputParameters & parameters)\n  : IdealGasFluidProperties(parameters),\n    NaNInterface(this) {}\n\nstd::vector<Real>\nIdealGasHenryFluidProperties::henryCoefficients() const\n{\n  return {-8.55445, 4.01195, 9.52345};\n}\n\n(note: I actually haven't tried to compile this but it should be similar).",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4845937",
+                          "updatedAt": "2023-02-01T23:33:26Z",
+                          "publishedAt": "2023-02-01T23:33:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Great! Thanks a million, @cpgr!  I\u2019ll make the code more succinct! \ud83d\udc4d",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4846100",
+                          "updatedAt": "2023-02-02T00:01:18Z",
+                          "publishedAt": "2023-02-02T00:01:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Let me know if you run into any issues but it shouldn't be too hard. The TOUGH2 manual shows some results using EOS3/EOS4 for one of the sample problems. It would be good to see if you could reproduce that at all.",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4846574",
+                          "updatedAt": "2023-02-02T01:38:14Z",
+                          "publishedAt": "2023-02-02T01:38:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Hi @cpgr, I have only one hurdle. I keep getting the following error which I\u2019m trying to fix:\nwarning: direct base 'NaNInterface' inaccessible in ' IdealGasHenryFluidProperties\n' due to ambiguity [-Winaccessible-base]\n   12 | class IdealGasHenryFluidProperties : public IdealGasFluidProperties, public NaNInterface \n\nIt seems I have a duplicate of NaNInterface, but when I removed it, I still got an error. Could you please help with this error?\nIt will be great to validate the code with those tests. I\u2019ll do that once I fix this error. Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4847009",
+                          "updatedAt": "2023-02-02T02:59:59Z",
+                          "publishedAt": "2023-02-02T02:59:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Oops, I was copying and pasting and should have deleted the NanInterface things I think. How about\n#pragma once\n\n#include \"IdealGasFluidProperties.h\"\n\n#pragma GCC diagnostic push\n#pragma GCC diagnostic ignored \"-Woverloaded-virtual\"\n\n/**\n * Ideal gas fluid properties\n * Default parameters are for air at atmospheric pressure and temperature\n */\nclass IdealGasHenryFluidProperties : public IdealGasFluidProperties\n{\npublic:\n  static InputParameters validParams();\n\n  IdealGasHenryFluidProperties(const InputParameters & parameters);\n\n  virtual std::vector<Real> henryCoefficients() const override;\n};\n\n#pragma GCC diagnostic pop\n\nand\n#include \"IdealGasHenryFluidProperties.h\"\n\nregisterMooseObject(\"FluidPropertiesApp\", IdealGasHenryFluidProperties);\n\nInputParameters\nIdealGasHenryFluidProperties::validParams()\n{\n  InputParameters params = IdealGasFluidProperties::validParams();\n\n  return params;\n}\n\nIdealGasHenryFluidProperties::IdealGasHenryFluidProperties(const InputParameters & parameters)\n  : IdealGasFluidProperties(parameters)\n{\n}\n\nstd::vector<Real>\nIdealGasHenryFluidProperties::henryCoefficients() const\n{\n  return {-8.55445, 4.01195, 9.52345};\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4847058",
+                          "updatedAt": "2023-02-02T03:10:54Z",
+                          "publishedAt": "2023-02-02T03:10:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Also, maybe IdealGasAirFluidProperties would be a better name?",
+                          "url": "https://github.com/idaholab/moose/discussions/23280#discussioncomment-4847111",
+                          "updatedAt": "2023-02-02T03:22:16Z",
+                          "publishedAt": "2023-02-02T03:22:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "auxiliary variable",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Hello everyone,\nI am trying to define a new auxiliary variable which is w*grad(c). w an c are both primary variables.\nI defined grad(c) components by VariableGradientComponent. My question is that what type of function I need to use in order to get a variable which is multiplication of grad(c) and w (w*grad(c)). I already tried ParsedFunction and failed.\nThanks,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/23410",
+          "updatedAt": "2023-04-29T03:45:48Z",
+          "publishedAt": "2023-02-14T01:16:17Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Minjiang-Zhu"
+                  },
+                  "bodyText": "Try it in auxkernels.",
+                  "url": "https://github.com/idaholab/moose/discussions/23410#discussioncomment-5211563",
+                  "updatedAt": "2023-03-06T04:31:58Z",
+                  "publishedAt": "2023-03-06T04:31:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Fatal error in internal_Init_thread: Other MPI error, error stack:",
+          "author": {
+            "login": "js-jixu"
+          },
+          "bodyText": "Hi, developers.\nI installed moose on a cloud host. But moose can't run in parallel:\nFatal error in internal_Init_thread: Other MPI error, error stack:\ninternal_Init_thread(60)...........: MPI_Init_thread(argc=0x7fff718e6c6c, argv=0x7fff718e6c60, required=0, provided=0x7fff718e6c7c) failed\nMPII_Init_thread(209)..............: \nMPID_Init(75)......................: \ninit_world(190)....................: channel initialization failed\nMPIDI_CH3_Init(84).................: \nMPID_nem_init(313).................: \nMPID_nem_tcp_init(175).............: \nMPID_nem_tcp_get_business_card(397): \nGetSockInterfaceAddr(369)..........: gethostbyname failed, simple (errno 1)\n\nThe installation process looks very smooth, and there are no errors. What is the reason?",
+          "url": "https://github.com/idaholab/moose/discussions/23610",
+          "updatedAt": "2023-03-06T02:06:59Z",
+          "publishedAt": "2023-03-05T14:34:51Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nPlease see this troubleshooting page for this particular error message\nhttps://mooseframework.inl.gov/help/troubleshooting.html#6790d8ab-b8fe-4f9d-bc56-04386260d3b1\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23610#discussioncomment-5207396",
+                  "updatedAt": "2023-03-05T14:35:51Z",
+                  "publishedAt": "2023-03-05T14:35:50Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Hi, Guillaume.\nI've read the troubleshooting page but failed to find related information about my problem. I can activate moose and run the input file in serial. But when I use mpiexec -n 2 ~/projects/.../opt -i , it encounters an error.\nThis virtual machine has previously installed openmc. When I use conda info -- envs to check the environment, it shows this:\n\nAnd I've found that there is nothing in /root/mambaforge3/envs, while there is a moose folder in /root/mambaforge3/envs on my own PC's moose. Is it because I didn't install moose in the anaconda3 environment\uff1f",
+                          "url": "https://github.com/idaholab/moose/discussions/23610#discussioncomment-5207496",
+                          "updatedAt": "2023-03-05T15:01:36Z",
+                          "publishedAt": "2023-03-05T15:01:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Did you search for gethostbyname on that page?\nIt s about modifying the hosts file",
+                          "url": "https://github.com/idaholab/moose/discussions/23610#discussioncomment-5208007",
+                          "updatedAt": "2023-03-05T16:34:49Z",
+                          "publishedAt": "2023-03-05T16:34:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Your suggestion is very helpful and I can run it in parallel!",
+                          "url": "https://github.com/idaholab/moose/discussions/23610#discussioncomment-5210967",
+                          "updatedAt": "2023-03-06T02:06:56Z",
+                          "publishedAt": "2023-03-06T02:06:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Extract Derivatives from ADReal",
+          "author": {
+            "login": "joe61vette"
+          },
+          "bodyText": "Hello:\nI would like to get the pressure and temperature derivatives from the ADReal variable for density.  For example:\nReal drho_dT = _rho[_qp].derivatives()[1];\nThis does give me the temperature derivative but only for the 1st quadrature point. So, the \"1\" appears to correspond to the index of the non-linear variable.  How can I get the indices of _T[_qp] and _p[_qp]?\nThanks,\nJoe Kelly",
+          "url": "https://github.com/idaholab/moose/discussions/23606",
+          "updatedAt": "2023-03-05T14:31:37Z",
+          "publishedAt": "2023-03-04T18:27:42Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere is an example in the INSFVMomentumAdvection fvkernel. First we get the dof number (here from the element argument)\nconst auto dof_number = sided_elem->dof_number(_sys.number(), _var.number(), 0);\nthen access the derivatives at that index\nconst Real d_u_face_d_dof = u_face.derivatives()[dof_number];\nWhat kind of kernel or object are you using?\nAre _T and _p both nonlinear variables?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23606#discussioncomment-5205193",
+                  "updatedAt": "2023-03-05T04:26:11Z",
+                  "publishedAt": "2023-03-05T04:26:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "Thanks Guillaume.  I knew there was some way to get the dof number but sometimes it is just hard to find.  Given that I would need to link to the variable number and then get the dof number, it is easier for me to just go ahead and add the eos functions that return the derivatives.  For example:\nrho_from_p_T(Real p, Real T, Real & rho, Real & drho_dp, Real & drho_dT)\nThanks again,\nJoe",
+                          "url": "https://github.com/idaholab/moose/discussions/23606#discussioncomment-5207240",
+                          "updatedAt": "2023-03-05T13:59:32Z",
+                          "publishedAt": "2023-03-05T13:59:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This works.\nIn the context of fluid properties there's a few examples where the AD routine is used then the derivatives retrieved from that AD call manually. This is still not quite what you want but it could be a way to do rho_from_p_T(Real p, Real T, Real & rho, Real & drho_dp, Real & drho_dT) easily\nFor example:\nvoid\nWater97FluidProperties::T_from_p_h(\n    Real pressure, Real enthalpy, Real & temperature, Real & dT_dp, Real & dT_dh) const\n{\n// this creates simple AD numbers with a 1 at a known index into the derivative array, for the dp_dp=1 here\n  FPDualReal p = pressure;\n  Moose::derivInsert(p.derivatives(), 0, 1.0);\n  FPDualReal h = enthalpy;\n  Moose::derivInsert(h.derivatives(), 1, 1.0);\n\n// this is the AD routine. AD suffix is not needed if you implement an AD version of the routine manually\n  const FPDualReal T = T_from_p_h_ad(p, h);\n\n  temperature = T.value();\n// we know the derivative indexing because we just set it above\n  dT_dp = T.derivatives()[0];\n  dT_dh = T.derivatives()[1];\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23606#discussioncomment-5207369",
+                          "updatedAt": "2023-03-05T14:34:15Z",
+                          "publishedAt": "2023-03-05T14:31:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A question about the RankFourTensor object initialization",
+          "author": {
+            "login": "TJT-post95"
+          },
+          "bodyText": "Hello\nIn my own app\u2019s header file, if I take the constructor with parameter to initiate the RankFourTensor object, like RankFourTensor C(RankFourTensorTempl<Real>::initIdentitySymmetricFour);, the compiling will not pass. But under the moose\u2019s header file, this declaration compiling could pass. So, is this a problem with C++ include headers?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/23583",
+          "updatedAt": "2023-04-29T03:46:02Z",
+          "publishedAt": "2023-03-02T16:54:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nPlease try this\nRankFourTensor C(RankFourTensor::initIdentitySymmetricFour)\nI think this is an issue with which header to include\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5181208",
+                  "updatedAt": "2023-03-02T16:58:17Z",
+                  "publishedAt": "2023-03-02T16:58:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Please post the corresponding error message.",
+                  "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5201356",
+                  "updatedAt": "2023-03-04T11:23:35Z",
+                  "publishedAt": "2023-03-04T11:23:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TJT-post95"
+                          },
+                          "bodyText": "I tried RankFourTensor _test(RankFourTensorTempl<Real>::initIdentityDeviatoric) and RankFourTensor _test(RankFourTensor::initIdentityDeviatoric), and they both could not work in my own app: error: RankFourTensorTempl<double>::initIdentityDeviatoric is not a type and error: RankFourTensor::initIdentityDeviatoric is not a type. I include the header file #include \"ComputeElasticityTensorBase.h\" to build a new child class about the elastic tensor.",
+                          "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5201509",
+                          "updatedAt": "2023-03-04T11:59:41Z",
+                          "publishedAt": "2023-03-04T11:59:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "#include \"RankFourTensor.h\"",
+                          "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5202253",
+                          "updatedAt": "2023-03-04T14:34:18Z",
+                          "publishedAt": "2023-03-04T14:34:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TJT-post95"
+                          },
+                          "bodyText": "I give it a try, but still don\u2019t work with the same error.\ud83d\ude02",
+                          "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5202361",
+                          "updatedAt": "2023-03-04T14:52:40Z",
+                          "publishedAt": "2023-03-04T14:52:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "I think its supposed to be RankFourTensor::IdentityDeviatoric()",
+                          "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5202838",
+                          "updatedAt": "2023-03-04T16:15:11Z",
+                          "publishedAt": "2023-03-04T16:15:10Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TJT-post95"
+                          },
+                          "bodyText": "Yep, static member function could be an alternative!",
+                          "url": "https://github.com/idaholab/moose/discussions/23583#discussioncomment-5205707",
+                          "updatedAt": "2023-03-05T07:32:20Z",
+                          "publishedAt": "2023-03-05T07:32:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Contact Modeling of Radom Particle Interactions",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "Are there any example problems of modeling random contact between multiple volumes in MOOSE?",
+          "url": "https://github.com/idaholab/moose/discussions/23605",
+          "updatedAt": "2023-04-29T03:46:05Z",
+          "publishedAt": "2023-03-04T16:46:58Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat do you mean by random contact?\nLike contact between surfaces that you dont predetermine to be in contact?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23605#discussioncomment-5205172",
+                  "updatedAt": "2023-03-05T04:18:21Z",
+                  "publishedAt": "2023-03-05T04:18:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Use GPU in moose",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "if i install moose with conda. how did i use GPU command\uff1f",
+          "url": "https://github.com/idaholab/moose/discussions/23608",
+          "updatedAt": "2023-04-29T03:39:19Z",
+          "publishedAt": "2023-03-05T03:26:21Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSee this thread\n#21152\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23608#discussioncomment-5205164",
+                  "updatedAt": "2023-03-05T04:16:53Z",
+                  "publishedAt": "2023-03-05T04:16:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Ray Tracing for Lens Design",
+          "author": {
+            "login": "mrplants"
+          },
+          "bodyText": "I'd like to use the ray tracing module to design a system of lenses. Is there a clever way to visualize the rays, themselves, so that I can iterate and focus my design.",
+          "url": "https://github.com/idaholab/moose/discussions/23602",
+          "updatedAt": "2023-03-04T16:37:05Z",
+          "publishedAt": "2023-03-04T12:50:48Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can output the rays to Exodus\nhttps://mooseframework.inl.gov/source/outputs/RayTracingExodus.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23602#discussioncomment-5202519",
+                  "updatedAt": "2023-03-04T15:17:17Z",
+                  "publishedAt": "2023-03-04T15:17:16Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mrplants"
+                          },
+                          "bodyText": "Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/23602#discussioncomment-5202969",
+                          "updatedAt": "2023-03-04T16:37:06Z",
+                          "publishedAt": "2023-03-04T16:37:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Does Weak Plane Stress setup work with Dynamic Tensor Mechanics?",
+          "author": {
+            "login": "chongxiyuan"
+          },
+          "bodyText": "Hi, I am trying to run 2d problems with plane stress setup. The example modules/tensor_mechanics/test/tests/plane_stress/weak_plane_stress_small.i works fine. But if I try to change the action to DynamicMaster, I get the error\n*** ERROR ***\nAttempting to set parameter \"out_of_plane_strain\" with type (std::vector<VariableName, std::allocator<VariableName> >)\nbut the parameter already exists as type (VariableName)\n\nThe input I am running is modifies from given example changing to DynamicMaster\n[GlobalParams]\n  order = FIRST\n  family = LAGRANGE\n  displacements = 'disp_x disp_y'\n  temperature = temp\n  #out_of_plane_strain = strain_zz\n[]\n\n[Mesh]\n  [./square]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 2\n    ny = 2\n  [../]\n[]\n\n[Variables]\n  [./disp_x]\n  [../]\n  [./disp_y]\n  [../]\n  [./strain_zz]\n  [../]\n[]\n\n[AuxVariables]\n  [./temp]\n  [../]\n  [./nl_strain_zz]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n\n[Postprocessors]\n  [./react_z]\n    type = MaterialTensorIntegral\n    rank_two_tensor = stress\n    index_i = 2\n    index_j = 2\n  [../]\n  [./min_strain_zz]\n    type = NodalExtremeValue\n    variable = strain_zz\n    value_type = min\n  [../]\n  [./max_strain_zz]\n    type = NodalExtremeValue\n    variable = strain_zz\n    value_type = max\n  [../]\n[]\n\n[Modules/TensorMechanics/DynamicMaster]\n  [plane_stress]\n    add_variables= true\n    planar_formulation = WEAK_PLANE_STRESS\n    strain = SMALL\n    generate_output = 'stress_xx stress_xy stress_yy stress_zz strain_xx strain_xy strain_yy'\n    eigenstrain_names = eigenstrain\n    out_of_plane_strain = strain_zz\n  []\n[]\n\n[AuxKernels]\n  [./tempfuncaux]\n    type = FunctionAux\n    variable = temp\n    function = tempfunc\n    use_displaced_mesh = false\n  [../]\n  [./strain_zz]\n    type = RankTwoAux\n    rank_two_tensor = total_strain\n    variable = nl_strain_zz\n    index_i = 2\n    index_j = 2\n  [../]\n[]\n\n[Functions]\n  [./pull]\n    type = PiecewiseLinear\n    x='0     1   100'\n    y='0  0.00  0.00'\n  [../]\n  [./tempfunc]\n    type = ParsedFunction\n    value = '(1 - x) * t'\n  [../]\n[]\n\n[BCs]\n  [./bottomx]\n    type = DirichletBC\n    boundary = 0\n    variable = disp_x\n    value = 0.0\n  [../]\n  [./bottomy]\n    type = DirichletBC\n    boundary = 0\n    variable = disp_y\n    value = 0.0\n  [../]\n[]\n\n[Materials]\n  [./elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    poissons_ratio = 0.3\n    youngs_modulus = 1e6\n  [../]\n  [./thermal_strain]\n    type = ComputeThermalExpansionEigenstrain\n    thermal_expansion_coeff = 0.02\n    stress_free_temperature = 0.5\n    eigenstrain_name = eigenstrain\n  [../]\n  [./stress]\n    type = ComputeLinearElasticStress\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = PJFNK\n  line_search = none\n\n# controls for linear iterations\n  l_max_its = 100\n  l_tol = 1e-06\n\n# controls for nonlinear iterations\n  nl_max_its = 15\n  nl_rel_tol = 1e-14\n  nl_abs_tol = 1e-12\n\n# time control\n  start_time = 0.0\n  dt = 1.0\n  dtmin = 1.0\n  end_time = 2.0\n[]\n\n[Outputs]\n  exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23469",
+          "updatedAt": "2023-03-06T02:49:51Z",
+          "publishedAt": "2023-02-17T17:46:35Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero @dschwen on dynamic tensor mechanics master action",
+                  "url": "https://github.com/idaholab/moose/discussions/23469#discussioncomment-5013067",
+                  "updatedAt": "2023-02-17T17:59:55Z",
+                  "publishedAt": "2023-02-17T17:59:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "reed-lfh"
+                  },
+                  "bodyText": "I just got the same issue. I am trying to switch to the static module. But it looks like the HHT parameter in inertia force does not work in this way.",
+                  "url": "https://github.com/idaholab/moose/discussions/23469#discussioncomment-5162867",
+                  "updatedAt": "2023-03-01T04:54:31Z",
+                  "publishedAt": "2023-03-01T04:54:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Weak plane stress does not work with HHT-alpha yet. Feel free to open an issue if there isn't one already.",
+                  "url": "https://github.com/idaholab/moose/discussions/23469#discussioncomment-5201374",
+                  "updatedAt": "2023-03-04T11:27:48Z",
+                  "publishedAt": "2023-03-04T11:27:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "To clarify, the capabilities are there, it's just the action that needs to be fixed.",
+                          "url": "https://github.com/idaholab/moose/discussions/23469#discussioncomment-5202282",
+                          "updatedAt": "2023-03-04T14:37:55Z",
+                          "publishedAt": "2023-03-04T14:37:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,864 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNi0yOVQxNjozMTowNi0wNjowMM4AUa23"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "restart simultations with adaptive mesh",
+          "author": {
+            "login": "lyyc199586"
+          },
+          "bodyText": "A general queation about restart/ recover: is it possible to restart a simulation with adaptive mesh?",
+          "url": "https://github.com/idaholab/moose/discussions/24890",
+          "updatedAt": "2023-07-03T16:24:49Z",
+          "publishedAt": "2023-07-03T16:19:15Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "Yes, it is.",
+                  "url": "https://github.com/idaholab/moose/discussions/24890#discussioncomment-6345732",
+                  "updatedAt": "2023-07-03T16:22:54Z",
+                  "publishedAt": "2023-07-03T16:22:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lyyc199586"
+                          },
+                          "bodyText": "Great! how to do that? do I have to specify the exodus file? (like exodus.e-s001)",
+                          "url": "https://github.com/idaholab/moose/discussions/24890#discussioncomment-6345744",
+                          "updatedAt": "2023-07-03T16:24:49Z",
+                          "publishedAt": "2023-07-03T16:24:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Gradual relaxation of dirichlet BCs",
+          "author": {
+            "login": "Edward-Eth"
+          },
+          "bodyText": "Hi, I am running a plastic simulation driven by a tip displacement, which due to the finite strain implementation, is applied gradually over a few time steps, which works nicely. At the end of the simulation I need to be able to release this BC, to example resultant permanent deformation, however, just as instantly applying the tip load leads to issues with the finite strain implementation, instantly releasing it also causes divergence on the final step.\nHow would I gradually release the load? This is not equivalent to gradually dropping the tip displacement to 0 which would be simple, but rather removing the enforcement in a way that doesn't resulting a shock change that destabilises the model\nThis is my current input:\n[Mesh]\n  [GenerateBeam]\n    type = GeneratedMeshGenerator\n    dim = 3\n    elem_type = HEX8\n    xmax = 500\n    ymax = 25\n    zmax = 25\n    nx = 100\n    ny = 5\n    nz = 5\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [disp_z]\n  []\n[]\n\n[AuxVariables]\n  [vonMises]\n    family = MONOMIAL\n    order = CONSTANT\n    [AuxKernel]\n      type = RankTwoScalarAux\n      rank_two_tensor = cauchy_stress\n      variable = vonmises\n      scalar_type = VonMisesStress\n      execute_on = timestep_end\n    []\n  []\n  [plasticStrain]\n    family = MONOMIAL\n    order = CONSTANT\n    [AuxKernel]\n      type = MaterialRealAux\n      property = effective_plastic_strain\n      variable = plasticStrain\n      execute_on = 'TIMESTEP_END'\n    []\n  []\n  [totalStrain]\n    family = MONOMIAL\n    order = CONSTANT\n    [AuxKernel]\n      type = RankTwoScalarAux\n      variable = totalStrain\n      scalar_type = L2norm\n      rank_two_tensor = total_strain\n      execute_on = 'TIMESTEP_END'\n    []\n  []\n[]\n\n[Kernels]\n  [sdx]\n    type = TotalLagrangianStressDivergence\n    variable = disp_x\n    component = 0\n  []\n  [sdy]\n    type = TotalLagrangianStressDivergence\n    variable = disp_y\n    component = 1\n  []\n  [sdz]\n    type = TotalLagrangianStressDivergence\n    variable = disp_z\n    component = 2\n  []\n[]\n\n[Materials]\n  [Elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 110000\n    shear_modulus = 42000\n  []\n  [flow_stress]\n    type = DerivativeParsedMaterial\n    f_name = flow_stress\n    function = '850+275*(effective_plastic_strain+0.0001)^0.21'\n    material_property_names = 'effective_plastic_strain'\n    additional_derivative_symbols = 'effective_plastic_strain'\n    derivative_order = 2\n    compute = false\n  []\n  [plasticStress]\n    type = ComputeSimoHughesJ2PlasticityStress\n    flow_stress_material = flow_stress\n  []\n  [Strain]\n    type = ComputeLagrangianStrain\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_z\n  []\n  [Tip_Displacement]\n    type = FunctionDirichletBC\n    boundary = 'right'\n    variable = disp_z\n    function = t*50\n    preset = false\n  []\n[]\n\n[Controls]\n  [TimePeriod]\n    type = TimePeriod\n    enable_objects = 'BCs::Tip_Displacement'\n    start_time = '0'\n    end_time = '1.0'\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  dt = 0.1\n\n  end_time = 1.1\n\n  automatic_scaling = true\n  solve_type = 'NEWTON'\n\n  nl_abs_tol = 5e-13\n  nl_rel_tol = 1e-08\n\n  line_search = none\n\n  petsc_options_iname = '-pc_type  -pc_hypre_type'\n  petsc_options_value = 'hypre   boomeramg'\n\n  [Predictor]\n    type = SimplePredictor\n    scale = 1\n  []\n\n[]\n\n[Postprocessors]\n  [Stress]\n    type = PointValue\n    point = '5 25 25'\n    variable = vonMises\n  []\n  [TotalStrain]\n    type = PointValue\n    point = '5 25 25'\n    variable = totalStrain\n  []\n  [PlasticStrain]\n    type = PointValue\n    point = '5 25 25'\n    variable = plasticStrain\n  []\n[]\n\n[Outputs]\n  [Exodus]\n    type = Exodus\n  []\n  [Performance]\n    type = PerfGraphOutput\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/22891",
+          "updatedAt": "2023-07-03T15:17:33Z",
+          "publishedAt": "2022-12-06T10:59:39Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Restart is what you need here. When you restart the simulation, replace the Dirichlet BC with a Neumann BC. The value of the Neumann BC will initially match the reaction force from the previous simulation on the boundary, then ramp down the Neumann BC over time.",
+                  "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-4322732",
+                  "updatedAt": "2022-12-06T12:37:35Z",
+                  "publishedAt": "2022-12-06T12:37:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "@hugary1995 how do you ensure the Neumann BC initially matches the reaction force?",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6282158",
+                          "updatedAt": "2023-06-26T13:15:17Z",
+                          "publishedAt": "2023-06-26T13:15:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "In the first simulation, you can tag the residual vector and output it to an auxvariable. In the second simulation, you can apply a NeumannBC whose values are coupled to the previously saved auxvariable.",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6282583",
+                          "updatedAt": "2023-06-26T13:54:22Z",
+                          "publishedAt": "2023-06-26T13:54:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "@hugary1995 thanks for the answer, please could you clarify what you mean by 'tag the residual vector'?",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6282655",
+                          "updatedAt": "2023-06-26T14:02:38Z",
+                          "publishedAt": "2023-06-26T14:02:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Sure. I was referring to the Tagging System (https://mooseframework.inl.gov/framework_development/tagging.html).\nDoFs associated with constraints (e.g. Dirichlet BCs) will have non-zero residual upon convergence. Such residual is the reaction force you want to apply in the restart simulation. You can \"tag\" a system vector which stores the residuals, and then use a TagVectorAux to output the tagged vector to auxvariables.\nTake a look at the example at modules/tensor_mechanics/test/tests/torque_reaction/torque_reaction.i.",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6282844",
+                          "updatedAt": "2023-06-26T14:19:37Z",
+                          "publishedAt": "2023-06-26T14:19:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "Thanks @hugary1995. I want to validate that I have setup the tagging correctly by comparing to the SidesetReaction postprocessor. Should I be able to integrate saved_x, for example, over the sideset to get the same value?",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6283597",
+                          "updatedAt": "2023-06-26T15:33:33Z",
+                          "publishedAt": "2023-06-26T15:33:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Yes, they should match. If not we should investigate.",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6283684",
+                          "updatedAt": "2023-06-26T15:43:03Z",
+                          "publishedAt": "2023-06-26T15:43:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "@hugary1995 Interestingly using the SideIntegralVariablePostprocessor to integrate over the sideset doesn't seem to quite give the same result. I have modified the test input file as bellow:\n# Scalar torque reaction\n\n# This test computes the sum of the torques acting on a ten element 2D bar mesh\n# and is intended to replicate the classical wrench problem from statics.\n# A displacement in the y along the right face is applied to the bar end to create\n# a shear force along the bar end. The rotation origin default (the global origin)\n# and the axis of rotation direction vector used to compute the torque reaction\n# is set to (0, 0, 1) out of the plane.\n# Torque is calculated for the two nodes on the left of the bar. For the bottom\n# node on the right, the torque/ moment lever is the x coordinate value, and for\n# the top node on the right the torque lever is the hypotenuse of the x and y\n# coordinates.  The expected sum of the torque reaction is just over 37.\n\n[GlobalParams]\n  order = FIRST\n  family = LAGRANGE\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 10\n  ny = 10\n  xmax = 1\n  ymax = 1\n[]\n\n[Problem]\n  extra_tag_vectors = 'ref'\n[]\n\n[AuxVariables]\n  [saved_x]\n  []\n  [saved_y]\n  []\n[]\n\n[AuxKernels]\n  [saved_x]\n    type = TagVectorAux\n    vector_tag = 'ref'\n    v = 'disp_x'\n    variable = 'saved_x'\n  []\n  [saved_y]\n    type = TagVectorAux\n    vector_tag = 'ref'\n    v = 'disp_y'\n    variable = 'saved_y'\n  []\n[]\n\n[Modules/TensorMechanics/Master]\n  [master]\n    strain = FINITE\n    generate_output = 'stress_xx stress_yy'\n    add_variables = true\n    extra_vector_tags = 'ref'\n  []\n[]\n\n[BCs]\n  [./left_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0\n  [../]\n  [./left_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = left\n    value = 0.0\n  [../]\n  [./right_shear_y]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = right\n    function = '0.001*t'\n  [../]\n[]\n\n[Materials]\n  [elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 207000\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  line_search = 'none'\n\n  l_max_its = 30\n  nl_max_its = 20\n  nl_abs_tol = 1e-12\n  nl_rel_tol = 1e-10\n  l_tol = 1e-8\n\n  start_time = 0.0\n  dt = 0.5\n\n  end_time = 1\n  num_steps = 2\n[]\n\n[Postprocessors]\n  [react_y]\n    type = SidesetReaction\n    direction = '0 1 0'\n    stress_tensor = stress\n    boundary = right\n  []\n  [tagged_calc]\n    type = SideIntegralVariablePostprocessor\n    variable = saved_y\n    boundary = right\n  []\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n[]\n\nThis gives an answer out by ~10x which is the number of elements in the y direction:\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | react_y        | tagged_calc    |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-01 |   1.589230e+01 |   1.588031e+00 |\n|   1.000000e+00 |   3.178462e+01 |   3.176061e+00 |\n+----------------+----------------+----------------+",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6290431",
+                          "updatedAt": "2023-06-27T08:09:00Z",
+                          "publishedAt": "2023-06-27T08:08:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Can you try NodalSum instead of SideIntegralVariablePostprocessor?",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6290447",
+                          "updatedAt": "2023-06-27T08:10:26Z",
+                          "publishedAt": "2023-06-27T08:10:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "Thanks, nodal sum gives approximately the same answer.\nPostprocessor Values:\n+----------------+----------------+----------------+\n| time           | react_y        | tagged_calc    |\n+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-01 |   1.589230e+01 |   1.605956e+01 |\n|   1.000000e+00 |   3.178462e+01 |   3.211911e+01 |\n+----------------+----------------+----------------+\n\nWhat causes this difference? I was under the impression from the docs that SidesetReaction was an integral not a sum.",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6290487",
+                          "updatedAt": "2023-06-27T08:14:54Z",
+                          "publishedAt": "2023-06-27T08:14:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "@hugary1995 apologies another question, if I use automatic scaling in my executioner the residuals are scaled and hence are different to the SidesetReaction post processor. Does this matter for coupling to a NeumannBC?",
+                          "url": "https://github.com/idaholab/moose/discussions/22891#discussioncomment-6291839",
+                          "updatedAt": "2023-06-27T10:04:58Z",
+                          "publishedAt": "2023-06-27T10:04:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A problem with 'ADSoretCoeffTest' in \"Misc\" Modules",
+          "author": {
+            "login": "sinaheidari22"
+          },
+          "bodyText": "Hello everyone,\nHappy new year to you,\nI was trying to run 'ad_thermo_diffusion.i'  input file which is available in this address: modules/misc/test/tests/kernels/thermo_diffusion/ad_thermo_diffusion.i\nI got this error:\n\n*** ERROR ***A 'ADSoretCoeffTest' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure thatthe library can be found either in your \"Problem/library_path\" parameter or in the MOOSE_LIBRARY_PATH environment variable.\n\n====================================================\nCan you please advise on that,\nThank you in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/16605",
+          "updatedAt": "2023-07-03T08:01:53Z",
+          "publishedAt": "2021-01-03T18:20:42Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nHappy New Year to you too!\nI think ADSoretCoeffTest is a test object, so a regular moose executable might not be linked to a library that contains it.\nWhich executable are you using to run this test? The one built in the misc folder?\nIf this material object is the one you need, you can just move the source code in modules/misc/test/src/materials/ADSoretCoeffTest.C to modules/misc/src/materials/ADSoretCoeffTest.C, same for the header. Then it will be compiled in the module.\nBest,\nGuillaume\nEDIT See logan's answer",
+                  "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-259134",
+                  "updatedAt": "2022-07-18T19:59:29Z",
+                  "publishedAt": "2021-01-04T00:45:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaheidari22"
+                          },
+                          "bodyText": "Thank you for your reply.",
+                          "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-260416",
+                          "updatedAt": "2022-07-18T19:59:38Z",
+                          "publishedAt": "2021-01-04T16:22:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "You can use an application\u2019s test objects by passing the --allow-test-objects command line flag when you call the executable.\nTest objects are meant to be used in testing only. If you wish to use them in a production environment, we recommend creating your own application and creating an object specific for your needs.",
+                  "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-260226",
+                  "updatedAt": "2022-07-18T19:59:38Z",
+                  "publishedAt": "2021-01-04T15:11:41Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaheidari22"
+                          },
+                          "bodyText": "Thank you for your reply, I did like that and had successful run.",
+                          "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-260424",
+                          "updatedAt": "2022-07-18T19:59:37Z",
+                          "publishedAt": "2021-01-04T16:24:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ZJYZXH"
+                          },
+                          "bodyText": "Hello, I have such a mistake in the program I created, how should I solve it?",
+                          "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-1699937",
+                          "updatedAt": "2022-07-18T19:59:37Z",
+                          "publishedAt": "2021-11-25T12:11:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Please create your own discussions post. And paste the error message there. If it s the same object missing, it s the same solution Logan wrote down here",
+                          "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-1700047",
+                          "updatedAt": "2022-07-18T19:59:38Z",
+                          "publishedAt": "2021-11-25T12:26:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "i cant understand \uff0cwhat should we do",
+                          "url": "https://github.com/idaholab/moose/discussions/16605#discussioncomment-6341519",
+                          "updatedAt": "2023-07-03T08:01:54Z",
+                          "publishedAt": "2023-07-03T08:01:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Not a registered object error",
+          "author": {
+            "login": "mohbarka"
+          },
+          "bodyText": "Good mooring Moose community,\nI am trying to create  a new  kernel for coupled  Moisture chloride diffusion in concrete and. when I run the  example  I get this error\n** ERROR ***\nA 'ConcreteMoistureTimeIntegration' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable\nCan anyone have any idea what could be wrong?  below show what I have  in both C ,and f files\nThank you!\nC file\n#include \"ConcreteMoistureTimeIntegration.h\"\n#include \"Material.h\"\nregisterMooseObject(\"MooseTestApp\", ConcreteMoistureTimeIntegration);\ntemplate <>\nInputParameters\nvalidParams()\n{\nInputParameters params = validParams();\nreturn params;\n}\nh file\n#pragma once\n#include \"TimeDerivative.h\"\n// Forward Declaration\nclass ConcreteMoistureTimeIntegration;\ntemplate <>\nInputParameters validParams();",
+          "url": "https://github.com/idaholab/moose/discussions/16921",
+          "updatedAt": "2023-07-03T07:14:14Z",
+          "publishedAt": "2021-02-08T17:12:51Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "You are registering to \"MooseTestApp\", but you should be registering it to the application you created.\nhttps://mooseframework.inl.gov/getting_started/new_users.html",
+                  "url": "https://github.com/idaholab/moose/discussions/16921#discussioncomment-355557",
+                  "updatedAt": "2022-07-01T23:16:35Z",
+                  "publishedAt": "2021-02-10T06:51:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "cant understand u say\uff0cwhat should we do",
+                          "url": "https://github.com/idaholab/moose/discussions/16921#discussioncomment-6341150",
+                          "updatedAt": "2023-07-03T07:14:31Z",
+                          "publishedAt": "2023-07-03T07:14:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Restart with deformed and pre-stressed body",
+          "author": {
+            "login": "feltner515"
+          },
+          "bodyText": "Hi Moose forum!\nI am having issues with utilizing restart in the context of the tensor mechanics module of moose. Basically, my goal is to begin with a simulation where an elastic indenter is driven into an elasto-plastic substrate. This works no problem. The state of the substrate at the end of simulation 1 should be the initial condition in simulation 2, where the original indenter is deleted and replaced with another indenter at a different position and of a different size. I can project the stress, strain, and displacement information from simulation 1 onto simulation 2 by using auxvariables and variables respectively, but as soon as the simulation begins, the substrate reverts to a stress free state, but remains displaced. I think that I am missing some initialization within either the tensor mechanics master kernel or the plasticity auxkernels, but am having trouble finding where the issue is. Any help would be greatly appreciated!\nTwoDIndenter.zip\nThank you\nLangdon",
+          "url": "https://github.com/idaholab/moose/discussions/24760",
+          "updatedAt": "2023-07-03T03:28:29Z",
+          "publishedAt": "2023-06-21T15:58:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Hi Langdon, elastoplasticity has history dependent internal variables such as the plastic strain. If you don't initialize the plastic strain in the second simulation properly, the substrate will become elastic and reverts to a (nearly) stress free state.",
+                  "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266215",
+                  "updatedAt": "2023-06-23T21:27:52Z",
+                  "publishedAt": "2023-06-23T21:27:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "Hello and thank you for your response! Within the tensor mechanics master kernel, are the elastic and plastic strain stored as separate auxiliary variables that I can make sure are written to the exodus file? I couldn't find in the documentation a convenient way to initialize those as separate entities.",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266407",
+                          "updatedAt": "2023-06-23T22:04:03Z",
+                          "publishedAt": "2023-06-23T22:04:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThey are not written to the exodus file, which is why you need to use the Checkpoint restart instead of the exodus one\nUse checkpoint = true in [Outputs]\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266468",
+                          "updatedAt": "2023-06-23T22:20:41Z",
+                          "publishedAt": "2023-06-23T22:20:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "Got it, but is there a way I can make the checkpoint work with changing the size and location of the indenter from simulation-to-simulation? My understanding is that the checkpoint restart does not play with changing the mesh. I suppose I can re-break the mesh into blocks and rescale the mesh of the indenter and translate it at each time-step. Do you think this is the easiest course of action?",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266488",
+                          "updatedAt": "2023-06-23T22:24:33Z",
+                          "publishedAt": "2023-06-23T22:24:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no not currently. Checkpoint cannot be used if the mesh is changed.\nYou will have to try to restart in the same mesh, then modify the mesh",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266513",
+                          "updatedAt": "2023-06-23T22:32:48Z",
+                          "publishedAt": "2023-06-23T22:32:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "Got it, thank you very much for your time!",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266544",
+                          "updatedAt": "2023-06-23T22:41:32Z",
+                          "publishedAt": "2023-06-23T22:41:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Yeah, that's why I didn't mention checkpoint at first... I think you are in the right direction. My suggestion for you is to save all history dependent data as auxvariables, and then restart the simulation (with a different indenter location) and manually reinitialize those data from the auxvariables.\nTo output properties into exodus, add \"outputs = exodus\" in every material object. It sounds like you already know how to read those variables back in in the subsequent simulation. The final challenge is to modify the source code to \"reinitialize\" the data. The method you need to modify is called initQpStatefulProperties.",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266581",
+                          "updatedAt": "2023-06-23T22:51:18Z",
+                          "publishedAt": "2023-06-23T22:51:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "Understood. So is the goal of editing initQpStatefulProperties to make sure that the auxvariables I initialize are properly recognized by the kernel as the initial conditions for the computation?",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266644",
+                          "updatedAt": "2023-06-23T23:10:33Z",
+                          "publishedAt": "2023-06-23T23:10:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "ya, you'll want to\n\ncouple the appropriate auxvariables to the material object and\ninitialize the values of the history dependent material property using the values of the auxvariables (which are reloaded from the previous simulation).\n\nThere may be quite many properties to initialize this way, now that I think more about it...\nNow, let's change the topic entirely. There is indeed a way that checkpoint-restart may work for you. The trick is to modify the mesh at run time (that's actually what @GiudGiud was suggesting -- now I understand). So in theory you should be able to\n\nCreate a mesh that has the substrate + the first indenter + the second indenter\nIn the first simulation, activate the first indenter and deactivate the second indenter.\nIn the second simulation, start from the latest checkpoint, deactivate the first indenter and activate the second indenter.\n\nThe way to \"activate/deactivate\" an indenter (or in other words, part of the mesh) at run time is using the element subdomain modifiers. There is one object called CoupledVarThresholdElementSubdomainModifer that you can play with.",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266722",
+                          "updatedAt": "2023-06-23T23:32:22Z",
+                          "publishedAt": "2023-06-23T23:32:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I am very interested to learn whether this element subdomain modifier works for you -- keep me posted. Once it works, I'd like to add an animation to our homepage gallery if you okay with sharing.",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266733",
+                          "updatedAt": "2023-06-23T23:35:41Z",
+                          "publishedAt": "2023-06-23T23:35:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "That sounds like the way to go! I will do some reading up on that object and try it out. Thank you for all of your help gentlemen!",
+                          "url": "https://github.com/idaholab/moose/discussions/24760#discussioncomment-6266736",
+                          "updatedAt": "2023-06-23T23:36:41Z",
+                          "publishedAt": "2023-06-23T23:36:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to obtain material properties from three time steps ago?",
+          "author": {
+            "login": "tttsss-01"
+          },
+          "bodyText": "getMaterialPropertyOld and getMaterialPropertyOlder can retrieve material properties from the previous one and two time steps, respectively. How can I obtain material properties from three time steps ago or even earlier?",
+          "url": "https://github.com/idaholab/moose/discussions/24884",
+          "updatedAt": "2023-07-06T04:11:51Z",
+          "publishedAt": "2023-07-02T02:19:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI m afraid we dont have that one!\nYou could hack it though.\nUse a material property which's sole job is to store the old property of another material property.\nThen older for that one gives you the 3x old of the one you care about.\n@lindsayad for awareness\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24884#discussioncomment-6339056",
+                  "updatedAt": "2023-07-02T23:44:28Z",
+                  "publishedAt": "2023-07-02T23:44:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "We can actually do this with #24673 (merged) and a small change to what the max state allowed is (currently \"older\"))\nWhat is the use case here? Why do you need such old properties?",
+                  "url": "https://github.com/idaholab/moose/discussions/24884#discussioncomment-6339947",
+                  "updatedAt": "2023-07-03T03:26:03Z",
+                  "publishedAt": "2023-07-03T03:26:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about ADPenaltyConstraint",
+          "author": {
+            "login": "TheGreatCid"
+          },
+          "bodyText": "Hi all,\nI am trying to fix an issue I am having with the ADPenaltyConstraint type. I generated an MWE to display the issue.\nI generate two square meshes, which are then combined using CombinerGenerator. I apply a displacement BC to the top of one of the meshes and fix the bottom of the other. The meshes are held together by two ADPenaltyConstaint blocks. One for the x displacement and one for the y displacement. The Y displacement seems to hold fine between the two, but the x direction seems to be fixed between the domains, as pictured below. The middle of the sample should contract due to the Poisson effect, but that is not what I am seeing.\n\nHere is the input file\nE = 207e3\n\npenalty = 1e8\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n[Mesh] \n  [bot]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 4\n    ny = 4\n    xmax = 1\n    ymax = 1\n  []\n  [block_bot]\n    type = RenameBlockGenerator\n    input = bot\n    old_block = 0\n    new_block = 'bot_block'\n  []\n  [rename_bot]\n    type = RenameBoundaryGenerator\n    input = block_bot\n    old_boundary = 'top'\n    new_boundary = 'bot_top'\n  []\n  [mid]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 4\n    ny = 4\n    ymin = 1\n    xmax = 1\n    ymax = 2\n    boundary_id_offset = 10\n  []\n  [rename_mid]\n    type = RenameBoundaryGenerator\n    input = mid\n    old_boundary = 'bottom'\n    new_boundary = 'mid_bottom'\n  []\n  [combine]\n    type = CombinerGenerator\n    inputs = 'rename_bot rename_mid'\n  []\n  [secondary]\n    type = LowerDBlockFromSidesetGenerator\n    input = combine\n    sidesets = 'mid_bottom'\n    new_block_id = 102\n    new_block_name = \"secondary\"\n  []\n  [primary]\n    type = LowerDBlockFromSidesetGenerator\n    input = secondary\n    sidesets = 'bot_top'\n    new_block_id = 103\n    new_block_name = \"primary\"\n  []\n[]\n[Constraints]\n  [mortar_x1]\n    type = ADPenaltyEqualValueConstraint\n    secondary_boundary = 'mid_bottom'\n    primary_boundary = 'bot_top'\n    primary_subdomain = 'primary'\n    secondary_subdomain = 'secondary'\n    secondary_variable = disp_x\n    penalty_value = ${penalty}\n    use_displaced_mesh = True\n  []\n  [mortar_y1]\n    type = ADPenaltyEqualValueConstraint\n    secondary_boundary = 'mid_bottom'\n    primary_boundary = 'bot_top'\n    primary_subdomain = 'primary'\n    secondary_subdomain = 'secondary'\n    secondary_variable = disp_y\n    penalty_value = ${penalty}\n    use_displaced_mesh = True\n  []\n[]\n\n[BCs]\n  [fix_bot]\n    type = ADDirichletBC\n    variable = disp_y\n    value = 0\n    boundary = bottom\n    preset = false\n  []\n  [fix_left]\n    type = ADDirichletBC\n    variable = disp_x\n    value = 0\n    boundary = bottom\n    preset = false\n  []\n  [func]\n    type = ADFunctionDirichletBC\n    variable = disp_y\n    boundary = top\n    function = '0.1*t'\n    preset = false\n  []\n[]\n[Modules/TensorMechanics/DynamicMaster]\n  [all]\n    add_variables = true\n    strain = SMALL\n    incremental = true\n    generate_output = 'stress_yy stress_xx stress_xy stress_yz'\n    use_automatic_differentiation = true\n    decomposition_method = EigenSolution\n    density = 7000\n  []\n[]\n\n[Materials]\n\n  [elasticity_tensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = ${E}\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ADComputeLinearElasticStress\n  []\n[]\n[Executioner]\n  type = Transient\n  end_time = 3000\n  line_search = none\n  solve_type = NEWTON\n  dtmin = 1e-20\n  nl_max_its = 25\n  nl_rel_tol = 1e-15\n  nl_abs_tol = 1e-10\n\n  [TimeStepper]\n    type = ConstantDT\n    dt = 0.1\n  []\n  [TimeIntegrator]\n    type = NewmarkBeta\n  []\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  automatic_scaling = true\n\n[]\n[Outputs]\n  print_linear_residuals = false\n  exodus = true\n  interval = 1\n[]\n\nAny insight would be much appreciated. Thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/24860",
+          "updatedAt": "2023-06-30T12:33:30Z",
+          "publishedAt": "2023-06-29T13:29:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero",
+                  "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6316233",
+                  "updatedAt": "2023-06-29T14:47:10Z",
+                  "publishedAt": "2023-06-29T14:47:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "It seems you are using those constraints in a dynamic setting. I don't believe we have tested (thought about) that particular application. Two recommendations:\n\nRun the same problem without dynamics and assess the behavior you describe\nMake sure your sidesets are properly named. I was trying to check your results and got that sideset 3 and 13 have the same name 'left' in Paraview.",
+                  "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6319532",
+                  "updatedAt": "2023-06-29T21:35:13Z",
+                  "publishedAt": "2023-06-29T21:35:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "I modified the input file to exclude inertia effects as well as ensure all sidesets are unique, however, I still see the same behavior.\nIt seems like the way the mortar constraint is enforced does not allow the mortar boundaries to contract.\nE = 207e3\n\npenalty = 1e8\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n[Mesh]\n  [bot]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 4\n    ny = 4\n    xmax = 1\n    ymax = 1\n  []\n  [block_bot]\n    type = RenameBlockGenerator\n    input = bot\n    old_block = 0\n    new_block = 'bot_block'\n  []\n  [rename_bot]\n    type = RenameBoundaryGenerator\n    input = block_bot\n    old_boundary = 'top'\n    new_boundary = 'bot_top'\n  []\n  [mid]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 4\n    ny = 4\n    ymin = 1\n    xmax = 1\n    ymax = 2\n    boundary_id_offset = 10\n  []\n  [rename_mid]\n    type = RenameBoundaryGenerator\n    input = mid\n    old_boundary = 'bottom left right top'\n    new_boundary = 'mid_bottom left_mid right_mid top_mid'\n  []\n  [combine]\n    type = CombinerGenerator\n    inputs = 'rename_bot rename_mid'\n  []\n  [secondary]\n    type = LowerDBlockFromSidesetGenerator\n    input = combine\n    sidesets = 'mid_bottom'\n    new_block_id = 102\n    new_block_name = \"secondary\"\n  []\n  [primary]\n    type = LowerDBlockFromSidesetGenerator\n    input = secondary\n    sidesets = 'bot_top'\n    new_block_id = 103\n    new_block_name = \"primary\"\n  []\n[]\n[Constraints]\n  [mortar_x1]\n    type = ADPenaltyEqualValueConstraint\n    secondary_boundary = 'mid_bottom'\n    primary_boundary = 'bot_top'\n    primary_subdomain = 'primary'\n    secondary_subdomain = 'secondary'\n    secondary_variable = disp_x\n    penalty_value = ${penalty}\n    use_displaced_mesh = True\n  []\n  [mortar_y1]\n    type = ADPenaltyEqualValueConstraint\n    secondary_boundary = 'mid_bottom'\n    primary_boundary = 'bot_top'\n    primary_subdomain = 'primary'\n    secondary_subdomain = 'secondary'\n    secondary_variable = disp_y\n    penalty_value = ${penalty}\n    use_displaced_mesh = True\n  []\n[]\n\n[BCs]\n  [fix_bot]\n    type = ADDirichletBC\n    variable = disp_y\n    value = 0\n    boundary = bottom\n    preset = false\n  []\n  [fix_left]\n    type = ADDirichletBC\n    variable = disp_x\n    value = 0\n    boundary = bottom\n    preset = false\n  []\n  [func]\n    type = ADFunctionDirichletBC\n    variable = disp_y\n    boundary = top_mid\n    function = '0.1*t'\n    preset = false\n  []\n[]\n[Modules/TensorMechanics/Master]\n  [all]\n    add_variables = true\n    strain = SMALL\n    incremental = true\n    generate_output = 'stress_yy stress_xx stress_xy stress_yz'\n    use_automatic_differentiation = true\n    decomposition_method = EigenSolution\n    #density = 7000\n  []\n[]\n\n[Materials]\n\n  [elasticity_tensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = ${E}\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ADComputeLinearElasticStress\n  []\n[]\n[Executioner]\n  type = Transient\n  end_time = 3000\n  line_search = none\n  solve_type = NEWTON\n  dtmin = 1e-20\n  nl_max_its = 25\n  nl_rel_tol = 1e-15\n  nl_abs_tol = 1e-10\n\n  [TimeStepper]\n    type = ConstantDT\n    dt = 0.1\n  []\n  [TimeIntegrator]\n    type = NewmarkBeta\n  []\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  automatic_scaling = true\n\n[]\n[Outputs]\n  file_base = '/home/det12/projects/DavidRac/localexodus/torsion/moosephysics'\n  print_linear_residuals = false\n  exodus = true\n  interval = 1\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6319638",
+                          "updatedAt": "2023-06-29T21:56:22Z",
+                          "publishedAt": "2023-06-29T21:56:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "You need to block restrict your physics (and remove your TimeIntegrator from the executioner to be consistent)\ngreat_cid.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6320802",
+                          "updatedAt": "2023-06-30T02:02:27Z",
+                          "publishedAt": "2023-06-30T02:02:25Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "The block restricted physics fixed it for me. Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6325531",
+                          "updatedAt": "2023-06-30T12:33:02Z",
+                          "publishedAt": "2023-06-30T12:33:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Also, it seems to hold up fine after I added dynamics back in",
+                          "url": "https://github.com/idaholab/moose/discussions/24860#discussioncomment-6325534",
+                          "updatedAt": "2023-06-30T12:33:31Z",
+                          "publishedAt": "2023-06-30T12:33:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "CSV file",
+          "author": {
+            "login": "nourriahi"
+          },
+          "bodyText": "Hello everyone,\nI am trying to use lineValuesampler to get a csv file for 80 timesteps between 0s and 3e-3s, I couldn't manage to get this, I am only obtaining for the first timestep.\n[VectorPostprocessors]                                  \n  [t_sampler]\n    type = LineValueSampler\n    variable = temperature\n    start_point = '500 500 0'\n    end_point = '500 500 100'\n    num_points = 80\n    sort_by = z\n  []\n[]\n\n[Outputs]\n  exodus = true\n\n  [csv]\n    type = CSV                                                          \n    file_base = excel/additive_manufacturing_temperature_profile_output_100w\n    start_time = 0.0\n    end_time = 3e-3\n    interval = 80\n  []\n[]\n\nThanks,",
+          "url": "https://github.com/idaholab/moose/discussions/24836",
+          "updatedAt": "2023-06-30T12:28:30Z",
+          "publishedAt": "2023-06-27T18:27:35Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Interval = 80 does not do what you think.\nIt triggers output every 80 time steps, not 80 times within the start/end time window",
+                  "url": "https://github.com/idaholab/moose/discussions/24836#discussioncomment-6297254",
+                  "updatedAt": "2023-06-27T19:06:38Z",
+                  "publishedAt": "2023-06-27T19:06:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "nourriahi"
+                  },
+                  "bodyText": "Hello,\nI took your suggestions into consideration and I made the required changes, but I am still having one csv file with only one timestep (final\nI guess), ideally I want to have a csv file with various times (interval=2)\n[Outputs]\nexodus = true\n[csv]\ntype = CSV                                                          # Extraction of data in the form of a CSV FILE\nfile_base = excel/additive_manufacturing_temperature_profile_output_100w\nstart_time = 0.0\nend_time = 3e-3\ninterval = 2\nexecute_on = final\n[]\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/24836#discussioncomment-6324603",
+                  "updatedAt": "2023-06-30T10:35:07Z",
+                  "publishedAt": "2023-06-30T10:35:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is because you are using an execute_on of FINAl. This only executes once, at the end of the simulation\nYou want to use an execute on of tomestep end",
+                          "url": "https://github.com/idaholab/moose/discussions/24836#discussioncomment-6325502",
+                          "updatedAt": "2023-06-30T12:28:31Z",
+                          "publishedAt": "2023-06-30T12:28:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Any solutions for better convergence in sharp feature?",
+          "author": {
+            "login": "bosxered"
+          },
+          "bodyText": "Hello, Moose Experts.\nI am suffering from a bad convergence situation.\nIn my opinion, It is because of the sharp feature of temperature(T) in my system.\nThe temperature profile in my system changes quite steeply.\n\nIt stopped with aborting at step 61 by cutting timestep to 1e-13 (sec) but in step 60, dt was 1e-3 (sec).\nOn the 'top' and 'bottom', Dirichlet boundary conditions, T=300K is applied.\nFor your information, I've attached the input file below.\n########## Global Parameters ########## \nxmax = 20\nymax = 5\n\nNmax = 1.0\n######################################\n\n\n\n[Mesh]\n  [./gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 40\n    ny = 20\n    nz = 0\n    xmin = 0\n    xmax = ${xmax}\n    ymin = 0\n    ymax = ${ymax}\n    zmin = 0\n    zmax = 0\n    elem_type = QUAD8\n\n  []\n\n[]\n\n[Functions]\n  [./bc_func]\n    type = PiecewiseLinear\n    data_file = './vsweep.csv'\n    format = columns\n    scale_factor = 1.0\n  [../]\n[]\n\n[Variables]\n  [./N]\n    order = FIRST\n    family = LAGRANGE\n    #block = 2\n  [../]\n\n  [./V]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 0.0\n  [../]\n\n  [./T]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 300.0\n  [../]\n[]\n\n[ICs]\n  [./N_IC]\n    type = MultiBoundingBoxIC\n    corners = '0.0 0.0 0   '\n    opposite_corners = '5.0 5.0 0'\n    inside = '${Nmax}'\n    outside = 0.0\n    variable = N\n    #block = 2\n  [../]\n[]\n\n[BCs]\n  [V_top]\n    type = FunctionDirichletBC\n    variable = V\n    function = bc_func # GND\n    boundary = 'top'\n  []\n\n  [V_bot]\n    type = DirichletBC\n    variable = V\n    value = 0.0\n    boundary = 'bottom'\n  []\n\n  [./T_top]\n    type = DirichletBC\n    boundary = top\n    variable = T\n    value = 300 #in K\n  [../]\n\n  [./T_bot]\n    type = DirichletBC\n    boundary = bottom\n    variable = T\n    value = 300 #in K\n  [../]\n[]\n\n[Kernels]\n\n  ########### Phase-field ############\n\n  [./Matdiff_D_del2_N]\n    type = MatDiffusion\n    variable = N\n    diffusivity = Diff_coeff\n    #block = 2\n  [../]\n\n\n  [./Nernst]\n    type = NernstElec\n    variable = N\n    elec = V\n    eDkT = eDkT\n    #block = 2\n  [../]\n\n\n  [./PFM_time]\n    type = TimeDerivative\n    variable = N\n    #block = 2 \n  [../]\n\n  ########## Phase-field END ##########\n\n  ########## Electrical ###############\n\n  [./Matdiff_sig_del2_V]\n    type = MatDiffusion\n    variable = V\n    diffusivity = 'electrical_conductivity'\n  [../]\n\n  ########## Electrical END ###########\n\n  ###### Heat ######\n\n  [./HeatDiff]\n    type = HeatConduction\n    variable = T\n  [../]\n\n  [./HeatSrc]\n    type = JouleHeatingSource\n    variable = T\n    elec = V\n  [../]\n\n  ##################\n[]\n\n\n\n\n\n[Materials]\n  [./Diff_coeff]\n    type = ParsedMaterial\n    property_name  = Diff_coeff\n    coupled_variables = 'T'\n    constant_names       = 'D0     E_A_D    kB        ' #[nm^2/s]  [eV/K]  [K]\n    constant_expressions = '2e+11  1.0      8.617e-5'\n    expression = 'D0*exp(-E_A_D/(kB*T))' #[nm^2/s]\n    outputs = exodus\n    #block = 2\n  [../]\n\n  [./eDkT]\n    type = ParsedMaterial\n    property_name = eDkT\n    coupled_variables = 'T'\n    constant_names       = 'kB       ' #[V/K]\n    constant_expressions = '8.617e-5'\n    material_property_names = 'Diff_coeff'\n    expression = 'Diff_coeff/(kB*T)' #[nm^2/(s*V)]\n    outputs = exodus\n    #block = 2\n  [../]\n\n  [./electrical_conductivity_INS]\n    type = ParsedMaterial\n    coupled_variables = 'N E_AC_elec T'\n    property_name = 'electrical_conductivity'\n    constant_names =        'sig_H    sig_L     kB'       \n    constant_expressions =  '1.0e-7   9.4e-5  8.617e-5' #[1/(ohm*nm)] [1/(ohm*nm)] [eV/K]\n#    material_property_names = 'h'\n#    function = '(1/cm_2_nm) * if(eta <= 0.5-w/2,Crys,if(eta<0.5+w/2, Amor + 0.5*(Crys+Amor)*(1.0+cos(pi*(eta-0.5+w/2)/w)),Amor))'  # [1/(ohm*nm)]\n#    function = 'if(c <= 0.5-w/2, sig_H, if(c > 0.5+w/2, sig_L, sig_H + 0.5 * (sig_L-sig_H) * (1 - cos(pi/w * (c-0.5+w/2)))))'\n#    expression = 'sig_H*(1-h)+sig_L*h'\n    expression = 'if(N<0, sig_H*exp(-E_AC_elec/(kB*T)), if(N>${Nmax}, sig_L*exp(-E_AC_elec/(kB*T)),((sig_L-sig_H)/${Nmax}*N+sig_H)*exp(-E_AC_elec/(kB*T))))'\n#    expression = 'if(N<0, sig_H*exp(-E_AC_elec/(kB*T)), ((sig_L-sig_H)/1.2*N+sig_H)*exp(-E_AC_elec/(kB*T)))'\n    outputs = exodus\n    #block = 2\n#    tol_names = 'N'\n#    tol_values = '0.01'\n  [../]\n\n\n  ####### Heat #######\n  [./k_INS]\n    type = ParsedMaterial\n    property_name = 'thermal_conductivity'\n    coupled_variables = 'N'\n    constant_names =        'k_H      k_L'\n    constant_expressions =  '0.12e-9  57.5e-9'\n    expression = 'if(N<0, k_H, if(N>${Nmax}, k_L, (k_L-k_H)/${Nmax}*N+k_H))'    # W/(nm K)\n#    expression = 'if(N<0, k_H, (k_L-k_H)/1.2*N+k_H)'    # W/(nm K)\n    outputs = exodus\n    #block = 2\n  [../]\n\n  ####################\n\n[]\n\n[AuxVariables]\n\n  ########## Electric ##########\n  [Ex]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n\n  [Ey]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n\n  [J]\n    family = NEDELEC_ONE\n    order = FIRST\n  []\n\n  [Jy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n\n  [E_AC_elec]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n\n  [Jy_times_x]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n\n  ######## Electric END ########\n\n[]\n\n\n[AuxKernels]\n  ########## Electric ##########\n  [Ex_aux]\n    type = PotentialToFieldAux\n    variable = Ex\n    gradient_variable = V\n    sign = negative\n    component = x\n  []\n\n  [Ey_aux]\n    type = PotentialToFieldAux\n    variable = Ey\n    gradient_variable = V\n    sign = negative\n    component = y\n  []\n\n  [current_density]\n    type = CurrentDensity\n    variable = J\n    potential = V\n  []\n\n  [Jy]\n    type = VectorVariableComponentAux\n    variable = Jy\n    vector_variable = J\n    component = y\n  []\n\n  [E_AC_elec_aux]\n    type = ParsedAux\n    variable = E_AC_elec\n    coupled_variables = 'N'\n    constant_names = 'Nth  E_AC'\n    constant_expressions = '0.5  0.05' #[nm^-3] [eV]\n    expression = 'if(N>Nth, -0.006, if(N<0, E_AC, -E_AC/Nth*N + E_AC))'\n    execute_on = 'initial linear timestep_end'\n    #block = 2\n  []\n\n  [Jy_times_x]\n    type = ParsedAux\n    variable = Jy_times_x\n    coupled_variables = 'Jy'\n    use_xyzt = true\n    expression = 'Jy*x'\n#    boundary = 'BE_top'\n    boundary = bottom\n  []\n\n  ######## Electric END ########\n[]\n\n[Postprocessors]\n\n  ######## Electric #######\n\n  [average_V]\n    type = SideAverageValue\n    variable = V\n    boundary = 'top'\n  []\n\n  [average_Jy]\n    type = SideAverageValue\n    variable = Jy\n#    boundary = 'BE_top'\n    boundary = bottom\n  []\n\n  [Int_Jy_x_dx]\n    type = SideIntegralVariablePostprocessor\n#    boundary = 'BE_top'\n\n    boundary = bottom\n    variable = Jy_times_x\n  []\n\n  [Current]\n    type = ParsedPostprocessor\n    constant_names = 'pi'\n    constant_expressions = '3.14'\n    function = \"if(Int_Jy_x_dx>0,Int_Jy_x_dx*2*pi,-Int_Jy_x_dx*2*pi)\" \n    pp_names = Int_Jy_x_dx\n  []\n\n\n  ######## Electric END #######\n\n  [Timestepsize]\n    type = TimestepSize\n  []\n\n  [Max_T]\n    type = NodalExtremeValue\n    variable = T\n  []\n    \n    \n\n[]\n\n[Debug]\n  show_var_residual_norms = true\n[]\n\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  scheme = bdf2\n  solve_type = 'PJFNK'\n\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre      boomeramg'\n\n  l_max_its = 50\n  nl_max_its = 50\n\n  l_tol = 1.0e-4\n  nl_rel_tol = 1.0e-8\n  nl_abs_tol = 1e-8\n\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    growth_factor = 1.5\n    cutback_factor = 0.5\n    optimal_iterations = 5\n    dt = 1e-4\n  [../]\n  \n#  [./Adaptivity]\n#    interval = 2\n#    refine_fraction = 0.2\n#    coarsen_fraction = 0.3\n#    max_h_level = 3\n#  [../]\n\n\n  dtmin = 1e-13\n  dtmax = 1.0e-2\n\n  start_time = 0.0\n  end_time = 0.7\n\n  automatic_scaling = true\n  compute_scaling_once = false\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  file_base = output\n\n  [myexo]\n    type = Exodus\n    file_base = half\n    interval = 2\n#    start_step = 4340 \n  []\n\n  [mymycp]\n    type = Checkpoint\n    num_files = 10\n    interval = 50\n    file_base = mycp\n  []\n[]\n\nI tried more fine mesh (also applying adaptivity) to solve this problem but it doesn't work.\nCould you guys recommend for the convergence?\nThank you.\nBest wishes,\nJeonghwan.",
+          "url": "https://github.com/idaholab/moose/discussions/24835",
+          "updatedAt": "2023-06-30T07:35:33Z",
+          "publishedAt": "2023-06-27T17:54:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nShould there be boundary conditions on N?\nShould the solution be symmetric along the X axis?\nDo the solutions for V and N look reasonable?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24835#discussioncomment-6298430",
+                  "updatedAt": "2023-06-27T22:03:28Z",
+                  "publishedAt": "2023-06-27T22:02:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There's a general page for troubleshooting here\nhttps://mooseframework.inl.gov/help/troubleshooting.html",
+                          "url": "https://github.com/idaholab/moose/discussions/24835#discussioncomment-6298438",
+                          "updatedAt": "2023-06-27T22:03:53Z",
+                          "publishedAt": "2023-06-27T22:03:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bosxered"
+                          },
+                          "bodyText": "Hello\n\nfor N, the Neumann boundary condition ((del)N = 0) is considered so that I have not imposed additional BC because, as far as I know, the default BC in the MOOSE is Neumann boundary condition ((del)u = 0).\nDo You mean the X-axis? No. I applied BC for V on top, time-varying voltage (Dirichlet Boundary Condition), and on the bottom, 0 (DBC). so that there cannot be symmetry along the X-axis. Maybe there can be Y-axis symmetry. To be clear, I assumed cylindrical symmetry but I haven't used coord_type = RZ because I thought XY coordinate system is enough. Can coord_type = RZ attribute to better convergence?\nYes. For other parameters and system length, I compared the results with one from publicated paper and they look quite similar. Here is the comparison. The first row is from the paper and the second row is my simulation results.\n\n\nAlso, in this simulation, there was a bad convergence situation, too, beyond 1.1V due to (maybe) high temperature and steeply changed temperature(T).",
+                          "url": "https://github.com/idaholab/moose/discussions/24835#discussioncomment-6301910",
+                          "updatedAt": "2023-06-28T08:08:32Z",
+                          "publishedAt": "2023-06-28T08:08:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "1 OK\n2: if you want to simulate a cylindrical geometry, coord_type is a must.\nHowever, if you are wanting to just try XY, and solve a XY problem instead of a cylindrical one, then you can do that without the coord_type\nyou could remove compute_scaling_once = false. This could be computing bad scaling factors on a time step, causing it to fail\nThe trends are close for the results but the values for V and T seem different, especially the extrema? Or is this a plotting artefact?",
+                          "url": "https://github.com/idaholab/moose/discussions/24835#discussioncomment-6305054",
+                          "updatedAt": "2023-06-29T03:35:39Z",
+                          "publishedAt": "2023-06-28T13:34:53Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bosxered"
+                          },
+                          "bodyText": "The results may be a little bit different from the ones from the paper because the system is a little bit different.\nThe paper includes elastic energy to calculate the strain effect and the mesh size would be also different.\nAnyway, removing \"compute_scaling_once = false.\" works for my system.\nThank you so much!!",
+                          "url": "https://github.com/idaholab/moose/discussions/24835#discussioncomment-6322674",
+                          "updatedAt": "2023-06-30T07:36:34Z",
+                          "publishedAt": "2023-06-30T07:35:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Interpolating temperature field from input data",
+          "author": {
+            "login": "chakra34"
+          },
+          "bodyText": "Hi,\nSo I have a temperature field data, that has X, Y, Z, Temp values. When I read the file via PiecewiseConstantCSV I get stepped results which makes me think that the interpolation between them is not that great. So I was wondering are there any different such interpolation strategies in-built in MOOSE that I can play around with ?\nI was looking at PiecewiseMultilinear but it seems it needs ascending order of AXIS values-- (or is my interpretation wrong ?). In other words, can such PiecewiseMultilinear be used to better interpolate such 3D data set into my grid ?\nThanks,\nBest,\nAritra",
+          "url": "https://github.com/idaholab/moose/discussions/24869",
+          "updatedAt": "2023-06-29T22:31:08Z",
+          "publishedAt": "2023-06-29T19:07:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nif you have general 3D data, so not on a grid, the PiecewiseConstantFromCSV is the only option.\nHowever it really would not be hard to build a linear version instead of the constant step interpolation\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24869#discussioncomment-6319627",
+                  "updatedAt": "2023-06-29T21:53:39Z",
+                  "publishedAt": "2023-06-29T21:53:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chakra34"
+                          },
+                          "bodyText": "got it thanks :)",
+                          "url": "https://github.com/idaholab/moose/discussions/24869#discussioncomment-6319809",
+                          "updatedAt": "2023-06-29T22:31:06Z",
+                          "publishedAt": "2023-06-29T22:31:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

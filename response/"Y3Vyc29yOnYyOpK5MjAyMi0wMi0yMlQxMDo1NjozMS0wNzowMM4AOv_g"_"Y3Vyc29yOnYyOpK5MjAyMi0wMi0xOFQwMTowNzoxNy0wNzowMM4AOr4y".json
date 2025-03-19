@@ -1,0 +1,1053 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wMi0xOFQwMTowNzoxNy0wNzowMM4AOr4y"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Performance of iterative solvers with mesh refinement / hanging nodes",
+          "author": {
+            "login": "matthiasneuner"
+          },
+          "bodyText": "Hi, we recently tried to use an initial local mesh refinement (h refinement) for our solid mechanics based applications, using MOOSE's refinement capabilities. However, what we observe is a considerably degrading performance of the GMRES/BoomerAMG combo, i.e., the linear solver takes many iterations or does not converge at all within the defined limit of linear iterations.\nI assume that this is related to some constraints (of which nature are they?) introduced by the hanging nodes of the non-compatible finite element meshes.\nIs this the usual behavior, and are there any approaches to tackle those performance issues?\nThank you and best regards!",
+          "url": "https://github.com/idaholab/moose/discussions/20344",
+          "updatedAt": "2022-06-28T09:22:32Z",
+          "publishedAt": "2022-02-18T18:04:55Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI ll let @roystgnr comment about the hanging nodes, I m not aware of that.\nA few things:\n\nyou can let the the linear solver converge by increasing the l_max_its parameter.\nwhat are your executioner parameters? Maybe we can improve the preconditioning / solver combo\ndo you really need to refine the whole domain? If not then use adaptivity in certain subdomains only or use the RefineBlockGenerator.\ndo you need to refine from the beginning of the simulation? If not then start with a coarser mesh, converge that solution, then refine.\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20344#discussioncomment-2206584",
+                  "updatedAt": "2022-06-28T09:22:31Z",
+                  "publishedAt": "2022-02-18T18:16:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Do you know what the magnitude of your physics Jacobians is? Is it of order Young's modulus which is often of order 1e9-1e12? Hanging node constraints do indeed introduce Jacobian rows of order unity, e.g.:\nvoid DofMap::enforce_constraints_on_jacobian (const NonlinearImplicitSystem & system,\n                                              SparseMatrix<Number> * jac) const\n{\n  parallel_object_only();\n\n  if (!this->n_constrained_dofs())\n    return;\n\n  if (!jac)\n    jac = system.matrix;\n\n  libmesh_assert_equal_to (this, &(system.get_dof_map()));\n\n  for (const auto & pr : _dof_constraints)\n    {\n      dof_id_type constrained_dof = pr.first;\n      if (!this->local_index(constrained_dof))\n        continue;\n\n      const DofConstraintRow constraint_row = pr.second;\n\n      for (const auto & j : constraint_row)\n        jac->set(constrained_dof, j.first, -j.second);\n      jac->set(constrained_dof, constrained_dof, 1);\n    }\n}\nSo this does have the potential to introduce scaling issues if your physics are dramatically different from order unity",
+                  "url": "https://github.com/idaholab/moose/discussions/20344#discussioncomment-2223472",
+                  "updatedAt": "2022-06-28T09:22:37Z",
+                  "publishedAt": "2022-02-21T19:11:29Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "This is a good hypothesis.  I've never noticed solver issues from hanging nodes, but most of my own work has been with nondimensionalized physics.  I'm kind of surprised that that's enough to throw BoomerAMG for a loop, though; generally it doesn't take too much of a preconditioner to notice that some rows/columns tend to be much bigger than others and to try to compensate accordingly.",
+                          "url": "https://github.com/idaholab/moose/discussions/20344#discussioncomment-2224853",
+                          "updatedAt": "2022-06-28T09:22:52Z",
+                          "publishedAt": "2022-02-22T00:23:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "matthiasneuner"
+                  },
+                  "bodyText": "Thank you to all your responses!\nI think it might be related to the magnitude of the Jacobian; I am using a coupled Cosserat approach; hence I am also solving for the balance of angular momentum which might have a completely different magnitude. Furthermore, I am dealing with strongly localized solutions due to large deformations, which BoomerAMG doesn't really like anyways:\nhttps://matthiasneuner.github.io/chamois/index.html\nIt is good to know that in principle hanging nodes should not cause such problems, this helps definitely a lot.",
+                  "url": "https://github.com/idaholab/moose/discussions/20344#discussioncomment-2230395",
+                  "updatedAt": "2022-06-28T09:22:59Z",
+                  "publishedAt": "2022-02-22T17:20:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "INS - Can a mesh be too fine?",
+          "author": null,
+          "bodyText": "I'm having trouble converging a steady-state INS problem when I attempt to increase the mesh refinement. I plan to use the output of the simulation as a \"background flow\" for another simulation, which requires a finer mesh due to the physics than the INS needs. In the txt file attached, I included both the .geo file (using gmsh to make the mesh) and the input file. The mesh refinement shown on the .geo file of 2e-4 at each point works great, but decreasing this value to even 1e-4 for some points ruins the convergence.\nIf anybody has any clues/suggestions on how to fix this, I would greatly appreciate it.\nins_mesh_issue.txt",
+          "url": "https://github.com/idaholab/moose/discussions/20350",
+          "updatedAt": "2022-02-23T06:59:30Z",
+          "publishedAt": "2022-02-19T15:26:46Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou could be running into the CFL conditions limit.\nWhat time integration scheme are you using?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2213320",
+                  "updatedAt": "2022-02-20T07:14:28Z",
+                  "publishedAt": "2022-02-20T07:14:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "I am running with a steady executioner, not a transient. Does this question still apply?",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2214746",
+                          "updatedAt": "2022-02-20T14:42:19Z",
+                          "publishedAt": "2022-02-20T14:42:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no it does not (time integrator is effectively implicit euler, with an infinite time step)\nIt's usually easier to get convergence for a flow problem with a relaxation-to-steady-state transient than with a steady solve. You could try that.\n@lindsayad",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2215112",
+                          "updatedAt": "2022-02-20T16:24:15Z",
+                          "publishedAt": "2022-02-20T16:11:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "Good to know, I will try that! Thank you",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2215118",
+                          "updatedAt": "2022-02-20T16:13:27Z",
+                          "publishedAt": "2022-02-20T16:13:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Have you estimated what your cell Reynolds number should be for this problem? The answer to this question will determine whether SUPG is needed or not",
+                  "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2222582",
+                  "updatedAt": "2022-02-21T16:46:15Z",
+                  "publishedAt": "2022-02-21T16:46:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "In the thinnest part of the domain, I'm getting a Reynold's number of about 50 with a Q= 1000 sccm, rho = 0.2135 kg/m^3, mu = 2.3e-5 Pa-s, and D = 0.004 m. I'm not sure if this what you mean by \"cell\", though.",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2222967",
+                          "updatedAt": "2022-02-21T17:39:29Z",
+                          "publishedAt": "2022-02-21T17:39:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I'm going to add a reynolds number aux kernel to the NS module to help users compute this. Should have a PR up sometime today.\nFor determining whether to stabilize or not we are typically interested in the highest element/cell Reynolds number, so that will occur for the largest _current_elem->hmax(). Anyway any Re greater than ~1 strictly speaking raises a need for stabilization technique like upwinding. You can get this for finite element INS by putting supg = true in your GlobalParams block. This may or may not make your convergence issues go away. I'm going to run your problem at some point today.",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2223249",
+                          "updatedAt": "2022-02-21T18:27:07Z",
+                          "publishedAt": "2022-02-21T18:27:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You may also consider using PSPG which negates the need to have different orders for your velocity and pressure variables. To get PSPG, put pspg = true in your GlobalParams block",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2223258",
+                          "updatedAt": "2022-02-21T18:28:22Z",
+                          "publishedAt": "2022-02-21T18:28:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "See #20361 for a reynolds number aux kernel. I found that if I set pspg = true and used first order for all variables, I could get your simulation to converge with 1e-4 for your characteristic mesh size. However, if I took it lower to 5e-5, then even with pspg = true the nonlinear solve stagnated. So I would posit that the answer to your question is yes, although I'm hesitant to give a sure answer as to why. My gut feeling is that you run out of precision and the problem loses conditioning but I don't have definitive proof of this. Using quad precision could test my hypothesis",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2224568",
+                          "updatedAt": "2022-02-21T23:00:07Z",
+                          "publishedAt": "2022-02-21T23:00:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "good to know! Did you also use the \"supg = true\"?",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2224585",
+                          "updatedAt": "2022-02-21T23:04:35Z",
+                          "publishedAt": "2022-02-21T23:04:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I believe I ran with both supg = true and supg = false and the nonlinear solve behavior (and results) were pretty similar in this case",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2224590",
+                          "updatedAt": "2022-02-21T23:06:02Z",
+                          "publishedAt": "2022-02-21T23:06:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "So having talked with another colleague, I think a better explanation is more along the lines of @GiudGiud 's initial suggestion. In order for Newton-Raphson to be effective you must start with an initial guess that is reasonably close to the converged solution, e.g. you need to be in the \"ball of attraction\" or \"sphere of convergence\" for Newton. When you are doing a Steady solve with arbitrary initial conditions you are very far from the final solution. This is likely enhanced the finer and finer you make the mesh. So I suspect that if you follow a Transient pseudo-stepping strategy like @GiudGiud suggested, then you should be able to reach a steady-state for a finer mesh than you are able to with Steady with an arbitrary initial guess/conditions.",
+                          "url": "https://github.com/idaholab/moose/discussions/20350#discussioncomment-2230255",
+                          "updatedAt": "2022-02-22T16:59:17Z",
+                          "publishedAt": "2022-02-22T16:59:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "\"mamba install moose-tools moose-libmesh\" error, cannot install",
+          "author": null,
+          "bodyText": "I'm attempting to re-install, so I followed the install directions from the getting started page, and I got stuck at \"mamba install moose-tools moose-libmesh.\" It gets stuck during installation of \"public/linux-64\" and \"public/noarch\", saying \"Timeout was reached\" before finally failing and terminating. The conda-forge equivalents install just fine. I assumed it was the fact that I'm running a Linux WSL on Windows, so I tried to install on my MacBook and I got the same error. I've attached the error message I got from the Mac install attempt below.\nTraceback (most recent call last):\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/conda/exceptions.py\", line 1080, in __call__\n        return func(*args, **kwargs)\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 917, in exception_converter\n        raise e\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 911, in exception_converter\n        exit_code = _wrapped_main(*args, **kwargs)\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 869, in _wrapped_main\n        result = do_call(args, p)\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 734, in do_call\n        exit_code = install(args, parser, \"install\")\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 486, in install\n        index = load_channels(pool, channels, repos)\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/utils.py\", line 122, in load_channels\n        index = get_index(\n      File \"/Users/seanpeyres/mambaforge3/lib/python3.9/site-packages/mamba/utils.py\", line 103, in get_index\n        is_downloaded = dlist.download(True)\n    RuntimeError: Download error (28) Timeout was reached [https://conda.software.inl.gov/public/noarch/repodata.json]\n    Connection timeout after 9106 ms\n\n`$ /Users/seanpeyres/mambaforge3/bin/mamba install moose-tools moose-libmesh`\n\n  environment variables:\n                 CIO_TEST=<not set>\n        CONDA_DEFAULT_ENV=moose\n                CONDA_EXE=/Users/seanpeyres/mambaforge3/bin/conda\n             CONDA_PREFIX=/Users/seanpeyres/mambaforge3/envs/moose\n           CONDA_PREFIX_1=/Users/seanpeyres/opt/anaconda3\n           CONDA_PREFIX_2=/Users/seanpeyres/mambaforge3\n    CONDA_PROMPT_MODIFIER=(moose)\n         CONDA_PYTHON_EXE=/Users/seanpeyres/mambaforge3/bin/python\n               CONDA_ROOT=/Users/seanpeyres/opt/anaconda3\n              CONDA_SHLVL=3\n           CURL_CA_BUNDLE=<not set>\n                     PATH=/Users/seanpeyres/mambaforge3/bin:/Users/seanpeyres/mambaforge3/envs/m\n                          oose/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/Apple/u\n                          sr/bin:/Library/Frameworks/Mono.framework/Versions/Current/Commands\n       REQUESTS_CA_BUNDLE=<not set>\n            SSL_CERT_FILE=<not set>\n\n     active environment : moose\n    active env location : /Users/seanpeyres/mambaforge3/envs/moose\n            shell level : 3\n       user config file : /Users/seanpeyres/.condarc\n populated config files : /Users/seanpeyres/.condarc\n          conda version : 4.11.0\n    conda-build version : not installed\n         python version : 3.9.7.final.0\n       virtual packages : __osx=11.6=0\n                          __unix=0=0\n                          __archspec=1=x86_64\n       base environment : /Users/seanpeyres/mambaforge3  (writable)\n      conda av data dir : /Users/seanpeyres/mambaforge3/etc/conda\n  conda av metadata url : None\n           channel URLs : https://conda.software.inl.gov/public/osx-64\n                          https://conda.software.inl.gov/public/noarch\n                          https://conda.anaconda.org/conda-forge/osx-64\n                          https://conda.anaconda.org/conda-forge/noarch\n                          https://conda.anaconda.org/idaholab/osx-64\n                          https://conda.anaconda.org/idaholab/noarch\n                          https://repo.anaconda.com/pkgs/main/osx-64\n                          https://repo.anaconda.com/pkgs/main/noarch\n                          https://repo.anaconda.com/pkgs/r/osx-64\n                          https://repo.anaconda.com/pkgs/r/noarch\n          package cache : /Users/seanpeyres/mambaforge3/pkgs\n                          /Users/seanpeyres/.conda/pkgs\n       envs directories : /Users/seanpeyres/mambaforge3/envs\n                          /Users/seanpeyres/.conda/envs\n               platform : osx-64\n             user-agent : conda/4.11.0 requests/2.26.0 CPython/3.9.7 Darwin/20.6.0 OSX/11.6\n                UID:GID : 501:20\n             netrc file : None\n           offline mode : False",
+          "url": "https://github.com/idaholab/moose/discussions/20351",
+          "updatedAt": "2022-07-10T08:08:47Z",
+          "publishedAt": "2022-02-20T20:56:08Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nOur conda server is down right now.\nYou can follow more advanced installation instructions here: https://mooseframework.inl.gov/getting_started/installation/install_moose.html\nor wait till this gets fixed, likely Monday\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2216762",
+                  "updatedAt": "2022-07-10T08:09:03Z",
+                  "publishedAt": "2022-02-20T22:07:27Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YuhangNIU"
+                          },
+                          "bodyText": "Could you please kindly tell me, if it is fixed?",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2219832",
+                          "updatedAt": "2022-07-10T08:09:10Z",
+                          "publishedAt": "2022-02-21T10:45:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "we will update this post when it's fixed",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2222327",
+                          "updatedAt": "2022-07-10T08:09:10Z",
+                          "publishedAt": "2022-02-21T16:15:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "we will update this post when it's fixed\n\nYes, I am currently working with our department to get this back online.",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2222345",
+                          "updatedAt": "2022-07-10T08:09:10Z",
+                          "publishedAt": "2022-02-21T16:19:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "It looks to be back up now....",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2223233",
+                          "updatedAt": "2023-09-19T06:27:05Z",
+                          "publishedAt": "2022-02-21T18:25:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "I'm still getting timeout errors:\nLooking for: ['moose-tools', 'moose-libmesh']\n\npuDownload interrupted\npublic/linux-64          [>                   ] (00m:12s) Timeout was reached\npublic/noarch            [>                   ] (00m:12s) Timeout was reached\nconda-forge/linux-64     [>                   ] (00m:12s) Timeout was reached\nconda-forge/noarch       [>                   ] (00m:12s) Timeout was reached\n\n# >>>>>>>>>>>>>>>>>>>>>> ERROR REPORT <<<<<<<<<<<<<<<<<<<<<<\n\n    Traceback (most recent call last):\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/conda/exceptions.py\", line 1080, in __call__\n        return func(*args, **kwargs)\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 917, in exception_converter\n        raise e\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 911, in exception_converter\n        exit_code = _wrapped_main(*args, **kwargs)\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 869, in _wrapped_main\n        result = do_call(args, p)\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 734, in do_call\n        exit_code = install(args, parser, \"install\")\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/mamba.py\", line 486, in install\n        index = load_channels(pool, channels, repos)\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/utils.py\", line 122, in load_channels\n        index = get_index(\n      File \"/home/sean_wsl/mambaforge3/lib/python3.9/site-packages/mamba/utils.py\", line 106, in get_index\n        raise RuntimeError(\"Error downloading repodata.\")\n    RuntimeError: Error downloading repodata.\n\n`$ /home/sean_wsl/mambaforge3/bin/mamba install moose-tools moose-libmesh`\n\n  environment variables:\n                 CIO_TEST=<not set>\n        CONDA_DEFAULT_ENV=moose\n                CONDA_EXE=/home/sean_wsl/mambaforge3/bin/conda\n             CONDA_PREFIX=/home/sean_wsl/mambaforge3/envs/moose\n           CONDA_PREFIX_1=/home/sean_wsl/mambaforge3\n    CONDA_PROMPT_MODIFIER=(moose)\n         CONDA_PYTHON_EXE=/home/sean_wsl/mambaforge3/bin/python\n               CONDA_ROOT=/home/sean_wsl/mambaforge3\n              CONDA_SHLVL=2\n           CURL_CA_BUNDLE=<not set>\n                     PATH=/home/sean_wsl/mambaforge3/bin:/home/sean_wsl/mambaforge3/envs/moose/b\n                          in:/home/sean_wsl/mambaforge3/condabin:/usr/local/sbin:/usr/local/bin:\n                          /usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/usr/lib/wsl\n                          /lib:/mnt/c/Program Files/WindowsApps/CanonicalGroupLimited.Ubuntu20.0\n                          4onWindows_2004.2021.825.0_x64__79rhkp1fndgsc:/mnt/c/Windows/system32:\n                          /mnt/c/Windows:/mnt/c/Windows/System32/Wbem:/mnt/c/Windows/System32/Wi\n                          ndowsPowerShell/v1.0:/mnt/c/Windows/System32/OpenSSH:/mnt/c/Program Fi\n                          les/Git/cmd:/mnt/c/Users/sean/AppData/Local/Microsoft/WindowsApps:/mnt\n                          /c/Users/sean/AppData/Local/atom/bin:/snap/bin\n       REQUESTS_CA_BUNDLE=<not set>\n            SSL_CERT_FILE=<not set>\n\n     active environment : moose\n    active env location : /home/sean_wsl/mambaforge3/envs/moose\n            shell level : 2\n       user config file : /home/sean_wsl/.condarc\n populated config files : /home/sean_wsl/mambaforge3/.condarc\n                          /home/sean_wsl/.condarc\n          conda version : 4.11.0\n    conda-build version : not installed\n         python version : 3.9.7.final.0\n       virtual packages : __linux=5.10.60.1=0\n                          __glibc=2.31=0\n                          __unix=0=0\n                          __archspec=1=x86_64\n       base environment : /home/sean_wsl/mambaforge3  (writable)\n      conda av data dir : /home/sean_wsl/mambaforge3/etc/conda\n  conda av metadata url : None\n           channel URLs : https://conda.software.inl.gov/public/linux-64\n                          https://conda.software.inl.gov/public/noarch\n                          https://conda.anaconda.org/conda-forge/linux-64\n                          https://conda.anaconda.org/conda-forge/noarch\n          package cache : /home/sean_wsl/mambaforge3/pkgs\n                          /home/sean_wsl/.conda/pkgs\n       envs directories : /home/sean_wsl/mambaforge3/envs\n                          /home/sean_wsl/.conda/envs\n               platform : linux-64\n             user-agent : conda/4.11.0 requests/2.26.0 CPython/3.9.7 Linux/5.10.60.1-microsoft-standard-WSL2 ubuntu/20.04.3 glibc/2.31\n                UID:GID : 1000:1000\n             netrc file : None\n           offline mode : False\n\nedited for easier reading (pre)",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2223263",
+                          "updatedAt": "2022-02-21T18:36:10Z",
+                          "publishedAt": "2022-02-21T18:29:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "conda-forge is not our channel yet it's timing out as well, so this isnt our server issues anymore",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2223294",
+                          "updatedAt": "2022-02-21T18:35:26Z",
+                          "publishedAt": "2022-02-21T18:35:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "garciapintado"
+                  },
+                  "bodyText": "It has now worked for me!",
+                  "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2226414",
+                  "updatedAt": "2022-07-10T08:08:52Z",
+                  "publishedAt": "2022-02-22T07:13:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": null,
+                          "bodyText": "It works for me as well now",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2228167",
+                          "updatedAt": "2022-07-10T08:09:02Z",
+                          "publishedAt": "2022-02-22T12:19:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Oh... we didn't update this post when it was fixed yesterday... sorry!",
+                          "url": "https://github.com/idaholab/moose/discussions/20351#discussioncomment-2229160",
+                          "updatedAt": "2022-07-10T08:09:03Z",
+                          "publishedAt": "2022-02-22T14:51:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Extracting single component from array variable.",
+          "author": {
+            "login": "adityaghantasala"
+          },
+          "bodyText": "Hello Moose community !\nHow can I extract a single component of an array variable as a scalar variable ?\nUse case : I would then make an object of a scalar kernel acting on this single component.\nAny pointers on how to achieve this will be helpful.\nThank you in advance for the pointers.",
+          "url": "https://github.com/idaholab/moose/discussions/20220",
+          "updatedAt": "2022-06-16T12:01:37Z",
+          "publishedAt": "2022-02-03T15:22:08Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nJust to make sure, you want a single number, not a single component (a field then) of the array variable (composed of multiple fields, it s a vector field essentially)?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2104689",
+                  "updatedAt": "2022-06-26T03:23:14Z",
+                  "publishedAt": "2022-02-03T15:35:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityaghantasala"
+                          },
+                          "bodyText": "Hi Thank you for your reply.\nYou mean a \"number\" like the variable number as here ?\n\n  \n    \n      moose/framework/src/systems/SystemBase.C\n    \n    \n         Line 825\n      in\n      c98ae8b\n    \n  \n  \n    \n\n        \n          \n           var_num = system().add_variables(var_names, fe_type, &blocks) - (components - 1); \n        \n    \n  \n\n\nCan this help creating a class(ideally a kernel) which can work on a single component(yes a field) ?",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2104831",
+                          "updatedAt": "2022-06-26T03:23:16Z",
+                          "publishedAt": "2022-02-03T15:56:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok so you need a field.\nI meant a number as in: the value of the component 4 of variable array_with_5_components on element 12, which would have been 11.6 or something\nThis is the way to extract a component. However, this places it in a auxiliary variable. You cant create a 'kernel' in the sense of defining a non-linear equation (that will be solved by the nonlinear solver, not just substituting values in) for that component.\nhttps://mooseframework.inl.gov/source/auxkernels/ArrayVariableComponent.html\nYou will be able to use this auxiliary variable to help define an equation for another variable, or compute other auxvariables and matprops",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2104885",
+                          "updatedAt": "2022-06-26T03:23:31Z",
+                          "publishedAt": "2022-02-03T16:04:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityaghantasala"
+                          },
+                          "bodyText": "Hi @GiudGiud Thank you. That helps.\nAnother question. Is there a video or document explaining the software architecture or workflow of Moose framework ?",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2112438",
+                          "updatedAt": "2022-06-26T03:23:44Z",
+                          "publishedAt": "2022-02-04T16:24:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Software architecture surely in the docs.\nIf you want the workflow, add this to your simulation, it ll give you a lot of info\n[Debug]\n  show_actions = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2122745",
+                          "updatedAt": "2023-02-28T09:25:40Z",
+                          "publishedAt": "2022-02-07T05:13:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Maybe this page will have some info you want?\nhttps://mooseframework.inl.gov/framework_development/",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2122752",
+                          "updatedAt": "2022-11-02T13:47:58Z",
+                          "publishedAt": "2022-02-07T05:15:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityaghantasala"
+                          },
+                          "bodyText": "If you want the workflow, add this to your simulation, it ll give you a lot of info\n[Debug]\n  show_actions = true\n[]\n\n\n@GiudGiud  Thank you for this pointer. This helps. But I did not get what you ment by Software architecture surely in the docs . You mean the doxygen pages with inheritance diagrams ?\nI am looking more in the direction of which software design patterns are used, which classes fall under which pattern, which is the steering class for a given simulation and similar things which can give me a roadmap on how to see the dependency of particular class. Also this information is particularly helpful to debug some segfaults and errors which I get when experimenting with Moose.\nThank you again for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2220606",
+                          "updatedAt": "2022-11-02T13:47:58Z",
+                          "publishedAt": "2022-02-21T12:19:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The doc website is this one\nhttps://mooseframework.inl.gov/index.html\nThere is also a lot of information about how classes are organized in the doxygen, and that will give you the dependencies of each class.\nThe steering class for a given simulation is usually the Executioner, though in fixed point iterations (multiapp-based setups) then it's the FixedPointSolve.\nWe are actually reworking that system right now so this answer will change and be more clear in a few months.",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2222323",
+                          "updatedAt": "2022-11-02T13:47:58Z",
+                          "publishedAt": "2022-02-21T16:15:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "MOOSE papers are probably the best places to find data about the workflow actually. Unless there is an INL EXT report about it?\n@permcody",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2222392",
+                          "updatedAt": "2022-11-02T13:48:47Z",
+                          "publishedAt": "2022-02-21T16:26:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adityaghantasala"
+                          },
+                          "bodyText": "We are actually reworking that system right now so this answer will change and be more clear in a few months.\n\nInteresting, can I follow this development ? is there a branch or a fork where this work is pushed to ?\n\nThe steering class for a given simulation is usually the Executioner, though in fixed point iterations (multiapp-based setups) then it's the FixedPointSolve.\n\nThank you. I learnt this a couple of days ago, your previous pointers helped.",
+                          "url": "https://github.com/idaholab/moose/discussions/20220#discussioncomment-2226927",
+                          "updatedAt": "2022-11-02T13:49:02Z",
+                          "publishedAt": "2022-02-22T08:37:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Incorporating density-dependent porous flow for freshwater-seawater system",
+          "author": {
+            "login": "jwheiss"
+          },
+          "bodyText": "Hi all,\nI would like to incorporate density-dependent flow in PorousFlow to simulate flow in a coastal aquifer where seawater and freshwater mix (1 solute (total salt) affects fluid density). I want to use a simple linear relationship between fluid density and salt concentration: rho_fluid = rho_fresh + (delta_rho/delta_C) * C\nwhere C is the salt mass of the fluid (max of 35 g/kg for seawater) and delta_rho/delta_C = 0.71.\nMy current model is set up as single fluid density coupled to geomechanics. I attempted to use the example 1phase_convection.i model to inform how to do this, but the example model is more complex with multiple phases and I am having difficulty following the contents of the 1phase_convection.i file since it does not contain line by line comments.  The 2phase_convection model at https://mooseframework.inl.gov/modules/porous_flow/lava_lamp.html has been helpful to a degree - I am looking for help to incorporate a simpler density:concentration relationship in a model with one solute. Has anyone modeled density-dependent flow in a saltwater-freshwater system, or have suggestions for how to incorporate it?\nThanks,\nJames",
+          "url": "https://github.com/idaholab/moose/discussions/20334",
+          "updatedAt": "2022-07-10T18:48:59Z",
+          "publishedAt": "2022-02-17T22:56:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I don't think that there is anything exactly like you want already in PorousFlow, but it wouldn't be too hard to make a new material that calculates the density according to your requirements.\nI have done something similar to this in the past (specifically for density-driven convective mixing) that predates PorousFlow. You can take a look at what I did here https://github.com/cpgr/numbat - from memory the density is computed just like you want.",
+                  "url": "https://github.com/idaholab/moose/discussions/20334#discussioncomment-2201787",
+                  "updatedAt": "2022-07-10T18:49:03Z",
+                  "publishedAt": "2022-02-18T04:08:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jwheiss"
+                          },
+                          "bodyText": "Hi, thanks for that link. The 2D.i numbat example problem specifies fluid density in the Materials block as\n[./density]\ntype = NumbatDensity\nconcentration = concentration\nzero_density = 995\ndelta_density = 10.5\nsaturated_concentration = 0.049306\n[../]\nIf I create a new Object in MOOSE equivalent to the NumbatDensity Object in numbat, it should do the trick.\nThanks,\nJames",
+                          "url": "https://github.com/idaholab/moose/discussions/20334#discussioncomment-2223515",
+                          "updatedAt": "2022-10-06T17:09:59Z",
+                          "publishedAt": "2022-02-21T19:19:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Let us know if you run into any issues.",
+                          "url": "https://github.com/idaholab/moose/discussions/20334#discussioncomment-2225651",
+                          "updatedAt": "2023-03-24T10:34:55Z",
+                          "publishedAt": "2022-02-22T04:07:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Issues running MOOSE on HPC",
+          "author": {
+            "login": "TheGreatCid"
+          },
+          "bodyText": "Hi,\nI have compiled Petsc and Libmesh with ./update_and_rebuild_libmesh and update_and_rebuildt_petsc with the following modules loaded\ncmake/3.19.3-rhel8\nPython/3.8.1\nGCC/9.3.0\nMPICH/3.2.1\nMOOSE then compiles without issue.\nHowever, when I try to run a simulation, I am greeted with\n[6] ../src/utils/xdr_cxx.C, line 148, compiled Feb 15 2022 at 23:27:32 ERROR: Functionality is not available. Make sure LIBMESH_HAVE_XDR is defined at build time The XDR interface is not available in this installation\nI am on the most recent commit of MOOSE and I have no issues running simulations locally.\nIs anyone familiar with this error?",
+          "url": "https://github.com/idaholab/moose/discussions/20316",
+          "updatedAt": "2022-06-21T21:12:09Z",
+          "publishedAt": "2022-02-16T16:00:08Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre you trying to use the restart functionality or is this coming up out of the blue?\nLocally did you install with the conda/mamba build or still with update_and_rebuild_libmesh ?\nThere should be a log of the libmesh install, in the scripts directory iirc, could you please share it?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2194286",
+                  "updatedAt": "2022-06-21T21:12:10Z",
+                  "publishedAt": "2022-02-17T07:16:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Hi,\nThank you for your response.\nLocally I installed with mamba build\nlibmesh_diagnostic.log\nI cannot find the full build log, but I did find the configure log.\nIn the script file, it should be outputting a build log in the scripts directory, but for some reason that did not happen",
+                          "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2197511",
+                          "updatedAt": "2022-06-21T21:12:17Z",
+                          "publishedAt": "2022-02-17T15:10:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Ah, but I do have a combination of the petsc and libmesh build log from a build I did the day before. It should be identical except for the fact that this was built with a slightly older version of GCC.\nmake_raccoon.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2197583",
+                          "updatedAt": "2022-06-21T21:12:12Z",
+                          "publishedAt": "2022-02-17T15:21:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "LIBMESH_HAVE_XDR\n\nComes from the system not having libtirpc installed. Basically the rpc.h files specifically. This as a reference: https://bugzilla.redhat.com/show_bug.cgi?id=1537432",
+                  "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2198480",
+                  "updatedAt": "2022-06-21T21:12:17Z",
+                  "publishedAt": "2022-02-17T16:59:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2198499",
+                          "updatedAt": "2022-06-21T21:12:13Z",
+                          "publishedAt": "2022-02-17T17:01:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I hope this is the solution! Please let us know either way \ud83d\ude03. We install the following on our build machines:\nlibtirpc libtirpc-devel",
+                          "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2198545",
+                          "updatedAt": "2022-06-21T21:12:13Z",
+                          "publishedAt": "2022-02-17T17:06:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TheGreatCid"
+                          },
+                          "bodyText": "Hi!\nI went ahead and installed the conda/mamba environment on my HPC and that fixed my issue, so I did not apply this solution.\nI'll go ahead and mark it as the answer in case it helps anyone else!\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/20316#discussioncomment-2223661",
+                          "updatedAt": "2022-06-21T21:12:13Z",
+                          "publishedAt": "2022-02-21T19:48:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "syncing auxvariable and material computation",
+          "author": {
+            "login": "mcacace"
+          },
+          "bodyText": "Dear all,\nI would need to retrieve the old and current value of an auxvariable (computed at each linear iteration) inside a material. Is there a way to do so?\nThanks a lot,\nMauro",
+          "url": "https://github.com/idaholab/moose/discussions/20250",
+          "updatedAt": "2022-09-19T04:07:59Z",
+          "publishedAt": "2022-02-08T08:31:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ajacquey"
+                  },
+                  "bodyText": "Hi Mauro,\nDid you try adding execute_on = 'LINEAR' in your AuxKernel block?\nRetrieving the current value and old values of the AuxVariable in the material can then be done in the normal way with coupledValue and coupledValueOld I suppose.\nCheers,\nAntoine",
+                  "url": "https://github.com/idaholab/moose/discussions/20250#discussioncomment-2133986",
+                  "updatedAt": "2022-09-19T04:08:00Z",
+                  "publishedAt": "2022-02-08T14:56:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "Thanks @ajacquey (long time not seeing you). Did try to force the computation at linear (see my original post), but to not avail. I ended up by creating a copy of it via a stateful property. Admit it is not the most elegant solution, but it provides with more freedom for my case at least - I can restrict the actual computation to the end of the time step.\nCiao,\nMauo",
+                          "url": "https://github.com/idaholab/moose/discussions/20250#discussioncomment-2139630",
+                          "updatedAt": "2022-09-19T04:08:00Z",
+                          "publishedAt": "2022-02-09T08:27:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@mcacace material properties are indeed computed before auxiliary variables, e.g. code below, so you do have a dependency issue here. If you didn't want to use a stateful material property, you could use a material property for the current value and then an aux variable to get the old values (using MaterialRealAux as the mechanism to create the old aux values from the current material property). But it sounds like you are content with your work-around, which is great!\ntemplate <typename AuxKernelType>\nvoid\nComputeElemAuxVarsThread<AuxKernelType>::onElement(const Elem * elem)\n{\n  if (_aux_kernels.hasActiveBlockObjects(_subdomain, _tid))\n  {\n    const std::vector<std::shared_ptr<AuxKernelType>> & kernels =\n        _aux_kernels.getActiveBlockObjects(_subdomain, _tid);\n    _fe_problem.prepare(elem, _tid);\n    _fe_problem.reinitElem(elem, _tid);\n\n    // Set up the sentinel so that, even if reinitMaterials() throws, we\n    // still remember to swap back.\n    SwapBackSentinel sentinel(_fe_problem, &FEProblem::swapBackMaterials, _tid, _need_materials);\n\n    if (_need_materials)\n      _fe_problem.reinitMaterials(elem->subdomain_id(), _tid);\n\n    for (const auto & aux : kernels)\n      aux->compute();",
+                  "url": "https://github.com/idaholab/moose/discussions/20250#discussioncomment-2223528",
+                  "updatedAt": "2022-09-19T04:08:00Z",
+                  "publishedAt": "2022-02-21T19:22:15Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Method of Manufactured Solutions (MMS): running example results in error",
+          "author": {
+            "login": "klean700c"
+          },
+          "bodyText": "Dear MOOSE community,\nI tried to run the documented example from https://mooseframework.inl.gov/python/mms.html .\n#!/usr/bin/env python3\n\nimport mms\nfs,ss = mms.evaluate('-div(grad(u))', 'sin(2*pi*x)*sin(2*pi*y)')\nmms.print_fparser(fs)\n\nmms.print_hit(fs, 'force')\nmms.print_hit(ss, 'exact')\n\nI ran the program by\n(base) jan@Jan-ThinkPad:~$ mamba activate moose\n(moose) jan@Jan-ThinkPad:~/projects$ python3 mms_exact.py\n\nUnfortunatelly, it returns the following error message\nTraceback (most recent call last):\n  File \"/home/jan/projects/mms_exact.py\", line 11, in <module>\n    import mms\nModuleNotFoundError: No module named 'mms'\n\nI installed sympy before I ran the code.\nCan you explain me how to implement the mms module?\nI\u00b4m a new user to MOOSE and Ubuntu 18.04.5. Perhaps I did some obvious error, that was not that obvious to me. Although, compiling and testing MOOSE went successful.\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/20356",
+          "updatedAt": "2022-08-23T20:57:15Z",
+          "publishedAt": "2022-02-21T15:46:05Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nmms is one of our packages.\nYou just need to tell Python where to look for that module. We by default dont modify your PYTHONPATH\nso\n export PYTHONPATH=$PYTHONPATH:/home/jan/projects/moose/python\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20356#discussioncomment-2222172",
+                  "updatedAt": "2022-08-23T20:57:22Z",
+                  "publishedAt": "2022-02-21T15:55:24Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Is it possible to let the conda environment modify PYTHONPATH for us? I've run into this issue several times already.",
+                          "url": "https://github.com/idaholab/moose/discussions/20356#discussioncomment-2223049",
+                          "updatedAt": "2022-08-23T20:57:22Z",
+                          "publishedAt": "2022-02-21T17:52:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it's certainly possible if we know where people installed moose.\n@milljm what do you think?",
+                          "url": "https://github.com/idaholab/moose/discussions/20356#discussioncomment-2223079",
+                          "updatedAt": "2023-02-27T19:33:12Z",
+                          "publishedAt": "2022-02-21T17:57:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Difficulty setting non-trivial PenaltyDirichletBC with constant monomial",
+          "author": {
+            "login": "helen-brooks"
+          },
+          "bodyText": "I seem to be having trouble using ADPenaltyDirichletBC and PenaltyDirichletBC with a constant monomial variable. In an essentially trivial setup (diffusion on 10x10 2D generated mesh), as soon as I set the value of the boundary condition to be anything other than identically zero I get the following error:\n\nlinear solve did not converge due to DIVERGED_PC_FAILED iterations 0\nPC failed due to FACTOR_NUMERIC_ZEROPIVOT\n\nI've played around with both AD and non-AD versions, with various values of the penalty and the value of the BC to no avail. I have definitely managed to get something  like this working in the past, so I wonder if something has changed?\nPlease find my minimal example here:\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  xmin = -1\n  xmax = 1\n  ymin = -1\n  ymax = 1\n  nx = 10\n  ny = 10\n[]\n\n[Variables]\n  [./u]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n\n[Kernels]\n  [./diff]\n    type = ADDiffusion\n    variable = u\n  [../]\n[]\n\n[BCs]\n  [./bc-top]\n    type = ADPenaltyDirichletBC\n    variable = u\n    value = 0\n    boundary = 'top'\n    penalty = 1e5\n  [../]\n  [./bc-bot]\n    type = ADPenaltyDirichletBC\n    variable = u\n    value = 1\n    boundary = 'bottom'\n    penalty = 1e5\n  [../]\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = 'NEWTON'\n[]\n\n[Outputs]\n  execute_on = 'timestep_end'\n  exodus = true\n  csv = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/20355",
+          "updatedAt": "2022-06-16T00:15:29Z",
+          "publishedAt": "2022-02-21T14:11:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe preconditioner is dying, probably there is a zero pivot / saddle point?\n@lindsayad I dont remember how we investigate that one?\nFor a problem that simple, it's likely the numerical problem is ill-posed. I think it has to do with the CONSTANT MONOMIAL variable type not having the required derivatives for the ADDiffusion kernel. This kernel does an integration by part to compute the laplacian with a first order derivative. You would need information from the neighbors to compute a first derivative, the local shape function (flat) has a 0 derivative.\nThis preconditioner manages to get an answer but the answer seems wrong though. We expect a linear slope from bottom to top right? So this points to the problem I mentioned with the variable type.\n[Executioner]\n  type = Steady\n  solve_type = 'NEWTON'\n  petsc_options_iname = ' -pc_type -pc_factor_shift_type '\n  petsc_options_value = ' lu NONZERO '\n[]\n\nCould you please try with another variable type? Is there any reason you want to be using constant monomials?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20355#discussioncomment-2222437",
+                  "updatedAt": "2022-06-16T00:15:31Z",
+                  "publishedAt": "2022-02-21T16:32:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "helen-brooks"
+                          },
+                          "bodyText": "This wasn't for a specific physics problem - I was trying to make a minimal but non-trivial  example using constant monomials. Ironically, this was actually to exemplify to others some of the different element types available in MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/20355#discussioncomment-2222922",
+                          "updatedAt": "2022-06-16T00:15:32Z",
+                          "publishedAt": "2022-02-21T17:32:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "If you are using a discontinuous basis, then you must use discontinuous Galerkin kernels. As @GiudGiud implied, this problem is indeed very singular as setup. If you run with -pc_type svd -pc_svd_monitor on the command line, 80 of the 100 degrees of freedom are singular. The 20 that are not actually correspond to the degrees of freedom touched by your penalty conditions. It is the internal degrees of freedom that are singular because _grad_test is 0 because the basis is constant within the element, so no matter what your solution is on the interior, the residuals will be 0.\nYou can look in moose/test/tests/dgkernels for some examples of using DGKernels if you wish to continue using a discontinuous basis",
+                  "url": "https://github.com/idaholab/moose/discussions/20355#discussioncomment-2222759",
+                  "updatedAt": "2022-06-16T00:15:32Z",
+                  "publishedAt": "2022-02-21T17:10:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "helen-brooks"
+                          },
+                          "bodyText": "OK, thanks. I don't think I had appreciated the need to use DGKernels. Now that I come to think of it, I've only used const monomials in aux variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/20355#discussioncomment-2222977",
+                          "updatedAt": "2022-06-16T00:16:30Z",
+                          "publishedAt": "2022-02-21T17:41:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "3D symmetry to full 3D solution",
+          "author": {
+            "login": "am-tc01"
+          },
+          "bodyText": "Hi,\nI am trying to convert a 3D symmetric solution to full 3D, read it in a sub-app and Transfer a variable to a main app.\nMy first idea was to simply transform the symmetric solution by changing z coordinate to -z coordinate, so that I get a mirrored version of the original solution, read them both using FileMeshGenerator and stitch them using StitchedMeshGenerator. This didn't work since mirroring probably distorted node order and I got an error of \"Negative Jacobian\". Although not sure if that is the reason, but got this error even though I am not solving for anything in the sub-app.\nAnother way could be that I use/modify MultiAppProjectionTransfer to mirror the mesh and project the data onto the new mesh, but I am not completely sure how to do it or if that is the best solution. Any clue?\nRegards.",
+          "url": "https://github.com/idaholab/moose/discussions/20209",
+          "updatedAt": "2022-07-13T18:43:31Z",
+          "publishedAt": "2022-02-02T14:28:24Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI think you are on the right track but I think the restart from exodus will be difficult. Like I dont know that we support restarting from two different exodus files.\nI would create two multiapps, flip one, restart both from exodus (or checkpoint), then do the transfers, each on their respective part of the full 3 D domain.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2096875",
+                  "updatedAt": "2022-07-13T18:43:31Z",
+                  "publishedAt": "2022-02-02T15:41:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "Hi @GiudGiud\nThanks! Yes I think that sounds more feasible.\nI could also create a full mesh using VTK (I simply flipped the original solution and grouped the data) but when I read it in Moose, I again got the error of Negative Jacobian. The question now is how to flip the solution and what exactly is causing this error?\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2098465",
+                          "updatedAt": "2022-07-13T18:43:35Z",
+                          "publishedAt": "2022-02-02T17:04:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Flip the elements by using a rotation.\nThe negative jacobian is probably because the element ended up with a negative volume with the transform you applied.",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2098809",
+                          "updatedAt": "2022-07-13T18:43:47Z",
+                          "publishedAt": "2022-02-02T18:00:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "Flip the elements by using a rotation.\nHow can I flip 3D geometry by using rotation? I tried TransformGenerator with Scale = '1 1 -1', but that resulted in the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2099483",
+                          "updatedAt": "2022-07-13T18:43:47Z",
+                          "publishedAt": "2022-02-02T20:11:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Try ROTATE then TRANSLATE",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2099493",
+                          "updatedAt": "2022-07-13T18:44:00Z",
+                          "publishedAt": "2022-02-02T20:12:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "Thanks! Have tried it already and that doesn't work.\nAttached is the geometry I am trying to flip along XY plane.\ntest1.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2099583",
+                          "updatedAt": "2022-07-13T18:44:00Z",
+                          "publishedAt": "2022-02-02T20:25:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI just had a look and this seemed to stitch the meshes correctly (for 1/4 -> 1/2 of the geometry, might not have done the XY plane precisely)\n[Mesh]\n  [fmg_left]\n    type = FileMeshGenerator\n    file = test1.e\n  []\n  [fmg_right]\n    type = FileMeshGenerator\n    file = test1.e\n  []\n  [rotate]\n    type = TransformGenerator\n    input = 'fmg_right'\n    transform = 'ROTATE'\n    vector_value = '0 -90 0'\n  []\n  [translate]\n    type = TransformGenerator\n    input = 'rotate'\n    transform = 'TRANSLATE'\n    vector_value = '0 -0.001 0.001'\n  []\n  [smg]\n    type = StitchedMeshGenerator\n    inputs = 'fmg_left translate'\n    clear_stitched_boundary_ids = true\n    stitch_boundaries_pairs = 'bottom front'\n    parallel_type = 'replicated'\n  []\n[]\n\nPlease let us know if that ends up working for your case\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2126670",
+                          "updatedAt": "2022-07-13T18:44:02Z",
+                          "publishedAt": "2022-02-07T16:12:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "Hi @GiudGiud\nThanks for having a look at it! So what you did now actually rotated the mesh, it didn't truly flip it (look at the temp data closely). I don't think one can flip the mesh by rotating+translating it. You have to change z = -z in order to flip it.\nAnyhow, I have flipped the mesh now and fixed the error with negative Jacobian :) So now I have two files, original and flipped. The problem now is how to read a variable from both these files. I can either stitch them together and restart, but I guess Moose doesn't support that. Another way, like you said earlier, is to restart from two apps (one with original and other with flipped) and then do the transfer, each on their respective part on full 3D domain. Is that possible? I tried it but then one Transfer overwrites the other Transfer such that I have the variable data only from one Transfer. How can I combine the two? Thanks!\nI am attaching the flipped mesh\ntest1_flipped.zip\n.",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2133206",
+                          "updatedAt": "2022-07-13T18:44:37Z",
+                          "publishedAt": "2022-02-08T13:13:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Well yes that is true. But dont you have an additional degree of symmetry in there? As in the system is 1/8th symmetry as far as I can see.\nIf that is true, then even without flipping you can leverage that to reconstruct the full solution from the 1/4.\nWe dont have block restricted transfers yet. But you can create two additional (one additional would work actually, but let s do two for simplicity) additional auxiliary variables. Those will be block restricted to each symmetric part of the domain. You will first transfer the fields onto these, then use a ParsedAux or a SelfAux to copy the info from these variables onto the unified one.",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2134087",
+                          "updatedAt": "2022-07-13T18:44:33Z",
+                          "publishedAt": "2022-02-08T15:15:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah really zooming in, it's not 1/8th symmetric.",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2134140",
+                          "updatedAt": "2022-07-13T18:45:00Z",
+                          "publishedAt": "2022-02-08T15:22:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "We dont have block restricted transfers yet. But you can create two additional (one additional would work actually, but let s do two for simplicity) additional auxiliary variables. Those will be block restricted to each symmetric part of the domain. You will first transfer the fields onto these, then use a ParsedAux or a SelfAux to copy the info from these variables onto the unified one.\n\nThanks for the tip! Yes something like that should work, but if I have two variables that are block restricted (one from each symmetric part), can I combine them using ParsedAux onto a unified variable (which is defined in both blocks)?",
+                          "url": "https://github.com/idaholab/moose/discussions/20209#discussioncomment-2180699",
+                          "updatedAt": "2022-07-13T18:45:00Z",
+                          "publishedAt": "2022-02-15T12:44:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

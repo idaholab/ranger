@@ -1,0 +1,815 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wNC0yN1QwNzoxNjo0NC0wNjowMM4APZvZ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Elastic response to mesh modification",
+          "author": {
+            "login": "AdrienWehrle"
+          },
+          "bodyText": "Hi everyone,\nI have been working on an application based on MASTODON to study the elastic response of a domain on an inclined surface, after the removal of some support at its front.\nWhat I did first was to apply a Pressure boundary condition, with the frontal_pressure function depending on time and taking two different values before and after a given time t (simulating the loss of support in front of the domain).\n[BCs]\n  [Pressure]\n    [front_pressure]  \n    boundary = front\n    function = frontal_pressure\n    displacements = 'disp_x disp_y disp_z'\n    []\n  []\n\nThis worked great and gave interesting results. But this only represents the result of a material removal, not the actual removal itself. Next step was therefore to actively remove some material at the front of the domain and get the pressure release as a result, instead of a preset. Just as it actually happens in a real case.\nBased on #20601, I looked into two potential solutions:\n\nhttps://mooseframework.inl.gov/source/userobject/CoupledVarThresholdElementSubdomainModifier.html\nhttps://mooseframework.inl.gov/source/meshgenerators/BlockDeletionGenerator.html\n\nMy progress (and issues) on those two options:\n\n\nThis is on the fly. One input file, and a moving boundary. However, I need to assign the newly deactivated block (considered as removed, chopped off) to an existing subdomain.\nAnd that is where I got stuck... How to assign it to a subdomain that doesn't have any, literally any, impact on the main domain anymore?\nHere is how far I got into that first direction with my input file: chop_dynamic.i\n\n\nThis is the restart option. Two input files, the first one for initialization, and the second one where a new mesh is created with the material chopped off and the solutions remapped based on the first simulation. It also seems like a good idea, because in my case I remove material only once and this is irreversible.\nI think I got pretty far here, but somehow I don't get significant elastic response (only a very slow displacement in x) in my transient simulation although I removed 500m off my domain and initialized with displacements corresponding to the entire loaded domain... So I should have a significant extension-dominated reaction...! Also the solve is very slow, much slower than with a pressure release of similar magnitude, somehow suggesting something is wrong...\nHere is how far I got into that second direction with my input files: chop_init.i (initialization) and chop_restart.i (transient after removal)\n\n\nAny help/thoughts on one of these options or both would be much appreciated! Thank you a lot in advance!",
+          "url": "https://github.com/idaholab/moose/discussions/20836",
+          "updatedAt": "2022-06-16T19:41:20Z",
+          "publishedAt": "2022-04-21T14:25:37Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor option 1, if you move elements to a domain that is outside the block restrictions of the kernels/variables, then it is effectively removed from the simulation.\nThere might also be material property values you could set in that domain that negate all form of displacement (like incredibly stiff). This might not be a good idea as I think you may pay a steep price in convergence properties.\nFor your inputs in 1 and 2, I would set displacement = 'disp_x disp_y ...' in GlobalParams. it s too easy to have forgotten it somewhere.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2609486",
+                  "updatedAt": "2022-06-16T19:41:35Z",
+                  "publishedAt": "2022-04-21T14:50:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Hi @GiudGiud ! Thank you a lot for your help!\n\nFor option 1, if you move elements to a domain that is outside the block restrictions of the kernels/variables, then it is effectively removed from the simulation.\n\nIt sounds like option 1 is the better option here, so I tried to move elements to a domain outside of the block restrictions of my problem. To this end, I think I need to create some elements disconnected from my domain, defined in channel.e.\nI therefore tried the following in chop_dynamic.i:\n[Mesh]\n  [channel]      \n  type = FileMeshGenerator\n  file = channel.e\n  []\n  \n  [chop_event]\n    type = SubdomainBoundingBoxGenerator\n    input = channel\n    block_id = 2\n    block_name = chop_event\n    bottom_left = '29500  -100 0'\n    top_right = '30000 2100 1000'\n  []\n\n  [deactivated]\n    type = SubdomainBoundingBoxGenerator\n    input = calving_event\n    block_id = 3\n    block_name = deactivated_domain\n    bottom_left = '40000  1000 1000'\n    top_right = '40001  1001 1001'\n  []\n[]\n\nwith the CoupledVarThresholdElementSubdomainModifier subdomain_id set to 3. And where deactivated has somehow random coordinates, just to be out of the main domain boundaries.\nHowever I get Requested subdomain 3 does not exist.. I suppose the subdomain wasn't created because no element are in the bounding box. I looked at other objects in https://mooseframework.inl.gov/syntax/Mesh/index.html but I couldn't find the one that I should use here so far... Or maybe am I not interpreting your advice the right way? Thank you a lot for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2613614",
+                          "updatedAt": "2022-06-16T19:41:36Z",
+                          "publishedAt": "2022-04-22T07:01:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nYou could use an ElementGenerator and CombinerGenerator for this:\nhttps://mooseframework.inl.gov/source/meshgenerators/ElementGenerator.html\nhttps://mooseframework.inl.gov/source/meshgenerators/CombinerGenerator.html\njust put an element real far and block restrict the physics out of it.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2616231",
+                          "updatedAt": "2022-06-16T19:41:45Z",
+                          "publishedAt": "2022-04-22T14:44:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Thank you a lot! What don't get right with https://mooseframework.inl.gov/source/meshgenerators/ElementGenerator.html is that it only generates an element if I use existing nodes for element_connectivity, although I want to create an element that is not connected at all to my main domain, hence with new nodes...\nHere is the mesh I'm working on:\n\n[Mesh]\n  \n  [channel]      \n  type = FileMeshGenerator\n  file = channel.e\n  []\n\n  [chop_event]\n    type = SubdomainBoundingBoxGenerator\n    input = channel\n    block_id = 2\n    block_name = chop_event\n    bottom_left = '29500  -100 0'\n    top_right = '30000 2100 1000'\n  []\n\n  [single_element]\n    type = ElementGenerator\n    input = chop_event\n    nodal_positions = '0 0 0\n                       -1000 0 0\n                       -1000 -1000 0\n                       0 -1000 0\n                       0 0 -500\n                       -1000 0 -500\n                       -1000 -1000 -500\n                       0 -1000 -500'\n    element_connectivity = '100000 100001 100002 100003 100005 100006 100007 100008'\n    elem_type = \"QUAD8\"\n  []\n\n  [combined]\n    type = CombinerGenerator\n    inputs = 'chop_event single_element'\n  []\n\n  final_generator = combined\n[]\n\nI set element_connectivity higher than my maximum node number to try to create new ones, but it fails with a segmentation fault (because those nodes don't exist).... If I set element_connectivity in my range of existing nodes, then it uses those... Somehow I'm using it in the wrong way since it doesn't allow me make it do what's meant to...!\nThank you a lot for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2630647",
+                          "updatedAt": "2022-06-16T19:41:44Z",
+                          "publishedAt": "2022-04-25T14:56:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "umm. Well if it's not in a block that has the physics it shouldnt matter at all where it is. Or how many elements it has\nIf that mesh generator doesnt work for you you can use any random mesh, load it with FileMeshGenerator and combine it, unstitched, with the CombinerMeshGenerator. And it ll just sit there, doing nothing.\nYou'll need this btw\n[Problem]\n  kernel_coverage_check = false\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2631421",
+                          "updatedAt": "2022-07-11T08:22:57Z",
+                          "publishedAt": "2022-04-25T16:43:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Thank you a lot for you help on that @GiudGiud! I think I'm getting close, but still have an issue.\nIn the updated version of chop_dynamic.i, I:\n\nLoad my main domain + a single isolated element\nSet a new block id for the isolated element only (value is 255)\nCombine the two meshes\nRestrict all the physics to blocks 1 and 2 (main mesh and area that I want to chop off, respectively)\nChange block 2 to 255 at the chopping time to move the chopped area out of my problem.\nSet kerner_coverage_check and material_coverage_check to False.\n\nIt somehow sounds good but I get the following error, which is linked to the element doing nothing at the solve level but I can't really backtrack it nor solve it (error is at the end of the log):\nThe following total 1 aux variables:\n  von_mises\nare added for automatic output by MaterialOutputAction.\nFinished Setting Up                                                                      [  0.65 s] [  187 MB]\nFramework Information:\nMOOSE Version:           git commit 6f309b1abd on 2022-02-07\nLibMesh Version:         \nPETSc Version:           3.15.1\nSLEPc Version:           3.15.1\nCurrent Time:            Tue Apr 26 09:30:20 2022\nExecutable Timestamp:    Fri Mar 11 16:19:52 2022\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             11\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:                   11987\n  Elems:                   9864\n  Num Subdomains:          3\n\nNonlinear System:\n  Num DOFs:                35961\n  Num Local DOFs:          35961\n  Variables:               { \"disp_x\" \"disp_y\" \"disp_z\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                182549\n  Num Local DOFs:          182549\n  Variables:               { \"vel_x\" \"accel_x\" \"vel_y\" \"accel_y\" \"vel_z\" \"accel_z\" } { \"stress_xx\" \"stress_xy\" \n                             \"stress_xz\" \"stress_yx\" \"stress_yy\" \"stress_yz\" \"stress_zx\" \"stress_zy\" \n                             \"stress_zz\" } \"t_calving\" \"von_mises\" \n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\" \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             ConstantDT\n  Solver Mode:             NEWTON\n  MOOSE Preconditioner:    SMP\n\nLEGACY MODES ENABLED:\n This application uses the legacy material output option: material properties are output only on TIMESTEP_END, not INITIAL. To remove this message, set 'use_legacy_material_output' to false in this application. If there are gold output files that contain material property output for which output occurs on INITIAL, then these will generate diffs due to zero values being stored, and these tests should be re-golded.\n\n\n    Setting Up Materials\n      Finished Computing Initial Material Values                                         [  0.21 s] [  131 MB]\n    Finished Setting Up Materials                                                        [  0.21 s] [  131 MB]\n  Finished Performing Initial Setup                                                      [  2.77 s] [  185 MB]\n\nTime Step 0, time = 0\nWarning, Exodus files cannot have titles longer than 80 characters.  Your title will be truncated.\n\nTime Step 1, time = 0.02, dt = 0.02\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 9.256317e-01\nAt column 2, pivotL() encounters zero diagonal at line 722 in file /opt/civet/build_2/conda_builds/conda_envs/next-aeb8c4f62f/conda-bld/moose-petsc_1643733610091/work/arch-conda-c-opt/externalpackages/git.superlu_dist/SRC/symbfact.c\n\nThank you a lot for your precious help!",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2637628",
+                          "updatedAt": "2022-07-11T08:22:59Z",
+                          "publishedAt": "2022-04-26T09:50:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh did you block restrict the variables outside of the elements with no physics? This is actually important, otherwise the matrix has a zero for the qps there.\nThe block restriction of the variables is usually inherited by the kernels btw",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2640349",
+                          "updatedAt": "2022-07-11T08:23:04Z",
+                          "publishedAt": "2022-04-26T15:58:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "oh did you block restrict the variables outside of the elements with no physics?\n\nI am not sure I completely understand. Variables are not block-restricted at the moment, but they probably should? Should I use inactive on block 255 (inactive element) for all variables?",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2640473",
+                          "updatedAt": "2022-07-11T08:23:06Z",
+                          "publishedAt": "2022-04-26T16:15:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "They should be. Pass the block =  in the variables blocks (each of them) not the kernels.\ninactive is not for this. inactive is to turn off an object in the input file, like entirely not just block restrict",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2640618",
+                          "updatedAt": "2022-07-11T08:23:05Z",
+                          "publishedAt": "2022-04-26T16:34:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Thank you a lot, that indeed solved the zero qps issue!\nOnly remaining problem is I restrict the physics to block 1 and 2 (main domain and chopped area, respectively), then change the block ID of the chopped area from 2 to 255 (to deactivate it). Therefore block 2 doesn't exist anymore, but is passed in block = in variable blocks, resulting in ExodusII_IO_Helper: block id 2 not found in block_ids. at chop time (t=1).\nI think one workaround is to have not only the one isolated element (block_id=255), but also a second one with block_id=2 (useless but containing the physics) so that block id 2 doesn't disappear. Do you think that is a good idea?\nThank you a lot for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2645516",
+                          "updatedAt": "2022-07-11T08:23:06Z",
+                          "publishedAt": "2022-04-27T10:15:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yeah I think you ll have to do that.\nOr you start with just all elements in block 1, then move some of the chopped elements in block 1 to block 255?",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2647419",
+                          "updatedAt": "2022-07-11T08:23:06Z",
+                          "publishedAt": "2022-04-27T14:55:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "AdrienWehrle"
+                  },
+                  "bodyText": "Or you start with just all elements in block 1, then move some of the chopped elements in block 1 to block 255?\n\nIndeed, I managed to trade my initial SubdomainBoundingBoxGenerator + CoupledVarThresholdElementSubdomainModifier with threshold on time, with one single CoupledVarThresholdElementSubdomainModifier on a variable depending on space and time! Thank you so much for your help on that!",
+                  "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2661012",
+                  "updatedAt": "2022-06-16T19:41:51Z",
+                  "publishedAt": "2022-04-29T12:01:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "AdrienWehrle"
+                  },
+                  "bodyText": "One last thing that I can't get right for this problem (sorry to disturb you with that!):\nI added the following function:\n[Functions]\n  [chop_criterion]\n    type = ParsedFunction\n    value = 'if((x>29300.)&(t>1.), 1., 0.)'\n  []\n[]\n\nthat I then apply in my subdomain modifier:\n[UserObjects]\n  [calving_event]\n    type = CoupledVarThresholdElementSubdomainModifier\n    coupled_var = 'chop_boolean'\n    block = 1\n    criterion_type = ABOVE\n    threshold = 0.5\n    subdomain_id = 255\n    moving_boundary_name = downstream \n    execute_on = 'INITIAL TIMESTEP_BEGIN'\n  []\n[]\n\nchop_boolean is the variable set by chop_criterion.\nI thought I solved my issue, but I get a weird chop where not all expected elements are moved to the 255 subdomain (see screenshots below) although the condition is a clear cut and not at the border of an element row (x=29000 and x=29500 are the two element rows before and after the condition x=29300)... As you can see on the sfcreenshots, the outer band of elements is entirely removed but not issue appears in the second one....\nThis is independent of the threshold, I always get such elements in and out no matter what value I take...\nI was earlier using the same spatial condition with SubdomainBoundingBoxGenerator and I got a nice and clear cut as expected... Any ideas on that? Thank you a lot",
+                  "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2661132",
+                  "updatedAt": "2022-06-16T19:41:50Z",
+                  "publishedAt": "2022-04-29T12:27:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think the centroid of the element is considered. If you move this x=29300 closer to the next layer (3rd) does it cut properly?",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2662092",
+                          "updatedAt": "2022-06-16T19:41:59Z",
+                          "publishedAt": "2022-04-29T15:10:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "actually no scratch that.\nThis is how the element value is determined:\n  Real avg_val = 0;\n\n  for (unsigned int qp = 0; qp < _qrule->n_points(); ++qp)\n    avg_val += _v[qp] * _JxW[qp] * _coord[qp];\n  avg_val /= _current_elem_volume;\n\n  return avg_val;\n\nsp you have to make that average below the threshold value.\nEither smooth the transition with a linear function in between the jump, or jump to -1 instead of 0, or raise/lower the threshold appropriately",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2662327",
+                          "updatedAt": "2022-06-16T19:42:00Z",
+                          "publishedAt": "2022-04-29T15:43:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Oh woh, I wasn't looking in the right direction, I also initially thought it was about the spatial threshold.\nWhat I have for the moment is my chop_criterion taking -1000 or 1000 and threshold at 0 so there can't be any overrunning.\nThank you a lot for all your help on that! \ud83d\udc4d",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2662711",
+                          "updatedAt": "2022-06-16T19:42:00Z",
+                          "publishedAt": "2022-04-29T16:29:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AdrienWehrle"
+                          },
+                          "bodyText": "Next step will be to try and have my chop_criterion to depend on a damage value I compute from stresses. Challenge is my damage is a material property and not an (aux)variable, therefore I can't access it directly with a CoupledVarThresholdElementSubdomainModifier... I tried to find a way to convert a material property to a variable, but that sounds like a bad idea. Would you  by any chance have an advice on that before I mark this question as answered? Thank you a lot!\nThe damage implementation is visible here.",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2662775",
+                          "updatedAt": "2022-07-11T08:23:33Z",
+                          "publishedAt": "2022-04-29T16:40:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nit s fine to convert material property to auxiliary variable in your case. You are only interested about the value.\nit s not fine when you care about transferring derivatives.\nTo do that use MaterialRealAux or one of the other template instantiations depending on the type of your material property\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/20836#discussioncomment-2664641",
+                          "updatedAt": "2022-07-11T08:23:33Z",
+                          "publishedAt": "2022-04-30T01:18:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Do not convergence of heat conduction",
+          "author": {
+            "login": "Salma-Mao"
+          },
+          "bodyText": "Hi,\nI am studying  about heat conduction. Material properties change with temperature as shown in the picture.  I define the material like:\nif \uff08temperature[_qp] < 1000\uff09\n{\n     specific_heat[_qp] = 1.23*temperature[_qp] + 1.23;\n}\nelse\n{\n     specific_heat[_qp] = 4.56*temperature[_qp] + 4.56;\n}\n\n\nHowever, does not converge after a certain time step. At the same time, some units are just above 1000 K.  I guess this error has something to do with my judgment on temperature. But I do not know how to  solve this problem.\n\nThanks,\nMS",
+          "url": "https://github.com/idaholab/moose/discussions/20891",
+          "updatedAt": "2022-06-22T09:15:41Z",
+          "publishedAt": "2022-04-27T14:24:41Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFrom what you copy pasted it looks like the code skips the center portion of this graph. It jumps straight from 1200 J/m3 to 4500.\nIs this normal? It seems to miss the T=1200 to 3500 portion.\nif the solve struggles with too much discontinuity, you could smooth this profile.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20891#discussioncomment-2647297",
+                  "updatedAt": "2022-06-22T09:16:02Z",
+                  "publishedAt": "2022-04-27T14:43:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Salma-Mao"
+                          },
+                          "bodyText": "Thanks  for your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/20891#discussioncomment-2659711",
+                          "updatedAt": "2022-06-22T09:16:19Z",
+                          "publishedAt": "2022-04-29T07:28:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error on reading the abaqus file (.inp)",
+          "author": {
+            "login": "avtarsinghh1991"
+          },
+          "bodyText": "Hello MOOSE Experts\nI generated a ABAQUS mesh input file (.inp) using CUBIT with several grains. After I am trying to read the file in the MOOSE as follows:\n[Mesh]\n  [initial_mesh]\n     type = FileMeshGenerator\n     file = Abaqus_file.inp\n  []\n    [./scale]\n    type = TransformGenerator\n    input = initial_mesh\n    transform = SCALE\n    vector_value ='11.0e-6 11.0e-6 0'\n  []\n   construct_side_list_from_node_list=true\n[]\n\nAfterwards, I am running the command with --mesh-only option and getting the following error:\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n/home/asingh/projects/babbler/babbler-opt: Relink `/home/asingh/mambaforge3/envs/moose/lib/libgfortran.so.5' with `/lib64/librt.so.1' for IFUNC symbol `clock_gettime'\n\n\n\n*** Warning, This code is deprecated and will be removed in future versions:\nThe parameter direction is deprecated.\nSpecifying direction+multiapp is deprecated. Specify the to_multi_app and from_multi_app\n\nError: Needed to read 2 nodes, but read 4 instead!\n[0] ../src/mesh/abaqus_io.C, line 723, compiled Apr 13 2022 at 21:08:08\n\n\n*** ERROR ***\nError: Needed to read 2 nodes, but read 4 instead!\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n\nIf the number of grains are less than 30, it is working absolutely fine. However, if the number of grains increases even to 31, the above mentioned error is popping out.\nPlease give me any suggestions to solve the issue. I have attached the mesh file as well.\nmesh_file.zip\nBest\nAvtar",
+          "url": "https://github.com/idaholab/moose/discussions/20903",
+          "updatedAt": "2022-06-22T15:59:57Z",
+          "publishedAt": "2022-04-28T16:00:48Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor the first errors, I'd remove the moose environment in mamba and re-install. Something changed in the libgfortran library since it was compiled, and easiest way is to reinstall.\nFor the deprecation warning, your multiapp syntax is deprecated. Instead of\n direction = TO_MULTIAPP\n  multiapp = multiapp_name\n\nwe now do\nto_multiapp = multiapp_name\n\nthis is to support transfers from multiapp to multiapp.\nWhat's a good reader for abaqus meshes? I dont have Abaqus on my machine.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2656152",
+                  "updatedAt": "2022-06-22T16:00:08Z",
+                  "publishedAt": "2022-04-28T16:24:32Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hi @GiudGiud\nThanks. I solved the multiapp issue.\nFor the abaqus file, I tried this file to read in ABAQUS, its working absolutely fine in ABAQUS.\nBest\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2656185",
+                          "updatedAt": "2022-06-22T16:00:16Z",
+                          "publishedAt": "2022-04-28T16:27:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Well the error isnt explicit enough. My guess is that there are mixed element types in a domain, like a single triangle in a quad block.\nMOOSE doesnt support this.\nI converted it to exodus with meshio. Do you get a better error message with this format?\nmesh_file_exo.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2656337",
+                          "updatedAt": "2022-06-22T16:00:16Z",
+                          "publishedAt": "2022-04-28T16:51:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "@GiudGiud\nThanks for the insight. I have also written the abaqus input using my own MATLAB subroutine. For that I am generating structured mesh in which there is no possibility of mixed element type.\nI am facing the same issue in there as well with more than 30 grains.\nI am getting the following error upon reading the file you shared in MOOSE\nEXODUS: Error: Attempting to open the netcdf-4 file:\n        '/home/singh/projects/babbler/Anisotropic_2D/Abaqus_file.e'\n        with a netcdf library that does not support netcdf-4\nError opening ExodusII mesh file: /home/singh/projects/babbler/Anisotropic_2D/Abaqus_file.e\n[0] ../src/mesh/exodusII_io_helper.C, line 643, compiled Dec 16 2021 at 14:15:31\n\n\n*** ERROR ***\nError opening ExodusII mesh file: /home/singh/projects/babbler/Anisotropic_2D/Abaqus_file.e\n\n\nI have tried importing the abaqus file in cubit and export it as exodus file. It is working fine if doing so. But i want to directly use the abaqus file. Any suggestions?\nBest\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2656409",
+                          "updatedAt": "2022-06-22T16:00:23Z",
+                          "publishedAt": "2022-04-28T17:04:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok you cant read my file because I m using an hdf5 exodus and I dont think your moose install is setup that way.\nOnly suggestion I would have is to debug the abaqus file reader in MOOSE. Ill create an issue and the thermomechanics people at INL may look at it if they have time",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2656459",
+                          "updatedAt": "2022-09-16T18:20:24Z",
+                          "publishedAt": "2022-04-28T17:12:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Thanks. Can you suggest any other file format which I can write including the nodesets and sidesets? I am thinking of using the .msh file format",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2657001",
+                          "updatedAt": "2022-09-16T18:20:26Z",
+                          "publishedAt": "2022-04-28T18:53:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The list of supported (well except for inp in your case) is here:\nhttps://mooseframework.inl.gov/source/meshgenerators/FileMeshGenerator.html",
+                          "url": "https://github.com/idaholab/moose/discussions/20903#discussioncomment-2657077",
+                          "updatedAt": "2022-09-16T18:20:27Z",
+                          "publishedAt": "2022-04-28T19:09:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Block Material as a Function of Time",
+          "author": {
+            "login": "jrwill11"
+          },
+          "bodyText": "I'm trying to simulate the transient of a moving material. The properties of the material doesn't change, but instead its block number does.\nSo say I have three blocks: block 1 is LEU, and blocks 2 and 3 are air at time step 1. At time step 2, block 1 is air, block 2 is LEU, and block 3 is air. Does MOOSE have any functions where I can change the material as a function of time in a single input?",
+          "url": "https://github.com/idaholab/moose/discussions/20902",
+          "updatedAt": "2022-05-31T04:35:54Z",
+          "publishedAt": "2022-04-28T15:55:10Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe only block modifier right now is this one:\nhttps://mooseframework.inl.gov/source/userobject/CoupledVarThresholdElementSubdomainModifier.html\nYou will have to encode the block change in a variable to make it work.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20902#discussioncomment-2656166",
+                  "updatedAt": "2022-05-31T04:37:01Z",
+                  "publishedAt": "2022-04-28T16:26:02Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "accumulateTaggedlocalMatrix function in kernel",
+          "author": {
+            "login": "xiaojbing"
+          },
+          "bodyText": "I want to inherit kernel.C and I want to know what is the function of accumulateTaggedlocalMatrix in kernel. The subclass must use this funcion or not?\naccumulateTaggedlocalMatrix in kernel.C:",
+          "url": "https://github.com/idaholab/moose/discussions/20890",
+          "updatedAt": "2022-08-08T02:41:03Z",
+          "publishedAt": "2022-04-27T11:54:34Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "In general you should not override Kernel::computeResidual() or Kernel::computeJacobian(). You should override things like Kernel::computeQp<>().\naccumulateTaggedLocalMatrix() must be called. It is what fills the local Jacobian into the global Jacobian based on what tags are set to be filled.",
+                  "url": "https://github.com/idaholab/moose/discussions/20890#discussioncomment-2646643",
+                  "updatedAt": "2022-08-08T02:41:03Z",
+                  "publishedAt": "2022-04-27T13:18:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiaojbing"
+                          },
+                          "bodyText": "In general you should not override Kernel::computeResidual() or Kernel::computeJacobian(). You should override things like Kernel::computeQp<>().\naccumulateTaggedLocalMatrix() must be called. It is what fills the local Jacobian into the global Jacobian based on what tags are set to be filled.\n\nThank you very much. I get it. But my code is not compute a variable's residuals or jacobian matrix\uff0cbut a flux consisting of several variables. So there will be one or two more loops in these two functions: computeResidual() and computeJacobian(). Is a simple overloading possible for this case? If it is what you mean, is it necessary to implement the loop I want in computeQp<>()",
+                          "url": "https://github.com/idaholab/moose/discussions/20890#discussioncomment-2646909",
+                          "updatedAt": "2022-08-08T02:41:04Z",
+                          "publishedAt": "2022-04-27T13:53:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok so you are making a custom kernel that is computing the contribution to the residual and jacobian for several variables?\nThen you should override computeResidual, computeJacobian. But huge disclaimer that you are hacking MOOSE at this point. You will have to re-implement some of the stuff we made.\nYou should still follow the structure that we have: computeResidual calls computeQpResidual at each quadrature point and multiplies that contribution by the quadrature weight, volume, coord (for RZ) etc\naccumulateTaggedLocalMatrix() transfers the contribution from the local thread to the global array. It does the work to avoid the race condition between threads etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/20890#discussioncomment-2648003",
+                          "updatedAt": "2022-08-08T02:41:04Z",
+                          "publishedAt": "2022-04-27T15:57:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiaojbing"
+                          },
+                          "bodyText": "I followed the structure of MOOSE to build this custom kernel, but the results are not reasonable. If these two functions are overloaded, are there other files that need to be modified?\nbaseclass:\nvoid\nDGKernel::computeElemNeighJacobian(Moose::DGJacobianType type)\n{\n  const VariableTestValue & test_space =\n      (type == Moose::ElementElement || type == Moose::ElementNeighbor) ? _test : _test_neighbor;\n  const VariableTestValue & loc_phi =\n      (type == Moose::ElementElement || type == Moose::NeighborElement) ? _phi : _phi_neighbor;\n\n  if (type == Moose::ElementElement)\n    prepareMatrixTag(_assembly, _var.number(), _var.number());\n  else\n    prepareMatrixTagNeighbor(_assembly, _var.number(), _var.number(), type);\n\n  for (_qp = 0; _qp < _qrule->n_points(); _qp++)\n    for (_i = 0; _i < test_space.size(); _i++)\n      for (_j = 0; _j < loc_phi.size(); _j++)\n        _local_ke(_i, _j) += _JxW[_qp] * _coord[_qp] * computeQpJacobian(type);\n\n  accumulateTaggedLocalMatrix();\n\n  if (_has_diag_save_in && (type == Moose::ElementElement || type == Moose::NeighborNeighbor))\n  {\n    unsigned int rows = _local_ke.m();\n    DenseVector<Number> diag(rows);\n    for (unsigned int i = 0; i < rows; i++)\n      diag(i) = _local_ke(i, i);\n\n    Threads::spin_mutex::scoped_lock lock(_jacoby_vars_mutex);\n    for (const auto & var : _diag_save_in)\n    {\n      if (type == Moose::ElementElement)\n        var->sys().solution().add_vector(diag, var->dofIndices());\n      else\n        var->sys().solution().add_vector(diag, var->dofIndicesNeighbor());\n    }\n  }\n}\n\nsubclass:\nvoid MultiDGKernel::computeElemNeighJacobian(Moose::DGJacobianType type)\n{\n  const VariableTestValue & test_space = (type == Moose::ElementElement || type == Moose::ElementNeighbor) ? _test : _test_neighbor;\n  const VariableTestValue & loc_phi = (type == Moose::ElementElement || type == Moose::NeighborElement) ? _phi : _phi_neighbor;\n  if (type == Moose::ElementElement)\n    prepareMatrixTag(_assembly, _var.number(), _var.number());\n  else\n    prepareMatrixTagNeighbor(_assembly, _var.number(), _var.number(), type);\n\n  for (_qp = 0; _qp<_qrule->n_points(); _qp++)\n  {\n precalculateJacobian();\n for (unsigned int p = 0; p < _n_equation; ++p)\n  for (unsigned int q = 0; q < _n_equation; ++q)\n  {\n   DenseMatrix<Number> & Kxx = type == Moose::ElementElement ?  \n                                                            _assembly.jacobianBlock(p, q) : _assembly.jacobianBlockNeighbor(type, p, q);\n   \n   for (_i=0; _i<test_space.size(); _i++)\n    for (_j=0; _j<loc_phi.size(); _j++)\n     Kxx(_i, _j) += _JxW[_qp]*_coord[_qp]*computeQpJacobian(type, p, q);\n  }\n  }\n\n  accumulateTaggedLocalMatrix();\n  if (_has_diag_save_in && (type == Moose::ElementElement || type == Moose::NeighborNeighbor))\n  {\n    unsigned int rows = _local_ke.m();\n    DenseVector<Number> diag(rows);\n    for (unsigned int i = 0; i < rows; i++)\n      diag(i) = _local_ke(i, i);\n    Threads::spin_mutex::scoped_lock lock(_jacoby_vars_mutex);\n    for (const auto & var : _diag_save_in)\n    {\n      if (type == Moose::ElementElement)\n        var->sys().solution().add_vector(diag, var->dofIndices());\n      else\n        var->sys().solution().add_vector(diag, var->dofIndicesNeighbor());\n    }\n  }\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/20890#discussioncomment-2653694",
+                          "updatedAt": "2022-08-08T02:41:05Z",
+                          "publishedAt": "2022-04-28T10:39:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "I think we need more information on this statement: \"I followed the structure of MOOSE to build this custom kernel, but the results are not reasonable.\"\nRe-implementing all of the methods you are modifying above is not an easy task, and support for it is not something that we would typically offer on Discussions.",
+                          "url": "https://github.com/idaholab/moose/discussions/20890#discussioncomment-2654725",
+                          "updatedAt": "2022-09-28T04:02:16Z",
+                          "publishedAt": "2022-04-28T13:22:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "new MOOSE/libMesh not building",
+          "author": {
+            "login": "mangerij"
+          },
+          "bodyText": "Hi, I have a number of errors printing after I just used conda update --all (today along with git fetch/pull). My idaholab conda packages are:\nmoose-libmesh             2022.03.02              build_0    idaholab\nmoose-libmesh-vtk         9.1.0                   build_4    idaholab\nmoose-mpich               3.4.2                   build_3    idaholab\nmoose-petsc               3.15.1                  build_7    idaholab\nmoose-tools               2022.01.25       py39hc64a412_0    idaholab\n\nThe errors are:\n\n/home/LIST/mangeri/projects/moose/framework/build/header_symlinks/MooseFunctor.h:822:1: error: no declaration matches 'typename Moose::FunctorBase<T>::GradientType Moose::FunctorBase<T>::gradient(const Moose::ElemFromFaceArg&, unsigned int) const'\n  822 | FunctorBase<T>::gradient(const ElemFromFaceArg & elem_from_face, const unsigned int state) const\n\n/home/LIST/mangeri/projects/moose/framework/build/header_symlinks/MooseFunctor.h:1084:16: error: no type named 'GradientType' in 'class Moose::FunctorBase<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<53> >, true> >'\n 1084 |   GradientType evaluateGradient(const ElemSideQpArg & qp, unsigned int state = 0) const override\n\nEDIT: I tried make cleanall and make clobberall\nYesterday, I had no problems building MOOSE on a cluster - something wrong with the conda distro on my end?",
+          "url": "https://github.com/idaholab/moose/discussions/20900",
+          "updatedAt": "2022-06-28T09:03:30Z",
+          "publishedAt": "2022-04-28T11:51:51Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "Follow the instructions in #20187 (reply in thread) for starting fresh.\nSome dependencies that you have installed are causing the moose packages to not update.",
+                  "url": "https://github.com/idaholab/moose/discussions/20900#discussioncomment-2654665",
+                  "updatedAt": "2022-06-28T09:03:44Z",
+                  "publishedAt": "2022-04-28T13:13:26Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Multiapps][Transfer variables]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Dear users,\nI want to find a way to pass some variables between two apps.\nSuch as,\nApp1: Variable 1 solved -> transfer -> App2: Initial condition of Variable 1 -> Solve Variable 1 in app2 -> transfer -> App1: Initial conditions. -> ... -> until converge.\nIs there any way to do this method?\nI am looking up the multiapps and transfers.\nHowever, I don't know how to define the solution of Variable1 to intial condition of app2.",
+          "url": "https://github.com/idaholab/moose/discussions/20888",
+          "updatedAt": "2022-06-05T05:31:53Z",
+          "publishedAt": "2022-04-27T11:13:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "coskrrb2002"
+                  },
+                  "bodyText": "I just found the multivariable_copy in the multiapps, and it works for transient as well.",
+                  "url": "https://github.com/idaholab/moose/discussions/20888#discussioncomment-2645918",
+                  "updatedAt": "2022-06-05T05:31:59Z",
+                  "publishedAt": "2022-04-27T11:29:08Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe transfers work for both steady and transient solves.\nWhat you are doing though may not always converge in the definition we use. You need both apps to have the same solution, otherwise what you transfer as an initial condition to app1, so the solution to app2, will have a non zero residual in the app1 solve, and the code will interpret this as the fixed point iteration not converging.\nIf you are expecting both app1 and app2 to converge to the same solution for Variable1 then this is ok.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20888#discussioncomment-2650056",
+                  "updatedAt": "2022-06-05T05:32:02Z",
+                  "publishedAt": "2022-04-27T20:46:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "coskrrb2002"
+                          },
+                          "bodyText": "Thank you for your advice,\nI expect the same solution for Variable1.\nCheers",
+                          "url": "https://github.com/idaholab/moose/discussions/20888#discussioncomment-2654344",
+                          "updatedAt": "2022-06-05T05:32:03Z",
+                          "publishedAt": "2022-04-28T12:29:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Can file as the ICs?",
+          "author": {
+            "login": "KangChenRui"
+          },
+          "bodyText": "Can I use a file as an initial condition in MOOSE?",
+          "url": "https://github.com/idaholab/moose/discussions/20883",
+          "updatedAt": "2022-08-11T06:08:45Z",
+          "publishedAt": "2022-04-27T03:04:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nwhat kind of file? CSV? exodus?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20883#discussioncomment-2643808",
+                  "updatedAt": "2022-08-11T06:08:45Z",
+                  "publishedAt": "2022-04-27T05:38:04Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KangChenRui"
+                          },
+                          "bodyText": "Hi, Guillaume\nAny files supported by moose will do, I don't know how to use them as there is no such example for the ICs module.\nCan you show an example in the input file?\nThanks for your reply!\nChen Rui",
+                          "url": "https://github.com/idaholab/moose/discussions/20883#discussioncomment-2644089",
+                          "updatedAt": "2022-08-11T06:08:51Z",
+                          "publishedAt": "2022-04-27T06:42:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There's a couple options for loading from CSV. I m working on a doc page\nFor data to interpolate on the mesh:\nhttps://mooseframework.inl.gov/source/functions/PiecewiseMultilinear.html\nhttps://mooseframework.inl.gov/source/functions/PiecewiseMulticonstant.html\nFor data to load directly on nodes/elements/blocks:\nhttps://mooseframework.inl.gov/source/functions/PiecewiseConstantFromCSV.html\ncombined with\nhttps://mooseframework.inl.gov/source/userobject/PropertyReadFile.html\nThere are input files attached to the documentation.",
+                          "url": "https://github.com/idaholab/moose/discussions/20883#discussioncomment-2647350",
+                          "updatedAt": "2022-08-11T06:08:51Z",
+                          "publishedAt": "2022-04-27T14:48:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KangChenRui"
+                          },
+                          "bodyText": "Thank you very much for your guidance.\nI will study it.\nChen Rui",
+                          "url": "https://github.com/idaholab/moose/discussions/20883#discussioncomment-2651132",
+                          "updatedAt": "2022-08-11T06:08:51Z",
+                          "publishedAt": "2022-04-28T01:48:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "INSFVNoSlipWallBC between subdomains",
+          "author": {
+            "login": "j-bowhay"
+          },
+          "bodyText": "Hi\nI am trying to model fluid flow through two concentric pipes (one pipe inside of another). To do this I have split my mesh into two subdomain and I am trying to apply a no slip BC between the two subdomains as per the diagram bellow.\n\nHowever when I run the model the bc between the two subdomains doesn't appear to be applied as I am only getting one boundary layer developing.\n\nI have also tried without using separate subdomains but the same issue still persists.\nThanks in advance for any thoughts on how to achieve this.\nJake\n\nInput File\n\n# 2d siumulation of a water through a pipe.\n\nmu=1e-3\nrho=997.0\nRe_inner=1000.0\npipe_length=1\ninner_radius=0.1\nouter_radius=0.1\nu_inner_inlet=${fparse (mu * Re_inner)/(2 * inner_radius * rho)}\nadvected_interp_method='average'\nvelocity_interp_method='average'\n\n[GlobalParams]\n  rhie_chow_user_object = 'rc'\n[]\n\n[UserObjects]\n  [rc]\n    type = INSFVRhieChowInterpolator\n    u = u\n    v = v\n    pressure = pressure\n    block = '0 1'\n  []\n[]\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    xmax = ${pipe_length}\n    ymin = 0\n    ymax = ${fparse inner_radius + outer_radius}\n    nx = 100\n    ny = 150\n  []\n  [id_outer]\n    type = ParsedSubdomainMeshGenerator\n    input = gen\n    combinatorial_geometry = 'y > ${inner_radius}'\n    block_id = 1\n  []\n  [delete_sideset]\n    type = BoundaryDeletionGenerator\n    input = id_outer\n    boundary_names = 'left right top bottom'\n  []\n  [name_outer_top]\n    type = ParsedGenerateSideset\n    input = delete_sideset\n    combinatorial_geometry = 'y = ${fparse inner_radius + outer_radius}'\n    replace = true\n    new_sideset_name = 'outer_top'\n  []\n  [name_outer_left]\n    type = ParsedGenerateSideset\n    input = name_outer_top\n    combinatorial_geometry = 'y > ${inner_radius} & x = 0'\n    replace = true\n    new_sideset_name = 'outer_left'\n  []\n  [name_outer_right]\n    type = ParsedGenerateSideset\n    input = name_outer_left\n    combinatorial_geometry = 'y > ${inner_radius} & x = ${pipe_length}'\n    replace = true\n    new_sideset_name = 'outer_right'\n  []\n  [middle_interface]\n    type = SideSetsBetweenSubdomainsGenerator\n    input = name_outer_right\n    primary_block = '0'\n    paired_block = '1'\n    new_boundary = 'middle_interface'\n  []\n  [name_inner_bottom]\n    type = ParsedGenerateSideset\n    input = middle_interface\n    combinatorial_geometry = 'y = 0'\n    replace = true\n    new_sideset_name = 'inner_bottom'\n  []\n  [name_inner_left]\n    type = ParsedGenerateSideset\n    input = name_inner_bottom\n    combinatorial_geometry = 'y < ${inner_radius} & x = 0'\n    replace = true\n    new_sideset_name = 'inner_left'\n  []\n  [name_inner_right]\n    type = ParsedGenerateSideset\n    input = name_inner_left\n    combinatorial_geometry = 'y < ${inner_radius} & x = ${pipe_length}'\n    replace = true\n    new_sideset_name = 'inner_right'\n  []\n[]\n\n[Problem]\n  fv_bcs_integrity_check = true\n  coord_type = 'RZ'\n  rz_coord_axis = x\n[]\n\n[Variables]\n  [u]\n    type = INSFVVelocityVariable\n    initial_condition = ${u_inner_inlet}\n    block = '0 1'\n  []\n  [v]\n    type = INSFVVelocityVariable\n    initial_condition = 1e-15\n    block = '0 1'\n  []\n  [pressure]\n    type = INSFVPressureVariable\n    block = '0 1'\n  []\n[]\n\n[FVKernels]\n  [mass]\n    type = INSFVMassAdvection\n    variable = pressure\n    advected_interp_method = 'average'#${advected_interp_method}\n    velocity_interp_method = 'average'#${velocity_interp_method}\n    rho = ${rho}\n    block = '0 1'\n  []\n\n  [u_advection]\n    type = INSFVMomentumAdvection\n    variable = u\n    advected_interp_method = 'average'#${advected_interp_method}\n    velocity_interp_method = 'average'#${velocity_interp_method}\n    rho = ${rho}\n    momentum_component = 'x'\n    block = '0 1'\n  []\n  [u_viscosity]\n    type = INSFVMomentumDiffusion\n    variable = u\n    mu = ${mu}\n    momentum_component = 'x'\n    block = '0 1'\n  []\n  [u_pressure]\n    type = INSFVMomentumPressure\n    variable = u\n    momentum_component = 'x'\n    pressure = pressure\n    block = '0 1'\n  []\n\n  [v_advection]\n    type = INSFVMomentumAdvection\n    variable = v\n    advected_interp_method = 'average'#${advected_interp_method}\n    velocity_interp_method = 'average'#${velocity_interp_method}\n    rho = ${rho}\n    momentum_component = 'y'\n    block = '0 1'\n  []\n  [v_viscosity]\n    type = INSFVMomentumDiffusion\n    variable = v\n    mu = ${mu}\n    momentum_component = 'y'\n    block = '0 1'\n  []\n  [v_pressure]\n    type = INSFVMomentumPressure\n    variable = v\n    momentum_component = 'y'\n    pressure = pressure\n    block = '0 1'\n  []\n[]\n\n[FVBCs]\n  [outer-inlet-u]\n    type = INSFVInletVelocityBC\n    boundary = 'outer_left'\n    variable = u\n    function = ${u_inner_inlet}\n  []\n  [outer-inlet-v]\n    type = INSFVInletVelocityBC\n    boundary = 'outer_left'\n    variable = v\n    function = 0\n  []\n  [outer-top-no-slip-wall-u]\n    type = INSFVNoSlipWallBC\n    boundary = 'outer_top'\n    variable = u\n    function = 0\n  []\n  [outer-top-no-slip-wall-v]\n    type = INSFVNoSlipWallBC\n    boundary = 'outer_top'\n    variable = v\n    function = 0\n  []\n  [outer-outlet-p]\n    type = INSFVOutletPressureBC\n    boundary = 'outer_right'\n    variable = pressure\n    function = 1e-15\n  []\n  [no-slip-middle-u]\n    type = INSFVNoSlipWallBC\n    boundary = 'middle_interface'\n    variable = u\n    function = 0\n  []\n  [no-slip-middle-v]\n    type = INSFVNoSlipWallBC\n    boundary = 'middle_interface'\n    variable = v\n    function = 0\n  [] \n  [inner-inlet-u]\n    type = INSFVInletVelocityBC\n    boundary = 'inner_left'\n    variable = u\n    function = ${u_inner_inlet}\n  []\n  [inner-inlet-v]\n    type = INSFVInletVelocityBC\n    boundary = 'inner_left'\n    variable = v\n    function = 0\n  []\n  [inner-outlet-p]\n    type = INSFVOutletPressureBC\n    boundary = 'inner_right'\n    variable = pressure\n    function = 1e-15\n  []\n  [axis-u]\n    type = INSFVSymmetryVelocityBC\n    boundary = 'inner_bottom'\n    variable = u\n    u = u\n    v = v\n    mu = ${mu}\n    momentum_component = x\n  []\n  [axis-v]\n    type = INSFVSymmetryVelocityBC\n    boundary = 'inner_bottom'\n    variable = v\n    u = u\n    v = v\n    mu = ${mu}\n    momentum_component = y\n  []\n  [axis-p]\n    type = INSFVSymmetryPressureBC\n    boundary = 'inner_bottom'\n    variable = pressure\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = 'NEWTON'\n  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_pc_type -sub_pc_factor_shift_type'\n  petsc_options_value = 'asm      100                lu           NONZERO'\n  line_search = 'none'\n  nl_max_its = 50       \n  l_max_its = 50\n  nl_rel_tol = 1e-12\n  automatic_scaling = true\n[]\n\n[Outputs]\n  exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/20885",
+          "updatedAt": "2022-06-16T13:04:34Z",
+          "publishedAt": "2022-04-27T09:45:53Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe do not support boundary conditions inside the flow domains. You will have to either:\n\ncut the domain by deleting an element or generating two separate meshes (you can keep them in the same solve using the CombinerGenerator\nhttps://mooseframework.inl.gov/source/meshgenerators/CombinerGenerator.html\nuse different flow variables (u,v,P) in both blocks.\nuse my branch where I'm working on interface kernels and a boundaries_to_avoid parameter to restrict the execution of kernels on some sidesets. But I havent figured out everything out for this yet, and it's being done for restricting flow with some sort of diode behavior, not for adding a wall (though it's very similar)\nhttps://github.com/giudgiud/moose/tree/PR_wall_flow_diode\n\nbtw average velocity and advected quantity interpolation are unstable for fluid flow, so you may want to use Rhie Chow for velocity and first order upwind or try our newly merged second order schemes for the advected quantity.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20885#discussioncomment-2650094",
+                  "updatedAt": "2022-06-16T13:05:03Z",
+                  "publishedAt": "2022-04-27T20:53:50Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "j-bowhay"
+                          },
+                          "bodyText": "Thank you for the helpful response",
+                          "url": "https://github.com/idaholab/moose/discussions/20885#discussioncomment-2650218",
+                          "updatedAt": "2022-06-16T13:05:04Z",
+                          "publishedAt": "2022-04-27T21:21:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "An issue about C++ grammer in moose",
+          "author": {
+            "login": "xiaojbing"
+          },
+          "bodyText": "I add code in my application to solve CFD problems. And I find that different conditional  statement will cause different residual and results in the following code. This code is to compute Jacobi Matrix and inherits DGkernel. The difference of conditional statement is just at orange area. But this should not cause difference,right?\nconditional  statement 1:\n\nresidual and results:\n\n\nconditional  statement 2:\n\nresidual and results:",
+          "url": "https://github.com/idaholab/moose/discussions/20889",
+          "updatedAt": "2022-09-06T14:22:02Z",
+          "publishedAt": "2022-04-27T11:42:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "Without looking at the code at all, I suspect that you just haven't converged as either your relative tolerance  is too loose, or your absolute tolerance is too high. The residual has only dropped by one order of magnitude. Maybe check that first?",
+                  "url": "https://github.com/idaholab/moose/discussions/20889#discussioncomment-2646087",
+                  "updatedAt": "2022-09-06T14:22:14Z",
+                  "publishedAt": "2022-04-27T11:56:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiaojbing"
+                          },
+                          "bodyText": "Without looking at the code at all, I suspect that you just haven't converged as either your relative tolerance is too loose, or your absolute tolerance is too high. The residual has only dropped by one order of magnitude. Maybe check that first?\n\nThank you. This code inherit from kernel.C. But the different type conditional statement should not affect residual,right.",
+                          "url": "https://github.com/idaholab/moose/discussions/20889#discussioncomment-2646123",
+                          "updatedAt": "2022-09-06T14:22:15Z",
+                          "publishedAt": "2022-04-27T12:02:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "No idea! I'll leave that to one of the MOOSE team.",
+                          "url": "https://github.com/idaholab/moose/discussions/20889#discussioncomment-2646145",
+                          "updatedAt": "2022-09-06T14:22:15Z",
+                          "publishedAt": "2022-04-27T12:07:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "First - please refrain from posting screenshots of text. It can be difficult to read and is also difficult for other users when searching questions in the discussions in the future.\nSecond - I would strongly suggest that you do not try to re-implement basic DG capability. In general, you should override computeQpResidual(Moose::DGResidualType type) and computeQpJacobian(Moose::DGJacobianType type). Lower level code like this is subject to change.\nNow... in terms of the rest of your confusion. This is expected. When you first assign Kxx in either case, you're setting to to either the block Jacobian or the neighbor block Jacobian. In what follows (your conditional statements), you are not reassigning Kxx but  you are instead calling the equals operator, thus you are setting the Jacobian that you had previously defined. That is:\nDenseMatrix<Number> & Kxx = _assembly.jacobianBlockNeighbor(type, p, q);\n// Sets the neighbor Jacobian = to the non-neighbor jacobian\nif (type == Moose::ElementElement)\n    Kxx = _assembly.jacobianBlock(p, q);\n// Sets the neighbor Jacobian = to the neighbor Jacobian\nelse\n    Kxx = _assembly.jacobianBlockNeighbor(type, p, q);\nYou are not re-assigning Kxx. You are literally setting Kxx equal to some other matrix.",
+                  "url": "https://github.com/idaholab/moose/discussions/20889#discussioncomment-2646632",
+                  "updatedAt": "2022-09-06T14:22:15Z",
+                  "publishedAt": "2022-04-27T13:16:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

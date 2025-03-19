@@ -1,0 +1,1289 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNC0xMlQxMDowNToxNC0wNjowMM4ATPQj"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "question about variable value transfer UO in THM",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel Hi josh, I wrote a hexagonal assembly which has 18 channels. And I met some new problems:\nI made some changes to the ElementalVariableTransferUO:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_ElementalVariableTransferUO.h\"\n#include \"MooseMesh.h\"\n#include \"KDTree.h\"\n#include \"Assembly.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_ElementalVariableTransferUO);\n\nInputParameters\nFLARE_ElementalVariableTransferUO::validParams()\n{\n  InputParameters params = ElementUserObject::validParams();\n  params.addRequiredParam<ChannelMapping *>(\"_channel_mapping\",\n                                                  \"Flow channel alignement object\");\n  params.addCoupledVar(\"w\", \"Lateral velocity between flow channels\");\n  params.addCoupledVar(\"H\", \"Specific total enthalpy in current flow channel\");\n  params.addCoupledVar(\"rho\", \"Density in current flow channel\");\n  params.addCoupledVar(\"vel\", \"Velocity in current flow channel\");\n  params.addCoupledVar(\"T\", \"Temperature in current flow channel\");\n  params.addCoupledVar(\"A\", \"Area of current flow channel\");\n  params.addCoupledVar(\"p\", \"Pressure in current flow channel\");\n  params.addClassDescription(\n      \"Base class for caching variables between 2 flow channels.\");\n  return params;\n}\n\nFLARE_ElementalVariableTransferUO::FLARE_ElementalVariableTransferUO(\n    const InputParameters & parameters)\n  : ElementUserObject(parameters),\n    _channel_mapping(*getParam<ChannelMapping *>(\"_channel_mapping\")),\n    _w_var(getVar(\"w\", 0)),\n    _H_var(getVar(\"H\", 0)),\n    _rho_var(getVar(\"rho\", 0)),\n    _vel_var(getVar(\"vel\", 0)),\n    _T_var(getVar(\"T\", 0)),\n    _A_var(getVar(\"A\", 0)),\n    _p_var(getVar(\"p\", 0))\n\n{\n}\n\nvoid\nFLARE_ElementalVariableTransferUO::initialize()\n{\n}\n\nvoid\nFLARE_ElementalVariableTransferUO::execute()\n{\n    dof_id_type nearest_elem_id = _channel_mapping.getNearestElemID(_current_elem->id());\n    // get elemental variable value in current element\n    ADReal _w,_H,_rho,_vel,_T,_A,_p;\n    _w = _w_var->getElementalValue(_current_elem);\n    _H = _H_var->getElementalValue(_current_elem);\n    _rho = _rho_var->getElementalValue(_current_elem);\n    _vel = _vel_var->getElementalValue(_current_elem);\n    _T = _T_var->getElementalValue(_current_elem);\n    _A = _A_var->getElementalValue(_current_elem);\n    _p = _p_var->getElementalValue(_current_elem);\n\n    // get the local DoF indices corresponding to the variable on the element\n//    std::vector<dof_id_type> dof_indices;\n//    _w_var->dofMap().dof_indices(_current_elem, dof_indices, _w_var->number());\n//    _H_var->dofMap().dof_indices(_current_elem, dof_indices, _H_var->number());\n//    _rho_var->dofMap().dof_indices(_current_elem, dof_indices, _rho_var->number());\n//    _vel_var->dofMap().dof_indices(_current_elem, dof_indices, _vel_var->number());\n//    _T_var->dofMap().dof_indices(_current_elem, dof_indices, _T_var->number());\n//    _A_var->dofMap().dof_indices(_current_elem, dof_indices, _A_var->number());\n//    _p_var->dofMap().dof_indices(_current_elem, dof_indices, _p_var->number());\n\n    // \"seed\" the derivative\n//    Moose::derivInsert(_vel.derivatives(), dof_indices[0], 1.0);\n//    Moose::derivInsert(_rho.derivatives(), dof_indices[0], 1.0);\n//    Moose::derivInsert(_p.derivatives(), dof_indices[0], 1.0);\n\n    _adj_w[nearest_elem_id] = _w;\n    _adj_H[nearest_elem_id] = _H;\n    _adj_rho[nearest_elem_id] = _rho;\n    _adj_vel[nearest_elem_id] = _vel;\n    _adj_T[nearest_elem_id] = _T;\n    _adj_A[nearest_elem_id] = _A;\n    _adj_p[nearest_elem_id] = _p;\n\n}\n\nvoid\nFLARE_ElementalVariableTransferUO::finalize()\n{\n}\n\nvoid\nFLARE_ElementalVariableTransferUO::threadJoin(const UserObject & y)\n{\n  const FLARE_ElementalVariableTransferUO & uo =\n      static_cast<const FLARE_ElementalVariableTransferUO &>(y);\n    for (auto & it : uo._adj_w)\n      _adj_w[it.first] = it.second;\n    for (auto & it : uo._adj_H)\n      _adj_H[it.first] = it.second;\n    for (auto & it : uo._adj_rho)\n      _adj_rho[it.first] = it.second;\n    for (auto & it : uo._adj_vel)\n      _adj_vel[it.first] = it.second;\n    for (auto & it : uo._adj_T)\n      _adj_T[it.first] = it.second;\n    for (auto & it : uo._adj_A)\n        _adj_A[it.first] = it.second;\n    for (auto & it : uo._adj_p)\n      _adj_p[it.first] = it.second;\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentW(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_w.find(element_id);\n  if (it != _adj_w.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Lateral Velocity for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentH(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_H.find(element_id);\n  if (it != _adj_H.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Specific Total Enthalpy for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentRHO(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_rho.find(element_id);\n  if (it != _adj_rho.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Density for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentVEL(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_vel.find(element_id);\n  if (it != _adj_vel.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Velocity for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentT(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_T.find(element_id);\n  if (it != _adj_T.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Temperature for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentA(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_A.find(element_id);\n  if (it != _adj_A.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Area for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_ElementalVariableTransferUO::getAdjacentP(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_p.find(element_id);\n  if (it != _adj_p.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Pressure for element \", element_id, \" was not computed.\");\n}\n\n\nI use the addCoupledVar interface because I want to add some flexibility. But there is some error info when I run the input file.\nThe info using debugger is :\nProcess 383340 launched: '/home/linux/projects/moose/modules/thermal_hydraulics/thermal_hydraulics-dbg' (x86_64)\nwarning: (x86_64) /home/linux/mambaforge3/envs/moose/lib/libstdc++.so.6 unsupported DW_FORM value: 0x1e\n\nFramework Information:\nMOOSE Version:           git commit 5d2aa15248 on 2022-04-01\nLibMesh Version:         \nPETSc Version:           3.16.5\nSLEPc Version:           3.16.2\nCurrent Time:            Tue Mar 28 09:29:56 2023\nExecutable Timestamp:    Tue Mar 28 09:28:53 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          1\n  Spatial Dimension:       3\n  Nodes:                   558\n  Elems:                   540\n  Num Subdomains:          18\n\nNonlinear System:\n  Num DOFs:                2340\n  Num Local DOFs:          2340\n  Variables:               { \"rhoA\" \"rhoEA\" \"rhouA\" } \"w1\" \"w2\" \n  Finite Element Types:    \"MONOMIAL\" \"MONOMIAL\" \"MONOMIAL\" \n  Approximation Orders:    \"CONSTANT\" \"CONSTANT\" \"CONSTANT\" \n\nAuxiliary System:\n  Num DOFs:                6498\n  Num Local DOFs:          6498\n  Variables:               \"A\" \"A_linear\" { \"H\" \"P_hf\" \"T\" \"e\" \"p\" \"rho\" \"v\" \"vel_x\" \"vel_y\" \"vel_z\" \n                             } \n  Finite Element Types:    \"MONOMIAL\" \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"CONSTANT\" \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             ConstantDT\n  Solver Mode:             Preconditioned JFNK\n  MOOSE Preconditioner:    SMP\n\n\n    Setting Up Initial Conditions......                                                  [ 43.38 s] [    8 MB]\n    Finished Initializing Auxiliary System                                               [  5.53 s] [    0 MB]\nProcess 383340 stopped\n* thread #1, name = 'thermal_hydraul', stop reason = signal SIGSEGV: invalid address (fault address: 0x878)\n    frame #0: 0x00007ffff3cf052c libmoose-dbg.so.0`std::__uniq_ptr_impl<MooseVariableData<double>, std::default_delete<MooseVariableData<double> > >::_M_ptr(this=0x0000000000000878) const at unique_ptr.h:173:58\n   170 \t      }\n   171 \t\n   172 \t      pointer&   _M_ptr() { return std::get<0>(_M_t); }\n-> 173 \t      pointer    _M_ptr() const { return std::get<0>(_M_t); }\n   174 \t      _Dp&       _M_deleter() { return std::get<1>(_M_t); }\n   175 \t      const _Dp& _M_deleter() const { return std::get<1>(_M_t); }\n   176 \t\n(lldb) bt\n* thread #1, name = 'thermal_hydraul', stop reason = signal SIGSEGV: invalid address (fault address: 0x878)\n  * frame #0: 0x00007ffff3cf052c libmoose-dbg.so.0`std::__uniq_ptr_impl<MooseVariableData<double>, std::default_delete<MooseVariableData<double> > >::_M_ptr(this=0x0000000000000878) const at unique_ptr.h:173:58\n    frame #1: 0x00007ffff3ce9440 libmoose-dbg.so.0`std::unique_ptr<MooseVariableData<double>, std::default_delete<MooseVariableData<double> > >::get(this=0x0000000000000878) const at unique_ptr.h:422:27\n    frame #2: 0x00007ffff3cdf92c libmoose-dbg.so.0`std::unique_ptr<MooseVariableData<double>, std::default_delete<MooseVariableData<double> > >::operator->(this=0x0000000000000878) const at unique_ptr.h:416:12\n    frame #3: 0x00007ffff4dd8ca3 libmoose-dbg.so.0`MooseVariableFE<double>::getElementalValue(this=0x0000000000000000, elem=0x0000555555bdffa0, idx=0) const at MooseVariableFE.C:225:42\n    frame #4: 0x00007ffff7a4195a libthermal_hydraulics-dbg.so.0`FLARE_ElementalVariableTransferUO::execute(this=0x0000555558ea7630) at FLARE_ElementalVariableTransferUO.C:63:39\n    frame #5: 0x00007ffff4131b5a libmoose-dbg.so.0`ComputeUserObjectsThread::onElement(this=0x00007fffffffaf80, elem=0x0000555555bdffa0) at ComputeUserObjectsThread.C:123:16\n    frame #6: 0x00007ffff6e3cc3f libnavier_stokes-dbg.so.0`ThreadedElementLoopBase<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> >::operator(this=0x00007fffffffaf80, range=0x0000555555e3b0c0, bypass_threading=false)(libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> const&, bool) at ThreadedElementLoopBase.h:226:18\n    frame #7: 0x00007ffff4885625 libmoose-dbg.so.0`void libMesh::Threads::parallel_reduce<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*>, ComputeUserObjectsThread>(range=0x0000555555e3b0c0, body=0x00007fffffffaf80) at threads_pthread.h:380:9\n    frame #8: 0x00007ffff48440b2 libmoose-dbg.so.0`FEProblemBase::computeUserObjectsInternal(this=0x0000555555be9a00, type=0x00007ffff5dcd380, group=0x00007fffffffb364, query=0x00007fffffffb220) at FEProblemBase.C:3886:29\n    frame #9: 0x00007ffff48432a2 libmoose-dbg.so.0`FEProblemBase::computeUserObjects(this=0x0000555555be9a00, type=0x00007ffff5dcd380, group=0x00007fffffffb364) at FEProblemBase.C:3812:29\n    frame #10: 0x00007ffff4842ae6 libmoose-dbg.so.0`FEProblemBase::execute(this=0x0000555555be9a00, exec_type=0x00007ffff5dcd380) at FEProblemBase.C:3725:21\n    frame #11: 0x00007ffff4828dbc libmoose-dbg.so.0`FEProblemBase::initialSetup(this=0x0000555555be9a00) at FEProblemBase.C:987:12\n    frame #12: 0x00007ffff3e81bb5 libmoose-dbg.so.0`Transient::init(this=0x0000555555e98ac0) at Transient.C:249:24\n    frame #13: 0x00007ffff4f2c91a libmoose-dbg.so.0`MooseApp::executeExecutioner(this=0x00005555556f6650) at MooseApp.C:1085:23\n    frame #14: 0x00007ffff4f2f4fa libmoose-dbg.so.0`MooseApp::run(this=0x00005555556f6650) at MooseApp.C:1400:23\n    frame #15: 0x00005555555577d3 thermal_hydraulics-dbg`main(argc=3, argv=0x00007fffffffc0c8) at main.C:34:11\n    frame #16: 0x00007fffea0f7493 libc.so.6`__libc_start_main + 243\n    frame #17: 0x0000555555557079 thermal_hydraulics-dbg`_start + 41\n\nIt seems there is something wrong with the FLARE_ElementalVariableTransferUO in line 63:\n_rho = _rho_var->getElementalValue(_current_elem);\nBut I don't see what the problem is. Do you have any ideas?\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/23872",
+          "updatedAt": "2023-04-29T02:50:58Z",
+          "publishedAt": "2023-03-28T13:42:28Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "It's not obvious. Is there something different about rho than H? Can you comment out the rho line and see if it occurs with other variables?",
+                  "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5454975",
+                  "updatedAt": "2023-03-28T14:34:14Z",
+                  "publishedAt": "2023-03-28T14:34:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "You inspire me. I replace the UO in TwoChannelsModel with the new UO. And it can calculate successfully. I think I should check the new component first.",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5460295",
+                          "updatedAt": "2023-03-29T01:48:30Z",
+                          "publishedAt": "2023-03-29T01:48:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Ethan-xj"
+                  },
+                  "bodyText": "@joshuahansel Hello josh, do you know how to increase the --param max-gcse-memory in MOOSE? It probably is a parameter in gcc.\nWhen I compile in the terminal, it says:\n/home/linux/projects/moose/modules/thermal_hydraulics/src/components/FLARE_HEX_7RODS.C:5967:1: warning: const/copy propagation disabled: 25859 basic blocks and 62092 registers; increase '--param max-gcse-memory' above 200872712 [-Wdisabled-optimization]\nI try some instruction codes but failed.\nEthan",
+                  "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5485756",
+                  "updatedAt": "2023-03-31T07:17:08Z",
+                  "publishedAt": "2023-03-31T07:17:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Sorry, I have no idea what this is even talking about!",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5488491",
+                          "updatedAt": "2023-03-31T12:03:56Z",
+                          "publishedAt": "2023-03-31T12:03:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@GiudGiud Hello Giud, do you have any ideas about the --param max-gcse-memory ?",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5504746",
+                          "updatedAt": "2023-04-03T01:19:42Z",
+                          "publishedAt": "2023-04-03T01:19:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "never dealt with that.\nI wouldnt worry about it though. Just keep it in the back of your mind, and if you profile the code and notice a large slowdown in that area of the code, then it could be that and you'd want to address it",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5504792",
+                          "updatedAt": "2023-04-03T01:30:10Z",
+                          "publishedAt": "2023-04-03T01:30:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "OK, thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5509212",
+                          "updatedAt": "2023-04-03T12:05:49Z",
+                          "publishedAt": "2023-04-03T12:05:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Ethan-xj"
+                  },
+                  "bodyText": "@joshuahansel Hi josh, I'm working on a larger case these days since I calculated a two-channels case not long ago. The convergence of the two-channels case is not so good, but the case can be converged. But the larger case(18-channels case) is not converged at all, the residual of linear iterations are not dropping for a specific time step. And I add these options in the Executioner block:\n  automatic_scaling = true\n  off_diagonals_in_auto_scaling = true\n  line_search = 'none'\n\n  petsc_options = '-snes_converged_reason -ksp_converged_reason -pc_svd_monitor'\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n  petsc_options_value = 'lu superlu_dist'\n\n\nThe residual start to drop, but not enough to converge.\nSo I start to think about the correctness of this method. Maybe there's some mistakes in this method and with the increase of the case's scale, the mistake became apparent.\nI want to ask: When I add the density and pressure of channel2 into channel1's kernel. What does the Jacobian look like? Will them be counted as variables? Or just a number?\nNow the situation is: I can calculate the lateral momentum equation in 18-channels case. But once I couple w(actually w1 and w2, because there are multiple channels adjacent to each other) into the other equations, the case start to become non-converged. I have no idea about how to make the case converged.\nEthan",
+                  "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5509613",
+                  "updatedAt": "2023-04-03T12:45:58Z",
+                  "publishedAt": "2023-04-03T12:45:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Hi Ethan,\nI don't know how well certain solve options work, like auto-scaling, since I don't try it very often. Definitely experiment with different combinations of options. For my applications (which are probably a bit smaller than yours), I typically just use -pc_type lu. It's surprising that your linear residuals are not dropping with LU preconditioner. Just to experiment, do -pc_type lu -ksp_type preonly, which does a true direct linear solve - that should converge in a single linear iteration (I'm not suggesting this as a solution, just troubleshooting at least).\n\nWhat does the Jacobian look like? Will them be counted as variables? Or just a number?\n\nNot sure what you mean. For the AD strategy we discussed, the Jacobians with respect to these DoFs should be handled correctly, without any approximation.\n\nI can calculate the lateral momentum equation in 18-channels case. But once I couple w(actually w1 and w2, because there are multiple channels adjacent to each other) into the other equations, the case start to become non-converged. I have no idea about how to make the case converged.\n\nI don't understand. So first you try solving the lateral momentum equations independently of the others, which works? But then you add terms to your other equations involving w, and you have trouble converging? If that's the case, I'm not sure. Are these terms correct? Do you have their Jacobians accounted for? Maybe you could try using PC type of FDP rather than SMP (if your problem isn't too large) to see if the nonlinear solve is better in that case, which would imply that you need to fix some Jacobians. However, I've found that sometimes FDP doesn't do well anyway, despite being approximately correct.",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5510038",
+                          "updatedAt": "2023-04-03T13:22:40Z",
+                          "publishedAt": "2023-04-03T13:22:39Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel\n\nI don't know how well certain solve options work, like auto-scaling, since I don't try it very often. Definitely experiment with different combinations of options. For my applications (which are probably a bit smaller than yours), I typically just use -pc_type lu. It's surprising that your linear residuals are not dropping with LU preconditioner. Just to experiment, do -pc_type lu -ksp_type preonly, which does a true direct linear solve - that should converge in a single linear iteration (I'm not suggesting this as a solution, just troubleshooting at least).\n\nThis is my [Executioner]:\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 3\n  dt = 0.1\n\n#  line_search = basic\n  solve_type = 'PJFNK'\n  l_max_its = 100\n\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-5\n  nl_max_its = 100\n\n  automatic_scaling = true\n  off_diagonals_in_auto_scaling = true\n  line_search = 'none'\n\n  petsc_options = '-ksp_type<preonly>'\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  \n[]\n\nAnd the residual is like:\nTime Step 0, time = 0\n\nTime Step 1, time = 0.1, dt = 0.1\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 2.455059e+02\n      0 Linear |R| = 2.455059e+02\n      1 Linear |R| = 1.924805e+01\n      2 Linear |R| = 1.587375e+01\n      3 Linear |R| = 1.413960e+01\n      4 Linear |R| = 1.356323e+01\n      5 Linear |R| = 1.285219e+01\n      6 Linear |R| = 1.282729e+01\n      7 Linear |R| = 1.279495e+01\n      8 Linear |R| = 1.273282e+01\n      9 Linear |R| = 1.273265e+01\n     10 Linear |R| = 1.253161e+01\n     11 Linear |R| = 1.253013e+01\n     12 Linear |R| = 1.251579e+01\n     13 Linear |R| = 1.229304e+01\n     14 Linear |R| = 1.228967e+01\n     15 Linear |R| = 1.221899e+01\n     16 Linear |R| = 1.220805e+01\n     17 Linear |R| = 1.219621e+01\n     18 Linear |R| = 1.216995e+01\n     19 Linear |R| = 1.216977e+01\n     20 Linear |R| = 1.216974e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 1 Nonlinear |R| = 1.943354e+01\n      0 Linear |R| = 1.943354e+01\n      1 Linear |R| = 1.943290e+01\n      2 Linear |R| = 1.943276e+01\n      3 Linear |R| = 1.943271e+01\n      4 Linear |R| = 1.942160e+01\n      5 Linear |R| = 1.933211e+01\n      6 Linear |R| = 1.933120e+01\n      7 Linear |R| = 1.931915e+01\n      8 Linear |R| = 1.931915e+01\n      9 Linear |R| = 1.910380e+01\n     10 Linear |R| = 1.908773e+01\n     11 Linear |R| = 1.908750e+01\n     12 Linear |R| = 1.906571e+01\n     13 Linear |R| = 1.895970e+01\n     14 Linear |R| = 1.893580e+01\n     15 Linear |R| = 1.893309e+01\n     16 Linear |R| = 1.890683e+01\n     17 Linear |R| = 1.853304e+01\n     18 Linear |R| = 1.851893e+01\n     19 Linear |R| = 1.851336e+01\n     20 Linear |R| = 1.847420e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 2 Nonlinear |R| = 1.858191e+01\n      0 Linear |R| = 1.858191e+01\n      1 Linear |R| = 1.858113e+01\n      2 Linear |R| = 1.857834e+01\n      3 Linear |R| = 1.856644e+01\n      4 Linear |R| = 1.854676e+01\n      5 Linear |R| = 1.854324e+01\n      6 Linear |R| = 1.854309e+01\n      7 Linear |R| = 1.852844e+01\n      8 Linear |R| = 1.852452e+01\n      9 Linear |R| = 1.852201e+01\n     10 Linear |R| = 1.850517e+01\n     11 Linear |R| = 1.846804e+01\n     12 Linear |R| = 1.845457e+01\n     13 Linear |R| = 1.840026e+01\n     14 Linear |R| = 1.838043e+01\n     15 Linear |R| = 1.836730e+01\n     16 Linear |R| = 1.831367e+01\n     17 Linear |R| = 1.806890e+01\n     18 Linear |R| = 1.803449e+01\n     19 Linear |R| = 1.799668e+01\n     20 Linear |R| = 1.799663e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 3 Nonlinear |R| = 1.812376e+01\n      0 Linear |R| = 1.812376e+01\n      1 Linear |R| = 1.812342e+01\n      2 Linear |R| = 1.811398e+01\n      3 Linear |R| = 1.811271e+01\n      4 Linear |R| = 1.810790e+01\n      5 Linear |R| = 1.810379e+01\n      6 Linear |R| = 1.810295e+01\n      7 Linear |R| = 1.809153e+01\n      8 Linear |R| = 1.808781e+01\n      9 Linear |R| = 1.805791e+01\n     10 Linear |R| = 1.804930e+01\n     11 Linear |R| = 1.804921e+01\n     12 Linear |R| = 1.803793e+01\n     13 Linear |R| = 1.802701e+01\n     14 Linear |R| = 1.802388e+01\n     15 Linear |R| = 1.801677e+01\n     16 Linear |R| = 1.801424e+01\n     17 Linear |R| = 1.770647e+01\n     18 Linear |R| = 1.770312e+01\n     19 Linear |R| = 1.769540e+01\n     20 Linear |R| = 1.768225e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 4 Nonlinear |R| = 1.775048e+01\n      0 Linear |R| = 1.775048e+01\n      1 Linear |R| = 1.775048e+01\n      2 Linear |R| = 1.774899e+01\n      3 Linear |R| = 1.774626e+01\n      4 Linear |R| = 1.774492e+01\n      5 Linear |R| = 1.774491e+01\n      6 Linear |R| = 1.774088e+01\n      7 Linear |R| = 1.773989e+01\n      8 Linear |R| = 1.773176e+01\n      9 Linear |R| = 1.773024e+01\n     10 Linear |R| = 1.772377e+01\n     11 Linear |R| = 1.772212e+01\n     12 Linear |R| = 1.767269e+01\n     13 Linear |R| = 1.765532e+01\n     14 Linear |R| = 1.765440e+01\n     15 Linear |R| = 1.758903e+01\n     16 Linear |R| = 1.753487e+01\n     17 Linear |R| = 1.750003e+01\n     18 Linear |R| = 1.749350e+01\n     19 Linear |R| = 1.749314e+01\n     20 Linear |R| = 1.749309e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 5 Nonlinear |R| = 1.754063e+01\n      0 Linear |R| = 1.754063e+01\n      1 Linear |R| = 1.754062e+01\n      2 Linear |R| = 1.753922e+01\n      3 Linear |R| = 1.753839e+01\n      4 Linear |R| = 1.750152e+01\n      5 Linear |R| = 1.748760e+01\n      6 Linear |R| = 1.748131e+01\n      7 Linear |R| = 1.746809e+01\n      8 Linear |R| = 1.744389e+01\n      9 Linear |R| = 1.742203e+01\n     10 Linear |R| = 1.740935e+01\n     11 Linear |R| = 1.740613e+01\n     12 Linear |R| = 1.739940e+01\n     13 Linear |R| = 1.737862e+01\n     14 Linear |R| = 1.737736e+01\n     15 Linear |R| = 1.737491e+01\n     16 Linear |R| = 1.737372e+01\n     17 Linear |R| = 1.710702e+01\n     18 Linear |R| = 1.707838e+01\n     19 Linear |R| = 1.705797e+01\n     20 Linear |R| = 1.703600e+01\n  Linear solve did not converge due to DIVERGED_ITS iterations 20\n 6 Nonlinear |R| = 1.712855e+01\n      0 Linear |R| = 1.712855e+01\n      1 Linear |R| = 1.712854e+01\n      2 Linear |R| = 1.711985e+01\n      3 Linear |R| = 1.711689e+01\n      4 Linear |R| = 1.710944e+01\n      5 Linear |R| = 1.710769e+01\n      6 Linear |R| = 1.710147e+01\n      7 Linear |R| = 1.708301e+01\n      8 Linear |R| = 1.706861e+01\n      9 Linear |R| = 1.702431e+01\n     10 Linear |R| = 1.702281e+01\n     11 Linear |R| = 1.700613e+01\n     12 Linear |R| = 1.700593e+01\n     13 Linear |R| = 1.699160e+01\n     14 Linear |R| = 1.698790e+01\n     15 Linear |R| = 1.698787e+01\n     16 Linear |R| = 1.690293e+01\n     17 Linear |R| = 1.682969e+01\n     18 Linear |R| = 1.682179e+01\n     19 Linear |R| = 1.673479e+01\n     20 Linear |R| = 1.673478e+01\n\n\nI don't understand. So first you try solving the lateral momentum equations independently of the others, which works? But then you add terms to your other equations involving w, and you have trouble converging? If that's the case, I'm not sure. Are these terms correct? Do you have their Jacobians accounted for? Maybe you could try using PC type of FDP rather than SMP (if your problem isn't too large) to see if the nonlinear solve is better in that case, which would imply that you need to fix some Jacobians. However, I've found that sometimes FDP doesn't do well anyway, despite being approximately correct.\n\nI'm worrying about the Jacobian. We use AD in all the kernels, so we don't need to write the Jacobian ourselves right? But I use analyzejacobian on my two-channels model and I find out that:\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' is wrong (off by 29.3 %)\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' is questionable (off by 10.56 %)\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' is questionable (off by 10.56 %)\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' is wrong (off by 123.6 %)\n\nKernel for variable 'rhouA':\n  (2,3) Off-diagonal Jacobian for variable 'w' is wrong (off by 29179.4 %)\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' is questionable (off by 10.56 %)\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' is questionable (off by 10.56 %)\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' is questionable (off by 10.56 %)\n\nKernel for variable 'rhoA':\n  (0,0) On-diagonal Jacobian is wrong (off by 37.6 %)\n  (0,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (0,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (1,1) On-diagonal Jacobian is wrong (off by 28.8 %)\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (2,2) On-diagonal Jacobian is wrong (off by 23.5 %)\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (3,3) On-diagonal Jacobian is wrong (off by 27.4 %)\n\nKernel for variable 'rhoA':\n  (0,0) On-diagonal Jacobian is wrong (off by 463.7 %)\n  (0,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (0,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (1,1) On-diagonal Jacobian is wrong (off by 481.9 %)\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (2,2) On-diagonal Jacobian is wrong (off by 484.3 %)\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (3,3) On-diagonal Jacobian is slightly off (by 0.084206 %)\n\nKernel for variable 'rhoA':\n  (0,0) On-diagonal Jacobian is wrong (off by 80.0 %)\n  (0,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (0,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (1,1) On-diagonal Jacobian is wrong (off by 99.7 %)\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (2,2) On-diagonal Jacobian is wrong (off by 99.0 %)\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (3,3) On-diagonal Jacobian is inexact (off by 1.183 %)\n\nKernel for variable 'rhoA':\n  (0,0) On-diagonal Jacobian is wrong (off by 5056.2 %)\n  (0,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (0,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (1,1) On-diagonal Jacobian is wrong (off by 414.8 %)\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (2,2) On-diagonal Jacobian is wrong (off by 804.4 %)\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,0) On-diagonal Jacobian is wrong (off by 1512.5 %)\n  (0,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (0,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (1,1) On-diagonal Jacobian is wrong (off by 1197.2 %)\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (2,2) On-diagonal Jacobian is wrong (off by 1184.5 %)\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n  (3,3) On-diagonal Jacobian is slightly off (by 0.000016 %)\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoEA':\n  (1,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhouA':\n  (2,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (2,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'rhoA' should just return  zero\n  (3,1) Off-diagonal Jacobian for variable 'rhoEA' should just return  zero\n  (3,2) Off-diagonal Jacobian for variable 'rhouA' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nKernel for variable 'rhoA':\n  (0,3) Off-diagonal Jacobian for variable 'w' should just return  zero\n\nIt seems that the Jacobian has big problem.\nI've tried FDP and it doesn't make a difference.\nI can't make sure if my kernel which couple w is wrong Orz.",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5511201",
+                          "updatedAt": "2023-04-03T15:03:53Z",
+                          "publishedAt": "2023-04-03T15:03:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "A lot to unpack here:\n\nusing AD only means the Jacobian will be correct if sufficient care is taken to not loose the derivatives through implicit conversion etc\n\nSo we should review that code to make sure that does not happen\n\nif it does not converge with FDP then I would begin to suspect that the problem is not well posed. You can use svd for the preconditioner as well as passing pc_svd_monitor to the petsc options to see about that.\nThis will only work on small problems (10k dofs MAX)\n\nthis will be very slow, keep the number of dofs below 10k.\nSo yeah two things potentially to fix.",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5511478",
+                          "updatedAt": "2023-04-03T16:05:17Z",
+                          "publishedAt": "2023-04-03T15:30:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@GiudGiud @joshuahansel Thank you Giud.\nI create a UO which can transfer the elemental variable's value of a block to another block.\nFor a specific example(lateral pressure gradient term), A/l*(Pi - Pj) , Pi is the pressure of current block and Pj is the pressure of adjacent block. There should be dPi/drhoA - dPj/drhoA (as well as rhouA and rhoEA) in the Jacobian. I think AD can help me to calculate the dPi/drhoA, and I want to know if AD can help me to calculate the dPj/drhoA?\nIf can't, I think maybe I need to write the Jacobian myself.\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5520586",
+                          "updatedAt": "2023-04-04T12:34:48Z",
+                          "publishedAt": "2023-04-04T12:34:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Yes, AD should be able to give you all of the Jacobians. As @GiudGiud pointed out, you just need to make sure you didn't accidentally drop the AD stuff - can you share your kernel?",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5533401",
+                          "updatedAt": "2023-04-05T14:48:11Z",
+                          "publishedAt": "2023-04-05T14:48:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel Oh, even if I only use the method like _rho = _rho_var->getElementalValue(_current_elem) to transfer the variable value, just like in the ADRDG3EqnMaterial.C, the variable value will be treated as a AD variable when being called(I didn't use Moose::derivInsert to any aux variable like rho p T etc, but I use Moose::derivInsert to w, solution variable to the lateral momentum equation)?\nI was going to change the way I transfer the aux variable value into transferring the solution variable and recompute the aux variable in my kernel. So I don't have to do any of this?\nHere is some kernels in my component:\nLateral momentum kernel:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_LateralMomentum.h\"\n#include \"FLARE_LateralKernelUO.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_LateralMomentum);\n\nInputParameters\nFLARE_LateralMomentum::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addParam<Real>(\"lk\", 0.023 ,\"Length of the turbulence\");\n  params.addParam<Real>(\"sk\", 0.011 ,\"Width of the gap\");\n  params.addParam<Real>(\"kg\", 0.5 ,\"Drag coefficient of the cross flow\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho\", \"Density property\");\n  params.addRequiredParam<MaterialPropertyName>(\"p\", \"Pressure property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n//  params.addRequiredParam<UserObjectName>(\"fp\", \"The name of the user object for fluid properties\");\n  params.addClassDescription(\"Computes the lateral velocity between 2 channels.\");\n  return params;\n}\n\nFLARE_LateralMomentum::FLARE_LateralMomentum(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _rho(getADMaterialProperty<Real>(\"rho\")),\n    _p(getADMaterialProperty<Real>(\"p\")),\n    _lk(getParam<Real>(\"lk\")),\n    _sk(getParam<Real>(\"sk\")),\n    _kg(getParam<Real>(\"kg\")),\n    _q_uo(getUserObject<FLARE_LateralKernelUO>(\"q_uo\"))\n\n{\n}\n\nADReal\nFLARE_LateralMomentum::computeQpResidual()\n{\n  ADReal adj_rho = _q_uo.getAdjacentRHO(_current_elem->id());\n  ADReal adj_p = _q_uo.getAdjacentP(_current_elem->id());\n  return  -_test[_i][_qp]*_sk/_lk*(_p[_qp]-adj_p)+\n          _test[_i][_qp]*_kg*std::abs(_u[_qp])*_u[_qp]/(_sk*_lk*(_rho[_qp]+adj_rho));\n}\n\nLateral term in mass equation(include 2 kernels, because between 2 channels, only one lateral mass flux is calculated):\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MassLateralTerm_S.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MassLateralTerm_S);\n\nInputParameters\nFLARE_MassLateralTerm_S::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredCoupledVar(\"w\", \"lateral velocity\");\n  params.addClassDescription(\"Computes lateral term of the mass equation.\");\n  return params;\n}\n\nFLARE_MassLateralTerm_S::FLARE_MassLateralTerm_S(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _w(adCoupledValue(\"w\"))\n{\n}\n\nADReal\nFLARE_MassLateralTerm_S::computeQpResidual()\n{\n    return  _test[_i][_qp]*_w[_qp];\n}\n\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MassLateralTerm_L.h\"\n#include \"FLARE_LateralTermUO.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MassLateralTerm_L);\n\nInputParameters\nFLARE_MassLateralTerm_L::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addClassDescription(\"Computes lateral term of the mass equation.\");\n  return params;\n}\n\nFLARE_MassLateralTerm_L::FLARE_MassLateralTerm_L(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _q_uo(getUserObject<FLARE_LateralTermUO>(\"q_uo\"))\n{\n}\n\nADReal\nFLARE_MassLateralTerm_L::computeQpResidual()\n{\n  ADReal adj_w = _q_uo.getAdjacentW(_current_elem->id());\n  return  -_test[_i][_qp]*adj_w;\n}\n\nLateral term in axial momentum equation:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MomentumLateralTerm_S.h\"\n#include \"FLARE_LateralTermUO_L2S.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MomentumLateralTerm_S);\n\nInputParameters\nFLARE_MomentumLateralTerm_S::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredCoupledVar(\"w\", \"lateral velocity\");\n  params.addRequiredParam<MaterialPropertyName>(\"vel\", \"Velocity property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addClassDescription(\"Computes lateral term of the momentum equation.\");\n  return params;\n}\n\nFLARE_MomentumLateralTerm_S::FLARE_MomentumLateralTerm_S(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _w(adCoupledValue(\"w\")),\n    _vel(getADMaterialProperty<Real>(\"vel\")),\n    _q_uo(getUserObject<FLARE_LateralTermUO_L2S>(\"q_uo\"))\n{\n}\n\nADReal\nFLARE_MomentumLateralTerm_S::computeQpResidual()\n{\n  ADReal adj_vel = _q_uo.getAdjacentVEL(_current_elem->id());\n  if(_w[_qp] > 0)\n  {\n    return  _test[_i][_qp]*_w[_qp]*_vel[_qp];\n  }\n  else\n  {\n    return  _test[_i][_qp]*_w[_qp]*adj_vel;\n  }\n}\n\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_MomentumLateralTerm_L.h\"\n#include \"FLARE_LateralTermUO.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_MomentumLateralTerm_L);\n\nInputParameters\nFLARE_MomentumLateralTerm_L::validParams()\n{\n  InputParameters params = ADKernel::validParams();\n  params.addRequiredParam<MaterialPropertyName>(\"vel\", \"Velocity property\");\n  params.addRequiredParam<UserObjectName>(\n      \"q_uo\", \"The name of the user object that transfers the variables\");\n  params.addClassDescription(\"Computes lateral term of the momentum equation.\");\n  return params;\n}\n\nFLARE_MomentumLateralTerm_L::FLARE_MomentumLateralTerm_L(const InputParameters & parameters)\n  : ADKernel(parameters),\n    _vel(getADMaterialProperty<Real>(\"vel\")),\n    _q_uo(getUserObject<FLARE_LateralTermUO>(\"q_uo\"))\n{\n}\n\nADReal\nFLARE_MomentumLateralTerm_L::computeQpResidual()\n{\n  ADReal adj_vel = _q_uo.getAdjacentVEL(_current_elem->id());\n  ADReal adj_w = _q_uo.getAdjacentW(_current_elem->id());\n  //  if(_p[_qp] > adj_p)\n    if(adj_w > 0)\n  {\n    return  -_test[_i][_qp]*adj_w*adj_vel;\n  }\n  else\n  {\n    return  -_test[_i][_qp]*adj_w*_vel[_qp];\n  }\n}\n\nSome other kernels is in the same form, so I'm not going to list them here. In my component I define the mapping of every 2 channels and add these kernels to every channel.\nEthan",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5538615",
+                          "updatedAt": "2023-04-06T01:56:37Z",
+                          "publishedAt": "2023-04-06T01:56:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Can you show FLARE_LateralKernelUO?",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5543254",
+                          "updatedAt": "2023-04-06T12:34:21Z",
+                          "publishedAt": "2023-04-06T12:34:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel Here it is\uff1a\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"FLARE_LateralKernelUO.h\"\n#include \"MooseMesh.h\"\n#include \"KDTree.h\"\n#include \"Assembly.h\"\n\nregisterMooseObject(\"ThermalHydraulicsApp\", FLARE_LateralKernelUO);\n\nInputParameters\nFLARE_LateralKernelUO::validParams()\n{\n  InputParameters params = ElementUserObject::validParams();\n  params.addRequiredParam<ChannelMapping *>(\"_channel_mapping\",\n                                                  \"Flow channel alignement object\");\n  params.addRequiredCoupledVar(\"rho\", \"Density in current flow channel\");\n  params.addRequiredCoupledVar(\"p\", \"Pressure in current flow channel\");\n  params.addClassDescription(\n      \"Base class for caching variables between 2 flow channels.\");\n  return params;\n}\n\nFLARE_LateralKernelUO::FLARE_LateralKernelUO(\n    const InputParameters & parameters)\n  : ElementUserObject(parameters),\n    _channel_mapping(*getParam<ChannelMapping *>(\"_channel_mapping\")),\n    _rho_var(getVar(\"rho\", 0)),\n    _p_var(getVar(\"p\", 0))\n\n{\n}\n\nvoid\nFLARE_LateralKernelUO::initialize()\n{\n}\n\nvoid\nFLARE_LateralKernelUO::execute()\n{\n    dof_id_type nearest_elem_id = _channel_mapping.getNearestElemID(_current_elem->id());\n    // get elemental variable value in current element\n    ADReal _rho,_p;\n    _rho = _rho_var->getElementalValue(_current_elem);\n    _p = _p_var->getElementalValue(_current_elem);\n\n    // \"seed\" the derivative\n//    Moose::derivInsert(_vel.derivatives(), dof_indices[0], 1.0);\n//    Moose::derivInsert(_rho.derivatives(), dof_indices[0], 1.0);\n//    Moose::derivInsert(_p.derivatives(), dof_indices[0], 1.0);\n    _adj_rho[nearest_elem_id] = _rho;\n    _adj_p[nearest_elem_id] = _p;\n}\n\nvoid\nFLARE_LateralKernelUO::finalize()\n{\n}\n\nvoid\nFLARE_LateralKernelUO::threadJoin(const UserObject & y)\n{\n  const FLARE_LateralKernelUO & uo =\n      static_cast<const FLARE_LateralKernelUO &>(y);\n    for (auto & it : uo._adj_rho)\n      _adj_rho[it.first] = it.second;\n    for (auto & it : uo._adj_p)\n      _adj_p[it.first] = it.second;\n}\n\nconst ADReal &\nFLARE_LateralKernelUO::getAdjacentRHO(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_rho.find(element_id);\n  if (it != _adj_rho.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Density for element \", element_id, \" was not computed.\");\n}\n\nconst ADReal &\nFLARE_LateralKernelUO::getAdjacentP(dof_id_type element_id) const\n{\n  Threads::spin_mutex::scoped_lock lock(Threads::spin_mtx);\n  auto it = _adj_p.find(element_id);\n  if (it != _adj_p.end())\n    return it->second;\n  else\n    mooseError(name(), \": Requested Pressure for element \", element_id, \" was not computed.\");\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5543286",
+                          "updatedAt": "2023-04-06T12:39:40Z",
+                          "publishedAt": "2023-04-06T12:39:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel Hi josh, I still haven't solved why the calculations don't converge. Is there anywhere wrong in the UO?",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5570657",
+                          "updatedAt": "2023-04-10T13:19:40Z",
+                          "publishedAt": "2023-04-10T13:19:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Sorry, I didn't see that you responded.\nIt's clear from this UO that you don't have the derivatives. What happened to the plan we discussed? We need to get the solution variables from the adjacent channels, \"seed\" the derivatives, and then locally compute the aux quantities rho and p. Try that, and show the UO, and I can tell you if it looks right.",
+                          "url": "https://github.com/idaholab/moose/discussions/23872#discussioncomment-5571494",
+                          "updatedAt": "2023-04-10T15:10:17Z",
+                          "publishedAt": "2023-04-10T15:10:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "DG and cohesive zone modelling",
+          "author": {
+            "login": "AbbBallout"
+          },
+          "bodyText": "I am looking for a FEM library that allows me to do cohesive zone modelling.\nI found the paper \"An IIPG-Based Finite Element Framework in MOOSE for Modeling Fiber Reinforced Composite Failure Governed by Extrinsic Cohesive Laws\" which makes MOOSE look promising.\nI can't find tutorials in MOOSE for CZM. Are there any examples somewhere else",
+          "url": "https://github.com/idaholab/moose/discussions/24047",
+          "updatedAt": "2023-04-13T14:47:17Z",
+          "publishedAt": "2023-04-12T19:01:49Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "There are CZM tests in the tensor_mechanics module, see for example\nlindad@pop-os:~/projects/moose/modules/tensor_mechanics/test/tests(nodal-bc-flex-23940)$ git grep -I --name-only Cohesive\ncohesive_zone_model/bilinear_mixed.i\ncohesive_zone_model/bilinear_mixed_scale_strength.i\ncohesive_zone_model/czm_multiple_action_and_materials.i\ncohesive_zone_model/czm_multiple_dimension_base.i\ncohesive_zone_model/czm_patch_test_base.i\ncohesive_zone_model/czm_traction_separation_base.i\ncohesive_zone_model/stretch_rotate_large_deformation.i",
+                  "url": "https://github.com/idaholab/moose/discussions/24047#discussioncomment-5596548",
+                  "updatedAt": "2023-04-12T19:23:37Z",
+                  "publishedAt": "2023-04-12T19:23:36Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "AbbBallout"
+                  },
+                  "bodyText": "One more thing.\nAre cohesive elements created automatically or should I include those by myself?",
+                  "url": "https://github.com/idaholab/moose/discussions/24047#discussioncomment-5602480",
+                  "updatedAt": "2023-04-13T10:03:38Z",
+                  "publishedAt": "2023-04-13T10:03:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "They are created by one of the mesh generator. Please follow the examples @lindsayad provided above.",
+                          "url": "https://github.com/idaholab/moose/discussions/24047#discussioncomment-5604303",
+                          "updatedAt": "2023-04-13T13:09:11Z",
+                          "publishedAt": "2023-04-13T13:09:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Why can't some modules change the time discrete parameters\uff1f",
+          "author": {
+            "login": "Moyiqi"
+          },
+          "bodyText": "Hello everyone. May I ask a question?\nWhat is the default time discretization in Modules/TensorMechanics/Master\uff0cis Newmark or not?\nIf so, where could I change the parameter \u03b1\uff1f\nLily",
+          "url": "https://github.com/idaholab/moose/discussions/24058",
+          "updatedAt": "2023-04-14T07:37:42Z",
+          "publishedAt": "2023-04-13T01:25:50Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nit should show at the beginning of the log, under the mesh information\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24058#discussioncomment-5599265",
+                  "updatedAt": "2023-04-13T02:51:41Z",
+                  "publishedAt": "2023-04-13T02:51:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Moyiqi"
+                          },
+                          "bodyText": "[Modules/TensorMechanics/Master]\n\u00a0 \u00a0 [all]\n\u00a0 \u00a0 \u00a0 # strain = FINITE\n\u00a0 \u00a0 \u00a0 add_variables = true\n\u00a0 \u00a0 \u00a0 generate_output = 'stress_zz strain_zz'\n\u00a0 \u00a0 \u00a0 block = '1 2'\n\u00a0 \u00a0 \u00a0 use_automatic_differentiation = true\n\u00a0 \u00a0 []\n\u00a0 []\n\u00a0 \n\u00a0 [Materials]\n\u00a0 \u00a0 [elasticity]\n\u00a0 \u00a0 \u00a0 type = ADComputeVariableIsotropicElasticityTensor\n\u00a0 \u00a0 \u00a0 poissons_ratio = 0.3\n\u00a0 \u00a0 \u00a0 youngs_modulus = 1e3\n\u00a0 \u00a0 \u00a0 block = '1 2'\n\u00a0 \u00a0 []\n\u00a0 \u00a0 [stress]\n\u00a0 \u00a0 \u00a0 type = ADComputeLinearElasticStress\n\u00a0 \u00a0 \u00a0 block = '1 2'\n\u00a0 \u00a0 []\n\u00a0 []\n\u00a0 \n\u00a0\n\u00a0 [UserObjects]\n\u00a0 \u00a0 [activated_elem_uo]\n\u00a0 \u00a0 \u00a0 type = ActivateElementsCoupled\n\u00a0 \u00a0 \u00a0 execute_on = timestep_begin\n\u00a0 \u00a0 \u00a0 coupled_var = strain_zz\n\u00a0 \u00a0 \u00a0 activate_value = 0.05\n\u00a0 \u00a0 \u00a0 active_subdomain_id = 1\n\u00a0 \u00a0 \u00a0 expand_boundary_name = 'moving_interface'\n\u00a0 \u00a0 []\n\u00a0 []\n\u00a0 \n\u00a0 [Outputs]\n\u00a0 \u00a0 exodus = true\n\u00a0 []\n\u00a0 [Postprocessors]\n\u00a0 \u00a0 [single_nodal_x]\n\u00a0 \u00a0 \u00a0 type = PointValue\n\u00a0 \u00a0 \u00a0 point = ' 1 1 1'\n\u00a0 \u00a0 \u00a0 variable = \"disp_x\"\n\u00a0 \u00a0 []\n\u00a0 []\n\nWhen I run this model, which only involves tensor mechanics, modifying scheme parameters has no effect on the results. Whether the equations of tensor mechanics have a default time-discretization scheme, such as using HHT.\nLily",
+                          "url": "https://github.com/idaholab/moose/discussions/24058#discussioncomment-5599297",
+                          "updatedAt": "2023-04-13T03:38:43Z",
+                          "publishedAt": "2023-04-13T03:00:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "How are you changing the time scheme? Could you please paste your executioner block",
+                          "url": "https://github.com/idaholab/moose/discussions/24058#discussioncomment-5603616",
+                          "updatedAt": "2023-04-13T12:07:23Z",
+                          "publishedAt": "2023-04-13T12:07:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Moyiqi"
+                          },
+                          "bodyText": "[Executioner]\ntype = Transient\nautomatic_scaling = true\n\nsolve_type = 'PJFNK'\n\nline_search = 'none'\nscheme=bdf2\n\nl_max_its = 100\nnl_max_its = 20\nnl_rel_tol = 1e-4\n\nstart_time = 0.0\nend_time = 1.0\ndt = 1e-1\ndtmin = 1e-4\n\n[]\nLily",
+                          "url": "https://github.com/idaholab/moose/discussions/24058#discussioncomment-5603969",
+                          "updatedAt": "2023-04-13T12:39:30Z",
+                          "publishedAt": "2023-04-13T12:39:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "https://mooseframework.inl.gov/source/timeintegrators/NewmarkBeta.html",
+                          "url": "https://github.com/idaholab/moose/discussions/24058#discussioncomment-5604290",
+                          "updatedAt": "2023-04-13T13:07:46Z",
+                          "publishedAt": "2023-04-13T13:07:45Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Parameter study]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Hi,\nI would like to know if there is any function for parameter study.\nFor example, in the same input file, I only want to adjust a single parameter value and get the calculation results.\ninput.i -> parameter = 1 => results_out_1.out\n-> parameter = 2 => results_out_2.out\n-> parameter = 3 => results_out_3.out\n...\n-> parameter = 100 => results_out_100.out\nIs there any function like this?",
+          "url": "https://github.com/idaholab/moose/discussions/24037",
+          "updatedAt": "2023-04-13T00:06:52Z",
+          "publishedAt": "2023-04-12T11:21:03Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere is, it s part of the Stochastic Tools module\nhttps://mooseframework.inl.gov/docs/site/syntax/ParameterStudy/index.html\nhttps://mooseframework.inl.gov/docs/site/source/actions/ParameterStudyAction.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24037#discussioncomment-5592643",
+                  "updatedAt": "2023-04-12T13:20:53Z",
+                  "publishedAt": "2023-04-12T13:20:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "coskrrb2002"
+                          },
+                          "bodyText": "Oh, thanks for helping.\nI will take a look!",
+                          "url": "https://github.com/idaholab/moose/discussions/24037#discussioncomment-5598345",
+                          "updatedAt": "2023-04-13T00:06:52Z",
+                          "publishedAt": "2023-04-13T00:06:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "OptimizationReporter",
+          "author": {
+            "login": "am-tc01"
+          },
+          "bodyText": "In one of the optimization tests, why is there one value in lower_bounds and upper_bounds, while num_values = 2. What if I want different lower and upper bounds for each value in diffusivty_values?\n[OptimizationReporter]\n  type = OptimizationReporter\n  parameter_names = diffusivity_values\n  num_values = 2 # diffusivity in the bottom material and in the top material of model.i\n  initial_condition = '3 4' # the expected result is about '1 10' so this initial condition is not too bad\n  lower_bounds = '1'\n  upper_bounds = '20'\n  measurement_file = 'synthetic_data.csv'\n  file_value = 'temperature'\n[]\n\nRegards.",
+          "url": "https://github.com/idaholab/moose/discussions/23772",
+          "updatedAt": "2023-04-12T21:17:48Z",
+          "publishedAt": "2023-03-17T12:58:26Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis would be an optimization that has not been added to the code.\nFeel free to add it, we would just need to have a \"vector of vector\" syntax for the parameter, then get the indexing right\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5347671",
+                  "updatedAt": "2023-03-17T16:19:32Z",
+                  "publishedAt": "2023-03-17T16:19:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@zachmprince for awareness",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5347673",
+                          "updatedAt": "2023-03-17T16:19:43Z",
+                          "publishedAt": "2023-03-17T16:19:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "Thank you for your answer.\nIn an earlier version, one could just specify the name of the vector in parameter_names and the size of the vector in num_values, and then specify lower_bounds and upper_bounds for the same vector length as num_values. But now, I think, this is changed, and it gets somehow a little confusing. The following worked in an earlier version, but now it gives an error: There must be a lower bound associated with each parameter.\n[OptimizationReporter]\n  type = OptimizationReporter\n  parameter_names = diffusivity_values\n  num_values = 2 # diffusivity in the bottom material and in the top material of model.i\n  initial_condition = '3 4' # the expected result is about '1 10' so this initial condition is not too bad\n  lower_bounds = '1 2'\n  upper_bounds = '10 20'\n  measurement_file = 'synthetic_data.csv'\n  file_value = 'temperature'\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5353388",
+                          "updatedAt": "2023-03-18T13:33:31Z",
+                          "publishedAt": "2023-03-18T13:33:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "@am-tc01   I removed the ability to have different lower and upper bounds for each parameter.  I wanted to make the optimizationReporter consistent with the mesh based method for defining parameters, ParameterMeshOptimization.  Do you have a good reason for needing different lower and upper bounds for the same material property?  Maybe it is something I can try to add back in.",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5398483",
+                          "updatedAt": "2023-03-22T21:48:07Z",
+                          "publishedAt": "2023-03-22T21:48:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "@lynnmunday thanks for your answer.\nOne could have different properties or different parameters to optimize for. For instance, in my case I have 5 different parameters to optimize for and then I need to have them in the same OptimizationReporter. It's not logical to have same upper and lower bounds on all those. Not sure how one can have a vector of vectors, have different upper and lower bounds on each and then transfer them to a sub-app?",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5406304",
+                          "updatedAt": "2023-03-23T13:42:02Z",
+                          "publishedAt": "2023-03-23T13:42:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "@am-tc01 Just so you know, you can have multiple parameter groups. So you can change your input to have:\n[OptimizationReporter]\n  type = OptimizationReporter\n  parameter_names = 'diffusivity_bottom diffusivity_top'\n  num_values = '1 1' # diffusivity in the bottom material and in the top material of model.i\n  initial_condition = '3 4' # the expected result is about '1 10' so this initial condition is not too bad\n  lower_bounds = '1 2'\n  upper_bounds = '10 20'\n  measurement_file = 'synthetic_data.csv'\n  file_value = 'temperature'\n[]\n\nThere is an example of doing this here.\nIt seems like this might be cumbersome for your problem though. We can consider adding the capability to have both options: one for single bound for all values, and one for a bound for each value.",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5411256",
+                          "updatedAt": "2023-03-23T20:56:45Z",
+                          "publishedAt": "2023-03-23T20:56:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "@zachmprince Yes that is correct. In principle this can be done but then if one has many parameters, it could get very cumbersome to deal with all the parameters separately in the sub-app. I would really appreciate if you could add this capability again, to have a bound for each value.\nRegards.",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5426926",
+                          "updatedAt": "2023-03-25T14:20:04Z",
+                          "publishedAt": "2023-03-25T14:20:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "@am-tc01 I added this pull request #23868 to change this and make all of these parameters a vector of vectors.  The input syntax changed a bit to do this, you now need to use a \";\"  to separate each vector of parameters.  You can see this in some changes to input files in that pr.",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5446709",
+                          "updatedAt": "2023-03-28T00:05:39Z",
+                          "publishedAt": "2023-03-28T00:05:39Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "@lynnmunday Super! many thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5455727",
+                          "updatedAt": "2023-03-28T15:31:48Z",
+                          "publishedAt": "2023-03-28T15:31:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "@am-tc01 could you tell me anything about the problems your are trying to solve with the optimization module?  I'm just curious how its being used.",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5456296",
+                          "updatedAt": "2023-03-28T16:19:30Z",
+                          "publishedAt": "2023-03-28T16:19:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "am-tc01"
+                          },
+                          "bodyText": "@lynnmunday I am trying to optimize processing parameters for certain manufacturing processes.\nI wonder if you or others, if you know, have used optimization module for some rigorous optimization problems? If yes, then how, in general is your experience with Petsc TAO solvers?",
+                          "url": "https://github.com/idaholab/moose/discussions/23772#discussioncomment-5514388",
+                          "updatedAt": "2023-04-03T20:50:30Z",
+                          "publishedAt": "2023-04-03T20:50:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "TestHarness does not require python3",
+          "author": {
+            "login": "hzclarksm"
+          },
+          "bodyText": "PythonUnitTest.getCommand() does explicitly use python3.  In my environment \"python\" is by default python2.   This cases several tests to fail which missing libraries and and/or syntax errors.  Here is a simple fix.\ndiff --git a/python/TestHarness/testers/PythonUnitTest.py b/python/TestHarness/testers/PythonUnitTest.py\nindex 1afb363c31..1a77cd6e92 100644\n--- a/python/TestHarness/testers/PythonUnitTest.py\n+++ b/python/TestHarness/testers/PythonUnitTest.py\n@@ -44,6 +44,6 @@ class PythonUnitTest(RunApp):\n         if self.specs[\"separate\"]:\n             cmd = os.path.join(self.specs['moose_dir'], 'scripts', 'separate_unittests.py') + ' -f ' + test_case + use_buffer\n         else:\n-            cmd = \"python -m unittest\" + use_buffer + \"-v \" + test_case\n+            cmd = \"python3 -m unittest\" + use_buffer + \"-v \" + test_case\n \n         return cmd  + ' '.join(self.specs['cli_args'])",
+          "url": "https://github.com/idaholab/moose/discussions/24048",
+          "updatedAt": "2023-04-29T02:51:05Z",
+          "publishedAt": "2023-04-12T19:30:42Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@milljm can we do that?\nIs python3 (in addition to python) provided on every platform we care about?",
+                  "url": "https://github.com/idaholab/moose/discussions/24048#discussioncomment-5596647",
+                  "updatedAt": "2023-04-12T19:34:04Z",
+                  "publishedAt": "2023-04-12T19:34:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Bringing in @dschwen, because his voice on this is like mine :)\nI say we change all our Python shebangs to #!/usr/bin/env python3 If not already. I thought I had sneaked this in already at some point.",
+                          "url": "https://github.com/idaholab/moose/discussions/24048#discussioncomment-5596698",
+                          "updatedAt": "2023-04-12T19:41:50Z",
+                          "publishedAt": "2023-04-12T19:41:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "but yes, I agree with the change. When calling python we should call python3",
+                          "url": "https://github.com/idaholab/moose/discussions/24048#discussioncomment-5596701",
+                          "updatedAt": "2023-04-12T19:42:20Z",
+                          "publishedAt": "2023-04-12T19:42:18Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hzclarksm"
+                          },
+                          "bodyText": "The change to Python shebangs does seem to already be in place.  That of course has no effect when running python commands as built in PythonUnitTest.py.",
+                          "url": "https://github.com/idaholab/moose/discussions/24048#discussioncomment-5596762",
+                          "updatedAt": "2023-04-12T19:52:02Z",
+                          "publishedAt": "2023-04-12T19:52:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "libmesh build fails - PETSc with Hypre was not found",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "I just pulled a new Moose distribution, build PETSc (using the update_and_rebuild_petsc.sh script) ad checked that the build did download Hypre and built it. But when I try to build libmesh (using the update_and_rebuild_libmesh.sh script) I get an errer: \"PETSc with Hypre was not found, but --enable-petsc-hypre-required was specified\". I had updated the conda environment before starting to build. I am a bit mystified by this as I checked that Hypre was indeed built. What is more perplexing is that I pulled Moose yesterday (on another machine) and did exactly the same thing (build PETSc, libmesh, and Moose) without any errors.",
+          "url": "https://github.com/idaholab/moose/discussions/24045",
+          "updatedAt": "2023-04-12T18:18:34Z",
+          "publishedAt": "2023-04-12T17:22:49Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "heinono1"
+                  },
+                  "bodyText": "Looks like the problem was trivial - I just had to unset environment variables (MOOSE_DIR, PETSC_DIR, LIBMESH_DIR) that I had set earlier to something else.",
+                  "url": "https://github.com/idaholab/moose/discussions/24045#discussioncomment-5596012",
+                  "updatedAt": "2023-04-12T18:18:28Z",
+                  "publishedAt": "2023-04-12T18:18:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "NodalStickConstraint with Shell Elements",
+          "author": {
+            "login": "Zoophish"
+          },
+          "bodyText": "Hello,\nI was trying to experiment and see if I could 'glue' two shell element surfaces together using the NodalStickConstraint. I'm getting some bizarre results when running a shell element scenario with the constraints. I noticed there are only example for beam elements, so I was hoping someone could tell me if it's possible to use NodalStickConstraint with shell elements.\n\n  Input File\nep = 1e-4\nspacing = 0.001\n\n[Mesh]\n  [Beams]\n    type = FileMeshGenerator\n    file = 'L_beams.msh'\n  []\n  [Contact1]\n    type = BoundingBoxNodeSetGenerator\n    input = Beams\n    bottom_left = '${fparse 1.0-ep} ${fparse -0.2-ep} ${fparse 0.0-ep}'\n    top_right = '${fparse 1+ep} ${fparse 0+ep} ${fparse 0.4+ep}'\n    new_boundary = contact1\n  []\n  [Contact2]\n    type = BoundingBoxNodeSetGenerator\n    input = Contact1\n    bottom_left = '${fparse 1+spacing-ep} ${fparse -.2-ep} ${fparse 0-ep}'\n    top_right = '${fparse 1+spacing+ep}  ${fparse 0+ep} ${fparse 0.4+ep}'\n    new_boundary = contact2\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [disp_z]\n  []\n  [rot_x]\n  []\n  [rot_y]\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  rotations = 'rot_x rot_y'\n[]\n\n[Kernels]\n  [solid_disp_x]\n    type = ADStressDivergenceShell\n    component = 0\n    variable = disp_x\n    through_thickness_order = SECOND\n  []\n  [solid_disp_y]\n    type = ADStressDivergenceShell\n    component = 1\n    variable = disp_y\n    through_thickness_order = SECOND\n  []\n  [solid_disp_z]\n    type = ADStressDivergenceShell\n    component = 2\n    variable = disp_z\n    through_thickness_order = SECOND\n  []\n  [solid_rot_x]\n    type = ADStressDivergenceShell\n    component = 3\n    variable = rot_x\n    through_thickness_order = SECOND\n  []\n  [solid_rot_y]\n    type = ADStressDivergenceShell\n    component = 4\n    variable = rot_y\n    through_thickness_order = SECOND\n  []\n[]\n\n[Materials]\n  # Materials are computed using the shell functions, see the moose docs on Shells.\n  [stress]\n    type = ADComputeShellStress\n    through_thickness_order = SECOND\n  []\n  [elasticity]\n    type = ADComputeIsotropicElasticityTensorShell\n    youngs_modulus = 500e9\n    poissons_ratio = 0.25\n    through_thickness_order = SECOND\n  []\n  [strain]\n    type = ADComputeFiniteShellStrain\n    thickness = 0.0001\n    through_thickness_order = SECOND\n  []\n[]\n\n[Constraints]\n  [GlueX]\n    type = NodalStickConstraint\n    boundary = 'contact2'\n    secondary = 'contact1'\n    penalty = 10e9\n    variable = disp_x\n  []\n  [GlueY]\n    type = NodalStickConstraint\n    boundary = 'contact2'\n    secondary = 'contact1'\n    penalty = 10e9\n    variable = disp_y\n  []\n  [GlueZ]\n    type = NodalStickConstraint\n    boundary = 'contact2'\n    secondary = 'contact1'\n    penalty = 10e9\n    variable = disp_z\n  []\n  [GlueRY]\n    type = NodalStickConstraint\n    boundary = 'contact2'\n    secondary = 'contact1'\n    penalty = 10e9\n    variable = rot_x\n  []\n  [GlueRZ]\n    type = NodalStickConstraint\n    boundary = 'contact2'\n    secondary = 'contact1'\n    penalty = 10e9\n    variable = rot_y\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = ADDirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_x\n  []\n  [Fixed_Y]\n    type = ADDirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_y\n  []\n  [Fixed_Z]\n    type = ADDirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_z\n  []\n  [Fixed_Rot_X]\n    type = ADDirichletBC\n    boundary = 'left'\n    value = 0\n    variable = rot_x\n  []\n  [Fixed_Rot_Y]\n    type = ADDirichletBC\n    boundary = 'left'\n    value = 0\n    variable = rot_y\n  []\n  [Load]\n    type = ADDirichletBC\n    boundary = right\n    value = -.01\n    variable = disp_z\n    preset = false\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = false\n  []\n[]\n\n[Executioner]\n  type = Steady\n  automatic_scaling = TRUE\n  solve_type = 'NEWTON'\n  #   line_search = 'default'\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n[]\n\n[Outputs]\n  [output_file]\n    type = Exodus\n    file_base = l_beams_glue\n  []\n[]\n\n\nThanks",
+          "url": "https://github.com/idaholab/moose/discussions/23256",
+          "updatedAt": "2023-04-29T02:51:29Z",
+          "publishedAt": "2023-01-26T16:17:31Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@neuphris @recuero on shell elements",
+                  "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4800092",
+                  "updatedAt": "2023-01-27T19:24:23Z",
+                  "publishedAt": "2023-01-27T19:24:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "It appears that NodalStickConstraint has never been used with shells. What kind of bizarre results do you get? Is the penalty factor you selected sufficiently high?",
+                  "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4821648",
+                  "updatedAt": "2023-01-30T18:00:31Z",
+                  "publishedAt": "2023-01-30T18:00:30Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "The two parts that are supposed to be stuck together move apart by a very large distance on the first time step. The penalty factors in my example input file above are all 1e+10, but I tried with a variety of magnitudes and still got the same result.\nOne thing I was wondering was if the constrained nodes have to be overlapping in their initial state, or if they can have a small amount of spacing between them?\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4832141",
+                          "updatedAt": "2023-01-31T16:58:05Z",
+                          "publishedAt": "2023-01-31T16:58:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "I'd start with coincident nodes or extremely small gap. I'd also try enforcing the constraint only on displacements degrees of freedom, since that's the most trivial set.",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4835176",
+                          "updatedAt": "2023-01-31T23:52:10Z",
+                          "publishedAt": "2023-01-31T23:52:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "So I removed the rotational constraints and reduced that spacing between the glued regions by two orders of magnitude; unfortunately I still get the same result.\nTimestep 0s\n\nTimestep 0.25s\n\nWould you expect this to work with shell elements?",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4849598",
+                          "updatedAt": "2023-02-02T09:32:15Z",
+                          "publishedAt": "2023-02-02T09:32:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "I can try running it myself: Can you attach the mesh file?",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4856689",
+                          "updatedAt": "2023-02-02T23:28:59Z",
+                          "publishedAt": "2023-02-02T23:28:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "Sure, here's the mesh.\nL_beams.msh.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-4860874",
+                          "updatedAt": "2023-02-03T10:43:08Z",
+                          "publishedAt": "2023-02-03T10:43:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "I can try running it myself: Can you attach the mesh file?\n\nI don't suppose you've had a chance to do this yet?\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-5591463",
+                          "updatedAt": "2023-04-12T11:27:10Z",
+                          "publishedAt": "2023-04-12T11:27:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "I didn't, but I am getting an issue with the mesh generator now:\n*** ERROR ***\nThe following error occurred in the object \"Contact1\", of type \"BoundingBoxNodeSetGenerator\".\n\nNo nodes found within the bounding box",
+                          "url": "https://github.com/idaholab/moose/discussions/23256#discussioncomment-5595983",
+                          "updatedAt": "2023-04-12T18:15:21Z",
+                          "publishedAt": "2023-04-12T18:15:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Reference frame for stress output under finite strain?",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "For a finite strain calculation - what reference frame are the output stress component values in (exodus file or postprocessors)? I'm curious how this compares to Abaqus, which (by default) reports stress in the reference frame it was computed in, which could be the global or an intermediate frame depending on if a specific material orientation is used. Of course Abaqus uses different kinematics (Hughes-Winget rather than Rashid) so maybe that has something to do with it. Is there a difference when AbaqusUMATStress is used? I can follow the logic in that code but not sure if the stress gets rotated elsewhere.",
+          "url": "https://github.com/idaholab/moose/discussions/24040",
+          "updatedAt": "2023-04-12T20:40:19Z",
+          "publishedAt": "2023-04-12T14:56:07Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "If you are using Rashid (incremental) formulation in MOOSE, then the output is Cauchy stress, i.e., respect to deformed configuration and after rotation.",
+                  "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5593919",
+                  "updatedAt": "2023-04-12T15:05:02Z",
+                  "publishedAt": "2023-04-12T15:05:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Thanks. So in terms of code, if I'm using ComputeFiniteStrainElasticStress for example, when the stress is rotated at the end of the computeQpStress, that is the stress that gets reported? Or does stress get rotated elsewhere?",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594039",
+                          "updatedAt": "2023-04-12T15:13:04Z",
+                          "publishedAt": "2023-04-12T15:13:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "Correct. The lines 85-87 in that class rotate the stress from intermediate state (without rotation) to the final rotated state. After that, stress is finalized, and then be outputted.",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594207",
+                          "updatedAt": "2023-04-12T15:26:46Z",
+                          "publishedAt": "2023-04-12T15:26:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "If I'm reading that code correctly, the intermediate state is the previous rotated state (old total rotation)? I think that is consistent with what is being done in AbaqusUMATStress where the stress is rotated to the current configuration at the end of the method, which will be will be used to calculate stress on the next step (stress is stateful so it is stress_old). Is that consistent throughout the different stress calculators in MOOSE?\nAlso curious what it means for stress to be finalized?",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594424",
+                          "updatedAt": "2023-04-12T15:45:57Z",
+                          "publishedAt": "2023-04-12T15:45:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "When I say \"finalized\", I just mean it won't be modified anymore.\nThe intermediate state is the \"previous rotated state + new incremental stretch\", and the rotation matrix that applies to the intermediate state is the incremental rotation. I believe this is consistent through all. Are you using plasticity, and damage? If so, maybe you want to check the code ComputeFiniteStrainElasticStress.",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594576",
+                          "updatedAt": "2023-04-12T15:58:38Z",
+                          "publishedAt": "2023-04-12T15:58:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Are you using plasticity, and damage? If so, maybe you want to check the code ComputeFiniteStrainElasticStress.\n\nEventually, but just trying to start simple. Did you mean a different class to check out?",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594661",
+                          "updatedAt": "2023-04-12T16:07:41Z",
+                          "publishedAt": "2023-04-12T16:07:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "My bad. ComputeMultipleInelasticStress",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5594811",
+                          "updatedAt": "2023-04-12T16:18:01Z",
+                          "publishedAt": "2023-04-12T16:18:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "And is it this stress value that gets used in the stress divergence calculation or is it rotated along the way?",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5595283",
+                          "updatedAt": "2023-04-12T16:58:59Z",
+                          "publishedAt": "2023-04-12T16:58:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "Correct, this is the stress that is used in the stress divergence calculation, to compute residual and Jacobian for a new nonlinear iteration. After solving the nonlinear step, you will get new displacements/strain, and then repeat the same thing to update stress. It will repeat until nonlinear iteration converges.",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5595402",
+                          "updatedAt": "2023-04-12T17:11:11Z",
+                          "publishedAt": "2023-04-12T17:11:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "When should the use_finite_deform_jacobian parameter be set? Doesn't look like it gets set by the Tensor Mechanics Master Action when doing finite strain. I think it's doing a stress rotation in that case.",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5595683",
+                          "updatedAt": "2023-04-12T17:41:41Z",
+                          "publishedAt": "2023-04-12T17:41:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "use_finite_deform_jacobian is used to improve the Jacobian calculation by adding a few chain rule derivatives. The improvement is very limited, so it is not included in the action. It should not affect the results anyway. If you are using AD, you definitely do not need this option on.",
+                          "url": "https://github.com/idaholab/moose/discussions/24040#discussioncomment-5595959",
+                          "updatedAt": "2023-04-12T18:12:49Z",
+                          "publishedAt": "2023-04-12T18:12:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Developing a new ConjugateHeatTransfer kernel with ability of calculating the thickness of corrosion layer",
+          "author": {
+            "login": "js-jixu"
+          },
+          "bodyText": "Hi, MOOSE developers. I want to develop a new InterfaceKernel which is capable of calculating conjugate heat transfer between solid and liquid.\nUnlike the original ConjugateHeatTransfer InterfaceKernel in MOOSE, the new InterfaceKernel needs to calculate the thickness of the corrosion layer at the solid-liquid interface in advance. And then use 1/h* = 1/h + \u03b4/k_corrosion to calculate the new convective heat transfer coefficient h* . Finally, h* is applied to conjugate heat transfer calculation.\nI want to study the corrosion of steel by liquid lead-bismuth eutectic (LBE). The corrosion layer often has two layers, Fe3O4 and spinel. After long-term corrosion, Fe3O4 will be washed away, leaving only spinel. The growth of spinel is not only related to the presence or absence of Fe3O4 on the outside, but also to the thickness of spinel when Fe3O4 is washed away. The thickness of corrosion layer is related to factors such as oxygen concentration(Co), time, fluid temperature, etc. I have a flow chart to show the calculation progress:\n\nThen I write a source file and header file based on the original ConjugateHeatTransfer. Here are source file and header file:\n#include \"CorrosionHeatTransfer.h\"\n\n#include \"metaphysicl/raw_type.h\"\n\nusing MetaPhysicL::raw_value;\n\nregisterMooseObject(\"HeatConductionApp\", CorrosionHeatTransfer);\n\nInputParameters\nCorrosionHeatTransfer::validParams()\n{\n  InputParameters params = InterfaceKernel::validParams();\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Fe3O4\", \"Density of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Spinel\", \"Density of spinel layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_LBE\", \"Density of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Steel\", \"Density of Steel\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Fe3O4\", \"Thermal conductivity of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Spinel\", \"Thermal conductivity of spinel layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"Re\", \"Reynolds number of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"Sc\", \"Schmidt number of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"Tb\", \"Main stream temperature of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"htc\", \"Heat transfer coefficient of LBE and steel pipe\");\n\n  params.addRequiredParam<Real>(\"time\", \"Time of corrosion, s\");\n  params.addRequiredParam<Real>(\"Co\", \"Oxygen concentration, ppm\");\n  params.addRequiredParam<Real>(\"d\", \"Diameter of steel pipe\");\n  params.addRequiredParam<Real>(\"L\", \"Length of steel pipe\");\n  params.addParam<Real>(\"F_Fe_Fe3O4\", 0.72, \"Mass fraction of Fe in Fe3O4\");\n  params.addParam<Real>(\"F_Fe_Spinel\", 0.591, \"Mass fraction of Fe in spinel\");\n  params.addParam<Real>(\"F_Fe_Steel\", 0.9, \"Mass fraction of Fe in steel\");\n  params.addParam<Real>(\"R_PB\", 2.1, \"Pilling-Bedworth ratio\");\n  params.addParam<Real>(\"kp0\", 2.096e-5, \"Model constant for calculating oxidation constant kp, m2/s\");\n  params.addParam<Real>(\"n\", 0.27, \"Exponential factor for calculating oxidation constant kp\");\n  params.addParam<Real>(\"Q_bar\", -157802.0, \"Activation energy Q' for calculating oxidation constant kp, J/mol\");\n  params.addParam<Real>(\"R\", 8.314, \"Gas constant for calculating oxidation constant kp, J/(mol*K)\");\n  params.addParam<Real>(\"A\", 11.217, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n  params.addParam<Real>(\"B\", -13967.2, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n\n  params.addRequiredCoupledVar(\"T_fluid\",\n                               \"The fluid temperature. It is not always identical to neighbor_var, \"\n                               \"e.g. when the fluid heat equation is solved for internal energy\");\n  params.addRequiredCoupledVar(\"delta_Fe3O4\", \"The thickness of Fe3O4\");\n  params.addRequiredCoupledVar(\"delta_Spinel\", \"The thickness of Spinel\");\n  params.addRequiredCoupledVar(\"htc_asterisk\", \"Heat transfer coefficient with corrosion thermal resistance\");\n\n  params.addRequiredParam<PostprocessorName>(\"delta_T\",\n                                             \"Loop temperature difference. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n  params.addRequiredParam<PostprocessorName>(\"T_max\",\n                                             \"Loop maximum temperature. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n\n  params.addClassDescription(\n      \"This class simulates the fluid-solid conjugate heat transfer containing \"\n      \"the oxidation-corrosion model of LBE and steel.\"\n      \"We firstly calculate the thickness of Fe3O4 and spinel based on physical properties, \"\n      \"and then integrate the thermal resistance of corrosion products into the equivalent heat transfer coefficient.\"\n      \"It should be noted that when corrosion products are generated, \"\n      \"the shell will also become thinner, which is represented by the Pilling-Bedworth ratio.\");\n\n  return params;\n}\n\nCorrosionHeatTransfer::CorrosionHeatTransfer(const InputParameters &parameters)\n    : InterfaceKernel(parameters),\n      _rho_Fe3O4(getADMaterialProperty<Real>(\"rho_Fe3O4\")),\n      _rho_Spinel(getADMaterialProperty<Real>(\"rho_Spinel\")),\n      _rho_LBE(getADMaterialProperty<Real>(\"rho_LBE\")),\n      _rho_Steel(getADMaterialProperty<Real>(\"rho_Steel\")),\n      _k_Fe3O4(getADMaterialProperty<Real>(\"k_Fe3O4\")),\n      _k_Spinel(getADMaterialProperty<Real>(\"k_Spinel\")),\n      _Re(getADMaterialProperty<Real>(\"Re\")),\n      _Sc(getADMaterialProperty<Real>(\"Sc\")),\n      _Tb(getADMaterialProperty<Real>(\"Tb\")),\n      _htc(getADMaterialProperty<Real>(\"htc\")),\n\n      _time(getParam<Real>(\"time\")),\n      _Co(getParam<Real>(\"Co\")),\n      _d(getParam<Real>(\"d\")),\n      _L(getParam<Real>(\"L\")),\n      _F_Fe_Fe3O4(getParam<Real>(\"F_Fe_Fe3O4\")),\n      _F_Fe_Spinel(getParam<Real>(\"F_Fe_Spinel\")),\n      _F_Fe_Steel(getParam<Real>(\"F_Fe_Steel\")),\n      _R_PB(getParam<Real>(\"R_PB\")),\n      _kp0(getParam<Real>(\"kp0\")),\n      _n(getParam<Real>(\"n\")),\n      _Q_bar(getParam<Real>(\"Q_bar\")),\n      _R(getParam<Real>(\"R\")),\n      _A(getParam<Real>(\"A\")),\n      _B(getParam<Real>(\"B\")),\n\n      _T_fluid(coupledValue(\"T_fluid\")),\n      _delta_Fe3O4(coupledValue(\"delta_Fe3O4\")),\n      _delta_Spinel(coupledValue(\"delta_Spinel\")),\n      _htc_asterisk(coupledValue(\"htc_asterisk\")),\n\n      _delta_T(getPostprocessorValue(\"delta_T\")),\n      _T_max(getPostprocessorValue(\"T_max\")),\n\n      _apply_element_jacobian(_var.name() == getParam<std::vector<VariableName>>(\"T_fluid\")[0])\n{\n  Real r1 = 0;\n  r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  Real r2 = 0;\n  r2 = (_rho_Steel[_qp] * _F_Fe_Steel) / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  Real r3 = 0;\n  r3 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  Real r4 = 0;\n  r4 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Fe3O4);\n  Real kp = 0;\n  kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _T_fluid[_qp]));\n  Real D_Fe = 0;\n  D_Fe = 3.97e-7 * exp(-44100 / (_R * _T_fluid[_qp]));\n  Real c_Fe_s = 0;\n  c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_fluid[_qp]);\n  Real c_Fe_b = 0;\n  c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _Tb[_qp]);\n  Real Rm = 0;\n  Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  Real R_Fe3O4 = 0;\n  R_Fe3O4 = r4 * Rm;\n  Real t0 = 0;\n  t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  Real delta_spinel_c = 0;\n  delta_spinel_c = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) * kp / (8 * _rho_LBE[_qp] * Rm);\n  Real delta_spinel_0 = 0;\n  delta_spinel_0 = 0.5 * pow(kp * _time, 0.5);\n\n  if (_time >= t0)\n  {\n    _delta_Fe3O4[_qp] = 0;\n    if (delta_spinel_0 >= delta_spinel_c)\n    {\n      double a = r2 * kp / 8;\n      double b = r3 * Rm;\n      double f(double x)\n      {\n        return delta_spinel_0 - (a / b) * log((a - b * x) / (a - b * delta_spinel_0)) - b * (_time - t0);\n      }\n      double x = 1e-4;\n      double tolerance = 1e-7;\n      int max_iter = 100;\n      for (int i = 0; i < max_iter; i++)\n      {\n        double y = f(x);\n        if (abs(y - x) < tolerance)\n        {\n          break;\n        }\n        x = y;\n      }\n      _delta_Spinel[_qp] = x;\n    }\n    else\n    {\n      _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n    }\n  }\n  else\n  {\n    _delta_Spinel[_qp] = delta_spinel_0;\n    _delta_Fe3O4[_qp] = r1 * _delta_Spinel[_qp] - r4 * Rm * _time;\n  }\n  _htc_asterisk[_qp] = 1/(1/_htc[_qp] + _delta_Fe3O4[_qp] / _k_Fe3O4[_qp] + _delta_Spinel[_qp] / _k_Spinel[_qp]);\n  return 0;\n}\n\nReal\nCorrosionHeatTransfer::computeQpResidual(Moose::DGResidualType type)\n{\n  switch (type)\n  {\n    case Moose::Element:\n      return raw_value(_htc_asterisk[_qp]) * (_T_fluid[_qp] - _neighbor_value[_qp]) * _test[_i][_qp];\n\n    case Moose::Neighbor:\n      return raw_value(_htc_asterisk[_qp]) * (_neighbor_value[_qp] - _T_fluid[_qp]) * _test_neighbor[_i][_qp];\n\n    default:\n      return 0.0;\n  }\n}\n\nReal\nCorrosionHeatTransfer::computeQpJacobian(Moose::DGJacobianType type)\n{\n  switch (type)\n  {\n    case Moose::ElementElement:\n      return _apply_element_jacobian ? raw_value(_htc_asterisk[_qp]) * _phi[_j][_qp] * _test[_i][_qp] : 0;\n\n    case Moose::NeighborNeighbor:\n      return raw_value(_htc_asterisk[_qp]) * _phi_neighbor[_j][_qp] * _test_neighbor[_i][_qp];\n\n    case Moose::NeighborElement:\n      return _apply_element_jacobian ? raw_value(_htc_asterisk[_qp]) * -_phi[_j][_qp] * _test_neighbor[_i][_qp]\n                                     : 0;\n\n    case Moose::ElementNeighbor:\n      return raw_value(_htc_asterisk[_qp]) * -_phi_neighbor[_j][_qp] * _test[_i][_qp];\n\n    default:\n      return 0.0;\n  }\n}\n\n#include \"InterfaceKernel.h\"\n\n/**\n * CorrosionHeatTransfer is an InterfaceKernel \n * used to calculate the deterioration of heat transfer caused by \n * LBE corrosion on stainless steel. \n * \n * Firstly we use corrosion model to \n * calculate the thickness of magnitude and spinel layers.\n * \n * Secondly we integrate the thermal resistance of oxide layers into\n * heat transfer coefficient.\n */\nclass CorrosionHeatTransfer : public InterfaceKernel\n{\npublic:\n  static InputParameters validParams();\n\n  CorrosionHeatTransfer(const InputParameters & parameters);\n\nprotected:\n  virtual Real computeQpResidual(Moose::DGResidualType type) override;\n  virtual Real computeQpJacobian(Moose::DGJacobianType type) override;\n\n  const ADMaterialProperty<Real> & _rho_Fe3O4;\n  const ADMaterialProperty<Real> & _rho_Spinel;\n  const ADMaterialProperty<Real> & _rho_LBE;\n  const ADMaterialProperty<Real> & _rho_Steel;\n  const ADMaterialProperty<Real> & _k_Fe3O4;\n  const ADMaterialProperty<Real> & _k_Spinel;\n  const ADMaterialProperty<Real> & _Re;\n  const ADMaterialProperty<Real> & _Sc;\n  const ADMaterialProperty<Real> & _Tb;\n  const ADMaterialProperty<Real> & _htc;\n\n  const Real _time;\n  const Real _Co;\n  const Real _d;\n  const Real _L;\n  const Real _F_Fe_Fe3O4;\n  const Real _F_Fe_Spinel;\n  const Real _F_Fe_Steel;\n  const Real _R_PB;\n  const Real _kp0;\n  const Real _n;\n  const Real _Q_bar;\n  const Real _R;\n  const Real _A;\n  const Real _B;\n\n  const VariableValue & _T_fluid;\n  const VariableValue & _delta_Fe3O4;\n  const VariableValue & _delta_Spinel;\n  const VariableValue & _htc_asterisk;\n\n  const PostprocessorValue & _delta_T;\n  const PostprocessorValue & _T_max;\n\n  /// Element Jacobian is only applied if variable = T_fluid\n  const bool _apply_element_jacobian;\n};\n\nWhen I compile it, it reports lots of errors:\nCreating Unity /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C\nCompiling C++ (in opt mode) /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C...\nIn file included from /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C:3:\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C: In constructor 'CorrosionHeatTransfer::CorrosionHeatTransfer(const InputParameters&)':\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:103:74: error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  103 | Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n      | ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n      |                                                             |\n      |                                                             MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype {aka MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>}\n\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:105:40: error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  105 |   r2 = (_rho_Steel[_qp] * _F_Fe_Steel) / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n      |        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n      |                                        |\n      |                                        MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype {aka MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>}\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:107:22: error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  107 |   r3 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:109:22: error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  109 |   r4 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Fe3O4);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:117:38: error: cannot convert 'MetaPhysicL::MultipliesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, double, true, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  117 |   c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _Tb[_qp]);\n      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~\n      |                                      |\n      |                                      MetaPhysicL::MultipliesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, double, true, void>::supertype {aka MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>}\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:119:91: error: invalid types 'const PostprocessorValue {aka const double}[unsigned int]' for array subscript\n  119 | 6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n      |                                                             ^\n\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:119:105: error: invalid types 'const PostprocessorValue {aka const double}[unsigned int]' for array subscript\n  119 | qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n      |                                                             ^\n\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:125:91: error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment\n  125 | [_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) * kp / (8 * _rho_LBE[_qp] * Rm);\n      | ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~\n      |                                                             |\n      |                                                             MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype {aka MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>}\n\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:131:23: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Fe3O4)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  131 |     _delta_Fe3O4[_qp] = 0;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:137:7: error: a function-definition is not allowed here before '{' token\n  137 |       {\n      |       ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:145:20: error: 'f' was not declared in this scope\n  145 |         double y = f(x);\n      |                    ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:152:26: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  152 |       _delta_Spinel[_qp] = x;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:134:14: warning: unused variable 'a' [-Wunused-variable]\n  134 |       double a = r2 * kp / 8;\n      |              ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:135:14: warning: unused variable 'b' [-Wunused-variable]\n  135 |       double b = r3 * Rm;\n      |              ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:156:26: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  156 |       _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:161:24: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  161 |     _delta_Spinel[_qp] = delta_spinel_0;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:162:23: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Fe3O4)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  162 |     _delta_Fe3O4[_qp] = r1 * _delta_Spinel[_qp] - r4 * Rm * _time;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:164:22: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_htc_asterisk)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  164 |   _htc_asterisk[_qp] = 1/(1/_htc[_qp] + _delta_Fe3O4[_qp] / _k_Fe3O4[_qp] + _delta_Spinel[_qp] / _k_Spinel[_qp]);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:165:10: error: returning a value from a constructor\n  165 |   return 0;\n      |          ^\nmake: *** [/home/jixu/projects/moltres/moose/framework/build.mk:145: /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\n\nThe most common error is error: cannot convert 'MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype' {aka 'MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>'} to 'libMesh::Real' {aka 'double'} in assignment and MetaPhysicL::DividesType<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>, false, void>::supertype {aka MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<200> >, true>}.\nDo you have any solutions for these errors\uff1f",
+          "url": "https://github.com/idaholab/moose/discussions/23956",
+          "updatedAt": "2023-04-16T07:02:52Z",
+          "publishedAt": "2023-04-04T11:58:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat's happening is that you have a whole bunch of implicit conversions from ADReal quantities (that carry derivatives) to Real (just a number).\nThis is not allowed and usually undesirable, as anything using AD downstream will miss out on the derivatives.\nJust convert all these intermediate variables into ADReal\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5520404",
+                  "updatedAt": "2023-04-04T12:33:11Z",
+                  "publishedAt": "2023-04-04T12:15:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "I convert all intermediate variables into ADReal and I have modified these parts:\n  ADReal r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal r2 = (_rho_Steel[_qp] * _F_Fe_Steel) / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r3 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r4 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Fe3O4);\n  ADReal kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _T_fluid[_qp]));\n  ADReal D_Fe = 3.97e-7 * exp(-44100 / (_R * _T_fluid[_qp]));\n  ADReal c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_fluid[_qp]);\n  ADReal c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _Tb[_qp]);\n  ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  ADReal R_Fe3O4 = r4 * Rm;\n  ADReal t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  ADReal delta_spinel_c = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) * kp / (8 * _rho_LBE[_qp] * Rm);\n  ADReal delta_spinel_0 = 0.5 * pow(kp * _time, 0.5);\n\nMany previous errors have been successfully resolved. Sadly there are also many errors:\nCreating Unity /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C\nCompiling C++ (in opt mode) /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C...\nIn file included from /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.C:3:\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C: In constructor 'CorrosionHeatTransfer::CorrosionHeatTransfer(const InputParameters&)':\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:110:98: error: invalid types 'const PostprocessorValue {aka const double}[unsigned int]' for array subscript\n  110 |   ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n      |                                                                                                  ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:110:112: error: invalid types 'const PostprocessorValue {aka const double}[unsigned int]' for array subscript\n  110 |   ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n      |                                                                                                                ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:118:23: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Fe3O4)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  118 |     _delta_Fe3O4[_qp] = 0;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:124:7: error: a function-definition is not allowed here before '{' token\n  124 |       {\n      |       ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:132:20: error: 'f' was not declared in this scope\n  132 |         double y = f(x);\n      |                    ^\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:139:26: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  139 |       _delta_Spinel[_qp] = x;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:143:26: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  143 |       _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:148:24: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  148 |     _delta_Spinel[_qp] = delta_spinel_0;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:149:23: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Fe3O4)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  149 |     _delta_Fe3O4[_qp] = r1 * _delta_Spinel[_qp] - r4 * Rm * _time;\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:151:22: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_htc_asterisk)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  151 |   _htc_asterisk[_qp] = 1/(1/_htc[_qp] + _delta_Fe3O4[_qp] / _k_Fe3O4[_qp] + _delta_Spinel[_qp] / _k_Spinel[_qp]);\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:152:10: error: returning a value from a constructor\n  152 |   return 0;\n      |          ^\nmake: *** [/home/jixu/projects/moltres/moose/framework/build.mk:145: /home/jixu/projects/moltres/moose/modules/heat_conduction/build/unity_src/interfacekernels_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\n\nThe full code of source file is:\n#include \"CorrosionHeatTransfer.h\"\n\n#include \"metaphysicl/raw_type.h\"\n\nusing MetaPhysicL::raw_value;\n\nregisterMooseObject(\"HeatConductionApp\", CorrosionHeatTransfer);\n\nInputParameters\nCorrosionHeatTransfer::validParams()\n{\n  InputParameters params = InterfaceKernel::validParams();\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Fe3O4\", \"Density of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Spinel\", \"Density of spinel layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_LBE\", \"Density of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Steel\", \"Density of Steel\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Fe3O4\", \"Thermal conductivity of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Spinel\", \"Thermal conductivity of spinel layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"Re\", \"Reynolds number of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"Sc\", \"Schmidt number of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"Tb\", \"Main stream temperature of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"htc\", \"Heat transfer coefficient of LBE and steel pipe\");\n\n  params.addRequiredParam<Real>(\"time\", \"Time of corrosion, s\");\n  params.addRequiredParam<Real>(\"Co\", \"Oxygen concentration, ppm\");\n  params.addRequiredParam<Real>(\"d\", \"Diameter of steel pipe\");\n  params.addRequiredParam<Real>(\"L\", \"Length of steel pipe\");\n  params.addParam<Real>(\"F_Fe_Fe3O4\", 0.72, \"Mass fraction of Fe in Fe3O4\");\n  params.addParam<Real>(\"F_Fe_Spinel\", 0.591, \"Mass fraction of Fe in spinel\");\n  params.addParam<Real>(\"F_Fe_Steel\", 0.9, \"Mass fraction of Fe in steel\");\n  params.addParam<Real>(\"R_PB\", 2.1, \"Pilling-Bedworth ratio\");\n  params.addParam<Real>(\"kp0\", 2.096e-5, \"Model constant for calculating oxidation constant kp, m2/s\");\n  params.addParam<Real>(\"n\", 0.27, \"Exponential factor for calculating oxidation constant kp\");\n  params.addParam<Real>(\"Q_bar\", -157802.0, \"Activation energy Q' for calculating oxidation constant kp, J/mol\");\n  params.addParam<Real>(\"R\", 8.314, \"Gas constant for calculating oxidation constant kp, J/(mol*K)\");\n  params.addParam<Real>(\"A\", 11.217, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n  params.addParam<Real>(\"B\", -13967.2, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n\n  params.addRequiredCoupledVar(\"T_fluid\",\n                               \"The fluid temperature. It is not always identical to neighbor_var, \"\n                               \"e.g. when the fluid heat equation is solved for internal energy\");\n  params.addRequiredCoupledVar(\"delta_Fe3O4\", \"The thickness of Fe3O4\");\n  params.addRequiredCoupledVar(\"delta_Spinel\", \"The thickness of Spinel\");\n  params.addRequiredCoupledVar(\"htc_asterisk\", \"Heat transfer coefficient with corrosion thermal resistance\");\n\n  params.addRequiredParam<PostprocessorName>(\"delta_T\",\n                                             \"Loop temperature difference. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n  params.addRequiredParam<PostprocessorName>(\"T_max\",\n                                             \"Loop maximum temperature. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n\n  params.addClassDescription(\n      \"This class simulates the fluid-solid conjugate heat transfer containing \"\n      \"the oxidation-corrosion model of LBE and steel.\"\n      \"We firstly calculate the thickness of Fe3O4 and spinel based on physical properties, \"\n      \"and then integrate the thermal resistance of corrosion products into the equivalent heat transfer coefficient.\"\n      \"It should be noted that when corrosion products are generated, \"\n      \"the shell will also become thinner, which is represented by the Pilling-Bedworth ratio.\");\n\n  return params;\n}\n\nCorrosionHeatTransfer::CorrosionHeatTransfer(const InputParameters &parameters)\n    : InterfaceKernel(parameters),\n      _rho_Fe3O4(getADMaterialProperty<Real>(\"rho_Fe3O4\")),\n      _rho_Spinel(getADMaterialProperty<Real>(\"rho_Spinel\")),\n      _rho_LBE(getADMaterialProperty<Real>(\"rho_LBE\")),\n      _rho_Steel(getADMaterialProperty<Real>(\"rho_Steel\")),\n      _k_Fe3O4(getADMaterialProperty<Real>(\"k_Fe3O4\")),\n      _k_Spinel(getADMaterialProperty<Real>(\"k_Spinel\")),\n      _Re(getADMaterialProperty<Real>(\"Re\")),\n      _Sc(getADMaterialProperty<Real>(\"Sc\")),\n      _Tb(getADMaterialProperty<Real>(\"Tb\")),\n      _htc(getADMaterialProperty<Real>(\"htc\")),\n\n      _time(getParam<Real>(\"time\")),\n      _Co(getParam<Real>(\"Co\")),\n      _d(getParam<Real>(\"d\")),\n      _L(getParam<Real>(\"L\")),\n      _F_Fe_Fe3O4(getParam<Real>(\"F_Fe_Fe3O4\")),\n      _F_Fe_Spinel(getParam<Real>(\"F_Fe_Spinel\")),\n      _F_Fe_Steel(getParam<Real>(\"F_Fe_Steel\")),\n      _R_PB(getParam<Real>(\"R_PB\")),\n      _kp0(getParam<Real>(\"kp0\")),\n      _n(getParam<Real>(\"n\")),\n      _Q_bar(getParam<Real>(\"Q_bar\")),\n      _R(getParam<Real>(\"R\")),\n      _A(getParam<Real>(\"A\")),\n      _B(getParam<Real>(\"B\")),\n\n      _T_fluid(coupledValue(\"T_fluid\")),\n      _delta_Fe3O4(coupledValue(\"delta_Fe3O4\")),\n      _delta_Spinel(coupledValue(\"delta_Spinel\")),\n      _htc_asterisk(coupledValue(\"htc_asterisk\")),\n\n      _delta_T(getPostprocessorValue(\"delta_T\")),\n      _T_max(getPostprocessorValue(\"T_max\")),\n\n      _apply_element_jacobian(_var.name() == getParam<std::vector<VariableName>>(\"T_fluid\")[0])\n{\n  ADReal r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal r2 = (_rho_Steel[_qp] * _F_Fe_Steel) / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r3 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r4 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Fe3O4);\n  ADReal kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _T_fluid[_qp]));\n  ADReal D_Fe = 3.97e-7 * exp(-44100 / (_R * _T_fluid[_qp]));\n  ADReal c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_fluid[_qp]);\n  ADReal c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _Tb[_qp]);\n  ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T[_qp] / _T_max[_qp], 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  ADReal R_Fe3O4 = r4 * Rm;\n  ADReal t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  ADReal delta_spinel_c = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) * kp / (8 * _rho_LBE[_qp] * Rm);\n  ADReal delta_spinel_0 = 0.5 * pow(kp * _time, 0.5);\n\n  if (_time >= t0)\n  {\n    _delta_Fe3O4[_qp] = 0;\n    if (delta_spinel_0 >= delta_spinel_c)\n    {\n      ADReal a = r2 * kp / 8;\n      ADReal b = r3 * Rm;\n      double f(double x)\n      {\n        return delta_spinel_0 - (a / b) * log((a - b * x) / (a - b * delta_spinel_0)) - b * (_time - t0);\n      }\n      double x = 1e-4;\n      double tolerance = 1e-7;\n      int max_iter = 100;\n      for (int i = 0; i < max_iter; i++)\n      {\n        double y = f(x);\n        if (abs(y - x) < tolerance)\n        {\n          break;\n        }\n        x = y;\n      }\n      _delta_Spinel[_qp] = x;\n    }\n    else\n    {\n      _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n    }\n  }\n  else\n  {\n    _delta_Spinel[_qp] = delta_spinel_0;\n    _delta_Fe3O4[_qp] = r1 * _delta_Spinel[_qp] - r4 * Rm * _time;\n  }\n  _htc_asterisk[_qp] = 1/(1/_htc[_qp] + _delta_Fe3O4[_qp] / _k_Fe3O4[_qp] + _delta_Spinel[_qp] / _k_Spinel[_qp]);\n  return 0;\n}\n\nReal\nCorrosionHeatTransfer::computeQpResidual(Moose::DGResidualType type)\n{\n  switch (type)\n  {\n    case Moose::Element:\n      return raw_value(_htc_asterisk[_qp]) * (_T_fluid[_qp] - _neighbor_value[_qp]) * _test[_i][_qp];\n\n    case Moose::Neighbor:\n      return raw_value(_htc_asterisk[_qp]) * (_neighbor_value[_qp] - _T_fluid[_qp]) * _test_neighbor[_i][_qp];\n\n    default:\n      return 0.0;\n  }\n}\n\nReal\nCorrosionHeatTransfer::computeQpJacobian(Moose::DGJacobianType type)\n{\n  switch (type)\n  {\n    case Moose::ElementElement:\n      return _apply_element_jacobian ? raw_value(_htc_asterisk[_qp]) * _phi[_j][_qp] * _test[_i][_qp] : 0;\n\n    case Moose::NeighborNeighbor:\n      return raw_value(_htc_asterisk[_qp]) * _phi_neighbor[_j][_qp] * _test_neighbor[_i][_qp];\n\n    case Moose::NeighborElement:\n      return _apply_element_jacobian ? raw_value(_htc_asterisk[_qp]) * -_phi[_j][_qp] * _test_neighbor[_i][_qp]\n                                     : 0;\n\n    case Moose::ElementNeighbor:\n      return raw_value(_htc_asterisk[_qp]) * -_phi_neighbor[_j][_qp] * _test[_i][_qp];\n\n    default:\n      return 0.0;\n  }\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5520605",
+                          "updatedAt": "2023-04-04T12:38:19Z",
+                          "publishedAt": "2023-04-04T12:37:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "_delta_T[_qp] should be _delta_T\nyou dont need to index into postprocessor values, it s a single value",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5520673",
+                          "updatedAt": "2023-04-04T12:43:53Z",
+                          "publishedAt": "2023-04-04T12:43:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Thank you, Guillaume. I've fixed this bug. Many times, I am just a moose user, not a developer. Actually this is my first time writing MooseApp, so I will make many beginner mistakes\ud83d\ude22. Thank you for patience of fixing bug for me.\nI want to store the calculated thickness in an variable(or something else, I initially wanted to store it in an variable), so I write _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);(line 143). But it reports error like:\n/home/jixu/projects/moltres/moose/modules/heat_conduction/src/interfacekernels/CorrosionHeatTransfer.C:143:26: error: assignment of read-only location '(&((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::_delta_Spinel)->MooseArray<double>::operator[](((CorrosionHeatTransfer*)this)->CorrosionHeatTransfer::<anonymous>.InterfaceKernelTempl<double>::<anonymous>.InterfaceKernelBase::_qp)'\n  143 |       _delta_Spinel[_qp] = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n\nI now realize that perhaps I cannot store the calculated thickness in the Variable[_qp] . Is there any way to solve this problem?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5520773",
+                          "updatedAt": "2023-04-04T12:53:55Z",
+                          "publishedAt": "2023-04-04T12:53:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yeah you cant write to:\n  const VariableValue & _delta_Spinel;\nfirst because it's const, and second because an interface kernel isnt meant to write variables.\nyou could use a material property, except this is an interface kernel not a Material.\nDo you really need to save this quantitiy?>",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5520815",
+                          "updatedAt": "2023-04-04T12:58:33Z",
+                          "publishedAt": "2023-04-04T12:58:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Yeah, the thickness of corrosion layer is very important, because it reports the degree of corrosion. I have two ideas:\n\n\nI think I can start by writing a Material called CorrosionLayerThickness. CorrosionLayerThickness can use some physical properties to calculate the thickness of the corrosion layer and store it. Then I will write another InterfaceKernel called CorrosionConjugateHeatTransfer. CorrosionConjugateHeatTransfer calculates htc_asterisk based on CorrosionLayerThickness and the original htc firstly and uses htc_asterisk to do conjugate heat tansfer calculation\u3002\n\n\nI still complete the two tasks in 1 in one InterfaceKernel. I use something that can store values to store the calculated thickness of the corrosion layer. Does moose have any kernels can store the calculated values? The subsequent calculations will be done step by step.\n\n\nWhich method do you recommend?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5521117",
+                          "updatedAt": "2023-04-04T13:40:30Z",
+                          "publishedAt": "2023-04-04T13:23:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the thickness material property can then be used in the interface kernel directly or in an htc material property",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5521358",
+                          "updatedAt": "2023-04-04T13:41:11Z",
+                          "publishedAt": "2023-04-04T13:41:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "OK, I'll work on it. Is there a Material in MOOSE that has done similar things for reference? I think I'll be more effecitive if I can find a Material which using some physical properties (coupled with variables, postprocessors or materials) to calculate a new material property. I want to learn some writing methods of objects from the Material, because I still don't have much experience in writing kernels.",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5521537",
+                          "updatedAt": "2023-04-04T13:57:18Z",
+                          "publishedAt": "2023-04-04T13:57:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I have two additional comments:\n\nDon't do qp dependent calculations in the constructor body.\nThe postprocessor delta_T could lead to inaccurate derivatives if you use ADInterfaceKernel. If it's non-AD remember it may give you nonlocal Jacobian.",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5521883",
+                          "updatedAt": "2023-04-04T14:26:33Z",
+                          "publishedAt": "2023-04-04T14:26:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Thank you for kind suggestions, Gary. I'll pay particular attention to your advice.",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5522231",
+                          "updatedAt": "2023-04-04T14:54:42Z",
+                          "publishedAt": "2023-04-04T14:54:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Hi, developers.\nI came across this auxkernel today and thought it was very similar to what I want to achieve. So I wrote two auxkernels. One is to calculate thickness of Fe3O4 and the other is to calculate thickness of spinel.  Let\u2019s discuss Fe3O4CorrosionLayerThicknessAux for simplicity\u2019s sake.\nThe source file and header file are here:\n#include \"Fe3O4CorrosionLayerThicknessAux.h\"\n\n#include \"metaphysicl/raw_type.h\"\n\nregisterMooseObject(\"MooseApp\", Fe3O4CorrosionLayerThicknessAux);\n\nInputParameters\nFe3O4CorrosionLayerThicknessAux::validParams()\n{\n  InputParameters params = AuxKernel::validParams();\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Fe3O4\", \"Density of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Spinel\", \"Density of spinel layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_LBE\", \"Density of LBE\");\n  params.addRequiredParam<MaterialPropertyName>(\"rho_Steel\", \"Density of Steel\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Fe3O4\", \"Thermal conductivity of Fe3O4 layer\");\n  params.addRequiredParam<MaterialPropertyName>(\"k_Spinel\", \"Thermal conductivity of spinel layer\");\n\n  params.addRequiredParam<Real>(\"time\", \"Time of corrosion, s\");\n  params.addRequiredParam<Real>(\"Co\", \"Oxygen concentration, ppm\");\n  params.addRequiredParam<Real>(\"d\", \"Diameter of steel pipe\");\n  params.addRequiredParam<Real>(\"L\", \"Length of steel pipe\");\n  params.addParam<Real>(\"F_Fe_Fe3O4\", 0.72, \"Mass fraction of Fe in Fe3O4\");\n  params.addParam<Real>(\"F_Fe_Spinel\", 0.591, \"Mass fraction of Fe in spinel\");\n  params.addParam<Real>(\"F_Fe_Steel\", 0.9, \"Mass fraction of Fe in steel\");\n  params.addParam<Real>(\"R_PB\", 2.1, \"Pilling-Bedworth ratio\");\n  params.addParam<Real>(\"kp0\", 2.096e-5, \"Model constant for calculating oxidation constant kp, m2/s\");\n  params.addParam<Real>(\"n\", 0.27, \"Exponential factor for calculating oxidation constant kp\");\n  params.addParam<Real>(\"Q_bar\", -157802.0, \"Activation energy Q' for calculating oxidation constant kp, J/mol\");\n  params.addParam<Real>(\"R\", 8.314, \"Gas constant for calculating oxidation constant kp, J/(mol*K)\");\n  params.addParam<Real>(\"A\", 11.217, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n  params.addParam<Real>(\"B\", -13967.2, \"Constant used to calculate the solubility of Fe in steel under LBE environment\");\n\n  params.addRequiredCoupledVar(\"temperature\",\n                               \"The temperature used to calculate the properties of Fe3O4 corrosion layer\");\n  params.addRequiredCoupledVar(\"T_main_stream\",\n                               \"Temperature used to calculate the Fe concentration 'c_Fe_b' in LBE\");\n  params.addRequiredCoupledVar(\"Re\", \"Reynolds number\");\n  params.addRequiredCoupledVar(\"Sc\", \"Schmidt number\");\n\n  params.addRequiredParam<PostprocessorName>(\"delta_T\",\n                                             \"Loop temperature difference. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n  params.addRequiredParam<PostprocessorName>(\"T_max\",\n                                             \"Loop maximum temperature. \"\n                                             \"The postprocessor used to calculate the mass transfer rate Rm at the LBE/oxide interface\");\n\n  params.addClassDescription(\n      \"This class calculates the thickness of Fe3O4 and spinel based on physical properties.\");\n\n  return params;\n}\n\nFe3O4CorrosionLayerThicknessAux::Fe3O4CorrosionLayerThicknessAux(const InputParameters & parameters)\n  : AuxKernel(parameters),\n    _rho_Fe3O4(getADMaterialProperty<Real>(\"rho_Fe3O4\")),\n    _rho_Spinel(getADMaterialProperty<Real>(\"rho_Spinel\")),\n    _rho_LBE(getADMaterialProperty<Real>(\"rho_LBE\")),\n    _rho_Steel(getADMaterialProperty<Real>(\"rho_Steel\")),\n    _k_Fe3O4(getADMaterialProperty<Real>(\"k_Fe3O4\")),\n    _k_Spinel(getADMaterialProperty<Real>(\"k_Spinel\")),\n\n    _time(getParam<Real>(\"time\")),\n    _Co(getParam<Real>(\"Co\")),\n    _d(getParam<Real>(\"d\")),\n    _L(getParam<Real>(\"L\")),\n    _F_Fe_Fe3O4(getParam<Real>(\"F_Fe_Fe3O4\")),\n    _F_Fe_Spinel(getParam<Real>(\"F_Fe_Spinel\")),\n    _F_Fe_Steel(getParam<Real>(\"F_Fe_Steel\")),\n    _R_PB(getParam<Real>(\"R_PB\")),\n    _kp0(getParam<Real>(\"kp0\")),\n    _n(getParam<Real>(\"n\")),\n    _Q_bar(getParam<Real>(\"Q_bar\")),\n    _R(getParam<Real>(\"R\")),\n    _A(getParam<Real>(\"A\")),\n    _B(getParam<Real>(\"B\")),\n\n    _temperature(coupledValue(\"temperature\")),\n    _T_main_stream(coupledValue(\"T_main_stream\")),\n    _Re(coupledValue(\"Re\")),\n    _Sc(coupledValue(\"Sc\")),\n\n    _delta_T(getPostprocessorValue(\"delta_T\")),\n    _T_max(getPostprocessorValue(\"T_max\"))\n{\n}\n\nADReal\nFe3O4CorrosionLayerThicknessAux::computeValue()\n{\n  ADReal r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal r4 = _rho_LBE[_qp] / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _temperature[_qp]));\n  ADReal D_Fe = 3.97e-7 * exp(-44100 / (_R * _temperature[_qp]));\n  ADReal c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _temperature[_qp]);\n  ADReal c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_main_stream[_qp]);\n  ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T / _T_max, 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  ADReal R_Fe3O4 = r4 * Rm;\n  ADReal t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  ADReal delta_Fe3O4 = 0;\n  ADReal delta_Spinel = 0;\n\n  if (_time >= t0)\n  {\n    delta_Fe3O4 = 0;\n  }\n  else\n  {\n    delta_Spinel = 0.5 * pow(kp * _time, 0.5);\n    delta_Fe3O4 = r1 * delta_Spinel - r4 * Rm * _time;\n  }\n\n  return -MetaPhysicL::raw_value(delta_Fe3O4);\n}\n\n#pragma once\n\n#include \"AuxKernel.h\"\n\nclass Fe3O4CorrosionLayerThicknessAux : public AuxKernel\n{\npublic:\n  static InputParameters validParams();\n\n  Fe3O4CorrosionLayerThicknessAux(const InputParameters & parameters);\n\nprotected:\n  virtual Real computeValue() override;\n\n  const ADMaterialProperty<Real> & _rho_Fe3O4;\n  const ADMaterialProperty<Real> & _rho_Spinel;\n  const ADMaterialProperty<Real> & _rho_LBE;\n  const ADMaterialProperty<Real> & _rho_Steel;\n  const ADMaterialProperty<Real> & _k_Fe3O4;\n  const ADMaterialProperty<Real> & _k_Spinel;\n\n  const Real _time;\n  const Real _Co;\n  const Real _d;\n  const Real _L;\n  const Real _F_Fe_Fe3O4;\n  const Real _F_Fe_Spinel;\n  const Real _F_Fe_Steel;\n  const Real _R_PB;\n  const Real _kp0;\n  const Real _n;\n  const Real _Q_bar;\n  const Real _R;\n  const Real _A;\n  const Real _B;\n\n  const PostprocessorValue & _delta_T;\n  const PostprocessorValue & _T_max;\n\n  const VariableValue & _temperature;\n  const VariableValue & _T_main_stream;\n  const VariableValue & _Re;\n  const VariableValue & _Sc;\n};\n\nWhen I compiled those, there're some errors:\nChecking if header needs updating: /home/jixu/projects/moltres/moose/framework/include/base/MooseRevision.h...\nCreating Unity /home/jixu/projects/moltres/moose/framework/build/unity_src/auxkernels_Unity.C\nCompiling C++ (in opt mode) /home/jixu/projects/moltres/moose/framework/build/unity_src/auxkernels_Unity.C...\nIn file included from /home/jixu/projects/moltres/moose/framework/src/auxkernels/Fe3O4CorrosionLayerThicknessAux.C:1,\n                 from /home/jixu/projects/moltres/moose/framework/build/unity_src/auxkernels_Unity.C:24:\n/home/jixu/projects/moltres/moose/framework/build/header_symlinks/Fe3O4CorrosionLayerThicknessAux.h: In constructor 'Fe3O4CorrosionLayerThicknessAux::Fe3O4CorrosionLayerThicknessAux(const InputParameters&)':\n/home/jixu/projects/moltres/moose/framework/build/header_symlinks/Fe3O4CorrosionLayerThicknessAux.h:43:25: warning: 'Fe3O4CorrosionLayerThicknessAux::_Sc' will be initialized after [-Wreorder]\n   43 |   const VariableValue & _Sc;\n      |                         ^~~\n/home/jixu/projects/moltres/moose/framework/build/header_symlinks/Fe3O4CorrosionLayerThicknessAux.h:37:30: warning:   'const PostprocessorValue& Fe3O4CorrosionLayerThicknessAux::_delta_T' [-Wreorder]\n   37 |   const PostprocessorValue & _delta_T;\n      |                              ^~~~~~~~\nIn file included from /home/jixu/projects/moltres/moose/framework/build/unity_src/auxkernels_Unity.C:24:\n/home/jixu/projects/moltres/moose/framework/src/auxkernels/Fe3O4CorrosionLayerThicknessAux.C:53:1: warning:   when initialized here [-Wreorder]\n   53 | Fe3O4CorrosionLayerThicknessAux::Fe3O4CorrosionLayerThicknessAux(const InputParameters & parameters)\n      | ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\nLinking Library /home/jixu/projects/moltres/moose/framework/libmoose-opt.la...\n\nIs there any way to fix those bugs? @GiudGiud\nHi, @hugary1995 .\n\nDon't do qp dependent calculations in the constructor body.\n\nI need to generate some intermediate variables and determine if the time is greater than t0, so I wrote those:\nReal\nFe3O4CorrosionLayerThicknessAux::computeValue()\n{\n  ADReal r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal r4 = _rho_LBE[_qp] / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _temperature[_qp]));\n  ADReal D_Fe = 3.97e-7 * exp(-44100 / (_R * _temperature[_qp]));\n  ADReal c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _temperature[_qp]);\n  ADReal c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_main_stream[_qp]);\n  ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T / _T_max, 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  ADReal R_Fe3O4 = r4 * Rm;\n  ADReal t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  ADReal delta_Fe3O4 = 0;\n  ADReal delta_Spinel = 0;\n\n  if (_time >= t0)\n  {\n    delta_Fe3O4 = 0;\n  }\n  else\n  {\n    delta_Spinel = 0.5 * pow(kp * _time, 0.5);\n    delta_Fe3O4 = r1 * delta_Spinel - r4 * Rm * _time;\n  }\n\n  return -MetaPhysicL::raw_value(delta_Fe3O4);\n}\n\nDo you think it's reasonable?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5532036",
+                          "updatedAt": "2023-04-05T12:58:47Z",
+                          "publishedAt": "2023-04-05T12:58:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "To fix the lambda function you just need to specify the quantities that are defined outside of it, and must be used inside of the function definition, inside the brackets [ ]",
+                  "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5543275",
+                  "updatedAt": "2023-04-06T12:37:50Z",
+                  "publishedAt": "2023-04-06T12:37:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "To fix the lambda function you just need to specify the quantities that are defined outside of it, and must be used inside of the function definition, inside the brackets [ ]\n\nI modified the lambda function and it's compiled without errors! After I compiled ADFe3O4CorrosionLayerThicknessMaterial sucessfully I'll add the spinel part. Here is my new code in SpinelCorrosionLayerThicknessAux to calculate thickness of spinel:\nReal\nSpinelCorrosionLayerThicknessAux::computeValue()\n{\n  ADReal r1 = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal r2 = (_rho_Steel[_qp] * _F_Fe_Steel) / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r3 = _rho_LBE[_qp] / (_rho_Spinel[_qp] * _F_Fe_Spinel);\n  ADReal r4 = _rho_LBE[_qp] / (_rho_Fe3O4[_qp] * _F_Fe_Fe3O4);\n  ADReal kp = _kp0 * pow(_Co, _n) * exp(_Q_bar / (_R * _temperature[_qp]));\n  ADReal D_Fe = 3.97e-7 * exp(-44100 / (_R * _temperature[_qp]));\n  ADReal c_Fe_s = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _temperature[_qp]);\n  ADReal c_Fe_b = pow(_Co, 4 / 3) * exp(_A) * exp(_B / _T_main_stream[_qp]);\n  ADReal Rm = 0.53 * pow(_Re[_qp], 0.6) * pow(_Sc[_qp], 0.5) * pow(_d / _L, 1 / 3) * pow(_delta_T / _T_max, 1 / 3) * (D_Fe / _d) * (c_Fe_s - c_Fe_b);\n  ADReal R_Fe3O4 = r4 * Rm;\n  ADReal t0 = pow(r1, 2) * kp / (4 * pow(R_Fe3O4, 2));\n  ADReal delta_spinel_c = (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel) * kp / (8 * _rho_LBE[_qp] * Rm);\n  ADReal delta_spinel_0 = 0.5 * pow(kp * _time, 0.5);\n  ADReal delta_Fe3O4 = 0;\n  ADReal delta_Spinel = 0;\n  ADReal a = r2 * kp / 8;\n  ADReal b = r3 * Rm;\n  ADReal corrosion_time = _time;\n\n  if (_time >= t0)\n  {\n    delta_Fe3O4 = 0;\n    if (delta_spinel_0 >= delta_spinel_c)\n    {\n      auto f = [&delta_spinel_0, &a, &b, &corrosion_time , &t0](double x) {return delta_spinel_0 - (a / b) * log((a - b * x) / (a - b * delta_spinel_0)) - b * (corrosion_time  - t0); };\n      double x = 1e-4;\n      double tolerance = 1e-7;\n      int max_iter = 100;\n      for (int i = 0; i < max_iter; i++)\n      {\n        if (abs(f(x) - x) < tolerance)\n        {\n          break;\n        }\n        x == f(x);\n      }\n      delta_Spinel = x;\n    }\n    else\n    {\n      delta_Spinel = delta_spinel_0 + (_time - t0) * (_rho_LBE[_qp] * Rm) / (_rho_Steel[_qp] * _F_Fe_Steel - _rho_Spinel[_qp] * _F_Fe_Spinel);\n    }\n  }\n  else\n  {\n    delta_Spinel = delta_spinel_0;\n    delta_Fe3O4 = r1 * delta_Spinel - r4 * Rm * _time;\n  }\n\n  return -MetaPhysicL::raw_value(delta_Spinel);\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5543962",
+                          "updatedAt": "2023-04-06T13:50:12Z",
+                          "publishedAt": "2023-04-06T13:50:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Is there an AuxKernel in MOOSE that is capable of obtaining Material property? I've found ADMaterialRealAux . But it computes the volume-averaged quantity over the element. So it only supports elemental auxvariable. I want to find an AuxKernel that supports nodal auxvariable.",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5553560",
+                          "updatedAt": "2023-04-07T13:38:51Z",
+                          "publishedAt": "2023-04-07T13:38:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There's no such thing as nodal material properties because nodes can be shared between blocks, so we wouldnt know which definition of a block-restricted material property to use for the node\nwhy do you need this? If it s an auxkernel it s probably for output right?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5553733",
+                          "updatedAt": "2023-04-07T14:02:50Z",
+                          "publishedAt": "2023-04-07T14:02:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "why do you need this? If it s an auxkernel it s probably for output right?\n\nI want to get LayeredAverage value of material properties. I find that I can use ADMaterialRealAux to obtain the value of material property and use LayeredAverage to get LayeredAverage value of material property.\nThe page of ADMaterialRealAux writes that The AD system currently does not support auxiliary variables. If you convert material properties, which do support automatic differentiation, to auxiliary variables, the derivatives will be ignored.  Does it mean that I'll get imprecise value if I use ADMaterialRealAux to obtain the value of ADMaterial property?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5553920",
+                          "updatedAt": "2023-04-07T14:27:58Z",
+                          "publishedAt": "2023-04-07T14:27:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is this going to be part of the solve? eg does it come in the equations, and you need to be able to get the derivatives with regards to the nonlinear variables?\nIt's not imprecise, the value is correct, it s just that auxiliary variables do not carry derivative information",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5554888",
+                          "updatedAt": "2023-04-07T16:26:19Z",
+                          "publishedAt": "2023-04-07T16:26:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Is this going to be part of the solve? eg does it come in the equations, and you need to be able to get the derivatives with regards to the nonlinear variables?\n\nI only need the values of the auxvariable and don't need its derivatives, so I think ADMaterialRealAux can meet my needs.\nI want to calcluate the thickness of corrosion layer on the interface of solid-fluid. So I set the boundary parameter rather than block parameter in ADLBECorrosionLayerThicknessMaterial:\n  [corrosion_thickness]\n    type = ADLBECorrosionLayerThicknessMaterial\n    rho_Fe3O4 = rho_Fe3O4\n    rho_Spinel = rho_Spinel\n    rho_LBE = rho_LBE\n    rho_Steel = rho_Steel\n    k_Fe3O4 = k_Fe3O4\n    k_Spinel = k_Spinel\n    time = ${time}\n    Co = ${Co}\n    d = ${d}\n    L = ${L}\n    temperature = Tf\n    T_main_stream = Tf_main_stream\n    Re = ave_Re\n    Sc = ave_Sc\n    delta_T = delta_fluid_Tf\n    T_max = max_fluid_Tf\n    # block = fluid\n    boundary = interface_wall\n    output_properties = 'thickness_of_Fe3O4 thickness_of_Spinel oxide_constant diffusion_Fe concentration_Fe_s concentration_Fe_b removal removal_Fe3O4'\n    outputs = exodus\n  []\n\n\nI have two problem:\n\n\nI want to know that will MOOSE use the fluid temperature on interface when I set temperature = Tf?\n\n\nAnd when I finished the calculation, the terminal reported that :\n\n\n*** ERROR ***\nThe following error occurred in the object \"ins_ad_object_tracker\", of type \"INSADObjectTracker\".\n\nThe requested sub_id is not a key in INSADObjectTracker::_block_id_to_params. Please contact a Moose developer to fix this bug.\n\nAnd moose failed to write the results into exudus file. Why does this happen?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5592048",
+                          "updatedAt": "2023-04-12T12:26:44Z",
+                          "publishedAt": "2023-04-12T12:26:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I want to know that will MOOSE use the fluid temperature on interface when I set temperature = Tf?\n\nwhen this material property gets evaluated, it will be computed for every quadrature point related to its evaluation. And when doing so, if you use adCoupledValue(\"temperature\") in the code, it will use the fluid temperature.\nI m not familiar with the INSADObjectTracker. Did you add one to your INSAD simulation?\nIs your material deriving from the INSADMaterial base class??",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5592736",
+                          "updatedAt": "2023-04-12T13:29:52Z",
+                          "publishedAt": "2023-04-12T13:29:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "when this material property gets evaluated, it will be computed for every quadrature point related to its evaluation. And when doing so, if you use adCoupledValue(\"temperature\") in the code, it will use the fluid temperature.\n\nThank you for explanation, I already understand what you mean.\n\nDid you add one to your INSAD simulation? Is your material deriving from the INSADMaterial base class?\n\nMy material is coupled with Tf and Tf is calculated by INSADKernels. But my material isn't coupled with any INSADMaterial and doesn't take part in INSAD simulation. I can show you the material blocks related to my material:\n  [corrosion_thickness]\n    type = ADLBECorrosionLayerThicknessMaterial\n    rho_Fe3O4 = rho_Fe3O4\n    rho_Spinel = rho_Spinel\n    rho_LBE = rho_LBE\n    rho_Steel = rho_Steel\n    k_Fe3O4 = k_Fe3O4\n    k_Spinel = k_Spinel\n    time = ${time}\n    Co = ${Co}\n    d = ${d}\n    L = ${L}\n    temperature = Tf\n    T_main_stream = Tf_main_stream\n    Re = ave_Re\n    Sc = ave_Sc\n    delta_T = delta_cool_Tf\n    T_max = max_cool_Tf\n    boundary = interface_wall\n    output_properties = 'thickness_of_Fe3O4 thickness_of_Spinel oxide_constant diffusion_Fe concentration_Fe_s concentration_Fe_b removal removal_Fe3O4'\n    outputs = exodus\n  []\n  [rho_Fe3O4_mat]\n    type = ADParsedMaterial\n    f_name = rho_Fe3O4\n    function = '0.005170'\n    boundary = interface_wall\n    output_properties = 'rho_Fe3O4'\n    outputs = exodus\n  []\n  [rho_Spinel_mat]\n    type = ADParsedMaterial\n    f_name = rho_Spinel\n    function = '0.003640'\n    boundary = interface_wall\n    output_properties = 'rho_Spinel'\n    outputs = exodus\n  []\n  [rho_LBE_mat]\n    type = ADParsedMaterial\n    f_name = rho_LBE\n    function = '(11096 - 1.3236 * Tf) * 1e-6'\n    args = 'Tf'\n    boundary = interface_wall\n    output_properties = 'rho_LBE'\n    outputs = exodus\n  []\n  [rho_Steel_mat]\n    type = ADParsedMaterial\n    f_name = rho_Steel\n    function = '(7830.853 - 0.212046 * Tf - 1.011373e-4 * pow(Tf,2)) * 1e-6'\n    args = 'Tf'\n    boundary = interface_wall\n    output_properties = 'rho_Steel'\n    outputs = exodus\n  []\n  [k_Fe3O4_mat]\n    type = ADParsedMaterial\n    f_name = k_Fe3O4\n    function = '(4.23 - 1.37e-3 * Tf) * 1e-2' # W/(cm*K) \n    args = 'Tf'\n    boundary = interface_wall\n    output_properties = 'k_Fe3O4'\n    outputs = exodus\n  []\n  [k_Spinel_mat]\n    type = ADParsedMaterial\n    f_name = k_Spinel\n    function = '50.78 * pow(Tf, -0.36) * 1e-2' # W/(cm*K) \n    args = 'Tf'\n    boundary = interface_wall\n    output_properties = 'k_Spinel'\n    outputs = exodus\n  []\n\nThe header file I used in my material's header file is Material.h, I don't know whether it relates to INSADMaterial base class.",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5593003",
+                          "updatedAt": "2023-04-12T13:54:12Z",
+                          "publishedAt": "2023-04-12T13:54:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok that makes sense.\nINSADMaterial are special materials in charge of computing the residual & jacobian for the AD implementation of INS (INSAD).\nWere you getting this effort before using this material?\nWhat if you replace this material with a simple constant using a Parsedmaterial for now?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5593039",
+                          "updatedAt": "2023-04-12T13:57:17Z",
+                          "publishedAt": "2023-04-12T13:57:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "What if you replace this material with a simple constant using a Parsedmaterial for now?\n\nI commented my material, and I calculated a ParsedMaterial with a simple constant at the interface:\n  [rho_LBE_mat]\n    type = ParsedMaterial\n    f_name = rho_LBE\n    # function = '(11096 - 1.3236 * Tf) * 1e-6'\n    function = '11096 * 1e-6'\n    # args = 'Tf'\n    boundary = interface_wall\n    # block = 'fluid'\n    output_properties = 'rho_LBE'\n    outputs = exodus\n  []\n\nHowever, it still reports the same error\ud83d\ude25:\n*** ERROR ***\nThe following error occurred in the object \"ins_ad_object_tracker\", of type \"INSADObjectTracker\".\n\nThe requested sub_id is not a key in INSADObjectTracker::_block_id_to_params. Please contact a Moose developer to fix this bug.\n\nThe biggest problem is that I can only use material on block, while I can't use the material on the boundary. Do you know why this happens?",
+                          "url": "https://github.com/idaholab/moose/discussions/23956#discussioncomment-5593520",
+                          "updatedAt": "2023-04-12T14:36:36Z",
+                          "publishedAt": "2023-04-12T14:36:35Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

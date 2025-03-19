@@ -1,0 +1,1106 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMS0xNVQxMzoyODo1Ny0wNzowMM4AXBZ8"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Convergence problems in solving Poisson equation with Poisson-Boltzmann relation",
+          "author": {
+            "login": "ahzeeshan"
+          },
+          "bodyText": "I am trying to solve the Poisson's equation for electrical potential in a system containing positively and negatively charged ions,\n$$\\nabla ^2 \\phi = - \\rho/ \\epsilon = - e(c^+ - c^-)/\\epsilon$$\nwhere $c^+$, $c^-$ are the concentrations given by\n$$c^{\\pm} = N \\exp\\left[\\frac{ A^{\\pm} \\pm e\\phi }{kT}  \\right]$$\nwhere $A^{\\pm}, N, kT, e, \\epsilon$ are constants.\nI used the Diffusion and the MaskedBodyForce kernels (in the phase field module) for phi. The MaskedBodyForce is used for the $-\\rho/\\epsilon$ term. I am getting a convergence problem: Linear solve did not converge due to DIVERGED_BREAKDOWN iterations\nSince the problem is very non-linear, I used a gradual ramp-up with time for the MaskedBodyForce term by defining function = 't/10' and running the simulation till end_time=10.0. This does not converge beyond the first iteration. The input and output files are in https://github.com/ahzeeshan/moose-issue/tree/main/poisson\nI am using similar values for the constants as a paper where they solved the equation in MATLAB.\nI also wanted to confirm: the material m in the MaskedBodyForce can be a function of the variable phi, right?",
+          "url": "https://github.com/idaholab/moose/discussions/26561",
+          "updatedAt": "2024-01-17T19:09:32Z",
+          "publishedAt": "2024-01-15T22:36:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "Hi, the preconditioning matrix seems to be very poor. You can check this by decreasing the size of the problem and running -snes_test_jacobian. I was able to get some convergence by switching to PJFNK. My edits to your input are below. I see that you're using the DerivativeMaterialInterface so I wouldn't expect your matrix to be so poor, but I don't really use that feature much myself. Perhaps @dschwen could see what's wrong at a glance\ndiff --git a/modules/phase_field/user-problem.i b/modules/phase_field/user-problem.i\nindex 16bb511818..318ec1186b 100644\n--- a/modules/phase_field/user-problem.i\n+++ b/modules/phase_field/user-problem.i\n@@ -2,7 +2,7 @@\n   [./mesh]\n    dim = 1\n    type = GeneratedMeshGenerator\n-   nx = 100000\n+   nx = 10000\n    xmax = 100e-9\n   [../]\n []\n@@ -119,18 +119,19 @@\n   type = Transient\n   scheme = bdf2\n   verbose = True\n-  solve_type = 'Newton'\n-  l_max_its = 50\n-  l_tol = 1e-6\n-  nl_max_its = 50\n+  solve_type = 'PJFNK'\n+  l_max_its = 300\n+  l_tol = 1e-2\n+  abort_on_solve_fail = true\n+  nl_max_its = 30\n   nl_rel_tol = 1e-8\n   nl_abs_tol = 1e-12\n #  petsc_options = '-snes_monitor -ksp_monitor_true_residual -snes_converged_reason -ksp_converged_reason'\n #  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n #  petsc_options_value = 'asm      31                  preonly      lu          4'\n #  line_search = 'none'\n-  petsc_options_iname = -pc_type\n-  petsc_options_value = asm\n+  petsc_options_iname = '-pc_type -ksp_gmres_restart -pc_factor_mat_solver_type'\n+  petsc_options_value = 'lu      300                superlu_dist'\n   start_time = 0.0\n   end_time = 10.0\n   dt = 1.0",
+                  "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8159429",
+                  "updatedAt": "2024-01-17T16:56:32Z",
+                  "publishedAt": "2024-01-17T16:56:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "When you use the material_properties argument you need to be careful, when those properties depend on non-linear variables. To ensurer propper chain rule derivatives read up here: https://mooseframework.inl.gov/moose/source/materials/DerivativeParsedMaterial.html the section following\n\nThe \"material_property_names\" are parsed by the FunctionMaterialPropertyDescriptor class, which understands the following syntax:",
+                          "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8159720",
+                          "updatedAt": "2024-01-17T17:20:49Z",
+                          "publishedAt": "2024-01-17T17:20:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "for example the cpos block should look like this\n  [cpos]\n    type = DerivativeParsedMaterial\n    property_name = cpos\n    material_property_names = 'dfepos(phi) N kT'\n    expression = 'N * exp(-dfepos/kT) '\n    derivative_order = 2\n    coupled_variables = 'phi'\n    outputs = other\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8159744",
+                          "updatedAt": "2024-01-17T17:23:19Z",
+                          "publishedAt": "2024-01-17T17:23:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "What if you have nested dependencies, for instance rhobyeps depends on cpos and cneg which depend on dfeneg/pos which depend on phi? I tried\n@@ -63,7 +63,7 @@\n   [./cpos]\n     type = DerivativeParsedMaterial\n     property_name = cpos\n-    material_property_names = 'dfepos N kT'\n+    material_property_names = 'dfepos(phi) N kT'\n     expression = 'N * exp(-dfepos/kT) '\n     derivative_order = 2\n     outputs = other\n@@ -71,7 +71,7 @@\n   [./cneg]\n     type = DerivativeParsedMaterial\n     property_name = cneg\n-    material_property_names = 'dfeneg N kT'\n+    material_property_names = 'dfeneg(phi) N kT'\n     expression = 'N * exp(-dfeneg/kT) '\n     derivative_order = 2\n     outputs = other\n@@ -79,7 +79,7 @@\n   [./rhobyeps]\n     type = DerivativeParsedMaterial\n     property_name = 'rhobyeps'\n-    material_property_names = 'cpos cneg e eps'\n+    material_property_names = 'cpos(phi) cneg(phi) e eps'\n     expression = 'e*(cpos - cneg)/eps'\n     derivative_order = 2\n     outputs = other\n\nand the Jacobian is still not good",
+                          "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8159836",
+                          "updatedAt": "2024-01-17T17:31:33Z",
+                          "publishedAt": "2024-01-17T17:31:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Oops, I hadn't added coupled_variables. With that addition, the Jacobian now looks perfect",
+                          "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8160122",
+                          "updatedAt": "2024-01-17T17:55:04Z",
+                          "publishedAt": "2024-01-17T17:55:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "So in summary, the working patch is\ndiff --git a/modules/phase_field/user-problem.i b/modules/phase_field/user-problem.i\nindex 16bb511818..6878f02beb 100644\n--- a/modules/phase_field/user-problem.i\n+++ b/modules/phase_field/user-problem.i\n@@ -63,25 +63,28 @@\n   [./cpos]\n     type = DerivativeParsedMaterial\n     property_name = cpos\n-    material_property_names = 'dfepos N kT'\n+    material_property_names = 'dfepos(phi) N kT'\n     expression = 'N * exp(-dfepos/kT) '\n     derivative_order = 2\n+    coupled_variables = 'phi'\n     outputs = other\n   [../]\n   [./cneg]\n     type = DerivativeParsedMaterial\n     property_name = cneg\n-    material_property_names = 'dfeneg N kT'\n+    material_property_names = 'dfeneg(phi) N kT'\n     expression = 'N * exp(-dfeneg/kT) '\n     derivative_order = 2\n     outputs = other\n+    coupled_variables = 'phi'\n   [../]\n   [./rhobyeps]\n     type = DerivativeParsedMaterial\n     property_name = 'rhobyeps'\n-    material_property_names = 'cpos cneg e eps'\n+    material_property_names = 'cpos(phi) cneg(phi) e eps'\n     expression = 'e*(cpos - cneg)/eps'\n     derivative_order = 2\n     outputs = other\n+    coupled_variables = 'phi'\n   [../]\n []\n\n@@ -119,18 +122,18 @@\n   type = Transient\n   scheme = bdf2\n   verbose = True\n   solve_type = 'Newton'\n-  l_max_its = 50\n-  l_tol = 1e-6\n-  nl_max_its = 50\n+  l_max_its = 300\n+  l_tol = 1e-2\n+  nl_max_its = 30\n   nl_rel_tol = 1e-8\n   nl_abs_tol = 1e-12\n #  petsc_options = '-snes_monitor -ksp_monitor_true_residual -snes_converged_reason -ksp_converged_reason'\n #  petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n #  petsc_options_value = 'asm      31                  preonly      lu          4'\n #  line_search = 'none'\n-  petsc_options_iname = -pc_type\n-  petsc_options_value = asm\n+  petsc_options_iname = '-pc_type -ksp_gmres_restart -pc_factor_mat_solver_type'\n+  petsc_options_value = 'lu\t  300\t\t     superlu_dist'\n   start_time = 0.0\n   end_time = 10.0\n   dt = 1.0",
+                          "url": "https://github.com/idaholab/moose/discussions/26561#discussioncomment-8160162",
+                          "updatedAt": "2024-01-17T18:00:05Z",
+                          "publishedAt": "2024-01-17T18:00:03Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Restart and Recover",
+          "author": {
+            "login": "wowodejiajia"
+          },
+          "bodyText": "Dear MOOSE experts,\nI would like to use the result file from the previous task as the initial condition, but it won't run. Could you please help me check if there are any issues with my input file?\nThe original input file\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 200\n  ny = 200\n  nz = 0\n  xmin = 0\n  xmax = 200\n  ymin = 0\n  ymax = 200\n  zmin = 0\n  zmax = 0\n[]\n\n[Variables]\n  [./w]\n  [../]\n  [./eta]\n  [../]\n  [./pot]\n  [../]\n[]\n\n[Functions]\n  [./ic_func_eta]\n    type = ParsedFunction\n    expression = 0.5*(1.0-1.0*tanh((x-20)*2))\n  [../]\n  [./ic_func_c]\n    type = ParsedFunction\n    expression = 0\n  [../]\n  [./ic_func_pot]\n    type = ParsedFunction\n    expression = -0.225*(1.0-tanh((x-20)*2))\n  [../]\n[]\n\n[ICs]\n  [./eta]\n    type = FunctionIC\n    variable = eta\n    function = ic_func_eta\n  [../]\n  [./w]\n    type = FunctionIC\n    variable = w\n    function = ic_func_c\n  [../]\n  [./pot]\n    type = FunctionIC\n    variable = pot\n    function = ic_func_pot\n  [../]\n[]\n\nInput file for continuing calculation\n[Mesh]\n  file = c01_out.e\n[]\n\n[Variables]\n  [./w]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = w\n    initial_from_file_timestep = 245\n  [../]\n  [./eta]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = eta\n    initial_from_file_timestep = 245\n  [../]\n  [./pot]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = pot\n    initial_from_file_timestep = 245\n  [../]\n[]\n\nThank you.",
+          "url": "https://github.com/idaholab/moose/discussions/26542",
+          "updatedAt": "2024-01-17T08:27:16Z",
+          "publishedAt": "2024-01-12T02:55:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "HelloI see two initialization methods here, ICs and the initial-from-file.You can only use one",
+                  "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8104411",
+                  "updatedAt": "2024-01-12T11:51:09Z",
+                  "publishedAt": "2024-01-12T03:38:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "First, I calculated c01_out.e using the first input file. Then, I used c01_out.e as the initial condition and continued the calculation with the second input file. But it didn't even finish the first step and stopped running.\nI plan to repeat this step many times.",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8104515",
+                          "updatedAt": "2024-01-12T04:02:44Z",
+                          "publishedAt": "2024-01-12T04:02:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Nevermind that 's not the problem.\nIn the second simulation, use a FileMeshGenerator in the [Mesh] block and set the use_for_exodus_restart parameter to true",
+                  "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8109305",
+                  "updatedAt": "2024-01-12T11:52:42Z",
+                  "publishedAt": "2024-01-12T11:52:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "I tried, but it still doesn't work.\nthe second input file\n[Mesh]\n  [./fmg]\n    type = FileMeshGenerator\n    file = 'c01_out.e'\n    use_for_exodus_restart = true\n  [../]\n[]\n\n[Variables]\n  [./w]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = w\n    initial_from_file_timestep = 245\n  [../]\n  [./eta]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = eta\n    initial_from_file_timestep = 245\n  [../]\n  [./pot]\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = pot\n    initial_from_file_timestep = 245\n  [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8115773",
+                          "updatedAt": "2024-01-13T17:43:13Z",
+                          "publishedAt": "2024-01-13T04:04:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nwhat error do you get?\nDoes time step 245 exist in the file? Do you get a better result with LATEST instead of 245?",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8119403",
+                          "updatedAt": "2024-01-13T17:43:42Z",
+                          "publishedAt": "2024-01-13T17:43:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "Time Step 0, time = 0\nTime Step 1, time = 0.02, dt = 0.02\nNonlinear solve did not converge due to DIVERGED_MAX_IT iterations 20\nCurrently Executing\nFinished Solving                                                                       [ 34.41 s] [  178 MB]\nSolve Did NOT Converge!\nAborting as solve did not converge\nTime Step 1, time = 0.01, dt = 0.01\nNonlinear solve did not converge due to DIVERGED_MAX_IT iterations 20\nFinished Solving                                                                       [ 28.42 s] [  182 MB]\nSolve Did NOT Converge!\nAborting as solve did not converge\nTime Step 1, time = 0.005, dt = 0.005\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 16\nFinished Solving                                                                       [ 24.37 s] [  182 MB]\nSolve Did NOT Converge!\nAborting as solve did not converge\nTime Step 1, time = 0.0025, dt = 0.0025\nStuck here. It neither reports an error nor runs here.",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8121475",
+                          "updatedAt": "2024-01-14T02:57:48Z",
+                          "publishedAt": "2024-01-14T02:57:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wowodejiajia"
+                  },
+                  "bodyText": "The first input file\nfirst.docx\nThe second input file\nsecond.docx\nThe article I am referring to is\n2023-ACS AMI.pdf",
+                  "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8121519",
+                  "updatedAt": "2024-01-14T03:07:17Z",
+                  "publishedAt": "2024-01-14T03:07:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think some of your materials have state.\nExodus restart does not restart those. So maybe that brings your simulation in an invalid configuration upon restart (first input works fine right?)\nTo restart materials with state, you need to use the checkpoint restart. See the restart recover documentation page to see how to do that",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8123696",
+                          "updatedAt": "2024-01-14T13:18:36Z",
+                          "publishedAt": "2024-01-14T13:18:36Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "My first input file is running normally.\nI am running the input file with added checkpoints restart. How to restart after running is completed? Do you have any examples?",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8129948",
+                          "updatedAt": "2024-01-15T07:50:00Z",
+                          "publishedAt": "2024-01-15T07:49:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There are examples of checkpoint restart in moose/test/tests/restart.\nThis one too :  restart in moose/test/tests/time_steppers/timesequence_stepper/timesequence_restart1.i",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8132682",
+                          "updatedAt": "2024-01-15T12:43:50Z",
+                          "publishedAt": "2024-01-15T12:43:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "There's a problem.\nTime Step 0, time = 112.721\nWARNING! There are options you set that were not used!\nWARNING! could be spelling mistake, etc!\nThere is one unused database option. It is:\nOption left: name:-i value: f02.i source: command line\nf02.i\n[Mesh]\nfile = c02_checkpoint_cp/6750-mesh.cpr\n[]\n[Problem]\nrestart_file_base = c02_checkpoint_cp/6750\nallow_initial_conditions_with_restart = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8139623",
+                          "updatedAt": "2024-01-16T04:04:05Z",
+                          "publishedAt": "2024-01-16T04:04:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThis is just a warning you can ignore it.\nWhy do you have allow_initial_conditions during restart set? Whichever initial condition you have set overrides the restarted values.\nSo it s ok but only if the restarted and initialized variables are diffeeent",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8143646",
+                          "updatedAt": "2024-01-16T12:31:26Z",
+                          "publishedAt": "2024-01-16T12:31:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wowodejiajia"
+                          },
+                          "bodyText": "I made a mistake in end_time. Now it can run.\nThank you very much for your patience.",
+                          "url": "https://github.com/idaholab/moose/discussions/26542#discussioncomment-8153590",
+                          "updatedAt": "2024-01-17T08:27:17Z",
+                          "publishedAt": "2024-01-17T08:27:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to link external libraries to a MOOSE application2.0",
+          "author": {
+            "login": "Wang-Yihu"
+          },
+          "bodyText": "If I have an external library(*.a, *.so), how can I build it with MOOSE app together?\nLet me show a simple example:\nCreate 2 C source files:\nfun1.c\n#include <stdio.h>\nvoid fun1()\n{\n  printf(\"This is fun1!\\n\");\n}\nfun2.c\n#include <stdio.h>\nvoid fun1()\n{\n  printf(\"This is fun2!\\n\");\n}\nCreate 1 head file:\nhead.h\nvoid fun1();\nvoid fun2();\nNow make a static library with gcc:\ngcc -c fun1.c -o fun1.o\ngcc -c fun2.c -o fun2.o\nar rcs libtest1.a fun1.o fun2.o\n\nNow I have a static library libtest1.a. If I use it in gcc compiler, there will be no problem.\nCreate file main.c:\n#include <stdio.h>\n#include \"head.h\"\nint main()\n{\n  fun1();\n  fun2();\n  return 0;\n}\nCompile it(all the files are in the same directory):\ngcc -o main main.c -I./ -L./ -ltest1\n./main\n\nThe shell will certainly return:\nThis is fun1!\nThis is fun2!\n\nHowever, how can I run build my external library with MOOSE?\nI read this #24129\nIt said we can use ADDITIONAL_LIBS in Makefile. I put the head.h in /home/sjtu/projects/lianxi_couplewithpy/include/, I put libtest1.a in /home/sjtu/projects/lianxi_couplewithpy/exlib/. I edit Makefile:\n# dep apps\nAPPLICATION_DIR    := $(CURDIR)\nAPPLICATION_NAME   := lianxi_couplewithpy\nBUILD_EXEC         := yes\nGEN_REVISION       := no\nADDITIONAL_LIBS    :=\"-I/home/sjtu/projects/lianxi_couplewithpy/include/ -L/home/sjtu/projects/lianxi_couplewithpy/exlib/ -ltest1\"\ninclude            $(FRAMEWORK_DIR)/app.mk\nand call fun1(), fun2() in my MOOSE code. However, it seems that #24129 does not work in my computer.\nI\nconda activate moose\nmake\n\nand the shell returns\nChecking if header needs updating: /home/sjtu/projects/moose/framework/include/base/MooseRevision.h...\nLinking Executable /home/sjtu/projects/lianxi_couplewithpy/lianxi_couplewithpy-opt...\n/home/sjtu/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/sjtu/projects/lianxi_couplewithpy/lib/liblianxi_couplewithpy-opt.so: undefined reference to `fun1()'\n/home/sjtu/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/sjtu/projects/lianxi_couplewithpy/lib/liblianxi_couplewithpy-opt.so: undefined reference to `fun2()'\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/sjtu/projects/moose/framework/app.mk:445: /home/sjtu/projects/lianxi_couplewithpy/lianxi_couplewithpy-opt] Error 1\n\nWhere is my fault? Could somebody explain it to me?",
+          "url": "https://github.com/idaholab/moose/discussions/26504",
+          "updatedAt": "2024-01-16T21:51:57Z",
+          "publishedAt": "2024-01-08T15:06:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "doquang"
+                  },
+                  "bodyText": "Could you define both ADDITIONAL_INCLUDES, and ADDITIONAL_LIBS as\nADDITIONAL_INCLUDES := -I/home/sjtu/projects/lianxi_couplewithpy/include\nADDITIONAL_LIBS     := /home/sjtu/projects/lianxi_couplewithpy/exlib/libltest1.a",
+                  "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8051012",
+                  "updatedAt": "2024-01-08T15:14:30Z",
+                  "publishedAt": "2024-01-08T15:14:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wang-Yihu"
+                          },
+                          "bodyText": "I change the Makefile into\nADDITIONAL_LIBS    :=\"-L/home/sjtu/projects/lianxi_couplewithpy/exlib/ -ltest1\"\nADDITIONAL_INCLUDES := \"/home/sjtu/projects/lianxi_couplewithpy/include\"\nBut it does not work...",
+                          "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8051120",
+                          "updatedAt": "2024-01-08T15:23:19Z",
+                          "publishedAt": "2024-01-08T15:22:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Wang-Yihu"
+                  },
+                  "bodyText": "Dear friends:\nI look through build.mk https://github.com/idaholab/moose/blob/next/framework/build.mk\nand app.mk  https://github.com/idaholab/moose/blob/next/framework/app.mk\nrecently.\nI find in moose default building compiling process. In build.mk, it will run these\n\t$$(libmesh_LIBTOOL) --tag=CXX $$(LIBTOOLFLAGS) --mode=compile --quiet \\\n\t  $$(libmesh_CXX) $$(libmesh_CPPFLAGS) $$(CXXFLAGS) $$(libmesh_CXXFLAGS) $$(ADDITIONAL_CPPFLAGS) $$(app_INCLUDES) $$(libmesh_INCLUDE) -MMD -MP -MF $$@.d -MT $$@ -c $$< -o $$@\n\nThe shell will return(I delete echo to make this displayed in the shell)\n/home/sjtu/mambaforge3/envs/moose/libmesh/contrib/bin/libtool  --tag=CXX  --mode=compile --quiet mpicxx -std=gnu++17 -DNDEBUG -fvisibility-inlines-hidden  -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/sjtu/mambaforge3/envs/moose/include -std=c++17 -O2 -felide-constructors -fstrict-aliasing -Wdisabled-optimization -funroll-loops -fopenmp -DMETHOD=opt -DWASP_ENABLED -I/home/sjtu/mambaforge3/envs/moose/wasp/include -DADFPARSER_INCLUDES=\"\\\"-I/home/sjtu/projects/moose/framework/include/utils -I/home/sjtu/projects/moose/framework/include/base -I/home/sjtu/mambaforge3/envs/moose/libmesh/include\\\"\" -DMODULE_LOADER_ENABLED -DLIANXI_MF_ENABLED  -I/home/sjtu/projects/moose/framework/build/header_symlinks  -I/home/sjtu/projects/moose/framework/contrib/boost/include  -I/home/sjtu/projects/moose/framework/contrib/json/include  -I/home/sjtu/projects/moose/framework/contrib/json/include/nlohmann  -I/home/sjtu/projects/moose/framework/contrib/mtwist/include  -I/home/sjtu/projects/moose/framework/contrib/pcre/include  -I/home/sjtu/projects/moose/framework/contrib/pugixml/include  -I/home/sjtu/projects/moose/framework/contrib/tinydir/include  -I/home/sjtu/projects/moose/framework/contrib/gtest  -I/home/sjtu/projects/moose/framework/contrib/hit -I/home/sjtu/mambaforge3/envs/moose/libmesh/include -I/home/sjtu/mambaforge3/envs/moose/include -I/home/sjtu/mambaforge3/envs/moose/libmesh-vtk/include/vtk-9.2 -pthread -I/home/sjtu/mambaforge3/envs/moose//include -I/home/sjtu/projects/moose/modules/module_loader/build/header_symlinks  -I/home/sjtu/projects/lianxi_mf/build/header_symlinks  -I/home/sjtu/mambaforge3/envs/moose/libmesh/include -I/home/sjtu/mambaforge3/envs/moose/include -I/home/sjtu/mambaforge3/envs/moose/libmesh-vtk/include/vtk-9.2 -pthread -I/home/sjtu/mambaforge3/envs/moose//include -MMD -MP -MF /home/sjtu/projects/lianxi_mf/src/main.x86_64-conda-linux-gnu.opt.lo.d -MT /home/sjtu/projects/lianxi_mf/src/main.x86_64-conda-linux-gnu.opt.lo -c /home/sjtu/projects/lianxi_mf/src/main.C -o /home/sjtu/projects/lianxi_mf/src/main.x86_64-conda-linux-gnu.opt.lo\n\nAlso in app.mk, it will run these\n$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link --quiet \\\n\t  $(libmesh_CXX) $(CXXFLAGS) $(libmesh_CXXFLAGS) -o $@ $(main_object) $(depend_test_libs_flags) $(applibs) $(ADDITIONAL_LIBS) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS)\n\t$(codesign)\n\nThe shell will return\n/home/sjtu/mambaforge3/envs/moose/libmesh/contrib/bin/libtool  --tag=CXX  --mode=link --quiet \\\n  mpicxx -std=gnu++17 -fvisibility-inlines-hidden  -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/sjtu/mambaforge3/envs/moose/include -std=c++17 -O2 -felide-constructors -fstrict-aliasing -Wdisabled-optimization -funroll-loops -fopenmp -DMETHOD=opt -DWASP_ENABLED -I/home/sjtu/mambaforge3/envs/moose/wasp/include -o /home/sjtu/projects/lianxi_mf/lianxi_mf-opt  /home/sjtu/projects/lianxi_mf/src/main.x86_64-conda-linux-gnu.opt.lo  /home/sjtu/projects/lianxi_mf/test/lib/liblianxi_mf_test-opt.la /home/sjtu/projects/lianxi_mf/lib/liblianxi_mf-opt.la /home/sjtu/projects/moose/modules/module_loader/lib/libmodule_loader_with-opt.la /home/sjtu/projects/moose/framework/libmoose-opt.la /home/sjtu/projects/moose/framework/contrib/pcre/libpcre-opt.la /home/sjtu/projects/moose/framework/contrib/hit/libhit-opt.la   -lstdc++fs -Wl,--no-as-needed -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/wasp/lib -L/home/sjtu/mambaforge3/envs/moose/wasp/lib -lwaspcore -lwaspddi -lwaspexpr -lwasphalite -lwasphit -lwasphive -lwaspjson -lwasplsp -lwaspsiren -lwaspson -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/libmesh/lib -L/home/sjtu/mambaforge3/envs/moose/libmesh/lib -lmesh_opt -ltimpi_opt -L/home/sjtu/mambaforge3/envs/moose/lib -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/lib -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/libmesh-vtk/lib -L/home/sjtu/mambaforge3/envs/moose/libmesh-vtk/lib -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/lib/gcc/x86_64-conda-linux-gnu/10.4.0 -L/home/sjtu/mambaforge3/envs/moose/lib/gcc/x86_64-conda-linux-gnu/10.4.0 -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/lib/gcc -L/home/sjtu/mambaforge3/envs/moose/lib/gcc -Wl,-rpath,/home/sjtu/mambaforge3/envs/moose/x86_64-conda-linux-gnu/lib -L/home/sjtu/mambaforge3/envs/moose/x86_64-conda-linux-gnu/lib -lhdf5_cpp -lvtkIOCore-9.2 -lvtkCommonCore-9.2 -lvtkCommonDataModel-9.2 -lvtkFiltersCore-9.2 -lvtkIOXML-9.2 -lvtkImagingCore-9.2 -lvtkIOImage-9.2 -lvtkImagingMath-9.2 -lvtkIOParallelXML-9.2 -lvtkParallelMPI-9.2 -lvtkParallelCore-9.2 -lvtkCommonExecutionModel-9.2 -lvtksys-9.2 -lz -lslepc -lpetsc -lHYPRE -ldmumps -lmumps_common -lpord -lstrumpack -lscalapack -lsuperlu_dist -lflapack -lfblas -lptesmumps -lptscotchparmetisv3 -lptscotch -lptscotcherr -lesmumps -lscotch -lscotcherr -lpthread -lparmetis -lmetis -lhdf5_hl -lhdf5 -lmpifort -lgfortran -lm -lgcc_s -lquadmath -lstdc++ -lrt -ldl -lmpi \n\nOK! I find -I -L -l in these statements! So I try to add\n-I/home/sjtu/projects/lianxi_couplewithpy/include/ -L/home/sjtu/projects/lianxi_couplewithpy/exlib/ -ltest1\n\nat the end of them.\nBut it does not work...\nAfter I make\nThe shell returns with errors...\n/home/sjtu/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/sjtu/projects/lianxi_mf/src/.libs/main.x86_64-conda-linux-gnu.opt.o: in function `main':\nmain.C:(.text.startup.main+0x88): undefined reference to `fun1()'\n/home/sjtu/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: main.C:(.text.startup.main+0x8e): undefined reference to `fun2()'\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/sjtu/projects/moose/framework/app.mk:456: /home/sjtu/projects/lianxi_mf/lianxi_mf-opt] Error 1\n\nSo where I made mistakes?\nHow to link external libraries to a MOOSE application like gcc?",
+                  "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8118755",
+                  "updatedAt": "2024-01-13T15:42:50Z",
+                  "publishedAt": "2024-01-13T15:42:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Wang-Yihu"
+                  },
+                  "bodyText": "Dear friends:\nNow I have link my static library(lib*.a) to MOOSE successfully. I will show my example to you. It is not a perfect process, but can give you some enlightenment.\nThe process to make C++ static library(a very simple example):\nFile fun1.C\n#include <stdio.h>\nvoid fun1()\n{\n  printf(\"This is fun1!\\n\");\n}\nFile fun2.C\n#include <stdio.h>\nvoid fun2()\n{\n  printf(\"This is fun2!\\n\");\n}\nMake the static library libtest1.a under g++ environment:\ng++ -c fun1.C -o fun1.o\ng++ -c fun2.C -o fun2.o\nar rcs libtest1.a fun1.o fun2.o\nThe file head.h\nvoid fun1();\nvoid fun2();\nIn the standard compiling process with g++, -I(head files directory), -L(library files directory), -l(library files names without 'lib' and '.a') options should be added to shell. In my example, head file directory is /home/sjtu/CProgramLianxi/lianxi7_jingtaiku/include; library file directory /home/sjtu/CProgramLianxi/lianxi7_jingtaiku/lib.\nI put these options into file $(FRAMEWORK_DIR)/app.mk, like this:\n$(app_EXEC): $(app_LIBS) $(mesh_library) $(main_object) $(app_test_LIB) $(depend_test_libs) $(ADDITIONAL_DEPEND_LIBS) $(app_resource)\n\t@echo \"Linking Executable \"$@\"...\"\n\t@$(libmesh_LIBTOOL) --tag=CXX $(LIBTOOLFLAGS) --mode=link --quiet \\\n\t  $(libmesh_CXX) $(CXXFLAGS) $(libmesh_CXXFLAGS) -o $@ $(main_object) $(depend_test_libs_flags) $(applibs) $(ADDITIONAL_LIBS) $(libmesh_LDFLAGS) $(libmesh_LIBS) $(EXTERNAL_FLAGS) \\\n\t  -I/home/sjtu/CProgramLianxi/lianxi7_jingtaiku/include/ -L/home/sjtu/CProgramLianxi/lianxi7_jingtaiku/lib/ -ltest1\n\t@$(codesign) \nI put these options into file $(FRAMEWORK_DIR)/build.mk, like this:\ndefine CXX_RULE_TEMPLATE\n%$(1).$(obj-suffix) : %.C $(ADDITIONAL_SRC_DEPS)\nifeq ($(1),)\n\t@echo \"Compiling C++ (in \"$$(METHOD)\" mode) \"$$<\"...\"\nelse\n\t@echo \"Compiling C++ with suffix (in \"$$(METHOD)\" mode) \"$$<\"...\"\nendif\n\t@$$(libmesh_LIBTOOL) --tag=CXX $$(LIBTOOLFLAGS) --mode=compile --quiet \\\n\t  $$(libmesh_CXX) $$(libmesh_CPPFLAGS) $$(CXXFLAGS) $$(libmesh_CXXFLAGS) $$(ADDITIONAL_CPPFLAGS) $$(app_INCLUDES) $$(libmesh_INCLUDE) -MMD -MP -MF $$@.d -MT $$@ -c $$< -o $$@\\\n\t  -I/home/sjtu/CProgramLianxi/lianxi7_jingtaiku/include/ -L/home/sjtu/CProgramLianxi/lianxi7_jingtaiku/lib/ -ltest1\nendef\nI edit src/main.C in my MOOSE App. I input \"head.h\" and fun1(), fun2() in it. Like this (my MOOSE app name is lianxi_mf)\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"lianxi_mfTestApp.h\"\n#include \"MooseInit.h\"\n#include \"Moose.h\"\n#include \"MooseApp.h\"\n#include \"AppFactory.h\"\n#include \"head.h\"\n\n// Create a performance log\nPerfLog Moose::perf_log(\"lianxi_mf\");\n\n// Begin the main program.\nint\nmain(int argc, char * argv[])\n{\n  // Initialize MPI, solvers and MOOSE\n  MooseInit init(argc, argv);\n\n  // Register this application's MooseApp and any it depends on\n  lianxi_mfTestApp::registerApps();\n\n  // Create an instance of the application and store it in a smart pointer for easy cleanup\n  std::shared_ptr<MooseApp> app = AppFactory::createAppShared(\"lianxi_mfTestApp\", argc, argv);\n  fun1();\n  fun2();\n  // Execute the application\n  app->run();\n\n  return 0;\n}\nSo I try to\nconda activate moose\nmake\n\nAlthough head.h is not in my MOOSE app directory, and fun1(), fun2() is not defined in my MOOSE app codes, opt file is still compiled successfully! We can make sure that the libtest1.a has been imported!\nNow my question is:\nIs there any more proper method to import external library? I believe it is not perfect to modify MOOSE framework files...",
+                  "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8122638",
+                  "updatedAt": "2024-01-14T09:38:51Z",
+                  "publishedAt": "2024-01-14T09:25:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You should modify your app s Makefile instead of the framework app.mk and build.mk.\nYou should use the ADDITIONAL_..._FLAGS variables to pass these additional flags you added.",
+                          "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8123617",
+                          "updatedAt": "2024-01-14T13:02:18Z",
+                          "publishedAt": "2024-01-14T13:02:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wang-Yihu"
+                          },
+                          "bodyText": "I try  this problem again. These are the best answers for linking external libraries:\n\nThe -I(head files directory) options have better be added after the ADDITIONAL_CPPFLAGS variable in Makefile of user's MOOSE app.\nThe -L(library files directory), -l(library files names without 'lib' and '.a')\noptions have better be added after the ADDITIONAL_LIBS variable in Makefile of user's MOOSE app.\nIn my example,  I put the head.h declaring void fun1() and void fun2() in /home/sjtu/projects/lianxi_couplewithpy/include/, I put library file libtest1.a defining void fun1() and void fun2() in /home/sjtu/projects/lianxi_couplewithpy/exlib/. I should put these in Makefile of user's MOOSE app. (The name of user's MOOSE app in this example is lianxi_couplewithpy)\n\n# dep apps\nAPPLICATION_DIR    := $(CURDIR)\nAPPLICATION_NAME   := lianxi_couplewithpy\nBUILD_EXEC         := yes\nGEN_REVISION       := no\n#This is realized by $(FRAMEWORK_DIR)/app.mk\nADDITIONAL_CPPFLAGS+=-I/home/sjtu/projects/lianxi_couplewithpy/include/\n#This is realized by $(FRAMEWORK_DIR)/build.mk\nADDITIONAL_LIBS+=-L/home/sjtu/projects/lianxi_couplewithpy/exlib/\nADDITIONAL_LIBS+=-ltest1\ninclude            $(FRAMEWORK_DIR)/app.mk\nAfter this, the C++ code of MOOSE with #include \"head.h\"can call the function void fun1() and void fun2() of libtest1.a directly.\nThanks for following this discussion with me!",
+                          "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8144462",
+                          "updatedAt": "2024-01-16T13:48:38Z",
+                          "publishedAt": "2024-01-16T13:45:45Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok this is more what I expect.\nThank you for figuring this out on your own and posting the solution!",
+                          "url": "https://github.com/idaholab/moose/discussions/26504#discussioncomment-8149582",
+                          "updatedAt": "2024-01-16T21:51:57Z",
+                          "publishedAt": "2024-01-16T21:51:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mutliscale Modeling",
+          "author": {
+            "login": "manikumd22"
+          },
+          "bodyText": "Hi @recuero and @dschwen ,\nI am working on multiscale modeling of materials, I am solving the microscale problem using machine learning, and for that, I have imported the weights and other parameters in the code.\nFor example, I am getting averaged stress from the micro problem as follows:\n_S[qp] = W^T*_F[_qp]\nSo, How to relate this stress with the macro scale problem to be solve?\n\n\nDo I need to obtain the material elastic constants as described in this paper: Development of a finite element based strain periodicity implementation\nmethodhttps://www.sciencedirect.com/science/article/pii/S0168874X20301165\n\n\nI was going through the ComputeNeoHookeanstress:\n\n\nComputeNeoHookeanstress::computeQpPK2Stress()\n{\n\n  // Large deformation = nonlinear strain\n  if (_large_kinematics)\n  {\n    RankTwoTensor Cinv = (2 * _E[_qp] + RankTwoTensor::Identity()).inverse();\n    _S[_qp] = (_lambda[_qp] * log(_F[_qp].det()) - _mu[_qp]) * Cinv +\n              _mu[_qp] * RankTwoTensor::Identity();\n    _C[_qp] =\n        -2 * (_lambda[_qp] * log(_F[_qp].det()) - _mu[_qp]) * Cinv.times<i_, k_, l_, j_>(Cinv) +\n        _lambda[_qp] * Cinv.times<i_, j_, k_, l_>(Cinv);\n  }\n  // Small deformations = linear strain\n  else\n  {\n    const auto I = RankTwoTensor::Identity();\n\n    RankTwoTensor strain = 0.5 * (_F[_qp] + _F[_qp].transpose()) - I;\n    _C[_qp] = _lambda[_qp] * I.times<i_, j_, k_, l_>(I) +\n            2.0 * _mu[_qp] * RankFourTensor(RankFourTensor::initIdentitySymmetricFour);\n    _S[_qp] = _C[_qp] * strain;\n\n  }\n}\n\nCan I modify this material module and equate the last _S[qp] with my average stress from micro?\nI'm confused how to link it",
+          "url": "https://github.com/idaholab/moose/discussions/26549",
+          "updatedAt": "2024-01-16T21:46:30Z",
+          "publishedAt": "2024-01-14T04:57:38Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "If I am understanding well, you just need a way to plug your local stress based on some parameters.\n\nCan I modify this material module and equate the last _S[qp] with my average stress from micro?\n\nIn a way, yes. You need to understand what you need from MOOSE to obtain your local stress, i.e. _S[qp] and then create your stress material. In that case, your stress won't be NeoHookean, just the stress you compute from your microscale problem. One example of \"micro\" model plugged into the engineering scale simulations is the following object:\nhttps://github.com/idaholab/moose/blob/next/modules/tensor_mechanics/src/materials/LAROMANCEStressUpdateBase.C. But this object inherits from radial return, which may or may not be what you want.",
+                  "url": "https://github.com/idaholab/moose/discussions/26549#discussioncomment-8148797",
+                  "updatedAt": "2024-01-16T20:07:07Z",
+                  "publishedAt": "2024-01-16T20:07:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[PorousFlow] - Single Phase - Multicomponent flow - density/ viscosity",
+          "author": {
+            "login": "1runer"
+          },
+          "bodyText": "Dear all,\nI am trying to simulate a single phase - two component system as mixed flow of a fluid and with a higher density fluid.\nSince I assume that I have a component with a mass fraction > 0.1 , I consider that rho and mu changes due to the mass concentration and I also have to consider this in the flow equations.\nI have therefore written my own material inspired by the material PorousFlowBrine, which calculates rho/mu as a function of p_T_x by means of a FluidProperties UserObject. Correspondingly I added also a MultiComponentFluidProperties Userobject that contains the mixture properties equations for this and which is coupled to a SinglePhase object e.g. for water.\nSo I can successfully derive the mixture properties for rho/mu which I successfully solve using the Kernels of PorousFlowMassTimeDerivative and PorousFlowAdvectiveFlux for both variables of mass_fraction0 and pore_pressure.\nSince of course the convergence through the density and viscosity contrasts is not too good, I assume that I have to include their derivatives wrt X as well. To transfer these from the user object into the material and to fill the local (*_ddensity_dx)[_qp] with it, worked so far. Now I'm stuck on how to get them into the corresponding flux kernels. I do not understand how the corresponding derivatives (drho_dX and dmu_dX) in the MaterialProperties vectors are structured and filled in dependence of the phase and components. The structure of PorousFlow is not simple in this respect.\nTherefore I wanted to ask if there is any further documentation or good examples (code as well as input files)? Or do I have a mistake in thinking and don't need these properties at all?",
+          "url": "https://github.com/idaholab/moose/discussions/23596",
+          "updatedAt": "2024-01-16T18:53:07Z",
+          "publishedAt": "2023-03-03T17:09:12Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "Well, this is a little embarrassing. I was about to say that it should be easy but just had a quick look and I don't think we are actually passing those derivatives wrt mass fraction from porousflowbrine...\nI'll fix this up this weekend so that it should just work for your case. Thanks for bringing this to our attention!",
+                  "url": "https://github.com/idaholab/moose/discussions/23596#discussioncomment-5198909",
+                  "updatedAt": "2023-03-04T01:28:43Z",
+                  "publishedAt": "2023-03-04T01:28:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Hopefully #23611 fixes this for you!",
+                          "url": "https://github.com/idaholab/moose/discussions/23596#discussioncomment-5211137",
+                          "updatedAt": "2023-03-06T02:48:29Z",
+                          "publishedAt": "2023-03-06T02:48:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "#23611 is in so this should work for you now using a PorousFlowMultiComponentFluid material.",
+                          "url": "https://github.com/idaholab/moose/discussions/23596#discussioncomment-5350015",
+                          "updatedAt": "2023-03-17T21:13:51Z",
+                          "publishedAt": "2023-03-17T21:13:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "Hi Chris,\nthanks for the update and also finally to get it merged.\nYes, that\u00a8s what I need.\nBest",
+                  "url": "https://github.com/idaholab/moose/discussions/23596#discussioncomment-5375660",
+                  "updatedAt": "2023-03-20T23:32:20Z",
+                  "publishedAt": "2023-03-20T23:32:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "josebastiase"
+                  },
+                  "bodyText": "Hi @1runer,\nYour UserObject may be really helpful for me. Any chance that you can merge it to MOOSE or share it?\nThanks!",
+                  "url": "https://github.com/idaholab/moose/discussions/23596#discussioncomment-8148180",
+                  "updatedAt": "2024-01-16T20:15:35Z",
+                  "publishedAt": "2024-01-16T18:53:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Correct reference to WASP libraries",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Hi,\nI have some difficulties linking WASP to MOOSE as the default libraries pulled out from 'setup_libtorch.sh' does not seem to link when building moose.\nThe libraries from framework/contrib/wasp/install/lib are listed here.\n\nPossibly some of these might need renamed to 'libwasp.so' for moose to interpret correctly at compile time. I tried doing this for libwaspcore.so.4 and it worked. Wanted to know from you the right way to get these libraries to be referenced from moose.\nThanks and regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/26557",
+          "updatedAt": "2024-01-16T18:12:58Z",
+          "publishedAt": "2024-01-15T18:29:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@brandonlangley",
+                  "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8136497",
+                  "updatedAt": "2024-01-15T19:18:18Z",
+                  "publishedAt": "2024-01-15T19:18:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "brandonlangley"
+                  },
+                  "bodyText": "@abarun22 -\nIs there a reason you are not using the recommended Conda environment route for the WASP libraries?\nUsing the Conda route, these WASP shared libraries should exist in $WASP_DIR/lib on your Linux box:\nlibwaspcore.so -> libwaspcore.so.4.0.3\nlibwaspcore.so.04 -> libwaspcore.so.4.0.3\nlibwaspcore.so.4.0.3\nlibwaspddi.so -> libwaspddi.so.4.0.3\nlibwaspddi.so.04 -> libwaspddi.so.4.0.3\nlibwaspddi.so.4.0.3\nlibwaspexpr.so -> libwaspexpr.so.4.0.3\nlibwaspexpr.so.04 -> libwaspexpr.so.4.0.3\nlibwaspexpr.so.4.0.3\nlibwasphalite.so -> libwasphalite.so.4.0.3\nlibwasphalite.so.04 -> libwasphalite.so.4.0.3\nlibwasphalite.so.4.0.3\nlibwasphit.so -> libwasphit.so.4.0.3\nlibwasphit.so.04 -> libwasphit.so.4.0.3\nlibwasphit.so.4.0.3\nlibwasphive.so -> libwasphive.so.4.0.3\nlibwasphive.so.04 -> libwasphive.so.4.0.3\nlibwasphive.so.4.0.3\nlibwaspjson.so -> libwaspjson.so.4.0.3\nlibwaspjson.so.04 -> libwaspjson.so.4.0.3\nlibwaspjson.so.4.0.3\nlibwasplsp.so -> libwasplsp.so.4.0.3\nlibwasplsp.so.04 -> libwasplsp.so.4.0.3\nlibwasplsp.so.4.0.3\nlibwaspsiren.so -> libwaspsiren.so.4.0.3\nlibwaspsiren.so.04 -> libwaspsiren.so.4.0.3\nlibwaspsiren.so.4.0.3\nlibwaspson.so -> libwaspson.so.4.0.3\nlibwaspson.so.04 -> libwaspson.so.4.0.3\nlibwaspson.so.4.0.3\nYou see that these libwasp*.so symbolic links are in the WASP libraries from the Conda environment:\nlibwaspcore.so -> libwaspcore.so.4.0.3\nlibwaspddi.so -> libwaspddi.so.4.0.3\nlibwaspexpr.so -> libwaspexpr.so.4.0.3\nlibwasphalite.so -> libwasphalite.so.4.0.3\nlibwasphit.so -> libwasphit.so.4.0.3\nlibwasphive.so -> libwasphive.so.4.0.3\nlibwaspjson.so -> libwaspjson.so.4.0.3\nlibwasplsp.so -> libwasplsp.so.4.0.3\nlibwaspsiren.so -> libwaspsiren.so.4.0.3\nlibwaspson.so -> libwaspson.so.4.0.3\nSo unless you using HPC and cannot go this route, I recommend using Conda as described here for WASP:\nhttps://mooseframework.inl.gov/getting_started/installation/conda.html\nIf you cannot use Conda and need to manually install WASP, then those libwasp*.so links should still exist.\nI know nothing about setup_libtorch.sh, but it shouldn't have any bearing on the installed WASP libraries.\nAgain if you can't use WASP from the Conda environment and need to do an offline install, could you try to:\n\nremove the contents of the framework/contrib/wasp directory\nrun the ./scripts/update_and_rebuild_wasp.sh script\nuse ls -ltr framework/contrib/wasp/install/lib to see if those libwasp*.so links were installed",
+                  "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8139789",
+                  "updatedAt": "2024-01-16T04:47:37Z",
+                  "publishedAt": "2024-01-16T04:47:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abarun22"
+                  },
+                  "bodyText": "HI @brandonlangley ,\nThe coda way of installing moose and its dependencies does not come with out any difficulties, as hearing from other users, it is may not be the nicest way dealing with build stuffs and so i have never given a thought about it.\nOn the wasp building, that script i was mentioning does set up the libtorch components and not the wasp as such. Apologies for that, as i got mixed-up between these build errors in my moose environment.\nThe wasp build script, as i can see, creates the library components along with the symbolic links needed for the linker. However in my case it sill does not reference these components installed in 'framework/contrib/wasp/install/lib' throwing the following error. FYI, this path is referenced in both WASP_DIR  and LD_LIBRARY_PATH for moose to be able to pick at the link time.\n[ir-bala2@login-q-2 mooseApp]$ make -j10\n\n***ERROR***\nWASP does not seem to be available.\nMake sure to either run scripts/update_and_rebuild_wasp.sh in your MOOSE directory,\nor set WASP_DIR to a valid WASP install\nmake: *** [/home/ir-bala2/moose_dev/moose/framework/moose.mk:375: wasp_submodule_status] Error 1\n\n\nI do not see any issues with the components either as these were correctly linked to their symbolic names.\n\nYou might've better suggestions for fixing this issue that seems quite straight-forward.\nKind regards,\nArun",
+                  "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8144864",
+                  "updatedAt": "2024-01-16T14:18:00Z",
+                  "publishedAt": "2024-01-16T14:17:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "You might have a goofed install. Try the following (from the moose root):\ncd framework\ngit clean -xfdq\ncd ..\ngit submodule deinit -f framework/contrib/wasp\nMOOSE_JOBS=10 ./scripts/update_and_rebuild_wasp.sh\ncd test\nmake -j 10\n\nThis'll clean up everything in the framework",
+                  "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8145199",
+                  "updatedAt": "2024-01-16T14:46:10Z",
+                  "publishedAt": "2024-01-16T14:45:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "brandonlangley"
+                  },
+                  "bodyText": "@abarun22 -\nActually, this looks problematic to me:\n$> echo $WASP_DIR\n/home/ir-bala2/moose dev/moose/framework/contrib/wasp/install/lib\n\nThe WASP_DIR variable is supposed to point to $(MOOSE_DIR)/framework/contrib/wasp/install.\nIn your case this would be /home/ir-bala2/moose dev/moose/framework/contrib/wasp/install without the lib subdirectory.\nHow / where is this WASP_DIR environment variable being set for you? Are you setting that yourself somehow?\nYou should not have to set that manually since your WASP install is in the normal place from update_and_rebuild_wasp.sh.\nBecause this line in moose.mk will set it correctly to that path (without the lib subdirectory) if it is not already set:\nWASP_DIR            ?= $(MOOSE_DIR)/framework/contrib/wasp/install",
+                  "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8146305",
+                  "updatedAt": "2024-01-16T16:10:59Z",
+                  "publishedAt": "2024-01-16T16:10:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "That's pretty much the issue and sorted now.\nThanks @brandonlangley and @loganharbour",
+                          "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8147720",
+                          "updatedAt": "2024-01-16T18:08:46Z",
+                          "publishedAt": "2024-01-16T18:08:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "I was setting that manually as i could not test it with the wasp install script, which might require a same 'terminal' building of moose. Good to check that although.",
+                          "url": "https://github.com/idaholab/moose/discussions/26557#discussioncomment-8147752",
+                          "updatedAt": "2024-01-16T18:12:59Z",
+                          "publishedAt": "2024-01-16T18:12:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Recovery system with EBSDReader of DREAM3D Input",
+          "author": {
+            "login": "bbattas"
+          },
+          "bodyText": "I am trying to work out what is causing this error when using the recovery system in MOOSE on an input that used a DREAM3D txt file.  The initial simulation ran fine, just hit an HPC walltime limit, and now recovering the simulation using the checkpoints is failing like this\nUsing 01_no_irradiation_checkpoint_cp/0375 for recovery.\ufffd[39m\nCurrently Setting Up\n  Setting Mesh                                                                           [\ufffd[33m  9.50 s\ufffd[39m] [\ufffd[33m  713 MB\ufffd[39m]\n  Currently Setting Up Undisplaced Mesh\n    Preparing Mesh\n      Finished Updating Mesh                                                             [\ufffd[33m  2.32 s\ufffd[39m] [\ufffd[33m  853 MB\ufffd[39m]\n    Finished Preparing Mesh                                                              [\ufffd[33m  2.92 s\ufffd[39m] [\ufffd[33m  853 MB\ufffd[39m]\n  Finished Setting Up Undisplaced Mesh                                                   [\ufffd[33m  2.92 s\ufffd[39m] [\ufffd[33m  853 MB\ufffd[39m]\n  Initializing\n    Initializing Equation Systems.                                                       [\ufffd[33m 13.46 s\ufffd[39m] [\ufffd[33m 1371 MB\ufffd[39m]\n  Finished Initializing                                                                  [\ufffd[33m 15.93 s\ufffd[39m] [\ufffd[33m 1371 MB\ufffd[39m]\nFinished Setting Up                                                                      [\ufffd[33m 36.24 s\ufffd[39m] [\ufffd[33m 1371 MB\ufffd[39m]\nFramework Information:\nMOOSE Version:           git commit ecc44cba97 on 2023-12-23\nLibMesh Version:         7c03afd53c9c7fd7fcb6e3e20bae37cf1b124986\nPETSc Version:           3.20.1\nSLEPc Version:           3.20.0\nCurrent Time:            Sat Dec 30 13:03:19 2023\nExecutable Timestamp:    Sat Dec 23 17:42:12 2023\n\nParallelism:\n  Num Processors:          960\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:                   \n    Total:                 1234321\n    Local:                 1735\n    Min/Max/Avg:           831/1770/1285\n  Elems:                   \n    Total:                 1200000\n    Local:                 1224\n    Min/Max/Avg:           1214/1287/1250\n  Num Subdomains:          1\n  Num Partitions:          1\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                14811852\n  Num Local DOFs:          20820\n  Variables:               { \"w\" \"phi\" \"gr0\" \"gr1\" \"gr2\" ... \"gr5\" \"gr6\" \"gr7\" \"gr8\" \"gr9\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                8434321\n  Num Local DOFs:          9079\n  Variables:               \"bnds\" { \"T\" \"OU\" \"voids\" \"unique_grains\" \"var_indices\" \"ebsd_grains\" } \n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          BDF2\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    hypre boomeramg strong_threshold: 0.7 (auto)\n\nCurrently Executing\n  Performing Initial Setup\n    Building SemiLocalElemMap.                                                           [\ufffd[33m 11.42 s\ufffd[39m] [\ufffd[33m 1798 MB\ufffd[39m]\n  Finished Performing Initial Setup                                                      [\ufffd[33m 16.13 s\ufffd[39m] [\ufffd[33m 1798 MB\ufffd[39m]\nSteady-State Relative Differential Norm: 6.78421e-05\n\nTime Step 376, time = 758.349, dt = 2.42284\n 0 Nonlinear |R| = \ufffd[32m9.302421e+06\ufffd[39m\n  Linear solve did not converge due to DIVERGED_ITS iterations 30\n 1 Nonlinear |R| = \ufffd[32m6.438134e+04\ufffd[39m\n  Linear solve did not converge due to DIVERGED_ITS iterations 30\n 2 Nonlinear |R| = \ufffd[32m1.227887e+03\ufffd[39m\n  Linear solve did not converge due to DIVERGED_ITS iterations 30\n 3 Nonlinear |R| = \ufffd[32m2.388255e+01\ufffd[39m\n  Linear solve did not converge due to DIVERGED_ITS iterations 30\n 4 Nonlinear |R| = \ufffd[32m7.086616e-01\ufffd[39m\n\ufffd[32m Solve Converged!\ufffd[39m\n  Finished Solving                                                                       [\ufffd[33m 81.98 s\ufffd[39m] [\ufffd[33m 1852 MB\ufffd[39m]\n\nGrain Tracker Status:\nGrains active index 0: 14 -> 14\nGrains active index 1: 14 -> 14\nGrains active index 2: 11 -> 11\nGrains active index 3: 13 -> 13\nGrains active index 4: 8 -> 8\nGrains active index 5: 8 -> 8\nGrains active index 6: 5 -> 5\nGrains active index 7: 2 -> 2\nGrains active index 8: 3 -> 3\nGrains active index 9: 1 -> 1\n\nFinished inside of GrainTracker\n\n\n\ufffd[31m\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader\ufffd[39m\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 624\n[r6i4n29:mpi_rank_624][MPIDI_CH3_Abort] application called MPI_Abort(MPI_COMM_WORLD, 1) - process 624: Cannot allocate memory (12)\n\nThe input file I am continuing with the --recover flag is set to use these ebsd sections\n[Mesh]\n  [ebsd_mesh]\n    type = EBSDMeshGenerator\n    filename = UO2_8umavg_large3D_plusVoid.txt\n  []\n[]\n\n[UserObjects]\n  [ebsd_reader]\n    type = EBSDReader\n  []\n  [ebsd]\n    type = PolycrystalEBSD\n    # coloring_algorithm = bt\n    ebsd_reader = ebsd_reader\n    enable_var_coloring = true\n    output_adjacency_matrix = true\n    phase = 1\n  []\n[]\n\n[ICs]\n  [PolycrystalICs]\n    [PolycrystalColoringIC]\n      polycrystal_ic_uo = ebsd\n    []\n  []\n  [VoidIC]\n    type = ReconPhaseVarIC\n    ebsd_reader = ebsd_reader\n    variable = phi\n    phase = 2\n  []\n[]\n\nI appreciate any help,\nBrandon",
+          "url": "https://github.com/idaholab/moose/discussions/26438",
+          "updatedAt": "2024-01-16T15:30:33Z",
+          "publishedAt": "2023-12-30T20:20:30Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont see anything obvious.\nI would start by modifying the error message to include the coordinates of the data point that is outside the mesh. This additional context might show what s going wrong. Then recompile and re-run\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7981246",
+                  "updatedAt": "2023-12-31T01:46:04Z",
+                  "publishedAt": "2023-12-31T01:46:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bbattas"
+                          },
+                          "bodyText": "It seems to just not be reading the header values (or existing mesh) at all maybe?  I had it print in the error message the x (and y) coordinate of the point, the min and max value for that coordinate it is comparing to, and then also the element size and number of them in each direction (which it uses to calculate the max in the EBSDReader.C).\n^[[31m\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 17875, minx 0, maxx 0, dx 0, nx 0, y coord 14375, miny 0, maxy 0, dy 0, ny 0^[[39m\n\n\n^[[31m\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 22125, minx 0, maxx 0, dx 0, nx 0, y coord 23125, miny 0, maxy 0, dy 0, ny 0^[[39m\n\n\n^[[31m\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 18125, minx 0, maxx 0, dx 0, nx 0, y coord 18375, miny 0, maxy 0, dy 0, ny 0^[[39m\n\nwhile the txt file provides\n# X_STEP: 250.0\n# Y_STEP: 250.0\n# Z_STEP: 250.0\n#\n# X_MIN: 0.000000\n# Y_MIN: 0.000000\n# Z_MIN: 0.000000\n#\n# X_MAX: 30000.0\n# Y_MAX: 25000.0\n# Z_MAX: 25000.0\n#\n# X_DIM: 120.0\n# Y_DIM: 100\n# Z_DIM: 100",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7984873",
+                          "updatedAt": "2023-12-31T19:40:05Z",
+                          "publishedAt": "2023-12-31T19:40:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The max is being computed from min, nx and dx\n  _maxx = _minx + _dx * _nx;\n\nso since the min is correct, I would say the number of steps is not parsed well maybe?\nin examles the x data is all together\n# X_Min:     50.400000\n# X_Max:    198.800000\n# X_step:     2.800000\n# X_Dim:            53\n#\n# Y_Min:     50.400000\n# Y_Max:    198.800000\n# Y_step:     2.800000\n# Y_Dim:            53\n#\n# Z_Min:      0.000000\n# Z_Max:      0.000000\n# Z_step:     0.000000\n# Z_Dim:      0\n\ncan you try that instead?",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7985416",
+                          "updatedAt": "2023-12-31T22:38:09Z",
+                          "publishedAt": "2023-12-31T22:35:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bbattas"
+                          },
+                          "bodyText": "Still the same problem, even with the inputs in that file resorted as\n# X_MIN: 0.000000\n# X_MAX: 30000.0\n# X_STEP: 250.0\n# X_DIM: 120.0\n#\n# Y_MIN: 0.000000\n# Y_MAX: 25000.0\n# Y_STEP: 250.0\n# Y_DIM: 100\n#\n# Z_MIN: 0.000000\n# Z_MAX: 25000.0\n# Z_STEP: 250.0\n# Z_DIM: 100",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7988931",
+                          "updatedAt": "2024-01-01T20:43:41Z",
+                          "publishedAt": "2024-01-01T20:43:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "maxx still 0?\nif you share the file I can try to debug this",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989044",
+                          "updatedAt": "2024-01-01T21:13:34Z",
+                          "publishedAt": "2024-01-01T21:13:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "next thing I would try too is an integer for X_DIM. After that, I d start up a debugger",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989132",
+                          "updatedAt": "2024-01-01T21:40:47Z",
+                          "publishedAt": "2024-01-01T21:40:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bbattas"
+                          },
+                          "bodyText": "My input has a couple custom inputs, but I just tried running the premade example in phase_field/examples/ebsd_reconstruction/IN100-111grn.i and then cancelling it a couple timesteps in, then loading with the --recover flag to recover from a checkpoint and it was doing the exact same thing.\n(moose) bbattas@ZBook:~/projects/moose/modules/phase_field/examples/sintering/paper3/01_test_inputs/13_defaultTest_d3d_recoveryFailure$ mpiexec -n 4 ~/projects/moose/modules/phase_field/phase_field-opt -i IN100-111grn.i\nFramework Information:\nMOOSE Version:           git commit 79b46da201 on 2023-10-17\nLibMesh Version:         \nPETSc Version:           3.19.3\nSLEPc Version:           3.19.1\nCurrent Time:            Mon Jan  1 16:42:18 2024\nExecutable Timestamp:    Tue Oct 17 14:54:40 2023\n\nParallelism:\n  Num Processors:          4\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   \n    Total:                 14641\n    Local:                 3727\n    Min/Max/Avg:           3580/3727/3660\n  Elems:                   \n    Total:                 14400\n    Local:                 3600\n    Min/Max/Avg:           3600/3600/3600\n  Num Subdomains:          1\n  Num Partitions:          4\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                117128\n  Num Local DOFs:          29816\n  Variables:               { \"gr0\" \"gr1\" \"gr2\" \"gr3\" \"gr4\" \"gr5\" \"gr6\" \"gr7\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                158641\n  Num Local DOFs:          39727\n  Variables:               \"bnds\" { \"unique_grains_ic\" \"unique_grains\" \"ghost_elements\" \"halos\" \"var_indices_ic\" \n                             \"var_indices\" \"ebsd_grains\" \"RGB_x\" \"RGB_y\" \"RGB_z\" } \n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          BDF2\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    hypre boomeramg \n\n\n\n*** Info ***\n/home/bbattas/projects/moose/modules/phase_field/examples/sintering/paper3/01_test_inputs/13_defaultTest_d3d_recoveryFailure/IN100-111grn.i:20: (UserObjects/ebsd/coloring_algorithm):\n    The backtracking algorithm has exponential complexity. If you are using very few order parameters,\n    or you have several hundred grains or more, you should use one of the PETSc coloring algorithms such as \"jp\".\nFinished inside of GrainTracker\n\n\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | DOFs           | dt             | grain_tracker  | n_elements     | n_nodes        |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   1.000000e+02 |   9.513000e+03 |   1.033100e+04 |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n\n\nTime Step 1, time = 10, dt = 10\n 0 Nonlinear |R| = 2.865949e-01\n      0 Linear |R| = 2.865949e-01\n      1 Linear |R| = 3.460554e-02\n      2 Linear |R| = 1.371603e-02\n      3 Linear |R| = 5.723689e-03\n      4 Linear |R| = 1.536610e-03\n      5 Linear |R| = 6.067550e-04\n      6 Linear |R| = 2.035308e-04\n      7 Linear |R| = 7.823606e-05\n      8 Linear |R| = 2.632166e-05\n 1 Nonlinear |R| = 4.314267e-02\n      0 Linear |R| = 4.314267e-02\n      1 Linear |R| = 1.272261e-02\n      2 Linear |R| = 8.160466e-03\n      3 Linear |R| = 4.275675e-03\n      4 Linear |R| = 2.353560e-03\n      5 Linear |R| = 1.546065e-03\n      6 Linear |R| = 6.800832e-04\n      7 Linear |R| = 3.315925e-04\n      8 Linear |R| = 1.499325e-04\n      9 Linear |R| = 6.896286e-05\n     10 Linear |R| = 3.492902e-05\n     11 Linear |R| = 2.044712e-05\n     12 Linear |R| = 1.131112e-05\n     13 Linear |R| = 6.646580e-06\n     14 Linear |R| = 3.389310e-06\n 2 Nonlinear |R| = 1.821555e-02\n      0 Linear |R| = 1.821555e-02\n      1 Linear |R| = 3.347639e-03\n      2 Linear |R| = 1.671889e-03\n      3 Linear |R| = 9.418170e-04\n      4 Linear |R| = 5.351302e-04\n      5 Linear |R| = 2.417002e-04\n      6 Linear |R| = 1.242812e-04\n      7 Linear |R| = 7.181001e-05\n      8 Linear |R| = 3.762325e-05\n      9 Linear |R| = 1.752817e-05\n     10 Linear |R| = 8.393972e-06\n     11 Linear |R| = 4.221521e-06\n     12 Linear |R| = 2.231511e-06\n     13 Linear |R| = 1.122162e-06\n 3 Nonlinear |R| = 3.629126e-03\n      0 Linear |R| = 3.629126e-03\n      1 Linear |R| = 4.932753e-04\n      2 Linear |R| = 2.407879e-04\n      3 Linear |R| = 1.177234e-04\n      4 Linear |R| = 7.151222e-05\n      5 Linear |R| = 3.516978e-05\n      6 Linear |R| = 1.990126e-05\n      7 Linear |R| = 1.115105e-05\n      8 Linear |R| = 6.592363e-06\n      9 Linear |R| = 3.178736e-06\n     10 Linear |R| = 1.542310e-06\n     11 Linear |R| = 7.236007e-07\n     12 Linear |R| = 4.057553e-07\n     13 Linear |R| = 1.905178e-07\n 4 Nonlinear |R| = 4.988232e-04\n      0 Linear |R| = 4.988232e-04\n      1 Linear |R| = 6.983638e-05\n      2 Linear |R| = 3.452737e-05\n      3 Linear |R| = 1.588518e-05\n      4 Linear |R| = 7.068441e-06\n      5 Linear |R| = 3.248674e-06\n      6 Linear |R| = 1.338674e-06\n      7 Linear |R| = 5.828372e-07\n      8 Linear |R| = 2.641977e-07\n      9 Linear |R| = 1.492678e-07\n     10 Linear |R| = 9.427278e-08\n     11 Linear |R| = 5.301098e-08\n     12 Linear |R| = 2.796456e-08\n 5 Nonlinear |R| = 1.788219e-05\n      0 Linear |R| = 1.788219e-05\n      1 Linear |R| = 2.683324e-06\n      2 Linear |R| = 1.367602e-06\n      3 Linear |R| = 6.171416e-07\n      4 Linear |R| = 2.242281e-07\n      5 Linear |R| = 8.949896e-08\n      6 Linear |R| = 3.560017e-08\n      7 Linear |R| = 1.676657e-08\n      8 Linear |R| = 6.983203e-09\n      9 Linear |R| = 2.881289e-09\n     10 Linear |R| = 1.242496e-09\n 6 Nonlinear |R| = 2.639305e-08\n      0 Linear |R| = 2.639305e-08\n      1 Linear |R| = 4.347460e-09\n      2 Linear |R| = 2.213220e-09\n      3 Linear |R| = 1.026130e-09\n      4 Linear |R| = 5.355241e-10\n      5 Linear |R| = 2.376072e-10\n      6 Linear |R| = 1.149043e-10\n      7 Linear |R| = 6.904640e-11\n      8 Linear |R| = 4.330970e-11\n      9 Linear |R| = 2.344043e-11\n     10 Linear |R| = 1.115082e-11\n     11 Linear |R| = 4.389527e-12\n     12 Linear |R| = 1.834290e-12\n 7 Nonlinear |R| = 1.837250e-12\n Solve Converged!\nCurrently Executing\n  Finished Solving                                                                       [  7.85 s] [  186 MB]\n\nGrain Tracker Status:\nGrains active index 0: 11 -> 11\nGrains active index 1: 13 -> 13\nGrains active index 2: 12 -> 12\nGrains active index 3: 13 -> 13\nGrains active index 4: 12 -> 12\nGrains active index 5: 16 -> 16\nGrains active index 6: 12 -> 12\nGrains active index 7: 11 -> 12++\n\nSplit Grain Detected #15 (variable index: 7)\nGrain #0 intersects Grain #16 (variable index: 0)\n- Depth 0: Remapping grain #0 from variable index 0 to 7 whose closest grain (#39) is at a distance of 4.75\n\nGrain #56 intersects Grain #41 (variable index: 1)\n- Depth 0: Remapping grain #41 from variable index 1 to 3 whose closest grain (#58) is at a distance of 1.5\n\nFinished inside of GrainTracker\n\n\nOutlier Variable Residual Norms:\n  gr4: 9.989667e-13\n  gr6: 1.162429e-12\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | DOFs           | dt             | grain_tracker  | n_elements     | n_nodes        |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   1.000000e+02 |   9.513000e+03 |   1.033100e+04 |\n|   1.000000e+01 |   1.881090e+05 |   1.000000e+01 |   1.010000e+02 |   9.513000e+03 |   1.033100e+04 |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n\n\nTime Step 2, time = 20, dt = 10\n 0 Nonlinear |R| = 1.015980e-01\n      0 Linear |R| = 1.015980e-01\n      1 Linear |R| = 3.100032e-02\n      2 Linear |R| = 1.362208e-02\n      3 Linear |R| = 5.256832e-03\n      4 Linear |R| = 2.175144e-03\n      5 Linear |R| = 1.068724e-03\n      6 Linear |R| = 4.246938e-04\n      7 Linear |R| = 1.977314e-04\n      8 Linear |R| = 7.891729e-05\n      9 Linear |R| = 3.233704e-05\n     10 Linear |R| = 1.313685e-05\n     11 Linear |R| = 5.583165e-06\n 1 Nonlinear |R| = 7.570473e-02\n      0 Linear |R| = 7.570473e-02\n      1 Linear |R| = 1.130401e-02\n      2 Linear |R| = 4.189410e-03\n      3 Linear |R| = 1.726076e-03\n      4 Linear |R| = 7.542118e-04\n      5 Linear |R| = 2.978662e-04\n      6 Linear |R| = 9.779415e-05\n      7 Linear |R| = 3.949010e-05\n      8 Linear |R| = 1.805229e-05\n      9 Linear |R| = 6.502424e-06\n 2 Nonlinear |R| = 1.531201e-02\n      0 Linear |R| = 1.531201e-02\n      1 Linear |R| = 2.027306e-03\n      2 Linear |R| = 7.216494e-04\n      3 Linear |R| = 2.708334e-04\n      4 Linear |R| = 1.158785e-04\n      5 Linear |R| = 4.314513e-05\n      6 Linear |R| = 1.726409e-05\n      7 Linear |R| = 7.481964e-06\n      8 Linear |R| = 3.202588e-06\n      9 Linear |R| = 1.275462e-06\n 3 Nonlinear |R| = 1.786701e-03\n      0 Linear |R| = 1.786701e-03\n      1 Linear |R| = 2.736360e-04\n      2 Linear |R| = 1.104433e-04\n      3 Linear |R| = 3.816572e-05\n      4 Linear |R| = 1.618373e-05\n      5 Linear |R| = 5.176264e-06\n      6 Linear |R| = 2.025422e-06\n      7 Linear |R| = 7.113652e-07\n      8 Linear |R| = 2.860295e-07\n      9 Linear |R| = 9.561816e-08\n 4 Nonlinear |R| = 4.535125e-05\n      0 Linear |R| = 4.535125e-05\n      1 Linear |R| = 7.184780e-06\n      2 Linear |R| = 3.034307e-06\n      3 Linear |R| = 1.033533e-06\n      4 Linear |R| = 4.335693e-07\n      5 Linear |R| = 1.373084e-07\n      6 Linear |R| = 5.211784e-08\n      7 Linear |R| = 1.795516e-08\n      8 Linear |R| = 6.867045e-09\n      9 Linear |R| = 2.344230e-09\n 5 Nonlinear |R| = 3.946007e-08\n      0 Linear |R| = 3.946007e-08\n      1 Linear |R| = 6.545902e-09\n      2 Linear |R| = 2.826785e-09\n      3 Linear |R| = 9.728220e-10\n      4 Linear |R| = 4.171387e-10\n      5 Linear |R| = 1.410533e-10\n      6 Linear |R| = 6.264586e-11\n      7 Linear |R| = 2.197869e-11\n      8 Linear |R| = 8.682516e-12\n      9 Linear |R| = 2.740871e-12\n 6 Nonlinear |R| = 2.739355e-12\n Solve Converged!\n  Finished Solving                                                                       [  5.95 s] [  190 MB]\n\nGrain Tracker Status:\nGrains active index 0: 10 -> 10\nGrains active index 1: 12 -> 12\nGrains active index 2: 12 -> 11--\nGrains active index 3: 14 -> 13--\nGrains active index 4: 12 -> 12\nGrains active index 5: 16 -> 14--\nGrains active index 6: 12 -> 11--\nGrains active index 7: 13 -> 13\n\nMarking Grain 99 as INACTIVE (variable index: 3)\nMarking Grain 14 as INACTIVE (variable index: 6)\nMarking Grain 98 as INACTIVE (variable index: 2)\nMarking Grain 5 as INACTIVE (variable index: 5)\nMarking Grain 92 as INACTIVE (variable index: 5)\nGrain #80 intersects Grain #88 (variable index: 1)\n- Depth 0: Remapping grain #80 from variable index 1 to 3 whose closest grain (#97) is at a distance of 0.25\n\nGrain #20 intersects Grain #28 (variable index: 4)\n- Depth 0: Remapping grain #28 from variable index 4 to 0 whose closest grain (#48) is at a distance of 0.707107\n\nFinished inside of GrainTracker\n\n\nOutlier Variable Residual Norms:\n  gr7: 1.823607e-12\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | DOFs           | dt             | grain_tracker  | n_elements     | n_nodes        |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   1.000000e+02 |   9.513000e+03 |   1.033100e+04 |\n|   1.000000e+01 |   1.881090e+05 |   1.000000e+01 |   1.010000e+02 |   9.513000e+03 |   1.033100e+04 |\n|   2.000000e+01 |   1.959810e+05 |   1.000000e+01 |   9.600000e+01 |   9.960000e+03 |   1.070900e+04 |\n+----------------+----------------+----------------+----------------+----------------+----------------+\n\n\nTime Step 3, time = 30, dt = 10\n 0 Nonlinear |R| = 6.422717e-02\n      0 Linear |R| = 6.422717e-02\n      1 Linear |R| = 2.644833e-02\n      2 Linear |R| = 1.051197e-02\n      3 Linear |R| = 3.827085e-03\n      4 Linear |R| = 1.679445e-03\n      5 Linear |R| = 7.195371e-04\n      6 Linear |R| = 3.104775e-04\n      7 Linear |R| = 1.411431e-04\n      8 Linear |R| = 5.468438e-05\n      9 Linear |R| = 2.488754e-05\n     10 Linear |R| = 9.439425e-06\n     11 Linear |R| = 4.253495e-06\n 1 Nonlinear |R| = 3.683438e-02\n      0 Linear |R| = 3.683438e-02\n      1 Linear |R| = 1.094520e-02\n      2 Linear |R| = 2.369415e-03\n      3 Linear |R| = 8.521848e-04\n      4 Linear |R| = 3.064937e-04\n      5 Linear |R| = 1.581696e-04\n^C[mpiexec@ZBook] Sending Ctrl-C to processes as requested\n[mpiexec@ZBook] Press Ctrl-C again to force abort\n\n===================================================================================\n=   BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES\n=   PID 47105 RUNNING AT ZBook\n=   EXIT CODE: 2\n=   CLEANING UP REMAINING PROCESSES\n=   YOU CAN IGNORE THE BELOW CLEANUP MESSAGES\n===================================================================================\nYOUR APPLICATION TERMINATED WITH THE EXIT STRING: Interrupt (signal 2)\nThis typically refers to a problem with your application.\nPlease see the FAQ page for debugging suggestions\nTraceback (most recent call last):\n  File \"/home/bbattas/scripts/phase_field_run.py\", line 50, in <module>\n    subprocess.run(command)\n  File \"/home/bbattas/mambaforge3/envs/moose/lib/python3.10/subprocess.py\", line 505, in run\n    stdout, stderr = process.communicate(input, timeout=timeout)\n  File \"/home/bbattas/mambaforge3/envs/moose/lib/python3.10/subprocess.py\", line 1146, in communicate\n    self.wait()\n  File \"/home/bbattas/mambaforge3/envs/moose/lib/python3.10/subprocess.py\", line 1209, in wait\n    return self._wait(timeout=timeout)\n  File \"/home/bbattas/mambaforge3/envs/moose/lib/python3.10/subprocess.py\", line 1943, in _wait\n    (pid, sts) = self._try_wait(0)\n  File \"/home/bbattas/mambaforge3/envs/moose/lib/python3.10/subprocess.py\", line 1901, in _try_wait\n    (pid, sts) = os.waitpid(self.pid, wait_flags)\nKeyboardInterrupt\n\nand then recovering:\n(moose) bbattas@ZBook:~/projects/moose/modules/phase_field/examples/sintering/paper3/01_test_inputs/13_defaultTest_d3d_recoveryFailure$ ls\nIN100-111grn.i  IN100-111grn_out_cp  IN100-111grn_out.e  IN100-111grn_out.e-s002  IN100_120x120.txt\n(moose) bbattas@ZBook:~/projects/moose/modules/phase_field/examples/sintering/paper3/01_test_inputs/13_defaultTest_d3d_recoveryFailure$ mpiexec -n 4 ~/projects/moose/modules/phase_field/phase_field-opt -i IN100-111grn.i --recover IN100-111grn_out_cp/LATEST\n\n\n*** Info ***\nUsing IN100-111grn_out_cp/0002 for recovery.\nFramework Information:\nMOOSE Version:           git commit 79b46da201 on 2023-10-17\nLibMesh Version:         \nPETSc Version:           3.19.3\nSLEPc Version:           3.19.1\nCurrent Time:            Mon Jan  1 16:44:16 2024\nExecutable Timestamp:    Tue Oct 17 14:54:40 2023\n\nParallelism:\n  Num Processors:          4\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   \n    Total:                 10709\n    Local:                 2754\n    Min/Max/Avg:           2617/2754/2677\n  Elems:                   \n    Total:                 9960\n    Local:                 2490\n    Min/Max/Avg:           2490/2490/2490\n  Num Subdomains:          1\n  Num Partitions:          1\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                85672\n  Num Local DOFs:          22032\n  Num Constrained DOFs:    9328\n  Local Constrained DOFs:  2608\n  Variables:               { \"gr0\" \"gr1\" \"gr2\" \"gr3\" \"gr4\" \"gr5\" \"gr6\" \"gr7\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                110309\n  Num Local DOFs:          27654\n  Num Constrained DOFs:    1166\n  Local Constrained DOFs:  326\n  Variables:               \"bnds\" { \"unique_grains_ic\" \"unique_grains\" \"ghost_elements\" \"halos\" \"var_indices_ic\" \n                             \"var_indices\" \"ebsd_grains\" \"RGB_x\" \"RGB_y\" \"RGB_z\" } \n  Finite Element Types:    \"LAGRANGE\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          BDF2\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    hypre boomeramg \n\n\nTime Step 3, time = 30, dt = 10\n 0 Nonlinear |R| = 6.422717e-02\n      0 Linear |R| = 6.422717e-02\n      1 Linear |R| = 2.644833e-02\n      2 Linear |R| = 1.051197e-02\n      3 Linear |R| = 3.827085e-03\n      4 Linear |R| = 1.679445e-03\n      5 Linear |R| = 7.195371e-04\n      6 Linear |R| = 3.104775e-04\n      7 Linear |R| = 1.411431e-04\n      8 Linear |R| = 5.468438e-05\n      9 Linear |R| = 2.488754e-05\n     10 Linear |R| = 9.439425e-06\n     11 Linear |R| = 4.253495e-06\n 1 Nonlinear |R| = 3.683438e-02\n      0 Linear |R| = 3.683438e-02\n      1 Linear |R| = 1.094520e-02\n      2 Linear |R| = 2.369415e-03\n      3 Linear |R| = 8.521848e-04\n      4 Linear |R| = 3.064937e-04\n      5 Linear |R| = 1.581696e-04\n      6 Linear |R| = 6.398804e-05\n      7 Linear |R| = 2.157928e-05\n      8 Linear |R| = 8.342666e-06\n      9 Linear |R| = 3.231098e-06\n 2 Nonlinear |R| = 4.392734e-03\n      0 Linear |R| = 4.392734e-03\n      1 Linear |R| = 1.495831e-03\n      2 Linear |R| = 3.815588e-04\n      3 Linear |R| = 1.325769e-04\n      4 Linear |R| = 4.756763e-05\n      5 Linear |R| = 2.110181e-05\n      6 Linear |R| = 7.988081e-06\n      7 Linear |R| = 3.580762e-06\n      8 Linear |R| = 1.504066e-06\n      9 Linear |R| = 6.634719e-07\n     10 Linear |R| = 2.838541e-07\n 3 Nonlinear |R| = 1.743354e-04\n      0 Linear |R| = 1.743354e-04\n      1 Linear |R| = 6.411797e-05\n      2 Linear |R| = 1.645624e-05\n      3 Linear |R| = 5.413014e-06\n      4 Linear |R| = 1.931659e-06\n      5 Linear |R| = 7.211660e-07\n      6 Linear |R| = 2.680806e-07\n      7 Linear |R| = 1.095323e-07\n      8 Linear |R| = 4.458098e-08\n      9 Linear |R| = 1.842118e-08\n     10 Linear |R| = 7.568165e-09\n 4 Nonlinear |R| = 4.433385e-07\n      0 Linear |R| = 4.433385e-07\n      1 Linear |R| = 1.664262e-07\n      2 Linear |R| = 4.178614e-08\n      3 Linear |R| = 1.383822e-08\n      4 Linear |R| = 4.812154e-09\n      5 Linear |R| = 1.853186e-09\n      6 Linear |R| = 6.753480e-10\n      7 Linear |R| = 2.691289e-10\n      8 Linear |R| = 1.216256e-10\n      9 Linear |R| = 5.215923e-11\n     10 Linear |R| = 2.350462e-11\n 5 Nonlinear |R| = 2.383446e-11\n Solve Converged!\n\nGrain Tracker Status:\nGrains active index 0: 11 -> 11\nGrains active index 1: 11 -> 11\nGrains active index 2: 11 -> 11\nGrains active index 3: 14 -> 13--\nGrains active index 4: 11 -> 10--\nGrains active index 5: 14 -> 14\nGrains active index 6: 11 -> 10--\nGrains active index 7: 13 -> 13\n\nMarking Grain 50 as INACTIVE (variable index: 3)\nMarking Grain 36 as INACTIVE (variable index: 4)\nMarking Grain 30 as INACTIVE (variable index: 6)\nGrain #56 intersects Grain #49 (variable index: 1)\n- Depth 0: Remapping grain #49 from variable index 1 to 7 whose closest grain (#79) is at a distance of 1.75\n\nFinished inside of GrainTracker\n\n\n\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 15.5, minx 4.68851e-310, maxx 4.68851e-310, dx 0, nx 0, y coord 0.5, miny 4.68851e-310, maxy 4.94066e-323, dy 0, ny 0\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n\n\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 28.5, minx 4.67922e-310, maxx 4.67922e-310, dx 0, nx 0, y coord 11.5, miny 4.67922e-310, maxy 4.94066e-323, dy 0, ny 0\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 1\n\n\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 14.5, minx 4.6454e-310, maxx 4.6454e-310, dx 0, nx 0, y coord 1.5, miny 4.6454e-310, maxy 4.94066e-323, dy 0, ny 0\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 2\n\n\n*** ERROR ***\nThe following error occurred in the object \"ebsd_reader\", of type \"EBSDReader\".\n\nData points must be on the interior of the mesh elements. In EBSDReader ebsd_reader x coord 0.5, minx 4.68557e-310, maxx 4.68557e-310, dx 0, nx 0, y coord 23.5, miny 4.68557e-310, maxy 4.94066e-323, dy 0, ny 0\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 3\n\n\nThe only difference in this one is that it is reading something other than just 0, technically, but e-310 is effectively 0 when it should be based on\n# X_Min:      0.000000\n# X_Max:      30.000000\n# X_step:     0.250000\n# X_Dim:      120\n#\n# Y_Min:      0.000000\n# Y_Max:      30.000000\n# Y_step:     0.250000\n# Y_Dim:      120",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989159",
+                          "updatedAt": "2024-01-01T21:54:45Z",
+                          "publishedAt": "2024-01-01T21:49:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "e-310 looks more like initialized data than anything else.\nfound the bug. I ll message here when I have the patch",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989259",
+                          "updatedAt": "2024-01-01T22:21:32Z",
+                          "publishedAt": "2024-01-01T22:21:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "in EBSDReader.C can you delete the last three lines here\nvoid\nEBSDReader::readFile()\n{\n  // No need to re-read data upon recovery\n  if (_app.isRecovering())\n    return;",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989265",
+                          "updatedAt": "2024-01-01T22:23:57Z",
+                          "publishedAt": "2024-01-01T22:23:56Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "so recover is disabled because we only use EBSD data for mesh generation I think.\nWhen do you use it during the simulation?",
+                  "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7989325",
+                  "updatedAt": "2024-01-01T22:37:58Z",
+                  "publishedAt": "2024-01-01T22:37:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bbattas"
+                          },
+                          "bodyText": "I only use it to generate the initial condition, after that when I recover I wanted it to just load from the checkpoint and continue from there.  So to recover do I instead need to set up more like a restart with a new input that loads all the nemesis/exodus data at the final timestep of the first simulation?",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7995385",
+                          "updatedAt": "2024-01-02T17:17:22Z",
+                          "publishedAt": "2024-01-02T17:17:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont think so? I would think the Checkpoint is the way to go.\nBut the data is being queried after the initial condition. It looks like after 5 non linear iterations? The GrainTracker is using it.\nDid you try the fix I suggested (deleting those 3 lines)? Did it work?",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7997366",
+                          "updatedAt": "2024-01-02T22:17:16Z",
+                          "publishedAt": "2024-01-02T22:17:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bbattas"
+                          },
+                          "bodyText": "Oh I didn't see that, sorry.  Yes, that seems to solve the problem, thank you so much!",
+                          "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-7997709",
+                          "updatedAt": "2024-01-02T22:59:16Z",
+                          "publishedAt": "2024-01-02T22:59:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "While this fix seems reasonable, another alternative and perhaps a more logically correct way to do this would be to store off the information required by the mesh generator in the MeshData system.",
+                  "url": "https://github.com/idaholab/moose/discussions/26438#discussioncomment-8145797",
+                  "updatedAt": "2024-01-16T15:30:34Z",
+                  "publishedAt": "2024-01-16T15:30:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Any restrictions on using MOOSE",
+          "author": {
+            "login": "Oops-Qiao"
+          },
+          "bodyText": "Dear MOOSE colleagues,\nDo we have any resctrictions on using MOOSE license regarding the users' background, such as countries from Iran etc.?\nAnyone from the world can freely use MOOSE, right? Thank you.\nBest regards,\nJohn",
+          "url": "https://github.com/idaholab/moose/discussions/26567",
+          "updatedAt": "2024-01-16T15:13:43Z",
+          "publishedAt": "2024-01-16T14:41:27Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "Open source licenses do not discriminate against different people, groups, or organizations. As long as the end user works within the bounds of the applicable license, in MOOSE's case that's LGPLv2.1, then our software can be used around the world.",
+                  "url": "https://github.com/idaholab/moose/discussions/26567#discussioncomment-8145563",
+                  "updatedAt": "2024-01-16T15:13:43Z",
+                  "publishedAt": "2024-01-16T15:13:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "\"Fatal\" warning during MOOSE update",
+          "author": {
+            "login": "EdSheltonUKAEA"
+          },
+          "bodyText": "I'm trying to do a Conda/Mamba and MOOSE update and got the following when attempting to do the git rebase:\n\n(moose) eshelton@K0214:~$ cd /projects/moose\n(moose) eshelton@K0214:/projects/moose$ git fetch origin\nremote: Enumerating objects: 19833, done.\nremote: Counting objects: 100% (12117/12117), done.\nremote: Compressing objects: 100% (2079/2079), done.\nremote: Total 19833 (delta 10437), reused 11338 (delta 9968), pack-reused 7716\nReceiving objects: 100% (19833/19833), 17.08 MiB | 8.36 MiB/s, done.\nResolving deltas: 100% (14937/14937), completed with 1892 local objects.\nFrom https://github.com/idaholab/moose\nc9f69be..c5bcc5d  master                   -> origin/master\n\n[new branch]            2023-11-08-release       -> origin/2023-11-08-release\n[new branch]            assembly-refactors-25666 -> origin/assembly-refactors-25666\ne8c7f09..c835ce5  devel                    -> origin/devel\n9f83051..3833a5c  next                     -> origin/next\nc9f69be..c5bcc5d  scheduled                -> origin/scheduled\n[new branch]            thm-joss-paper-review    -> origin/thm-joss-paper-review\n[new tag]               2023-11-08               -> 2023-11-08\n(moose) eshelton@K0214:~/projects/moose$ git rebase origin/master\nFirst, rewinding head to replay your work on top of it...\nerror: Updating the following directories would lose untracked files in them:\nmodules/heat_conduction/src\n\nAborting\nfatal: Could not detach HEAD\n(moose) eshelton@K0214:~/projects/moose$\n\nThe \"Aborting\" and \"fatal\" messages don't look like good news!\nI don't think I've ever had a problem like this before running the git fetch and rebase commands.\nHas the MOOSE update procedure changed, or is there a problem here.\nIs it safe for me to proceed with the clobberall and make in my project directory, or is this likely to fail if the git update didn't work?",
+          "url": "https://github.com/idaholab/moose/discussions/26465",
+          "updatedAt": "2024-01-16T11:44:43Z",
+          "publishedAt": "2024-01-03T09:34:03Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you put work in the heat conduction module?\nThat module was renamed to heat transfer. The rebase should have worked but maybe it got confused because of the sym links we now have in the former heat conduction module.\nHow many commits are we talking about here? Could we consider doing this manually?\nIs this branch public?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8001815",
+                  "updatedAt": "2024-01-03T11:22:12Z",
+                  "publishedAt": "2024-01-03T11:22:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Hello Guillaume - and Happy New Year!\nIt's possible some custom files have been added, but I don't think so.  I'm pretty sure any new kernels, etc. have been added in my application rather than the overarching MOOSE folder.\nI don't have a module called heat transfer, so I assume haven't done an update since before this change was implemented.\nI've got a more recent installation on a different computer, so I'll take a look at that to so if that has the heat transfer module instead.\nI'm not sure what the question about commits means?  In the block of text it says \"Enumerating obects: 19833\", etc.\nThe branch isn't public, or at least shouldn't be.\nEd",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8002210",
+                          "updatedAt": "2024-01-03T12:08:38Z",
+                          "publishedAt": "2024-01-03T12:08:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "On the other PC with the more recent MOOSE installation, the git commands work OK.  This installation has both folders:\n~projects\\moose\\modules\\heat_conduction\n~projects\\moose\\modules\\heat_transfer\nThen in my application folder (~/projects/eshelton/red-kite) when running make clobberall or make -j8, I am prompted with:\n\n/projects/moose//modules/modules.mk:80: The heat conduction module was renamed to the heat transfer module. Please update your Makefile and replace HEAT_CONDUCTION with HEAT_TRANSFER\n\nSo I've done this by adding this line to Makefile.\n\nHEAT_TRANSFER\t\t    := yes\n\nNow \"make clobberall\" seems to run OK.\nBut \"make -j8\" throws up this error a couple of times before stopping:\n\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/exo_block.C...\n/home/timodel01/projects/moose//framework/contrib/hit/parse.cc: In member function 'hit::Field::Kind hit::Field::kind()':\n/home/timodel01/projects/moose//framework/contrib/hit/parse.cc:687:34: error: 'class wasp::HITNodeView' has no member named 'token_type'; did you mean 'set_type'?\n687 |     auto token_type = value_node.token_type();\n|                                  ^~~~~~~~~~\n|                                  set_type\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/SL_tokenize.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/FileInfo.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/add_to_log.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/util.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/stringx.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/check.C...\nCompiling C++ (in opt mode) /home/timodel01/projects/moose//framework/contrib/exodiff/map.C...\nmake: *** [/home/timodel01/projects/moose//framework/build.mk:135: /home/timodel01/projects/moose//framework/contrib/hit/parse.x86_64-conda-linux-gnu.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....\n/home/timodel01/projects/moose//framework/contrib/hit/parse.cc: In member function 'hit::Field::Kind hit::Field::kind()':\n/home/timodel01/projects/moose//framework/contrib/hit/parse.cc:687:34: error: 'class wasp::HITNodeView' has no member named 'token_type'; did you mean 'set_type'?\n687 |     auto token_type = value_node.token_type();\n|                                  ^~~~~~~~~~\n|                                  set_type\nmake: *** [/home/timodel01/projects/moose//framework/moose.mk:138: /home/timodel01/projects/moose//framework/contrib/hit/hit.so] Error 1\n\nIt looks like this could be something different from the heat_transfer module, maybe?",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8003260",
+                          "updatedAt": "2024-01-03T14:08:59Z",
+                          "publishedAt": "2024-01-03T14:08:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Did you make cleanall in between both builds? Having objects from the two modules won't help\nI was asking about the number of commits that you added on top of your previous moose branch. If not too many, it would not be difficult to move them manually\nSo are you all set using a new version of moose without rebasing?",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8004548",
+                          "updatedAt": "2024-01-03T16:11:49Z",
+                          "publishedAt": "2024-01-03T16:11:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok the errors are unrelated to heat transfer / heat conduction actually\n/home/timodel01/projects/moose//framework/contrib/hit/parse.cc:687:34: error: 'class wasp::HITNodeView' has no member named 'token_type'; did you mean 'set_type'?\n687 | auto token_type = value_node.token_type();\n\nthis is from WASP. You ll want to update your conda packages if you are using that.\nIf not then you ll need to run update_and_rebuild_wasp",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8006513",
+                          "updatedAt": "2024-01-03T20:02:30Z",
+                          "publishedAt": "2024-01-03T20:02:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "I've done both \"conda update --all\" and \"mamba update --all\".  It still results in the same error when trying to run make in my applications folder.\nHow and in what folder should I run update_and_rebuild_wasp?",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8013877",
+                          "updatedAt": "2024-01-04T15:16:21Z",
+                          "publishedAt": "2024-01-04T15:16:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I d delete mamba and re-install with conda.\nWe actually made the switch from mambaforge to miniforge so it would not be surprising to have difficulties download new packages",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8016063",
+                          "updatedAt": "2024-01-04T18:48:35Z",
+                          "publishedAt": "2024-01-04T18:48:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "OK.  Thanks.  I'll work with colleagues who know more about the software operating systems behind MOOSE to try to resolve these problems.",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8020978",
+                          "updatedAt": "2024-01-05T09:04:51Z",
+                          "publishedAt": "2024-01-05T09:04:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "How and in what folder should I run update_and_rebuild_wasp?\n\nThis should be done in the moose/scripts folder. But not if you are using conda. If you are using conda, the conda-downloaded packages will include moose-wasp.\nIf they dont, the conda update is failing. And the easiest way to fix it are either a new conda environment or simply wipe conda and install it again. Since we also transitioned from mambaforge to miniforge, I would recommend the latter",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8021359",
+                          "updatedAt": "2024-01-05T09:52:52Z",
+                          "publishedAt": "2024-01-05T09:52:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "If you choose to reinstall Conda, please be sure to re-follow our instructions: https://mooseframework.inl.gov/getting_started/installation/conda.html\nThere is a one-liner folks seems to forget: conda update --all immediately after installing Conda. This is necessary to get the very latest actual version of conda which has the correct package solver in it.",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8027413",
+                          "updatedAt": "2024-01-05T22:16:07Z",
+                          "publishedAt": "2024-01-05T22:16:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "EdSheltonUKAEA"
+                          },
+                          "bodyText": "Hi - I was able to get a colleague to help me do a complete removal and reinstall of MOOSE and the supporting software package management tools on both my laptop and shared desktop, so this is all sorted now.  Thanks again for the advice and help.\nEd",
+                          "url": "https://github.com/idaholab/moose/discussions/26465#discussioncomment-8143280",
+                          "updatedAt": "2024-01-16T11:44:17Z",
+                          "publishedAt": "2024-01-16T11:44:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to request an object to be executed only between two power iterations?",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "How can I set the execute_on parameter to ensure that the target object is only executed between two power iterations of InversePowerMethod? It may not be execute_on=NONLINEAR because InversePowerMethod might not necessarily involve the concept of NONLINEAR. Otherwise, why would the operation of computing the source term |Bx| require the execute_on to include LINEAR, when it actually only needs to be executed between separate power iterations?\nAny assistance will be appreciated.",
+          "url": "https://github.com/idaholab/moose/discussions/26491",
+          "updatedAt": "2024-01-15T20:28:57Z",
+          "publishedAt": "2024-01-06T14:50:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSeems like we would need a new execute_on flag to do that.\nCan you print a verbose log with the power iterations, the nonlienar iterations, and the execution of MOOSE objects in between?\nYou can use this to detect execution btw\nhttps://mooseframework.inl.gov/source/userobjects/MessageFromInput.html\nor the Debug flags.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26491#discussioncomment-8031224",
+                  "updatedAt": "2024-01-06T14:59:32Z",
+                  "publishedAt": "2024-01-06T14:59:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Thank you very much for your suggestion. Following your advice, I used the show_execution_order = 'LINEAR NONLINEAR' command to output some information about the execution order. I still observe NONLINEAR operations which are next to LINEAR operations in the InversePowerMethod. As I am using an SN program with numerous variables, the output is quite lengthy, making it inconvenient to share here.\nAlthough I still have one question at the moment, I can explore and test on my own. Great appreciation is owed to you. If you're interested, feel free to continue reading the following content, and I can also inform you about the results of subsequent tests if you wish.\nIn each power iteration, Petsc is essentially solving an Ax=b problem. Despite InversePowerMethod being an eigenvalue solver, the eigenvalue solution is independent of Petsc. The vector b contains information from the previous power iteration's eigenvalue and variable solutions. The object I intend to create is an acceleration algorithm, and I want this object to be executed before b is passed into Petsc. According to the documentation, when execute_on=NONLINEAR, the object is executed before Jacobian evaluation. However, I still cannot determine whether it happens before or after b is imported into Petsc.",
+                          "url": "https://github.com/idaholab/moose/discussions/26491#discussioncomment-8032194",
+                          "updatedAt": "2024-01-06T16:52:02Z",
+                          "publishedAt": "2024-01-06T16:52:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the object is executed before Jacobian evaluation\n\nboth on nonlinear iterations and on power iterations right? So it does not work for you.\nI think the way forward for now is to hardcode the execution of the objects in the Eigenvalue executioner.\nMaybe @loganharbour or @YaqiWang will see an easier solution to execute on power iterations",
+                          "url": "https://github.com/idaholab/moose/discussions/26491#discussioncomment-8040908",
+                          "updatedAt": "2024-01-07T21:11:50Z",
+                          "publishedAt": "2024-01-07T21:11:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Note that we prefer the Eigenvalue executioner over InversePowerMethod. The latter will be removed sometime in the future",
+                          "url": "https://github.com/idaholab/moose/discussions/26491#discussioncomment-8137006",
+                          "updatedAt": "2024-01-15T20:28:58Z",
+                          "publishedAt": "2024-01-15T20:28:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

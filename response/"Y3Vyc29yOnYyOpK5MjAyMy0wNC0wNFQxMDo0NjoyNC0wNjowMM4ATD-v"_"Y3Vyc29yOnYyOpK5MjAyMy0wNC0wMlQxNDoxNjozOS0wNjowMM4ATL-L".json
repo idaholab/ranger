@@ -1,0 +1,983 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNC0wMlQxNDoxNjozOS0wNjowMM4ATL-L"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Coupling kinetic Monte Carlo with Phase Field Model",
+          "author": {
+            "login": "vermaprk"
+          },
+          "bodyText": "Hi\nI am trying to couple a simple kinetic Monte Carlo (kMC) problem of 2D random walk with the phase field model.\nI previously posted regarding how to model a 2d random walk problem in moose.\n#23886\nI want to implement the simplest code for 2d random walk in C as shown below: The system is 200 by 200 matrix with 40 particles initialized randomly. The movement of particles is in 4 directions (determined by the random number).\n#include <stdio.h>\n#include <random>\n\nstruct points{\n  int x;\n  int y;\n};\n\nint main(){\nsrand(time(NULL));\ndouble rnum;\nint np = 40;\nint nwalk = 100;\nint xmax = 200;\nint ymax = 200;\nstruct points s[np];\nstruct points sfinal[nwalk][np];\n\nfor (int i=0;i<np;i++){\n  int tempx = (rand() % (xmax + 1));\n  int tempy = (rand() % (ymax + 1));\n  s[i].x = tempx;\n  s[i].y = tempy;\n}\n\nfor (int i=0;i<nwalk;i++){\n\n  for (int j=0;j<np;j++){\n    rnum = rand() / (double)RAND_MAX ;\n    if (rnum >=0 && rnum<=0.25 && s[j].x<xmax){\n      s[j].x = s[j].x + 1;\n    }      \n    else if (rnum > 0.25 && rnum <=0.5 && s[j].x>0){\n        s[j].x = s[j].x - 1;\n    }\n    else if (rnum > 0.5 && rnum <=0.75 && s[j].y<ymax){\n        s[j].y = s[j].y + 1;\n    }\n    else if (rnum > 0.75 && rnum <=1 && s[j].y>0){ \n        s[j].y = s[j].y - 1;}\n\n    sfinal[i][j].x = s[j].x;\n    sfinal[i][j].y = s[j].y;\n  }  \n}\nfor (int i=0;i<nwalk;i++){\n  printf(\"step %d\\n\",i);\n  for(int j=0;j<np;j++){\n    printf(\"particle %d = %d  %d\\n\",j,sfinal[i][j].x,sfinal[i][j].y);\n  }\n}\n}\n\nThe output is:\nmyVideo\nI tried the raytracing module. But, I am confused how to change the direction of rays randomly and to mimic the 2d random walk.\nIs it possible to represent discrete particles using the raytracing kernels.\nPlease add any other methods if available to model this.\n[Mesh]\n  [gmg]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 10\n    ny = 10\n    xmax = 5\n    ymax = 5\n  []\n[]\n\n[Variables/u]\n[]\n\n[Kernels]\n  [reaction]\n    type = Reaction\n    variable = u\n  []\n  [diffusion]\n    type = Diffusion\n    variable = u\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = PJFNK\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n  dt=2\n  end_time = 50\n  nl_abs_tol = 1e-10\n[]\n\n[UserObjects/study]\n  type = ConeRayStudy\n\n  start_points = '1 1.5 0'\n  directions = '2 1 0'\n  half_cone_angles = 2.5\n  ray_data_name = weight\n\n  # Must be set with RayKernels that\n  # contribute to the residual\n  execute_on = PRE_KERNELS\n\n  # For outputting Rays\n  always_cache_traces = true\n[]\n\n[RayBCs]\n  [reflect]\n    type = ReflectRayBC\n    boundary = 'right top bottom'\n  []\n  [kill_rest]\n    type = KillRayBC\n    boundary = 'left'\n  []\n[]\n\n[RayKernels/line_source]\n  type = LineSourceRayKernel\n  variable = u\n\n  # Scale by the weights in the ConeRayStudy\n  ray_data_factor_names = weight\n[]\n\n[Outputs]\n  exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23937",
+          "updatedAt": "2023-04-29T02:54:27Z",
+          "publishedAt": "2023-04-03T10:58:36Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou should use the RayTracingExodus output and the Exodus output to look at what you are currently simulating.\nWhat you ll want to add is a RayKernel that simulates the change of directions.\nWhat dictates a change of direction of the particle? Just at random times?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23937#discussioncomment-5509991",
+                  "updatedAt": "2023-04-03T13:17:46Z",
+                  "publishedAt": "2023-04-03T13:17:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "vermaprk"
+                          },
+                          "bodyText": "Yes, right now the particle's direction changes randomly at each time step. Which raykernel can be used to depict such changes ?",
+                          "url": "https://github.com/idaholab/moose/discussions/23937#discussioncomment-5516954",
+                          "updatedAt": "2023-04-04T05:23:44Z",
+                          "publishedAt": "2023-04-04T05:23:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There is not an example, but you can call changeDirection inside a RayKernel on the particle/ray",
+                          "url": "https://github.com/idaholab/moose/discussions/23937#discussioncomment-5520352",
+                          "updatedAt": "2023-04-04T12:10:37Z",
+                          "publishedAt": "2023-04-04T12:10:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How do I download the ferret package",
+          "author": {
+            "login": "irena-glass"
+          },
+          "bodyText": "I am a student. I want to use ferret for phase field simulation, but I have read a lot of posts on the moose website and github and have not been able to find a way to download ferret.",
+          "url": "https://github.com/idaholab/moose/discussions/23101",
+          "updatedAt": "2023-04-04T08:54:34Z",
+          "publishedAt": "2023-01-07T09:38:50Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "mangerij"
+                  },
+                  "bodyText": "Hi,\nCurrently Ferret is a private repo and we give access upon request. I am currently in the process of making it fully open source again along with a minimal documentation website but this will take a few more weeks. Please send me an email john.mangeri@list.lu to discuss what you would like to do so I can provide some input files.\np.s. MOOSE Issues are for changes to the code framework (not additional modules).",
+                  "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-4619662",
+                  "updatedAt": "2023-01-07T14:08:37Z",
+                  "publishedAt": "2023-01-07T13:27:29Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "p.s. MOOSE Issues are for changes to the code framework (not additional modules).\n\nConverted to a discussion.\n\nI am currently in the process of making it fully open source again along with a minimal documentation website but this will take a few more weeks.\n\nLooking forward to this @mangerij! \ud83e\udd73 open source all the things",
+                          "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-4619664",
+                          "updatedAt": "2023-01-07T14:09:32Z",
+                          "publishedAt": "2023-01-07T14:09:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "irena-glass"
+                          },
+                          "bodyText": "Thank you for your reply. My tutor wants me to try to simulate the domain structure of ferroelectric materials. The matter is not urgent, so there is no problem waiting for a while.",
+                          "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-4619818",
+                          "updatedAt": "2023-01-07T14:40:52Z",
+                          "publishedAt": "2023-01-07T14:40:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mangerij"
+                  },
+                  "bodyText": "@irena-glass We made the Ferret repo public today as well as updating the website extensively https://mangerij.github.io/ferret/",
+                  "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-5496562",
+                  "updatedAt": "2023-04-01T11:34:56Z",
+                  "publishedAt": "2023-04-01T11:34:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@mangerij please feel free to make a dedicated announcement post and we'll highlight it for a few weeks\nAre you on the MOOSE developer's slack? I couldnt find you there but it's an appropriate forum there",
+                          "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-5497890",
+                          "updatedAt": "2023-04-01T16:49:59Z",
+                          "publishedAt": "2023-04-01T16:49:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mangerij"
+                          },
+                          "bodyText": "@GiudGiud I will do something like this - perhaps at the end of next week. Letting the paper sit on arXiv for a bit :)\nI do use Slack frequently - you can send an invite to john.mangeri@uconn.edu cheers",
+                          "url": "https://github.com/idaholab/moose/discussions/23101#discussioncomment-5518611",
+                          "updatedAt": "2023-04-04T08:54:35Z",
+                          "publishedAt": "2023-04-04T08:54:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to output the singular value of KSP\uff1f",
+          "author": {
+            "login": "Moyiqi"
+          },
+          "bodyText": "When I use -ksp_view_singularvalues , When I use the -ksp_view_singularvalues directive, only gmres can output singularvalues,\nother krylov subspace methods like bcgs output 1,How can I get the true singular value\uff1f\nDo you have any ideas?\nLily",
+          "url": "https://github.com/idaholab/moose/discussions/23936",
+          "updatedAt": "2023-04-04T08:52:31Z",
+          "publishedAt": "2023-04-03T03:25:49Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nTo get singular values we usually use the SVD preconditioner.\n[Executioner]\n  ...\n  petsc_options = '-pc_svd_monitor'\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'svd'\n  ...\n[]\n\nThis is very slow, so it's reasonable on 1k dofs, and you could wait a while but still see the result for 10k dofs\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23936#discussioncomment-5510013",
+                  "updatedAt": "2023-04-03T16:03:50Z",
+                  "publishedAt": "2023-04-03T13:20:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Moyiqi"
+                          },
+                          "bodyText": "Thanks,I will try it!\nLily",
+                          "url": "https://github.com/idaholab/moose/discussions/23936#discussioncomment-5518579",
+                          "updatedAt": "2023-04-04T08:50:58Z",
+                          "publishedAt": "2023-04-04T08:50:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "This documentation page outlines the ksp types that work with -ksp_monitor_singular_value, CG and GMRES. Note that even for these KSP types, at least for GMRES, the estimation will be approximate and improve with the number of linear iterations you take. The options @GiudGiud gave are the best for sufficiently small problems (I usually make sure my dofs are less than ~1000)",
+                  "url": "https://github.com/idaholab/moose/discussions/23936#discussioncomment-5511559",
+                  "updatedAt": "2023-04-03T15:40:13Z",
+                  "publishedAt": "2023-04-03T15:40:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Moyiqi"
+                          },
+                          "bodyText": "Thanks,I will try it!\nLily",
+                          "url": "https://github.com/idaholab/moose/discussions/23936#discussioncomment-5518592",
+                          "updatedAt": "2023-04-04T08:52:32Z",
+                          "publishedAt": "2023-04-04T08:52:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Fluid flow through a rectangular channel using Navier-stokes module.",
+          "author": {
+            "login": "MashrurShejan"
+          },
+          "bodyText": "I am trying to simulate fluid flow through a rectangular channel but the simulation doesn't seem to be converging. I am new in working with MOOSE. Could anyone please refer me what I am doing wrong in the code and what could be the possible solution for the problem? My input code is as follows:\n[Mesh]\ntype = GeneratedMesh\ndim = 3\nnx = 100\nny = 10\nnz = 10\nxmin = 0\nxmax = .1\nymin = 0\nymax = .01\nzmin = 0\nzmax = .01\n[]\n\n[Variables]\n[u]\norder = FIRST\nfamily = LAGRANGE\n[]\n[v]\norder = FIRST\nfamily = LAGRANGE\n[]\n[w]\norder = FIRST\nfamily = LAGRANGE\n[]\n[p]\norder = FIRST\nfamily = LAGRANGE\n[]\n[]\n\n[Materials]\n[fluid_properties]\ntype = GenericConstantMaterial\nprop_names = 'rho mu'\nprop_values = '1000 0.001'\n[]\n[]\n\n[Kernels]\n[mass_u]\ntype = INSMass\nvariable = u\nu = u\nv = v\nw = w\npressure = p\n[]\n[momentum_u]\ntype = INSMomentumLaplaceForm\nvariable = u\ncomponent = 0\nu = u\nv = v\nw = w\npressure = p\n[]\n[pressure_u]\ntype = PressureGradient\nvariable = p\ncomponent = 0\npressure = p\n[]\n[mass_v]\ntype = INSMass\nvariable = v\nu = u\nv = v\nw = w\npressure = p\n[]\n[momentum_v]\ntype = INSMomentumLaplaceForm\nvariable = v\ncomponent = 1\nu = u\nv = v\nw = w\npressure = p\n[]\n[pressure_v]\ntype = PressureGradient\nvariable = p\ncomponent = 1\npressure = p\n[]\n[mass_w]\ntype = INSMass\nvariable = w\nu = u\nv = v\nw = w\npressure = p\n[]\n[momentum_w]\ntype = INSMomentumLaplaceForm\nvariable = w\ncomponent = 2\nu = u\nv = v\nw = w\npressure = p\n[]\n[pressure_w]\ntype = PressureGradient\nvariable = p\ncomponent = 2\npressure = p\n[]\n[time_u]\ntype = TimeDerivative\nvariable = u\n[]\n[time_v]\ntype = TimeDerivative\nvariable = v\n[]\n[time_w]\ntype = TimeDerivative\nvariable = w\n[]\n[]\n\n[BCs]\n[inlet_u]\ntype = FunctionDirichletBC\nvariable = u\nboundary = left\nfunction = 20\n[]\n[no_slip_u]\ntype = DirichletBC\nvariable = u\nboundary = 'right top bottom front back'\nvalue = 0\n[]\n[no_slip_v]\ntype = DirichletBC\nvariable = v\nboundary = 'right top bottom front back'\nvalue = 0\n[]\n[no_slip_w]\ntype = DirichletBC\nvariable = w\nboundary = 'right top bottom front back'\nvalue = 0\n[]\n[pressure_left]\ntype = DirichletBC\nvariable = p\nboundary = left\nvalue = 101325\n[]\n[pressure_right]\ntype = NeumannBC\nvariable = p\nboundary = right\nvalue = 0\n[]\n[]\n\n[ICs]\n[u_ic]\ntype = FunctionIC\nvariable = u\nfunction = '0'\n[]\n[v_ic]\ntype = FunctionIC\nvariable = v\nfunction = '0'\n[]\n[w_ic]\ntype = FunctionIC\nvariable = w\nfunction = '0'\n[]\n[p_ic]\ntype = FunctionIC\nvariable = p\nfunction = '0'\n[]\n[]\n\n[Executioner]\ntype = Transient\nscheme = 'crank-nicolson'\ndt = .01\nend_time = 1\nsolve_type = 'PJFNK'\npetsc_options_iname = '-pc_type -pc_hypre_type -ksp_type -ksp_max_it'\npetsc_options_value = 'hypre boomeramg gmres 100'\nl_max_its = 100\nl_tol = 1e-4\nnl_max_its = 100\nnl_rel_tol = 1e-6\n[]\n\n[Outputs]\nconsole = true\n[vtk]\ntype = VTK\nfile_base = output\nexecute_on = 'final'\n[]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23933",
+          "updatedAt": "2023-04-29T02:54:54Z",
+          "publishedAt": "2023-04-02T04:38:39Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere are a few things you'll want to change:\n\nmake velocity second order for a first order pressure\nINSmomentumLaplace is a derived class of INSMomentumBase that already has the pressure gradient term contribution to the residual, so you ll need to remove the 3 PressureGradient kernels\nThe system is over constrained, you have both an inlet velocity and an inlet & outlet pressure specified. You should only need inlet v + outlet p.\nCrank Nicholson is not used with incompressible NS because of issues with the mass equation not containing a time term. Please use implicit euler until you get a solution, then you can move to BDF2 for second order.\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5501373",
+                  "updatedAt": "2023-04-02T12:13:23Z",
+                  "publishedAt": "2023-04-02T12:13:22Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MashrurShejan"
+                          },
+                          "bodyText": "Hi! Thank you so much for the feedback. So,I have modified the code as per the instructions. but i am getting errors. Here is my code and error message mentioned below-\n[Mesh]\n  file = FlowChannel.e\n[]\n\n[Variables]\n  [u]\n    order = SECOND\n    family = LAGRANGE\n  []\n  [v]\n    order = SECOND\n    family = LAGRANGE\n  []\n  [w]\n    order = SECOND\n    family = LAGRANGE\n  []\n  [p]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[Materials]\n  [fluid_properties]\n    type = GenericConstantMaterial\n    prop_names  = 'rho mu'\n    prop_values = '1000 0.001'\n  []\n[]\n\n[Kernels]\n  [mass_u]\n    type = INSMass\n    variable = u\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [momentum_u]\n    type = INSMomentumLaplaceForm\n    variable = u\n    component = 0\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [mass_v]\n    type = INSMass\n    variable = v\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [momentum_v]\n    type = INSMomentumLaplaceForm\n    variable = v\n    component = 1\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [mass_w]\n    type = INSMass\n    variable = w\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [momentum_w]\n    type = INSMomentumLaplaceForm\n    variable = w\n    component = 2\n    u = u\n    v = v\n    w = w\n    pressure = p\n  []\n  [time_u]\n    type = TimeDerivative\n    variable = u\n  []\n  [time_v]\n    type = TimeDerivative\n    variable = v\n  []\n  [time_w]\n    type = TimeDerivative\n    variable = w\n  []\n[]\n\n[BCs]\n   [inlet_u]\n    type = FunctionDirichletBC\n    variable = u\n    boundary = inlet\n    function = 20\n  []\n  [no_slip_u]\n    type = DirichletBC\n    variable = u\n    boundary = 'tubewall'\n    value = 0\n  []\n  [no_slip_v]\n    type = DirichletBC\n    variable = v\n    boundary = 'tubewall'\n    value = 0\n []\n   [no_slip_w]\n    type = DirichletBC\n    variable = w\n    boundary = 'tubewall'\n    value = 0\n  []\n  [pressure_right]\n    type = DirichletBC\n    variable = p\n    boundary = outlet\n    value = 101325\n  []\n[]\n\n[ICs]\n  [u_ic]\n    type = FunctionIC\n    variable = u\n    function = '0'\n  []\n  [v_ic]\n    type = FunctionIC\n    variable = v\n    function = '0'\n  []\n  [w_ic]\n    type = FunctionIC\n    variable = w\n    function = '0'\n  []\n  [p_ic]\n    type = FunctionIC\n    variable = p\n    function = '0'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  scheme = 'implicit-euler'  # Updated to Implicit Euler\n  dt = .01 \n  end_time = 1\n  solve_type = 'PJFNK'\n  petsc_options_iname = '-pc_type -pc_hypre_type -ksp_type -ksp_max_it'\n  petsc_options_value = 'hypre boomeramg gmres 100'\n  l_max_its = 100\n  l_tol = 1e-4\n  nl_max_its = 100\n  nl_rel_tol = 1e-10\n[]\n\n[Outputs]\n  console = true\n  [vtk]\n    type = VTK\n    file_base = output\n    execute_on = 'final'\n  []\n[]\n\nError message:\n*** ERROR ***\nERROR: Finite element LAGRANGE on geometric element TET4\nonly supports FEInterface::max_order = 1, not fe_type.order = 2\nThe mesh file is a cylindrical tube and has been created using Coreform Cubit)",
+                          "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5505398",
+                          "updatedAt": "2023-04-29T02:54:46Z",
+                          "publishedAt": "2023-04-03T03:51:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You need to add second_order=true in the [Mesh] block",
+                          "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5509135",
+                          "updatedAt": "2023-04-03T11:58:21Z",
+                          "publishedAt": "2023-04-03T11:58:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You also should only have INSMass applied to the pressure variable, not applied to all three velocity variables. Have you looked at any of the test examples?",
+                          "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5512354",
+                          "updatedAt": "2023-04-03T16:58:48Z",
+                          "publishedAt": "2023-04-03T16:58:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MashrurShejan"
+                          },
+                          "bodyText": "Thanks for the guidelines. I made the adjustments and  simulation is running. But it is still not converging at the moment. Also, I am working on the project to simulate multiphase flow of water jet using moose and I am solving this fluid flow problem as a starter. I don't have a clear idea on MOOSE yet and currently exploring it. Would you mind giving a direction on how I should be learning it?",
+                          "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5513774",
+                          "updatedAt": "2023-04-03T19:37:01Z",
+                          "publishedAt": "2023-04-03T19:37:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "This is a good starting example (lid driven cavity) for the INS objects you are using: https://github.com/idaholab/moose/blob/next/modules/navier_stokes/test/tests/finite_element/ins/lid_driven/lid_driven.i\nA good channel example is https://github.com/idaholab/moose/blob/next/modules/navier_stokes/test/tests/finite_element/ins/velocity_channel/velocity_inletBC_by_parts.i\nWe are most actively developing our finite volume objects right now. There are some tutorial slides on those at https://mooseframework.inl.gov/slides/index.html#/ The NS module documentation landing page is here",
+                          "url": "https://github.com/idaholab/moose/discussions/23933#discussioncomment-5513958",
+                          "updatedAt": "2023-04-03T19:59:28Z",
+                          "publishedAt": "2023-04-03T19:59:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PJFNK vs Newton ADNodalBC",
+          "author": {
+            "login": "maxnezdyur"
+          },
+          "bodyText": "Background, I implemented an embedded Dirichlet BC method using the ADNodalBC class. When I run the test using the Newton Method, it can take ~100 iterations to converge. When I run it using PJFNK, it takes 5 to converge. The solutions are the same in both cases, but somehow, PJFNK gets there with fewer iterations. Is there a difference in how the two implement the BC for the Jacobain? I want to run with NEWTON because the final use case will solve NS equations and I had better performance with NEWTON for NS.",
+          "url": "https://github.com/idaholab/moose/discussions/23931",
+          "updatedAt": "2023-04-03T19:55:06Z",
+          "publishedAt": "2023-04-01T19:58:32Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Jacobian's probably not exact.\nwhat does this return?\nhttps://mooseframework.inl.gov/help/development/analyze_jacobian.html",
+                  "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5498697",
+                  "updatedAt": "2023-04-01T20:23:58Z",
+                  "publishedAt": "2023-04-01T20:23:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Not sure if it will work in my case (from the link)analyzejacobian.py turns off boundary all conditions, e.g. it currently tests kernels only and not integrated boundary conditions.. I am not using any kernel that is not a MOOSE kernel. I just have a different BC class.",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5498723",
+                          "updatedAt": "2023-04-01T20:30:09Z",
+                          "publishedAt": "2023-04-01T20:30:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah good point.\nCan you share the source for this BC?",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5499018",
+                          "updatedAt": "2023-04-01T21:43:45Z",
+                          "publishedAt": "2023-04-01T21:43:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Something definitely is not right. Seeing the source (and input file) would be great. When debugging Jacobians, the petsc command line options -snes_test_jacobian -snes_test_jacobian_view are great when you have relatively few degrees of freedom.",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5502059",
+                          "updatedAt": "2023-04-02T14:42:31Z",
+                          "publishedAt": "2023-04-02T14:42:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "you're not doing any AD in your compute_boundary_value routine. You're implicitly converting a Real to an ADReal in your return. I'll work on a commit for you that adds the AD",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5503310",
+                          "updatedAt": "2023-04-02T18:31:02Z",
+                          "publishedAt": "2023-04-02T18:31:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Thanks for looking into that. Before, I did have it all AD, but with how I got the Shape Functions at a point, I wasn't sure if it mattered. Hopefully, that gets Newton converging faster. My main concern is that PJFNK was still converging rapidly, and Newton was not. If I just threw away the AD terms, then I would expect both to have the same bad convergence.",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5503360",
+                          "updatedAt": "2023-04-02T18:40:38Z",
+                          "publishedAt": "2023-04-02T18:40:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I got one nonlinear iteration after my fixes. This also requires a change in ADNodalBC which I'll make a PR for soon",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5503468",
+                          "updatedAt": "2023-04-02T19:05:44Z",
+                          "publishedAt": "2023-04-02T19:05:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Wow!",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5503473",
+                          "updatedAt": "2023-04-02T19:07:06Z",
+                          "publishedAt": "2023-04-02T19:07:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "see maxnezdyur/insect#1 and #23941",
+                          "url": "https://github.com/idaholab/moose/discussions/23931#discussioncomment-5513887",
+                          "updatedAt": "2023-04-03T19:51:17Z",
+                          "publishedAt": "2023-04-03T19:51:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Can you block restrict boundary conditions?",
+          "author": {
+            "login": "Eilloo"
+          },
+          "bodyText": "Hello all,\nI am wondering if it is possible to block restrict a boundary condition - or indeed, if it makes any sense to?\nThe reason for doing this is related to #23484:\nI am trying to implement the same conditions described by the CoupledPenaltyInterfaceDiffusion interface kernels, instead using custom BCs which inherit from IntegratedBC, and are manually applied to what would be variable and neighbour_variable if using an interface kernel.\nI think my issue could be because I cannot differentiate between each side of the interface, and the neighbour_variable is defined on both sides.\nI am concerned that without some kind of block restriction, I am not actually setting the element residuals on each side of the interface to be equal through my custom BCs, and the BC handling neighbour_variable is actually contributing to the element residuals on both sides of the boundary. If so, this would prevent the residuals from being equal, no longer implying the continuity of flux as described in the linked thread.\nIs this a legitimate concern and if so, is there a way to block restrict boundary conditions so the contribution of neighbour_variable is only applied on one side?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/23658",
+          "updatedAt": "2023-04-03T19:32:52Z",
+          "publishedAt": "2023-03-08T15:54:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "If the neighbour variable is only present on one side, the BC will only contribute to its \"variable=\" parameter so it will only contribute on one side\nWhy is the neighbor_variable defined on both sides?\nA BC inside a variable's domain is not normal. I think you should look at interface kernels at this point",
+                  "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5243550",
+                  "updatedAt": "2023-03-08T16:07:02Z",
+                  "publishedAt": "2023-03-08T16:05:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Thanks for the suggestions,\nneighbour_variable in this case (fsi) is displacement, which exists across the whole mesh to enable the mesh to deform as in the fsi example input file.\nI did think that splitting this into disp_solid and disp_fluid, enforcing an equalValueBoundaryConstraint at the interface, and combining back into a single 'disp' aux variable across the whole mesh could work. However, it seems that 'disp' must be a coupled variable, not an aux variable, for the mesh displacements to be applied.\nThe problem with interface kernels is that I am looking to pair a vector variable on one side of the interface, with three field variables representing components of a vector on the other side (or two for 2D, as in my current test case). From looking at the interface kernel templates, I think that accommodating two different variable types in this way becomes very messy and is worth avoiding if possible\nThe aforementioned vector is fluid velocity, which is required to be a vector variable for the stabilisation kernels to work. Alternatively, I could try rewriting all the bits which contribute to these terms for individual field variables. This sounds more plausible, but still very involved for what I am trying to achieve.\nSince it was mentioned in the above thread that the interface kernel can be thought of as an integrated BC, I thought a simpler approach was to try and manually apply the appropriate conditions using custom BCs on each side of the interface.\nHopefully this explains my current thinking - if there might be a better way, I am very open to other options!",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5243756",
+                          "updatedAt": "2023-03-08T16:23:01Z",
+                          "publishedAt": "2023-03-08T16:23:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What is this BC on displacement?\nIt seems odd that it happens inside the domain.\nAre you forcing the discplacement of the solid?",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5243990",
+                          "updatedAt": "2023-03-08T16:41:32Z",
+                          "publishedAt": "2023-03-08T16:41:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "The displacement of the solid should be forced by the movement/pressure of the fluid.\nThis means that we want to ensure the continuity of stress between the fluid and solid.\nFrom my understanding of lindsayad's explanation here, this means setting the natural BC (ie, the residual) for the solid displacement, and for the fluid velocity (where pressure is integrated by parts) to be the same value (although one will be negative due to the normals being consistent in direction at the boundary).\nJust like the interface kernel, I am setting that value to be some penalty(someVar - someOtherVar), where I want someVar and someOtherVar to be equal at the interface. In this case, these are chosen to be the fluid and solid velocities.\nSo the boundary condition itself is the continuity of stress, achieved by applying the same residual for disp in the solid domain, and velocity in the fluid domain.",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5244131",
+                          "updatedAt": "2023-03-08T16:54:10Z",
+                          "publishedAt": "2023-03-08T16:54:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I honestly think the cleanest way is to try and figure out how to write an interface kernel that can be applied with the vector variable on one side and the scalar field variables on the other",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5244944",
+                          "updatedAt": "2023-03-08T18:18:33Z",
+                          "publishedAt": "2023-03-08T18:18:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You could create an issue asking for an analog of PenaltyInterfaceDiffusion that works with interfacing vector/scalar-field variables. I would be willing to tackle that issue if you open it",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5244957",
+                          "updatedAt": "2023-03-08T18:19:49Z",
+                          "publishedAt": "2023-03-08T18:19:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Okay, thanks @lindsayad, will do!\nIn the meantime I think I've been getting closer to making the above work, even if it is a bit of a short-term, hacky workaround.\nStopping me at the moment is an error stating that my BC depends on a variable that \"...does not appear to be defined on (all of) boundary 'interface'\". In this case, A variable on the solid side on which the residual of the fluid velocity depends.\nIt seems that the sideset created by 'SideSetsBetweenSubdomainsGenerator' only belongs to one subdomain, rather than being shared? I can only access variables belonging to the block I have specified as 'primary_block'.\nIs this expected - and if so, is there any way to have a sideset be shared by both blocks?\nA sidenote which could be of interest to you: I may have stumbled upon a bug:\nThe error only appears when I run the file on 1 or 2 nodes. Any more than that, I see no error message and the simulation attempts to run normally.\nThe mesh is very small, so I wonder if the sideset is somehow being spread across too many processors to determine that there is a problem... in any case, the behaviour seems unusual so I thought I should mention it!\nThanks again for all the insight!",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5256331",
+                          "updatedAt": "2023-03-09T16:05:02Z",
+                          "publishedAt": "2023-03-09T16:05:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "A sidenote which could be of interest to you: I may have stumbled upon a bug:\nThe error only appears when I run the file on 1 or 2 nodes. Any more than that, I see no error message and the simulation attempts to run normally.\nThe mesh is very small, so I wonder if the sideset is somehow being spread across too many processors to determine that there is a problem... in any case, the behaviour seems unusual so I thought I should mention it!\n\nIf you have a Minimal Working Example (MWE) input file that only uses MOOSE, then it would be great if you could open an issue with with that input. We do indeed want the same behavior regardless of the number of processes being used\n\nIt seems that the sideset created by 'SideSetsBetweenSubdomainsGenerator' only belongs to one subdomain, rather than being shared? I can only access variables belonging to the block I have specified as 'primary_block'.\nIs this expected - and if so, is there any way to have a sideset be shared by both blocks?\n\nSidesets are fundamentally \"sided\". They do logically belong to one block of elements or another. If you want the sideset associated with the other subdomain, then I would just create another SideSetsBetweenSubdomainsGenerator that has the primary_block and paired_block parameters switched. Then you'll have two sidesets that are collinear but are logically associated with different subdomain sides",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5327355",
+                          "updatedAt": "2023-03-15T22:44:52Z",
+                          "publishedAt": "2023-03-15T22:44:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Sounds good - I'll figure out what the MWE is for this and raise an issue.\nRegarding sidesets, I see... I did try and think of a workaround using two sidesets like this, but the issue is I need to be able to access the variables on both sides of the boundary in order to calculate the residual. Perhaps I'm finding out why interfaces exist in the first place!\nMy latest workaround attempt is to us anInterfaceUserObject, which should have access to variables on both sides of the boundary.\nThe idea is to have a method in the user object which pulls out the required variable values for a given quadrature point. This gets called from the BC, passing _qp and away we go.\nThe problem is, if I try and access something like: neighborVar[qp] in the user object, we segfault. 'neighbourVar' is a coupledNeighborValue.\nI realise that _qp's are local (here, printing them out always gives 0 and 1; presumably the ends of each side, given everything is first order) so I'm thinking I need to give the user object some global qp, or at make sure it's looking at the correct element/side? It doesn't complain about the 'normal' (non-neighbor) variable though...\nDoes this sound possible, or is the whole approach a no-go?",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5334999",
+                          "updatedAt": "2023-03-16T14:09:57Z",
+                          "publishedAt": "2023-03-16T14:09:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Your sideset that you pass to the boundary parameter of your InterfaceUserObject should be associated with the var side and consequently the neighborVar should be on the \"other\" side. If your neighborVar is associated with the same side as your sideset, then I believe you could get segmentation faults.\nIf you believe you're not violating the above conditions, then it sounds like we have some bugs associated with the InterfaceUserObject which would be a little surprising but obviously not impossible.\nStandard _qp indexing should work given the conditions I outlined in the first paragraph.",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5336806",
+                          "updatedAt": "2023-03-16T16:54:48Z",
+                          "publishedAt": "2023-03-16T16:54:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Okay, so I think there is a small update on this worth mentioning - apologies for the delay!\nI moved away from trying to use BCs in conjunction with InterfaceUserObjects, instead going back to the interface kernels system (more on this below). I suspect I was doing something wrong before, but if I get time I'll try and look over it again to make sure there aren't any bugs - I also suspect a bug is the less likely cause!\nMy new question is about vector test functions - I'll do my best to explain the updated context below:\nI realised that there might be a simpler workaround using interface kernels:\nThe idea is to set up two interface kernels - one vector, one field, each of which contributes to the residual only on the 'Element' side. The neighbour side is set to zero.\nIn the input file, the interface boundary is defined twice, such that we have a version with each side as the 'primary' block. This lets us use the appropriate interface kernel from each subdomain, given we only ever contribute to the 'Element' side.\nOn the other (neighbour) side for each subdomain is a dummy variable of the correct type, set to zero with only a nullKernel acting on it. These enable us to call each interface kernel without MOOSE complaining about the neighbour variable being a different type.\nFinally, we have the residual contributions:\n\nFor the field variable kernel, we accept the vector variable on the neighbour side as a coupled neighbour variable, along with a 'component' parameter referring to x, y, or z. We extract the appropriate component from the vector variable, and calculate the residual in exactly the same way as for one side of the existing `CoupledPenaltyInterfaceDiffusion' interface kernel.\nFor the vector variable, we accept all three (x, y, and z) neighbour coupled field variables, and calculate the individual penalties associated with each. These components are assembled in a vector, which is subsequently multiplied by the vector variable test function to give us our residual for that side of the interface.\n\nI would expect this setup to do exactly the same thing as the 'CoupledPenaltyInterfaceDiffusion' FSI example code; however, I can't seem to make it work. It did occur to me that the normals might be defined in the opposite direction on one side, but flipping the sign didn't help.\nI now wonder if the test functions for vector variables are different to the case where you had three field variables? The assembly of a vector of penalties, multiplied by a vector test function seems to be the most obvious deviation from the existing interface kernels.\nIt's also worth noting that I have made these interface kernels AD, whereas the originals were hand-coded. I am under the impression that moving from non-AD to AD should be 'safe', since the jacobians will be exact? Perhaps I am mistaken here though, and this is what's causing problems.\nHopefully the above makes some sense. If there's any other logic flaws which jump out, I'm all ears - this would be really useful to crack, as then FSI becomes possible at high Reynolds numbers and so on :)",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5455410",
+                          "updatedAt": "2023-03-28T15:05:49Z",
+                          "publishedAt": "2023-03-28T15:05:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Eilloo"
+                  },
+                  "bodyText": "Aaah, it's always something small - that's good to know, I'd misunderstood what value() does from the docs.\nThat has done the trick - thanks a lot for taking a look! :)",
+                  "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5507036",
+                  "updatedAt": "2023-04-03T08:15:46Z",
+                  "publishedAt": "2023-04-03T08:15:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You're welcome!",
+                          "url": "https://github.com/idaholab/moose/discussions/23658#discussioncomment-5513746",
+                          "updatedAt": "2023-04-03T19:32:52Z",
+                          "publishedAt": "2023-04-03T19:32:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "calculate interface normals based on FeatureFloodingCount",
+          "author": {
+            "login": "BoZeng1997"
+          },
+          "bodyText": "Hi,\nDoes MOOSE has objects that work together with FeatureFloodingCount to compute the normals of the interfaces between the regions identified?",
+          "url": "https://github.com/idaholab/moose/discussions/23927",
+          "updatedAt": "2023-04-29T02:46:56Z",
+          "publishedAt": "2023-04-01T04:42:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@permcody @laagesen on FeatureFloodingCount",
+                  "url": "https://github.com/idaholab/moose/discussions/23927#discussioncomment-5498548",
+                  "updatedAt": "2023-04-01T19:35:08Z",
+                  "publishedAt": "2023-04-01T19:35:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "To my knowledge, no we do not have that capability, but @permcody would be the best person to answer. You may be able to find interfacial normals using Paraview, you would create a contour of the isosurface of an order parameter by choosing a certain value to threshold at, similar to how you would choose it in FeatureFloodCount.",
+                          "url": "https://github.com/idaholab/moose/discussions/23927#discussioncomment-5510366",
+                          "updatedAt": "2023-04-03T13:52:12Z",
+                          "publishedAt": "2023-04-03T13:52:11Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Use of the Porous Flow module with a 2-phase and 3 fluid components system (no chemistry)",
+          "author": {
+            "login": "alessandrovacbz"
+          },
+          "bodyText": "Hi all,\nI need to simulate a porous flow consisting of:\n\n2 phases: water(liquid) + gas\n3 fluid components: water (liquid/vapour) + H2 + CO2\nwith no chemistry.\nI wasn't able to find a similar case in the many input file examples.\nI tried with \"PorousFlowWaterNCG\" and \"PorousFlow2PhasePS\" but I have problems in specifiying and using simultaneously the properties of the three fluids (it seems that I can only specify on a per phase base, not on per single component).\nCan anyone help me, please, in addressing this case?\nThank you.\nBest regards,\nAlessandro",
+          "url": "https://github.com/idaholab/moose/discussions/23015",
+          "updatedAt": "2023-04-03T12:01:01Z",
+          "publishedAt": "2022-12-22T13:55:11Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "Yeah, while this is technically possible the actual bits of code to enable it aren't in the publicly available MOOSE repository yet. There are two levels of complexity - one with no gas dissolution into the liquid phase, and one allowing gas to dissolve. The former is a lot easier!\nI can help you out in the new year when I'm back at work if you like - just send me a reminder as I'll probably forget!",
+                  "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4488769",
+                  "updatedAt": "2022-12-23T21:37:07Z",
+                  "publishedAt": "2022-12-23T21:37:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alessandrovacbz"
+                          },
+                          "bodyText": "Thank you for the reply!\nI will send you the reminder.\nBest regards,\nAlessandro",
+                          "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4490162",
+                          "updatedAt": "2022-12-24T09:22:05Z",
+                          "publishedAt": "2022-12-24T09:22:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alessandrovacbz"
+                  },
+                  "bodyText": "Hi Chris,\nexcuse me for bothering you. I'm writing this email to remind you\n(according to your past suggestion) about the possibility of using the\nPorous Flow module with a 2-phase and many fluid components (3 or more)\nsystem (no chemistry).\nI tried the easy way, defining an \"IdealRealGasMixtureFluidProperties\"\nclass in the \"Fluid Properties\" block and using it in the \"Materials\" with\nthe \"PorousFlow2PhasePS\" flow model.\nIt didn't work, probably for an incorrect class definition.\nCould you help me in solving the problem?\nCan I send you the *.i file?\nIn perspective, I suppose that the use of the \"PorousFlowWaterNCG\" flow\nmodel would be the better solution, but it is also the harder one\nto implement for more than one gaseous component.\nThank you.\nBest regards,\nAlessandro\n\n\n\n\nIl giorno ven 23 dic 2022 alle ore 22:37 Chris Green <\n***@***.***> ha scritto:\n\u2026\n Yeah, while this is technically possible the actual bits of code to enable\n it aren't in the publicly available MOOSE repository yet. There are two\n levels of complexity - one with no gas dissolution into the liquid phase,\n and one allowing gas to dissolve. The former is a lot easier!\n\n I can help you out in the new year when I'm back at work if you like -\n just send me a reminder as I'll probably forget!\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#23015 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A447NJR3FLN2DJOTDA2VZ23WOYLQ5ANCNFSM6AAAAAATGYARF4>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4635176",
+                  "updatedAt": "2023-01-09T16:08:16Z",
+                  "publishedAt": "2023-01-09T16:08:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Hi Alessandro,\nJust to mention that PorousFlowWaterNCG is if you need to allow gases to dissolve in the liquid phase (the harder option mentioned by @cpgr), which likely should be extended for multi-component situations. Although likely you already know that...\nActually, if this is your case, I am also curious to see how this would work, but haven't managed to do it myself by now",
+                          "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4707717",
+                          "updatedAt": "2023-01-17T14:56:25Z",
+                          "publishedAt": "2023-01-17T14:56:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alessandrovacbz"
+                  },
+                  "bodyText": "Hi Chris, Hi Javier,\n\nIn fact, I'm waiting for some useful hints from Chris regarding the way on\nhow to modify MOOSE code to describe multi-component situations, due to\ntheir implementation difficulties.\n\nBest regards,\n\nAlessandro\n\n\nIl giorno mar 17 gen 2023 alle ore 15:56 Javier Garcia-Pintado <\n***@***.***> ha scritto:\n\u2026\n Hi Alessandro,\n Just to mention that PorousFlowWaterNCG is if you need to allow gases to\n dissolve in the liquid phase (the harder option mentioned by @cpgr\n <https://github.com/cpgr>), which likely should be extended for\n multi-component situations. Although likely you already know that...\n Actually, if this is your case, I am also curious to see how this would\n work, but haven't managed to do it myself by now\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#23015 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A447NJRG5WO3CYCHMGBOF73WS2XKHANCNFSM6AAAAAATGYARF4>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4715954",
+                  "updatedAt": "2023-01-18T10:33:04Z",
+                  "publishedAt": "2023-01-18T10:33:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Hi Alessandro,\nI'm sort of back from holidays now so can try and help you out. Did you want to have gas dissolving in the water? I haven't looked at the code I have for this for a while, so it might need a little bit of work to make sure that it compiles and runs.",
+                          "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4722917",
+                          "updatedAt": "2023-01-19T00:29:51Z",
+                          "publishedAt": "2023-01-19T00:29:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Hello everybody,\nSince I faced similar issue #23920, I was wondering if this thread led to a solution. I appreciate it if you could share the solution if possible or give me a hint as well. Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-5509162",
+                          "updatedAt": "2023-04-03T12:01:01Z",
+                          "publishedAt": "2023-04-03T12:01:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alessandrovacbz"
+                  },
+                  "bodyText": "Hi Chris,\n\nThank you. Effectively, having gas dissolution would be the best choice for\nme.\n\nBest,\nAlessandro\n\n\nIl giorno gio 19 gen 2023 alle ore 01:30 Chris Green <\n***@***.***> ha scritto:\n\u2026\n Hi Alessandro,\n\n I'm sort of back from holidays now so can try and help you out. Did you\n want to have gas dissolving in the water? I haven't looked at the code I\n have for this for a while, so it might need a little bit of work to make\n sure that it compiles and runs.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#23015 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A447NJWX7ZSOBYXF2HUNAJTWTCDITANCNFSM6AAAAAATGYARF4>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/23015#discussioncomment-4724897",
+                  "updatedAt": "2023-01-19T07:40:32Z",
+                  "publishedAt": "2023-01-19T07:40:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A 'rechuandao' is not a registered object",
+          "author": {
+            "login": "Ating24"
+          },
+          "bodyText": "I am a newcomer to MOOSE and have written an app on heat conduction in a steady state, but the following error occurred:\n*** ERROR ***\nA 'rechuandao' is not a registered object.\n\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\n\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)\n3: Factory::reportUnregisteredError(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) const\n4: Factory::getValidParams(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n5: MooseObjectAction::MooseObjectAction(InputParameters const&)\n6: AddKernelAction::AddKernelAction(InputParameters const&)\n7: /home/liu/projects/moose/framework/libmoose-opt.so.0(+0x1419918) [0x7fd98860e918]\n8: ActionFactory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: Parser::walkRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, hit::Node*)\n10: Parser::walk(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, hit::Node*)\n11: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n12: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n13: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n14: Parser::parse(std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)\n15: MooseApp::setupOptions()\n16: MooseApp::run()\n17: main\n18: __libc_start_main\n19: ./hc-opt(+0x23ef) [0x55915a9803ef]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\nThis is the header file\uff1a\n/\n#pragma once\n\n#include \"Diffusion.h\"\n\n\nclass rechuandao : public Diffusion\n{\npublic:\n  static InputParameters validParams();\n\n  rechuandao(const InputParameters & parameters);\n\nprotected:\n  \n  virtual Real computeQpResidual() override;\n\n  const Real _k;\n};\n\n\n\nThis is the source file\uff1a\n/ ```c++\n#include \"rechuandao.h\"\nregisterMooseObject(\"hcAPP\", rechuandao);\nInputParameters\nrechuandao::validParams()\n{\nInputParameters params = Diffusion::validParams();\nparams.addRequiredParam<Real>(\"k\", \"\u70ed\u5bfc\u7387\");\n\nreturn params;\n\n}\nrechuandao::rechuandao(const InputParameters & parameters)\n: Diffusion(parameters),\n_k(getParam(\"k\"))\n{\n}\nReal\nrechuandao::computeQpResidual()\n{\nreturn (_k * _grad_u[_qp] * _grad_test[_i][_qp]);\n}\n\n\n\nThis is an i file\uff1a\n\n[Mesh]\ntype = GeneratedMesh # Can generate simple lines, rectangles and rectangular prisms\ndim = 2 # Dimension of the mesh\nnx = 10 # Number of elements in the x direction\nny = 10 # Number of elements in the y direction\nxmax = 0.01 # Length of test chamber\nymax = 0.01 # Test chamber radius\n[]\n[Variables]\n[./temperature]\norder = FIRST\nfamily = LAGRANGE\n[../]\n[]\n[Kernels]\n[diffusion]\ntype = rechuandao\nvariable = temperature\nk=1\n[]\n[]\n[BCs]\n[./bottom]\ntype = DirichletBC\nvariable = temperature\nboundary = 'bottom' # This must match a named boundary in the mesh file\nvalue = 300\n[../]\n[./top]\ntype = DirichletBC\nvariable = temperature\nboundary = 'top' # This must match a named boundary in the mesh file\nvalue = 1000\n[../]\n[]\n[Executioner]\ntype = Steady # Steady state problem\nsolve_type = 'PJFNK'\n[]\n[Outputs]\nexodus = true # Output Exodus format\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23935",
+          "updatedAt": "2023-04-03T03:01:55Z",
+          "publishedAt": "2023-04-03T02:11:07Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "registerMooseObject(\"hcAPP\", rechuandao);\nhcAPP is the name of the app in the base/hcAPP.C file too?\nIt must match exactly",
+                  "url": "https://github.com/idaholab/moose/discussions/23935#discussioncomment-5505037",
+                  "updatedAt": "2023-04-03T02:24:49Z",
+                  "publishedAt": "2023-04-03T02:24:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ating24"
+                          },
+                          "bodyText": "Yes, the created app is called hc.",
+                          "url": "https://github.com/idaholab/moose/discussions/23935#discussioncomment-5505055",
+                          "updatedAt": "2023-04-03T02:28:51Z",
+                          "publishedAt": "2023-04-03T02:28:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "but hcAPP or hcApp ?",
+                          "url": "https://github.com/idaholab/moose/discussions/23935#discussioncomment-5505135",
+                          "updatedAt": "2023-04-03T02:46:58Z",
+                          "publishedAt": "2023-04-03T02:46:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ating24"
+                          },
+                          "bodyText": "Okay, just change the hcApp to hcApp, thank you",
+                          "url": "https://github.com/idaholab/moose/discussions/23935#discussioncomment-5505197",
+                          "updatedAt": "2023-04-03T03:01:52Z",
+                          "publishedAt": "2023-04-03T03:01:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Questions on porous media Navier-Stokes governing equations",
+          "author": {
+            "login": "JuliaHLee"
+          },
+          "bodyText": "Dear MOOSE developers,\nI have been working on heat transport MOOSE model with porous media Navier-Stokes (PINSFV) equations. I want the model to numerically solve two-phase energy equations from Wakao and Kaguei (1982). I thought the PINSFV equations on the website very similar to the one of the literature. So I started to use PINSFV. However, while I was comparing in detail, I found some differences between them. Here I would like to ask for help to understand the equations used in MOOSE in detail.\nThe PINSFV energy equations, which I captured on the webpage, are:\n\nTwo energy equations from Wakao and Kaguei (1982), rewritten with MOOSE symbols, are:\n\nThe differences I would like to discuss are below:\n\nIn MOOSE fluid phase energy equation, I understood that (v_D/epsilon) corresponds to v in the literature. Then, what is a physical meaning behind the additional rho in numerator in the advection term?\nIf I consider porosity to be constant, porosity in convective heat transfer term will be cancelled out. Then this term misses the factor, epsilon or (1-epsilon), in the denominator, compared to the one of literature. Would there be a reason?\nConvective heat transfer term in MOOSE equation misses the factor, specific surface area a_sf. So I assumed alpha equals to h_sf multiplied by a_sf. Is there any correlation programmed in MOOSE for such a parameter?\n\nI plan to add functions in my input file, in case a parameter needs correlation. So I would like to have more information on the PINSFV equations. Can I have a reference of the PINSFV governing equation?\nMany thanks in advance!\nBest regards,\nJulia",
+          "url": "https://github.com/idaholab/moose/discussions/23918",
+          "updatedAt": "2023-04-02T20:16:39Z",
+          "publishedAt": "2023-03-31T13:57:27Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "In MOOSE fluid phase energy equation, I understood that (v_D/epsilon) corresponds to v in the literature. Then, what is a physical meaning behind the additional rho in numerator in the advection term?\n\n\nThat is a bug in the documentation. That prefactor of rho / epsilon should not be there. The prefactor does not exist in the code\n\n2. If I consider porosity to be constant, porosity in convective heat transfer term will be cancelled out. Then this term misses the factor, epsilon or (1-epsilon), in the denominator, compared to the one of literature. Would there be a reason?\n\nThis is another documentation bug. The epsilon prefactor for the fluid equation and the (1 - epsilon) prefactor for the solid equation do not exist in the code\n\n3. Convective heat transfer term in MOOSE equation misses the factor, specific surface area a_sf. So I assumed alpha equals to h_sf multiplied by a_sf. Is there any correlation programmed in MOOSE for such a parameter?\n\nI will have to ask our Pronghorn users about this one. @GiudGiud @snschune @pbalest do you guys have any comment on this item?\n@JuliaHLee what documentation page were you looking at?",
+                  "url": "https://github.com/idaholab/moose/discussions/23918#discussioncomment-5493604",
+                  "updatedAt": "2023-03-31T21:25:13Z",
+                  "publishedAt": "2023-03-31T21:25:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "JuliaHLee"
+                          },
+                          "bodyText": "Thank you very much for the reply!\nI found the PINSFV equations here: https://mooseframework.inl.gov/modules/navier_stokes/pinsfv.html\nIs there any specific reference of the equations used in the code?",
+                          "url": "https://github.com/idaholab/moose/discussions/23918#discussioncomment-5496381",
+                          "updatedAt": "2023-04-01T10:42:14Z",
+                          "publishedAt": "2023-04-01T10:41:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The equations in the documentation should have matched the code but it seems they don't.\nFor 3., we have not merged any correlations in the Navier Stokes module, they are all in Pronghorn.",
+                          "url": "https://github.com/idaholab/moose/discussions/23918#discussioncomment-5498613",
+                          "updatedAt": "2023-04-01T19:57:42Z",
+                          "publishedAt": "2023-04-01T19:57:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "See #23934 for updates to the documentation",
+                          "url": "https://github.com/idaholab/moose/discussions/23918#discussioncomment-5502138",
+                          "updatedAt": "2023-04-02T14:56:26Z",
+                          "publishedAt": "2023-04-02T14:56:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "JuliaHLee"
+                          },
+                          "bodyText": "Thanks a lot for the answer and updates!",
+                          "url": "https://github.com/idaholab/moose/discussions/23918#discussioncomment-5503718",
+                          "updatedAt": "2023-04-02T20:16:39Z",
+                          "publishedAt": "2023-04-02T20:16:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

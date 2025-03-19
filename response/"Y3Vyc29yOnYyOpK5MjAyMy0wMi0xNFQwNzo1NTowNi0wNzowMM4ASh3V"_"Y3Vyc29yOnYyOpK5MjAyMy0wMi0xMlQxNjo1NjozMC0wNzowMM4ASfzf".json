@@ -1,0 +1,794 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMi0xMlQxNjo1NjozMC0wNzowMM4ASfzf"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Question about the hasComponentByName funcion in THM",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel I wrote the code with the reference of the HeatTransferFromHeatStructure1Phase.C\nHere is part of the code:\nInputParameters\nTwoChannelsModel::validParams()\n{\n  InputParameters params = TwoChannelsModel::validParams();\n  params += FlowModelSinglePhase::validParams();\n  params.addRequiredParam<std::string>(\"current_flow_channel\",\n                                       \"Name of flow channel component to connect to\");\n  params.addRequiredParam<std::string>(\"adjacent_flow_channel\",\n                                       \"Name of flow channel component to connect to\");\n  params.addClassDescription(\"Calculate the lateral flow between 2 1-phase flow channels\");\n\n  return params;\n}\n\nTwoChannelsModel::TwoChannelsModel(\n    const InputParameters & parameters)\n  : FlowModelSinglePhase(parameters),\n    _mesh(static_cast<THMMesh &>(_sim.mesh())),\n    _current_flow_channel_name(getParam<std::string>(\"current_flow_channel\")),\n    _adjacent_flow_channel_name(getParam<std::string>(\"adjacent_flow_channel\")),\n    _fch_alignment(_mesh)\n{\n}\n\nvoid\nTwoChannelsModel::setupMesh()\n{\n  if (hasComponentByName<FlowChannel1Phase>(_current_flow_channel_name) &&\n      hasComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name))\n  {\n    const FlowChannel1Phase & current_flow_channel = getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n    const FlowChannel1Phase & adjacent_flow_channel =\n        getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n\n    _fch_alignment.build(current_flow_channel.getElementIDs(),adjacent_flow_channel.getElementIDs());\n\n    for (auto & elem_id : adjacent_flow_channel.getElementIDs())\n    {\n      dof_id_type nearest_elem_id = _fch_alignment.getNearestElemID(elem_id);\n      if (nearest_elem_id != DofObject::invalid_id)\n        _sim.augmentSparsity(elem_id, nearest_elem_id);\n    }\n  }\n}\n\nIt says 'hasComponentByName' was not declared in this scope\nAm I using it wrong?\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/23411",
+          "updatedAt": "2023-02-15T02:36:51Z",
+          "publishedAt": "2023-02-14T08:55:43Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Yes, hasComponentByName is a member function of Component, but you've inherited from FlowModelSinglePhase, which is not a component. The basic design is that there is a FlowChannel1Phase component, which creates and calls a FlowModelSinglePhase. Here, what you should do is make a new component (probably derive directly from Component since nothing in our current hierarchy makes sense for what you're doing).\nQuick note: I noticed you have\n  InputParameters params = ThisClass::validParams();\n  params += BaseClass::validParams();\n\nbut it should just be\n  InputParameters params = BaseClass::validParams();",
+                  "url": "https://github.com/idaholab/moose/discussions/23411#discussioncomment-4970525",
+                  "updatedAt": "2023-02-14T13:00:10Z",
+                  "publishedAt": "2023-02-14T13:00:09Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "I see. I mistake FlowModelSinglePhase for a Component class. I derive the Component directly and the error is gone. Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/23411#discussioncomment-4971046",
+                          "updatedAt": "2023-02-14T13:52:17Z",
+                          "publishedAt": "2023-02-14T13:52:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Got this error during outputting step after updating MOOSE, not exactly sure what happens",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": ".............................\n    Projecting Initial Solutions.........                                                [ 53.40 s] [    0 MB]\n\n      Computing Initial Material Values......                                            [ 42.49 s] [25416 MB]\n    Finished Setting Up Materials                                                        [ 42.98 s] [25416 MB]\n    Building SemiLocalElemMap..................................                          [183.59 s] [  445 MB]\n  Still Performing Initial Setup...\n    Computing Initial Material Properties.....                                           [ 31.01 s] [  817 MB]\n\n\n  Finished Performing Initial Setup                                                      [492.89 s] [36324 MB]\n\n\nTime Step 0, time = 0\n\n.................libMesh terminating:\nERROR: no std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > parameter named \"_unique_name\" found.\n\nKnown parameters:\nName\t Type\t Value\n---------------------\n\nStack frames: 17\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: /home/moose/projects/moose/framework/libmoose-opt.so.0(+0x7c5d1f) [0x7f3e2f7e7d1f]\n3: ActionWarehouse::printInputFile(std::ostream&)\n4: Exodus::outputInput()\n5: AdvancedOutput::output(MooseEnumItem const&)\n6: Exodus::output(MooseEnumItem const&)\n7: OversampleOutput::outputStep(MooseEnumItem const&)\n8: OutputWarehouse::outputStep(MooseEnumItem)\n9: FEProblemBase::outputStep(MooseEnumItem)\n10: Transient::preExecute()\n11: Transient::execute()\n12: MooseApp::executeExecutioner()\n13: MooseApp::run()\n14: main\n15: __libc_start_main\n16: ./moose_beh-opt(+0x33ef) [0x562314c143ef]\n[0] /home/moose/mambaforge3/envs/moose/libmesh/include/libmesh/parameters.h, line 441, compiled Feb  9 2023 at 09:33:03\n\nI suspect that it happens during the outputting step, here is my output block, is there any change that i'm not aware of?\n[Outputs]\nperf_graph = true\n[./run]\ntype = Exodus\nfile_base = /home/moose/projects/DOL2022054/DOL2022054_R05H_Mo3_transient\n[../]\n[./pwp_list]\ntype = CSV\nfile_base = /home/moose/projects/DOL2022054/DOL2022054_R05H_Mo3_transient\n[]\n[]\n\nit works fine on the test sample (much smaller scale), this one is full mine scale. It also works fine before an update.\nhere is my mesh block, just in case it's mesh related problem:\n[Mesh]\nallow_renumbering = false\n[mesh1]\ntype = FileMeshGenerator\nallow_renumbering = false\nfile= DOL2022054_MOOSEMESH_updated.inp\n[]\n[side_top]\n   type = ParsedGenerateSideset\n   input = mesh1\n   combinatorial_geometry = 'y<=-911.4'\n   new_sideset_name = 'top'\n []\n [side_bottom]\n    type = ParsedGenerateSideset\n    input = side_top\n    combinatorial_geometry = 'y>=12744'\n    new_sideset_name = 'bottom'\n  []\n  [side_left]\n     type = ParsedGenerateSideset\n     input = side_bottom\n     combinatorial_geometry = 'x>=8286.8'\n     new_sideset_name = 'left'\n   []\n   [side_right]\n      type = ParsedGenerateSideset\n      input = side_left\n      combinatorial_geometry = 'x<=-7500'\n      new_sideset_name = 'right'\n    []\n[]\n\n[UserObjects]\n[initial_mesh]\ntype = SolutionUserObject\nexecute_on = INITIAL\nmesh= /home/moose/projects/DOL2022054/DOL2022054_R01_F0.e\ntimestep = LATEST\nsystem_variables = porepressure\n[]\n[]\n\nThank you guys!",
+          "url": "https://github.com/idaholab/moose/discussions/23385",
+          "updatedAt": "2023-02-14T13:26:40Z",
+          "publishedAt": "2023-02-09T00:35:31Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSeeing pretty big memory numbers in the log and exodus output causes serialization so even more memory consumption. It could just be that you are running out of memory. Could you please check that?\nDo you have the hash for the commit before the update and after the update?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4913239",
+                  "updatedAt": "2023-02-09T02:05:18Z",
+                  "publishedAt": "2023-02-09T02:05:16Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi Guillaume\n\nSeeing pretty big memory numbers in the log and exodus output causes serialization so even more memory consumption. It could just be that you are running out of memory. Could you please check that?\n\nI still have 50% of RAM unsued when it reached that point\n\nDo you have the hash for the commit before the update and after the update?\n\nNo, I tried to use the previous version of MOOSE (I saved it late 2020) it's now working just fine, guess i'm stuck with the old version for now",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4913829",
+                          "updatedAt": "2023-02-09T03:14:58Z",
+                          "publishedAt": "2023-02-09T03:14:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "git log will give you the hash of the commit.\nbetween the case that works and the one that does not, is it just the mesh that's different?",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4913850",
+                          "updatedAt": "2023-02-09T03:17:49Z",
+                          "publishedAt": "2023-02-09T03:17:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "git log will give you the hash of the commit.\nbetween the case that works and the one that does not, is it just the mesh that's different?\n\nHi Guillaume,\nI'm not very familiar with git, but I will have a look.\nnote: the mesh and the input file are exactly the same for both tests.\nKind regards,\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4914338",
+                          "updatedAt": "2023-02-09T05:09:30Z",
+                          "publishedAt": "2023-02-09T05:09:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @GiudGiud\nI think i can isolate the issue now, so when i turned of my MPCbe, it works fine,\nI think the new libmesh affects part of the LinearNodalConstraint.C\nbelow is MPCbe.C\nregisterMooseAction(\"MOOSE_BEHApp\", MPCbe, \"add_constraint\");\n\nInputParameters\nMPCbe::validParams()\n{\n  InputParameters params = Action::validParams();\n  params.addRequiredParam<FileName>(\"csv_file\",\n                                    \"The name of the CSV file to read. Currently, with \"\n                                    \"the exception of the header row, only numeric \"\n                                    \"values are supported.\");\n  params.addParam<bool>(\"header\",\n                              \"When true it is assumed that the first row contains column headers, these \"\n                              \"headers are used as the VectorPostprocessor vector names. If false the \"\n                              \"file is assumed to contain only numbers and the vectors are named \"\n                             \"automatically based on the column number (e.g., 'column_0000', \"\n                              \"'column_0001'). If not supplied the reader attempts to auto detect the \"\n                              \"headers.\");\n\n  return params;\n}\n\nMPCbe::MPCbe(const InputParameters & params)\n  : Action(params)\n{\n}\nvoid\nMPCbe::act()\n\n{\n  MooseUtils::DelimitedFileReader csv_reader(getParam<FileName>(\"csv_file\"), &_communicator);\n  if (isParamValid(\"header\"))\n  csv_reader.setHeaderFlag(getParam<bool>(\"header\")\n                               ? MooseUtils::DelimitedFileReader::HeaderFlag::ON\n                               : MooseUtils::DelimitedFileReader::HeaderFlag::OFF);\n\n  csv_reader.read();\n    const std::vector<std::string> & names = csv_reader.getNames();\n    const std::vector<std::vector<double>> & data = csv_reader.getData();\n    int row = data.size();\n\n\n    _console << \"number of column   \" <<  row << std::endl;\n\nfor (unsigned cur_num = 0; cur_num<10000000 ; cur_num++)\n{\n\n  std::vector<Real> weights_in (1);\n  std::vector<unsigned int> primary_node_ids_in (1);\n  std::vector<unsigned int> secondary_node_ids_in_1 (1);\n  std::vector\n  <unsigned int> secondary_node_ids_in_2 (1);\n\n  weights_in.at(0) = 1;\n  primary_node_ids_in.at(0) = data[0][cur_num];\n  secondary_node_ids_in_1.at(0) =  data[1][cur_num];\n  std::vector<unsigned int> secondary_node_ids_in_final(secondary_node_ids_in_1);\n\n  for (unsigned n = 2; n<row ; n++)\n  {\n\n  secondary_node_ids_in_2.at(0) =  data[n][cur_num];\n\n  secondary_node_ids_in_final.insert(secondary_node_ids_in_final.end(), secondary_node_ids_in_2.begin(), secondary_node_ids_in_2.end());\n  }\n\n  sort( secondary_node_ids_in_final.begin(), secondary_node_ids_in_final.end() );\n  secondary_node_ids_in_final.erase( unique( secondary_node_ids_in_final.begin(), secondary_node_ids_in_final.end() ), secondary_node_ids_in_final.end() );\n\n  if (primary_node_ids_in.at(0) == 0){\n      break;\n  }\n\n  InputParameters params = _factory.getValidParams(\"LinearNodalConstraint\");\n  params.set<NonlinearVariableName>(\"variable\") = \"porepressure\";\n  params.set<std::vector<Real>>(\"weights\")= weights_in;\n  params.set<std::vector<unsigned int>>(\"primary\") = primary_node_ids_in;\n  params.set<std::vector<unsigned int>>(\"secondary_node_ids\") = secondary_node_ids_in_final;\n  params.set<Real>(\"penalty\") = 1e10;\n  _problem->addConstraint(\"LinearNodalConstraint\", \"MPCbe\" + Moose::stringify(cur_num), params);\n}\n\nconst_cast<InputParameters &>(_pars).clear();\n_console << \"MPC done!\" << std::endl;\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4966151",
+                          "updatedAt": "2023-02-14T03:30:28Z",
+                          "publishedAt": "2023-02-14T03:30:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "all good now, seems like the new moose/libmesh doesnt like this line const_cast<InputParameters &>(_pars).clear();",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4970724",
+                          "updatedAt": "2023-02-14T13:19:43Z",
+                          "publishedAt": "2023-02-14T13:19:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont see anything obvious (save that you need to add more comments :) )\n@roystgnr @lindsayad any changes with linear nodal constraints? Could be MOOSE or libmesh related (EDIT, seems problem is fixed)\nI see in 2022:  aaedfb9\nto  \"Allow LinearNodalConstraint to be run with distributed mesh\"\n@Traiwit are you running distributed meshes?",
+                          "url": "https://github.com/idaholab/moose/discussions/23385#discussioncomment-4970792",
+                          "updatedAt": "2023-02-14T13:27:40Z",
+                          "publishedAt": "2023-02-14T13:26:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow doc on GitHub",
+          "author": {
+            "login": "sinaomrani96"
+          },
+          "bodyText": "Hello,\nHope you are doing well.\nJust wanted to inform you that PorousFlow doc on Github faces \"404 not found error\" or \"Unable to render expression\". Nothing important, just wanted to let you know if you want to fix it. Thanks.\nLike theses:\nhttps://github.com/idaholab/moose/blob/next/modules/porous_flow/doc/content/modules/porous_flow/capillary_pressure.md#constant\nhttps://github.com/idaholab/moose/blob/next/PorousFlowCapillaryPressureConst.md\nBest regards,\nSina",
+          "url": "https://github.com/idaholab/moose/discussions/23412",
+          "updatedAt": "2023-03-23T15:09:42Z",
+          "publishedAt": "2023-02-14T10:51:33Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "sinaomrani96"
+                  },
+                  "bodyText": "Well it is not just PorousFlow. Lots of hyperlinks do not work in doc directories.\nhttps://github.com/idaholab/moose/blob/next/UserObjects/PropertyReadFile/nprop\nBest regards,\nSina",
+                  "url": "https://github.com/idaholab/moose/discussions/23412#discussioncomment-4969475",
+                  "updatedAt": "2023-02-14T10:59:32Z",
+                  "publishedAt": "2023-02-14T10:59:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou are accessing these links from the github interface, but they are not made for this. They need to be parsed by our documentation system to create the website.\nPlease see the following pages that correspond to the links you pasted:\nhttps://mooseframework.inl.gov/modules/porous_flow/capillary_pressure.html\nhttps://mooseframework.inl.gov/source/userobjects/PorousFlowCapillaryPressureConst.html\nhttps://mooseframework.inl.gov/source/userobject/PropertyReadFile.html\nBest,\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23412#discussioncomment-4970593",
+                  "updatedAt": "2023-02-14T13:06:19Z",
+                  "publishedAt": "2023-02-14T13:06:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Reading Capillary pressures from data file in PorousFlow",
+          "author": {
+            "login": "sinaomrani96"
+          },
+          "bodyText": "Hi,\nHope you are fine.\nI am new to MOOSE and its modules as well. I have read the documents and searched through discussions but did not find similar questions. I wanted to know if we can give our properties to moose? For example instead of using predefined Capillary Pressure functions i. e. constant, VG, BC, etc., we give a csv file containing CP vs saturation. Thanks.\nBest regards,\nSina",
+          "url": "https://github.com/idaholab/moose/discussions/23413",
+          "updatedAt": "2023-03-23T15:18:39Z",
+          "publishedAt": "2023-02-14T11:40:09Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can read CSV files with a number of objects in MOOSE, but especially functions.\nFor example:\nhttps://mooseframework.inl.gov/source/functions/PiecewiseLinear.html\nFunctions are usually dependent on time and position.\nBut in your code you can call functions with any arguments you like to replace time, x, y and z.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23413#discussioncomment-4970561",
+                  "updatedAt": "2023-02-14T13:03:22Z",
+                  "publishedAt": "2023-02-14T13:03:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "TIMEOUT error while installing moose conda packages",
+          "author": {
+            "login": "amintgn"
+          },
+          "bodyText": "Dear all,\nI'm a beginner in moose and c++. While installing moose conda packages using the command \"\" I receive the following error.\nI appreciate your help. Here is what I receive:\nLooking for: ['moose-tools', 'moose-libmesh']\n\n[+] 9.0s\nhttps://conda.software.inl.gov/public/linux-64      ??.?MB @  ??.?MB/s 0 failed  9.0s\nDownload error (28) Timeout was reached [https://conda.software.inl.gov/public/noarch/repodata.json]\nConnection timeout after 9000 ms\n\n# >>>>>>>>>>>>>>>>>>>>>> ERROR REPORT <<<<<<<<<<<<<<<<<<<<<<\n\n    Traceback (most recent call last):\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/conda/exceptions.py\", line 1118, in __call__\n        return func(*args, **kwargs)\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 936, in exception_converter\n        raise e\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 929, in exception_converter\n        exit_code = _wrapped_main(*args, **kwargs)\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 887, in _wrapped_main\n        result = do_call(parsed_args, p)\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 754, in do_call\n        exit_code = create(args, parser)\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 630, in create\n        return install(args, parser, \"create\")\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/mamba.py\", line 497, in install\n        index = load_channels(pool, channels, repos)\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/utils.py\", line 129, in load_channels\n        index = get_index(\n      File \"/home/amin/mambaforge3/lib/python3.10/site-packages/mamba/utils.py\", line 110, in get_index\n        is_downloaded = dlist.download(api.MAMBA_DOWNLOAD_FAILFAST)\n    RuntimeError: Download error (28) Timeout was reached [https://conda.software.inl.gov/public/noarch/repodata.json]\n    Connection timeout after 9000 ms\n\n`$ /home/amin/mambaforge3/bin/mamba create -n moose moose-tools moose-libmesh`\n\n  environment variables:\n                 CIO_TEST=<not set>\n        CONDA_DEFAULT_ENV=base\n                CONDA_EXE=/home/amin/mambaforge3/bin/conda\n             CONDA_PREFIX=/home/amin/mambaforge3\n    CONDA_PROMPT_MODIFIER=(base)\n         CONDA_PYTHON_EXE=/home/amin/mambaforge3/bin/python\n               CONDA_ROOT=/home/amin/mambaforge3\n              CONDA_SHLVL=1\n           CURL_CA_BUNDLE=<not set>\n               LD_PRELOAD=<not set>\n                     PATH=/home/amin/mambaforge3/bin:/home/amin/mambaforge3/condabin:/usr/local/\n                          sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/loca\n                          l/games:/usr/lib/wsl/lib:/mnt/c/Program Files/WindowsApps/MicrosoftCor\n                          porationII.WindowsSubsystemForLinux_1.0.3.0_x64__8wekyb3d8bbwe:/mnt/c/\n                          Program Files/Microsoft MPI/Bin:/mnt/c/Program Files/Microsoft HPC\n                          Pack 2012/Bin:/mnt/c/Program Files\n                          (x86)/CMG/CMGJobService:/mnt/c/Program Files (x86)/Intel/MPI-\n                          RT/5.0.2.044/intel64/bin:/mnt/c/Program Files (x86)/Intel/iCLS\n                          Client:/mnt/c/Program Files/Intel/iCLS Client:/mnt/c/WINDOWS/system32:\n                          /mnt/c/WINDOWS:/mnt/c/WINDOWS/System32/Wbem:/mnt/c/WINDOWS/System32/Wi\n                          ndowsPowerShell/v1.0:/mnt/c/Program\n                          Files/MATLAB/R2018a/runtime/win64:/mnt/c/Program Files/MATLAB/R2018a/b\n                          in:/mnt/c/ecl/HOME:/mnt/c/ecl/MACROS:/mnt/c/WINDOWS/System32/OpenSSH:/\n                          mnt/c/Program Files (x86)/Schlumberger/OLGA-S\n                          2017.2.0/Win32:/mnt/c/Program Files (x86)/Schlumberger/OLGA-S\n                          2017.2.0/Win64:/mnt/c/Program Files\n                          (x86)/Hummingbird/Connectivity/11.00/Accessories:/mnt/c/Program Files\n                          (x86)/Intel/Intel(R) Management Engine Components/DAL:/mnt/c/Program\n                          Files/Intel/Intel(R) Management Engine Components/DAL:/mnt/c/Program\n                          Files (x86)/Intel/Intel(R) Management Engine\n                          Components/IPT:/mnt/c/Program Files/Intel/Intel(R) Management Engine\n                          Components/IPT:/mnt/c/TDM-GCC-\n                          64/bin:/mnt/c/Users/Amin/AppData/Local/Microsoft/WindowsApps:/mnt/c/Us\n                          ers/Amin/AppData/Local/Programs/Microsoft VS Code/bin:/snap/bin\n       REQUESTS_CA_BUNDLE=<not set>\n            SSL_CERT_FILE=<not set>\n\n     active environment : base\n    active env location : /home/amin/mambaforge3\n            shell level : 1\n       user config file : /home/amin/.condarc\n populated config files : /home/amin/mambaforge3/.condarc\n                          /home/amin/.condarc\n          conda version : 22.11.1\n    conda-build version : not installed\n         python version : 3.10.8.final.0\n       virtual packages : __archspec=1=x86_64\n                          __glibc=2.31=0\n                          __linux=5.15.79.1=0\n                          __unix=0=0\n       base environment : /home/amin/mambaforge3  (writable)\n      conda av data dir : /home/amin/mambaforge3/etc/conda\n  conda av metadata url : None\n           channel URLs : https://conda.software.inl.gov/public/linux-64\n                          https://conda.software.inl.gov/public/noarch\n                          https://conda.anaconda.org/conda-forge/linux-64\n                          https://conda.anaconda.org/conda-forge/noarch\n          package cache : /home/amin/mambaforge3/pkgs\n                          /home/amin/.conda/pkgs\n       envs directories : /home/amin/mambaforge3/envs\n                          /home/amin/.conda/envs\n               platform : linux-64\n             user-agent : conda/22.11.1 requests/2.28.2 CPython/3.10.8 Linux/5.15.79.1-microsoft-standard-WSL2 ubuntu/20.04.3 glibc/2.31\n                UID:GID : 1000:1000\n             netrc file : None\n           offline mode : False\n\n\nAn unexpected error has occurred. Conda has prepared the above report.",
+          "url": "https://github.com/idaholab/moose/discussions/23402",
+          "updatedAt": "2023-06-24T19:41:19Z",
+          "publishedAt": "2023-02-12T11:31:01Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere s unfortunately no way I know to recover from borked conda environments.\nyou ll have to remove it and try again. And if it doesn\u2019t work then remove mamba and follow our instructions for getting started from the beginning again\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4949767",
+                  "updatedAt": "2023-02-12T15:36:25Z",
+                  "publishedAt": "2023-02-12T15:36:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "Thanks Guillaume.\nUnfortunately, I had no progress in installation. I am a Windows user and working with WSL is really new to me. I cannot even remove mamba which is a little confusing for me and I have no clue how to do so. I tried \"conda remove mamba\" but it is stuck and shows only:\nCollecting package metadata (repodata.json):\nfailed\nCondaHTTPError: HTTP 000 CONNECTION FAILED for url https://conda.software.inl.gov/public/linux-64/repodata.json\nElapsed: -\nAn HTTP error occurred when trying to retrieve this URL.\nHTTP errors are often intermittent, and a simple retry will get you on your way.\n'https//conda.software.inl.gov/public/linux-64'\nI appreciate your help if you can provide me with information on how to progress.\nAmin",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4959769",
+                          "updatedAt": "2023-02-13T15:47:32Z",
+                          "publishedAt": "2023-02-13T15:47:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nJust delete the folder where mamba / conda is installed.\nIt should be mamba if you followed the online instructions\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4959827",
+                          "updatedAt": "2023-02-13T15:51:44Z",
+                          "publishedAt": "2023-02-13T15:51:44Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "rm -rf /home/amin/mambaforge3\nShould delete Conda... Once you do the above, close out of WSL, and re-open WSL. Then try to run through the installation steps again.\nNote: The second time you received an error connecting to https://conda.software.inl.gov/public/linux-64/repodata.json, could actually have been my fault.\nAt 8:36 AM MST, I deleted much of the indexing cache that was present to build anew. It's possible you attempted to connect during that time frame.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4959982",
+                          "updatedAt": "2023-02-13T16:05:05Z",
+                          "publishedAt": "2023-02-13T16:05:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "amintgn"
+                  },
+                  "bodyText": "Hi\nI removed and re-installed mamba successfully, but the first problem (TIMEOUT error) is still the case.\nI reckon it's related to my internet connection. I found the following guide on MOOSE website (Troubleshooting guide for conda):\n\nTIMEOUT\nIf your tests fail due to timeout errors, it is most likely you have a good installation, but a slow machine (or slow filesystem). You can adjust the amount of time that the TestHarness allows a test to run before timing out, by adding a paramater to your test file:\n[Tests]\n[./timeout]\ntype = RunApp\ninput = my_input_file.i\nmax_time = 300   <-- time in seconds before a timeout occurs. 300 is the default for all tests.\n[../]\n[]\n\nBut I have no clue how should I implement such a code.\nAmin",
+                  "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4960483",
+                  "updatedAt": "2023-02-13T16:46:05Z",
+                  "publishedAt": "2023-02-13T16:46:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The troubleshooting steps you are referring to are for ./run_tests test timeouts. Are you saying you are still receiving something similar to:\nhttps://conda.software.inl.gov/public/linux-64      ??.?MB @  ??.?MB/s 0 failed  9.0s\nDownload error (28) Timeout was reached [https://conda.software.inl.gov/public/noarch/repodata.json]\nConnection timeout after 9000 ms",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4960515",
+                          "updatedAt": "2023-02-13T16:48:00Z",
+                          "publishedAt": "2023-02-13T16:48:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "Yes. This is what I receive after running \"mamba create -n moose moose-tools moose-libmesh\" after around 9 seconds. I'm really wondering what could cause this issue.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4960682",
+                          "updatedAt": "2023-02-13T17:00:06Z",
+                          "publishedAt": "2023-02-13T17:00:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "What happens when you:\ncurl https://conda.software.inl.gov/public\nThis is a simple bash command that reads a url, and prints the contents on the screen. A successful run will look like:\n<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>301 Moved Permanently</title>\n</head><body>\n<h1>Moved Permanently</h1>\n<p>The document has moved <a href=\"http://conda.software.inl.gov/public/\">here</a>.</p>\n</body></html>",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4960759",
+                          "updatedAt": "2023-02-13T17:04:04Z",
+                          "publishedAt": "2023-02-13T17:04:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "It returns:\ncurl: (28) Failed to connect to conda.software.inl.gov port 443: Connection timed out",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4961525",
+                          "updatedAt": "2023-02-13T18:05:08Z",
+                          "publishedAt": "2023-02-13T18:05:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Are you able to browse to the following address using your browser on the same machine: https://conda.software.inl.gov/public/",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4961778",
+                          "updatedAt": "2023-02-13T18:30:04Z",
+                          "publishedAt": "2023-02-13T18:30:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "Yes, I am. Out of the WSL everything works and I can access the link above.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4961829",
+                          "updatedAt": "2023-02-13T18:37:30Z",
+                          "publishedAt": "2023-02-13T18:37:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I am not sure why your WSL would not allow you to that address, while the host machine does. Is this some work machine at a lab or some other location which may lay down access restriction rules or some such??",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4961955",
+                          "updatedAt": "2023-02-13T18:51:23Z",
+                          "publishedAt": "2023-02-13T18:51:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "I should say it's my personal machine. But the thing is there are some restrictions in my location (Iran) to access some websites. I think something is wrong with my internet connection and I may try this some time later. Internet quality and restrictions fluctuate in my location from time to time.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4962136",
+                          "updatedAt": "2023-02-13T19:16:42Z",
+                          "publishedAt": "2023-02-13T19:16:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I am betting your Windows machine is routing through a Proxy, while the WSL guest machine is not configured to do so. I don't know how you would figure out your Proxy settings in Windows, but if you can figure them out; you would want to export those addresses like so:\nexport http_proxy=<your proxy server>\nexport https_proxy=<your proxy server>\nRef: https://stackoverflow.com/questions/9445489/performing-http-requests-with-curl-using-proxy\nConda will use the same environment variables... Edit: That is to say, once you can get:\nexport http_proxy=<your proxy server>\nexport https_proxy=<your proxy server>\ncurl https://conda.software.inl.gov/public\nto work, so should mamba commands.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4962353",
+                          "updatedAt": "2023-02-13T19:41:22Z",
+                          "publishedAt": "2023-02-13T19:38:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amintgn"
+                          },
+                          "bodyText": "Yes, I have to use a Proxy. I tried several ways to to use curl with a proxy bud all of them fail to connect to my Proxy server. It really beats me.",
+                          "url": "https://github.com/idaholab/moose/discussions/23402#discussioncomment-4969967",
+                          "updatedAt": "2023-02-14T11:49:32Z",
+                          "publishedAt": "2023-02-14T11:49:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Fluid Properties Build Error",
+          "author": {
+            "login": "AndrewFalkowski"
+          },
+          "bodyText": "Attempting to run the test file located at modules/porous_flow/test/tests/infiltration_and_drainage/rd01.i but am running into an issue where the FLUID_PROPERTIES module doesn't appear to build.\nGetting the following errors when attempting to run the test file:\n*** ERROR ***\n.../testing_infiltration.i:85: section 'FluidProperties' does not have an associated \"Action\".\nDid you misspell it?\n.../testing_infiltration.i:86: section 'FluidProperties/the_simple_fluid' does not have an associated \"Action\".\nDid you misspell it?\n\nI have attempted to make clobberall and am still getting the same issue.\nI have included the relevant sections of the makefile below:\n\nALL_MODULES                 := no\n\nCHEMICAL_REACTIONS          := no\nCONTACT                     := yes\nEXTERNAL_PETSC_SOLVER       := no\nFLUID_PROPERTIES            := yes\nFSI                         := no\nFUNCTIONAL_EXPANSION_TOOLS  := no\nGEOCHEMISTRY                := no\nHEAT_CONDUCTION             := yes\nLEVEL_SET                   := no\nMISC                        := no\nNAVIER_STOKES               := no\nPERIDYNAMICS                := no\nPHASE_FIELD                 := no\nPOROUS_FLOW                 := yes\nRAY_TRACING                 := no\nREACTOR                     := no\nRDG                         := no\nRICHARDS                    := no\nSTOCHASTIC_TOOLS            := no\nTENSOR_MECHANICS            := yes\nXFEM                        := no\n\nWhat am I missing here?",
+          "url": "https://github.com/idaholab/moose/discussions/23406",
+          "updatedAt": "2023-04-07T16:35:12Z",
+          "publishedAt": "2023-02-13T15:22:53Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthe syntax has changed recently. It seems you are trying to use the new syntax with an old MOOSE\nIf you are using an up-to-date MOOSE then you can use this syntax. If not you need to use\n[Modules]\n      [FluidProperties]\n          [the_simple_fluid]\n..\n[]\n[]\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/23406#discussioncomment-4959595",
+                  "updatedAt": "2023-02-13T15:33:14Z",
+                  "publishedAt": "2023-02-13T15:33:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Transfer Old Values",
+          "author": {
+            "login": "maxnezdyur"
+          },
+          "bodyText": "Is there a way to transfer old values of a variable when using multiapp?",
+          "url": "https://github.com/idaholab/moose/discussions/22825",
+          "updatedAt": "2023-02-13T14:01:51Z",
+          "publishedAt": "2022-11-30T12:43:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Yes, the trick is to use an AuxVariable to store the old value. Something like\n[Variables]\n  [u]\n  []\n[]\n\n[AuxVariables]\n  [u_old]\n    [AuxKernel]\n      type = ParsedAux\n      function = 'u'\n      args = 'u'\n      execute_on = TIMESTEP_END\n    []\n  []\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4273643",
+                  "updatedAt": "2022-11-30T13:19:43Z",
+                  "publishedAt": "2022-11-30T13:19:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Ok, that's what I did before. I believe that fails when using more than one fixed point iteration. Since the parent app at the end of the first fixed point iteration will update u_old to be u, when it transfers again, it will send the same values as the current u. If only there was an option like FIXED_POINT_END. I am creating an OldAux AuxKernel that I will run at TimeStepBegin on the child app, but I feel like there might be a use for FIXED_POINT_END.",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4273673",
+                          "updatedAt": "2022-11-30T13:24:27Z",
+                          "publishedAt": "2022-11-30T13:24:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "yeah, I don't like abusing TIMESTEP_END for FPI_END either. If someone has the time to fix it I'm all for it. But maybe @YaqiWang has some special needs for that?",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4273708",
+                          "updatedAt": "2022-11-30T13:28:57Z",
+                          "publishedAt": "2022-11-30T13:28:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "the parent app at the end of the first fixed point iteration will update u_old to be u\n\nAre you sure about this? You can use this to copy the old values into an aux var:\n[AuxVariables]\n  [u_old][]\n[]\n\n[AuxKernels]\n  [copy_old]\n    type = SelfAux\n    variable = u_old\n    v = u\n    implicit = false\n    execute_on = timestep_begin\n  []\n[]\n\nI think it should work. Even though the aux kernel will be executed multiple times during fixed point iteration at every time step, it won't change u_old.",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276337",
+                          "updatedAt": "2022-11-30T18:22:10Z",
+                          "publishedAt": "2022-11-30T18:21:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "For the real timestep_begin timestep_end execute flags, we basically derived a new executioner with two new custom execute flags and let object executed on those. timestep_begin and timestep_end is so widely used in MOOSE and apps, renaming them and checking all objects whether on timestep_begin or fixed_point_begin would be a real headache.",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276384",
+                          "updatedAt": "2022-11-30T18:27:58Z",
+                          "publishedAt": "2022-11-30T18:27:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "If I wanted my child app to run before my parent app, would your solution work? Does a parent app run all AuxKernels with timestep_begin before it transfers to the child app when using TransientMultiApp on TIMESTEP_BEGIN?",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276438",
+                          "updatedAt": "2022-11-30T18:35:18Z",
+                          "publishedAt": "2022-11-30T18:35:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if you wanted to do that you'd execute the auxkernel on timestep_end to make it work",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276467",
+                          "updatedAt": "2022-11-30T18:40:16Z",
+                          "publishedAt": "2022-11-30T18:40:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "btw there is the SelfAux to do this shorter than a ParsedAux",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276499",
+                          "updatedAt": "2022-11-30T18:44:47Z",
+                          "publishedAt": "2022-11-30T18:44:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "If the aux kernel and the multiapp are both on timestep_begin, multiapp/transfer will get executed first. They will not see the updated solution at the first fixed point iteration. The later iterations will see the updated solution and the solution will remain unchanged (I hope I understand this right). If you make the copy (aux kernel) on timestep_end with implicit = true, it will get executed on inside the current fixed point iteration, so it possibly won't work. If implicit = false, it will be the same as implicit = true plus on timestep_begin.",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276509",
+                          "updatedAt": "2022-11-30T18:52:00Z",
+                          "publishedAt": "2022-11-30T18:46:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "@GiudGiud\nAre you saying that this system would work? I think this would have a different problem. For the first FPI, it would send over \"older\" solution (for the new timestep), then for every other FPI, it would send over the correct old solution.\n[AuxVariables]\n  [copy_old]\n    type = SelfAux\n    variable = u_old\n    v = u\n    implicit = false\n    execute_on = timestep_end\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276638",
+                          "updatedAt": "2022-11-30T19:05:19Z",
+                          "publishedAt": "2022-11-30T19:05:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "good point.\nOk we do need a fixed_point_end, fixed_point_begin execute_on for this then",
+                          "url": "https://github.com/idaholab/moose/discussions/22825#discussioncomment-4276973",
+                          "updatedAt": "2022-11-30T20:04:29Z",
+                          "publishedAt": "2022-11-30T20:04:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to distinguish different grains",
+          "author": {
+            "login": "Nuwanted"
+          },
+          "bodyText": "Hello MOOSE experts,\nI want to simulate the evolution of inclusions in two grains, I wrote a sub-module to simulate the anisotropic mobility with reference to Kobayashi's paper. I want the anisotropic parameter to take different values in different grains. Here is the code of the initial conditions, eta denotes the grain, c denotes the inclusions.\n[ICs]\n[./eta1]\ntype = SmoothSuperellipsoidIC\nblock = 1\na = 2\nb = 2\nn = 2\nx1 = -10\ny1 = 0\nvariable = eta1\ninvalue = 0\noutvalue = 1.0\nint_width = 0.07\n[../]\n[./eta2]\ntype = BoundingBoxIC\nblock = 2\nx1 = 0\ny1 = -10\nx2 = 50\ny2 = 10\nvariable = eta2\ninside = 1.0\noutside = 0.0\nint_width = 0.05\n[../]\n[./c]\ntype = SmoothSuperellipsoidIC\na = 2\nb = 2\nn = 2\nx1 = -10\ny1 = 0\nvariable = c\ninvalue = -1.0\noutvalue = 1.0\nint_width = 0.07\n[../]\n[]\nWhen I use the block function to distinguish different grains, Inclusions cannot cross grain boundaries. Can anyone give me some advice?\nThank you very much.\nBest,",
+          "url": "https://github.com/idaholab/moose/discussions/23405",
+          "updatedAt": "2023-02-13T11:59:59Z",
+          "publishedAt": "2023-02-13T11:59:58Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Material property 'A', requested by 'mobility' is not defined on block 0",
+          "author": {
+            "login": "Johnney12138"
+          },
+          "bodyText": "Hello,\nI was trying to solve a phase field problem. After running, it gave me an error message:\n *** ERROR *** The following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\". Material property 'A', requested by 'mobility' is not defined on block 0 Material property 'A', requested by 'mobility_face' is not defined on block 0 Material property 'A', requested by 'mobility_neighbor' is not defined on block 0\nThe complete code is attached as follows:\n`[Mesh]\ntype = GeneratedMesh\ndim = 2\nnx = 10               # Number of elements in the X direction.\nny = 10               # Number of elements in the Y direction.\nxmin = 2\nxmax = 4              # Upper X Coordinate of the generated mesh.\nymin = 2\nymax = 4\nuniform_refine = 2\n[]\n[GlobalParams]\nderivative_order = 4\n[]\n[Variables]\n[./w]       # concentration\n[../]\n[./phi]   # phase field\n[../]\n[./T]   # temperature\n[../]\n[]\n[ICs]\n[./w]\ntype = ConstantIC\nvariable = w\nvalue = 0.3\n[../]\n[./T]\ntype = ConstantIC\nvariable = T\nvalue = 2.1\n[../]\n[./phi]\ntype = SmoothCircleIC\nvariable = phi\nx1 = 3\ny1 = 3\ninvalue = 1\noutvalue = 0\nradius = 0.1\nint_width = 0.01\n[../]\n[]\n[Kernels]\n[./phi_dot]\ntype = SusceptibilityTimeDerivative\nvariable = phi\nf_name = tau\n[../]\n[./free_energy]\ntype = AllenCahn\nvariable = phi\nf_name = Fr\n[../]\n[./anisoACinterface1]\ntype = ACInterfaceKobayashi1\nvariable = phi\n[../]\n[./anisoACinterface2]\ntype = ACInterfaceKobayashi2\nvariable = phi\n[../]\n[./w_dot]\ntype = SusceptibilityTimeDerivative\nvariable = w\nf_name = chi\ncoupled_variables = 'phi'\n[../]\n[./Diffusion]\ntype = MatDiffusion\nvariable = w\ndiffusivity = Dchi\ncoupled_variables = 'phi'\n[../]\n[./coupled_etaa0dot]\ntype = CoupledSusceptibilityTimeDerivative\nvariable = w\nv = phi\nf_name = ft\ncoupled_variables = 'phi'\n[../]\n[./coupled_antitrapping]\ntype = AntitrappingCurrent\nvariable = w\nv = phi\nf_name = rhodiff\n[../]\n[./coupled_etaa0dot_time]\ntype = TimeDerivative\nvariable = T\n[../]\n[./coupled_etab0dot_diff]\ntype = CoefDiffusion\nvariable = T\ncoef = 1e8\n[../]\n[./coupled_etab0dot_ctim]\ntype = CoefCoupledTimeDerivative\nvariable = T\nv = phi\ncoef = -0.5\n[../]\n[]\n[Materials]\n[./A]\ntype = InterfaceOrientationMaterial\nop = phi\nanisotropy_strength = 0.04\nmode_number = 4\noutputs = exodus\n[../]\n[./speexpress]\ntype = ParsedMaterial\ncoupled_variables = 'phi w T'\nf_name = Fr\nmaterial_property_names = 'lambda MCi'\nfunction = 'phi^3-phi+lambda*(1-phi^2)^2*(MCiw+T)'\noutput=exodus\n[../]\n[./mobility]\ntype = ParsedMaterial\ncoupled_variables = 'w'\nf_name = tau\nmaterial_property_names = 'tau0 Le MCi k A'\nexpression = 'tau0A^2*(1/Le+MCi*(1+(1-k)w))'\noutput=exodus\n[../]\n[./chemp]\ntype = ParsedMaterial\ncoupled_variables = 'phi'\nf_name = chi\nmaterial_property_names = 'k'\nfunction = '1+k-(1-k)phi'\noutput=exodus\n[../]\n[./matdiff]\ntype = ParsedMaterial\ncoupled_variables = 'phi'\nf_name = Dchi\nmaterial_property_names = 'D'\nfunction = 'D(1-phi)'\noutput=exodus\n[../]\n[./antitrap]\ntype = ParsedMaterial\ncoupled_variables = 'w'\nf_name = rhodiff\nmaterial_property_names = 'k wid'\nfunction = 'wid/sqrt(2)(1+(1-k)*w)'\noutput=exodus\n[../]\n[./int]\ntype = ParsedMaterial\ncoupled_variables = 'w'\nf_name = ft\nmaterial_property_names = 'k'\nfunction = '1+(1-k)*w'\noutput=exodus\n[../]\n[./const]\ntype = GenericConstantMaterial\nprop_names =  'tau0   Le  MCi   k  lambda   D  wid L erp'\nprop_values = '1e-5  1.0  0.15  0.15  3.1913  2.0  0.01 1 0.01'\n[../]\n[]\n[Preconditioning]\n[./SMP]\ntype = SMP\nfull = true\n[../]\n[]\n[Executioner]\ntype = Transient\nscheme = bdf2\nsolve_type = PJFNK\npetsc_options_iname = '-pc_type -pc_hypre_type -ksp_gmres_restart'\npetsc_options_value = 'hypre    boomeramg      31'\nl_tol = 1.0e-3\nl_max_its = 100\nnl_max_its = 100\nnl_rel_tol = 1.0e-8\nnl_abs_tol = 1e-8\nend_time = 0.01\n[./TimeStepper]\ntype = IterationAdaptiveDT\ndt = 0.00005\ncutback_factor = 0.7\ngrowth_factor = 1.2\n[../]\n[]\n[Adaptivity]\ninitial_steps = 3\nmax_h_level = 3\ninitial_marker = err_phi\n[./Markers]\n[./err_phi]\ntype = ErrorFractionMarker\ncoarsen = 0.3\nrefine = 0.95\nindicator = ind_phi\n[../]\n[../]\n[]\n[Outputs]\nexodus = true\ninterval = 10\n[]\n[Debug]\nshow_material_props = true\n[]`\nIs there any wrong with my input? Thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/23400",
+          "updatedAt": "2023-02-13T06:30:04Z",
+          "publishedAt": "2023-02-11T14:30:23Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis ParsedMaterial is using A\n[./mobility]\ntype = ParsedMaterial\ncoupled_variables = 'w'\nf_name = tau\nmaterial_property_names = 'tau0 Le MCi k A'\nexpression = 'tau0A^2*(1/Le+MCi*(1+(1-k)w))'\noutput=exodus\n[../]\n\nbut A is not defined. A below is the name of the Material not the material property. You need to find the actual name of the material property, either looking at the exodus output of the show_material_props\n[Materials]\n[./A]\ntype = InterfaceOrientationMaterial\nop = phi\n...",
+                  "url": "https://github.com/idaholab/moose/discussions/23400#discussioncomment-4943628",
+                  "updatedAt": "2023-02-11T14:40:11Z",
+                  "publishedAt": "2023-02-11T14:40:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Johnney12138"
+                          },
+                          "bodyText": "Hi @GiudGiud\nThank you for your reply.\nIn InterfaceOrientationMaterial, I didn't find an example of naming this block, such as material_property_names, etc.\nThe exodus output of the show_material_props is\n`The following total 8 aux variables:\nddepsdgrad_op_x\nddepsdgrad_op_y\nddepsdgrad_op_z\ndeps\ndepsdgrad_op_x\ndepsdgrad_op_y\ndepsdgrad_op_z\neps\nare added for automatic output by MaterialOutputAction.\nActive Materials:\nSubdomain:  (0)\nMaterial Name:       A\nProperty Names:      \"ddepsdgrad_op\" \"deps\" \"depsdgrad_op\" \"eps\"\nMaterial Name:       speexpress\nProperty Names:      \"Fr\"\nMaterial Name:       mobility\nProperty Names:      \"tau\"\nMaterial Name:       chemp\nProperty Names:      \"chi\"\nMaterial Name:       matdiff\nProperty Names:      \"Dchi\"\nMaterial Name:       antitrap\nProperty Names:      \"rhodiff\"\nMaterial Name:       int\nProperty Names:      \"ft\"\nMaterial Name:       const\nProperty Names:      \"D\" \"L\" \"Le\" \"MCi\" \"erp\" \"k\" \"lambda\" \"tau0\" \"wid\"\nActive Face Materials:\nSubdomain:  (0)\n  Material Name:       A_face\n  Property Names:      \"ddepsdgrad_op\" \"deps\" \"depsdgrad_op\" \"eps\" \n  Material Name:       speexpress_face\n  Property Names:      \"Fr\" \n  Material Name:       mobility_face\n  Property Names:      \"tau\" \n  Material Name:       chemp_face\n  Property Names:      \"chi\" \n  Material Name:       matdiff_face\n  Property Names:      \"Dchi\" \n  Material Name:       antitrap_face\n  Property Names:      \"rhodiff\" \n  Material Name:       int_face\n  Property Names:      \"ft\" \n  Material Name:       const_face\n  Property Names:      \"D\" \"L\" \"Le\" \"MCi\" \"erp\" \"k\" \"lambda\" \"tau0\" \"wid\" \n\nActive Neighboring Materials:\nSubdomain:  (0)\nMaterial Name:       A_neighbor\nProperty Names:      \"ddepsdgrad_op\" \"deps\" \"depsdgrad_op\" \"eps\"\nMaterial Name:       speexpress_neighbor\nProperty Names:      \"Fr\"\nMaterial Name:       mobility_neighbor\nProperty Names:      \"tau\"\nMaterial Name:       chemp_neighbor\nProperty Names:      \"chi\"\nMaterial Name:       matdiff_neighbor\nProperty Names:      \"Dchi\"\nMaterial Name:       antitrap_neighbor\nProperty Names:      \"rhodiff\"\nMaterial Name:       int_neighbor\nProperty Names:      \"ft\"\nMaterial Name:       const_neighbor\nProperty Names:      \"D\" \"L\" \"Le\" \"MCi\" \"erp\" \"k\" \"lambda\" \"tau0\" \"wid\"\nActive Boundary Materials: `",
+                          "url": "https://github.com/idaholab/moose/discussions/23400#discussioncomment-4943786",
+                          "updatedAt": "2023-02-11T15:09:57Z",
+                          "publishedAt": "2023-02-11T15:09:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so the A you are using defines these\nProperty Names: \"ddepsdgrad_op\" \"deps\" \"depsdgrad_op\" \"eps\"\nany of these is correct in the parsed expression you have?",
+                          "url": "https://github.com/idaholab/moose/discussions/23400#discussioncomment-4943881",
+                          "updatedAt": "2023-02-11T15:27:20Z",
+                          "publishedAt": "2023-02-11T15:27:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Johnney12138"
+                  },
+                  "bodyText": "Hi @GiudGiud\nThank you very much for your guidance and help. That is a stupid question. I looked at the InterfaceOrientationMaterial.C file and solved this problem.\nThanks again for your help.\nBest,\nNan Liu",
+                  "url": "https://github.com/idaholab/moose/discussions/23400#discussioncomment-4953833",
+                  "updatedAt": "2023-02-13T06:27:57Z",
+                  "publishedAt": "2023-02-13T06:27:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Residual of the weak form of the equation",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Hello everyone,\nI am trying to add a source term to the navier-stokes equation. In fact, I am going to add the below term:\nw*grad(c)\nHere both w and c are scalar variables, so grad(c) and w*grad(c) are both vectors. How can I compute two residuals for this equation? Is there any similar MOOSE kernel that computes the residuals for similar terms?\nThanks,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/23401",
+          "updatedAt": "2023-06-24T19:42:23Z",
+          "publishedAt": "2023-02-12T01:06:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo this is a source term in the momentum equation?\nWhich Navier Stokes discretization are you using? (finite element, but which prefix? INS? INSAD? INSFE?)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23401#discussioncomment-4947222",
+                  "updatedAt": "2023-02-12T04:54:31Z",
+                  "publishedAt": "2023-02-12T04:54:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "w and c are both coupled variables from CH equation.\nYes, this is a source term for the momentum equation and I am using INS in 2D.\nRegards,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23401#discussioncomment-4951693",
+                          "updatedAt": "2023-02-12T22:56:49Z",
+                          "publishedAt": "2023-02-12T22:56:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok great. You should be able to modify the coupledForce kernel to get what you want.\nYou ll need to add a kernel for each component of the momentum equations, so two kernels",
+                          "url": "https://github.com/idaholab/moose/discussions/23401#discussioncomment-4951870",
+                          "updatedAt": "2023-02-12T23:56:30Z",
+                          "publishedAt": "2023-02-12T23:56:29Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

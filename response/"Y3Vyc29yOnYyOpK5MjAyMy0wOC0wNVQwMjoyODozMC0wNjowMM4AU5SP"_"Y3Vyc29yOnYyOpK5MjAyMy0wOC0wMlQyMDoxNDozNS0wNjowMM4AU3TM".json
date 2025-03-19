@@ -1,0 +1,972 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wOC0wMlQyMDoxNDozNS0wNjowMM4AU3TM"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Element indexing issue in MaterialBase system",
+          "author": {
+            "login": "feltner515"
+          },
+          "bodyText": "Hi Moose users\nI have been working on implementing block-restricted advanced exodus restart.\n#24760\nAs part of this, I have been editing initQpStatefulProperties for several material models to allow me to specify an initial state for all quadrature points from an old simulation. To do this, I am using SolutionUserObjects and SolutionFunctions to create GenericFunctionMaterials to give me an initial solution at all Qp's. The edits to the code are very simple, for example:\n_hardening_var_init(this->template getGenericMaterialProperty<Real, is_ad>(\"hardening_var_init1\"))\nto get the generic material property to initialize a hardening variable, and :\n_hardening_variable[_qp] = 0;\n_hardening_variable[_qp] += _hardening_var_init[_qp];\n\nin initQpStatefulProperties to initialize the values.\nThis exercise has exposed an issue with the element indexing when 'initQpStatefulProperties' is called in the material base. There seems to be a one element difference between the \"current element\" that is being operated on, and the \"current element\" that the initial value is being read from. To show this I created a material from a parsed function where the value is equal to the x coordinate of the Qp. The GenericFunctionMaterial looks like this, as you'd expect:\n\nThe actual initial state of the variable looks like this:\n\nI may be wrong, but I do not think any of my additions are causing this. I planned on getting to the root cause of this, but I wanted to post this here so someone more qualified than me can see about getting a fix for this committed. The implications are only important if you are trying to use initQpStatefulProperties for something other than a constant field.\nThank you\nLangdon",
+          "url": "https://github.com/idaholab/moose/discussions/25059",
+          "updatedAt": "2023-08-04T22:04:28Z",
+          "publishedAt": "2023-07-31T01:18:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@loganharbour",
+                  "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6592701",
+                  "updatedAt": "2023-07-31T08:53:44Z",
+                  "publishedAt": "2023-07-31T08:53:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "To do this, I am using SolutionUserObjects and SolutionFunctions to create GenericFunctionMaterials to give me an initial solution at all Qp's. The edits to the code are very simple, for example:\n_hardening_var_init(this->template getGenericMaterialProperty<Real, is_ad>(\"hardening_var_init1\"))\n\nThis confuses me... that method is const. Are you const casting somewhere? Are you initializing a material property in a place in which the material wasn't declared?\nI follow everything else you're doing and might have a few other concerns... but need to know the above first.",
+                  "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6596603",
+                  "updatedAt": "2023-07-31T15:35:51Z",
+                  "publishedAt": "2023-07-31T15:35:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "Hi Logan, thank you for following up with me!\nI am casting this as a const in the header file,\nconst GenericMaterialProperty<Real, is_ad> & _hardening_var_init;\nI am not explicitly declaring the material property, rather just getting a material property named \"hardening_var_init1\". This is kind of a hacky solution and I do plan to clean this up later on once I get the method working.\nEverything seems to work fine up until the point where I am calling hardening_var_init1 into initQpStatefulProperties. It seems like it is putting each cooresponding solution on the element one index higher than it is supposed to be.",
+                          "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6599988",
+                          "updatedAt": "2023-07-31T23:10:59Z",
+                          "publishedAt": "2023-07-31T23:10:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "I think I have figured out the issue. I changed\n_hardening_variable[_qp] += _hardening_var_init[_qp];\nto\n_hardening_variable[_qp] += _current_elem -> id();\nyielding this:\n\nThe actual element id's go from 1 to 100, while initQpStatefulProperties is operating on elements 0 to 99, causing the one element offset. Is this mismatch to be expected, and does element numbering necessarily need to start at 0. The mesh in this model is created with a GeneratedMeshGenerator.",
+                          "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6600049",
+                          "updatedAt": "2023-07-31T23:30:12Z",
+                          "publishedAt": "2023-07-31T23:30:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "The actual element id's go from 1 to 100,\n\nThis isn't true. element IDs start with 0. Exodus output is 1 indexed, so they show up starting + 1 in exodus.",
+                          "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6642672",
+                          "updatedAt": "2023-08-04T21:53:43Z",
+                          "publishedAt": "2023-08-04T21:53:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "feltner515"
+                          },
+                          "bodyText": "In the meantime I figured this out. I'll put the solution here to bookend this thread in case anyone else runs into the same issue in the future.\nBasically my material I was bringing in was indexed in exodus id's, so it would show up correctly on its own in exodus outputs but was one index off in the kernel. To solve this, instead of creating a generic function material and calling the material into the kernel, call the function itself into the kernel.\n_functions00(FunctionInterface::getFunctionByName(_base_name + \"solution_fcn_hardening_var\")),\nThen you can evaluate the function at each Qp within the kernel and assign the value so there is never a chance for the indexing inconsistency to pop up.\n_hardening_variable[_qp]=_functions.value(0,_q_point[_qp]);\nI have block-restricted stateful property initialization from exodus working now using this basic pattern.\nThank you for your help Logan!",
+                          "url": "https://github.com/idaholab/moose/discussions/25059#discussioncomment-6642721",
+                          "updatedAt": "2023-08-04T22:04:08Z",
+                          "publishedAt": "2023-08-04T22:04:07Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Custom App build error: field .... will be initialized after field xxx [-Werror, -Wreorder-ctor",
+          "author": {
+            "login": "jsevarts"
+          },
+          "bodyText": "Hi moose community, I have a custom application I am attempting to compile and keep receiving the following errors and warnings. Eventually, I get fatal error: too many errors emitted.... Any help would be greatly appreciated.  I am running an Apple M2 Pro, Ventura 13.4.1.\n.../src/materials/PhysicalMaterial/PhysicalMaterial_Helium.C:159:3: error: field '_ad_T' will be initialized after field '_temp_coeff' [-Werror,-Wreorder-ctor]\n  _ad_T((_has_temp && is_ad) ? adCoupledValue(\"temp\") : _ad_zero),\n\nI am also getting the following warnings...\nld: warning: direct access in function 'RayTracingStudy::initialSetup()' from file .../projects/moose/modules/ray_tracing/build/unity_src/.libs/userobjects_Unity.aarch64-apple-darwin20.0.0.opt.o' to global weak symbol 'typeinfo for RayKernelTempl<double>' from file .../projects/moose/modules/ray_tracing/build/unity_src/.libs/raykernels_Unity.aarch64-apple-darwin20.0.0.opt.o' means the weak symbol cannot be overridden at runtime. This was likely caused by different translation units being compiled with different visibility settings.\nI have boiled this warning down to another issue...but I am now sure what this would affect downstream. #22804\nIn file included from .../build/unity_src/materials_PhysicalMaterial_Unity.C:5: .../src/materials/PhysicalMaterial/PhysicalMaterial_Nickel_He.C:381:10: warning: unused variable 'he_specific_heat_alt' [-Wunused-variable] double he_specific_heat_alt;\nI tested the app on a linux machine and it compiled fine.\nSo far, I have reinstalled mambaforge and rebuilt moose twice with the same result.\nMoose was installed successfully and all installation tests passed.\nThanks in advanced for any help!",
+          "url": "https://github.com/idaholab/moose/discussions/25065",
+          "updatedAt": "2023-08-04T15:48:34Z",
+          "publishedAt": "2023-07-31T19:30:39Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "You need to ensure that the initialization order in your constructor (.C file) does not go against the order of declarations in your class definition in the .h file. See https://stackoverflow.com/a/4467690/4493669",
+                  "url": "https://github.com/idaholab/moose/discussions/25065#discussioncomment-6598697",
+                  "updatedAt": "2023-07-31T19:41:59Z",
+                  "publishedAt": "2023-07-31T19:41:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I would not worry about the ld warnings. With respect to the unused variable warning, I think the warning message is pretty descriptive. he_specific_heat_alt is not used in your code. If you delete the double he_specific_heat_alt declaration, then that warning should go away.",
+                          "url": "https://github.com/idaholab/moose/discussions/25065#discussioncomment-6598716",
+                          "updatedAt": "2023-07-31T19:44:29Z",
+                          "publishedAt": "2023-07-31T19:44:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jsevarts"
+                          },
+                          "bodyText": "@lindsayad ,  thanks for the quick response.  Good to know that the two warnings shouldn't affect anything.\nRegarding the initialization order in the constructor file, essentially, everyone else who complies the app on either linux or a mac doesn't see these errors.  Since the app compiles for everyone else I am assuming something is wrong with my setup.  Any ideas?\nSimilar with the unused variable warning.  Others don't seem to be seeing this warning either.",
+                          "url": "https://github.com/idaholab/moose/discussions/25065#discussioncomment-6606808",
+                          "updatedAt": "2023-08-01T15:02:00Z",
+                          "publishedAt": "2023-08-01T15:01:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "It's possible to turn that error into a warning. Perhaps that is the default for other users, although that would be surprising to me. I believe my compiler defaults to treating it as an error. To help you further, you need to paste the constructor of your .C file and the contents of your .h file here",
+                          "url": "https://github.com/idaholab/moose/discussions/25065#discussioncomment-6608110",
+                          "updatedAt": "2023-08-01T16:56:39Z",
+                          "publishedAt": "2023-08-01T16:56:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jsevarts"
+                          },
+                          "bodyText": "I ended up going through each error and reordering the .C file to match the .h file, and turned off the warnings with the -Wall flag.  The app built and ran.  Thanks for the help!",
+                          "url": "https://github.com/idaholab/moose/discussions/25065#discussioncomment-6640116",
+                          "updatedAt": "2023-08-04T15:48:26Z",
+                          "publishedAt": "2023-08-04T15:48:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Compiling Application on HPC",
+          "author": {
+            "login": "jazorn"
+          },
+          "bodyText": "Looking for some help getting an application up and running using MOOSE.\nMy HPC Administrator has installed MOOSE following the HPC Cluster instructions (https://mooseframework.inl.gov/getting_started/installation/hpc_install_moose.html) and installed it as a module that can be loaded (like typical HPC Modules, i.e. module load moose).\nHowever, when I go to compile/install a new application (in particular, MACAW [https://github.com/marinasessim/macaw/tree/main ]), I get compilation errors because it tries to create directories in HPC locations that I can't create directories in. My initial thought was that I needed to catch the location of the moose directory that these makefiles access but that didn't seem to fix the problem.\nI am currently away from my work computer, but when I get back with access to my HPC I will post some examples of the errors I am receiving.\nAny help would be greatly appreciated.\nUPDATE:\nHere is an example of an error I am getting when running the Makefile of the MACAW Application.\nUPDATE 2:\nNoticed in some other discussions that images of errors are frowned upon. See the text version of the error below\nCreating Unity Directory /opt/Software/mooseproject/moose/modules/ray_tracing/build/unity_src mkdir: cannot create directory \u2018/opt/Software/mooseproject/moose/modules/ray_tracing/build\u2019: Permission denied make: *** [/opt/Software/mooseproject/moose/modules/ray_tracing/build/unity_src] Error 1\nAlso I saw in the main moose directory (located at /opt/Software/mooseproject/moose/ on my HPC system), there was a configure script. So I went back and tried running that. Both in the moose directory and in my application directory and still get errors.\nApologies if it seems like I am trying to spam this channel, trying to keep the discussion up-to-date with different things I have tried so in the future perhaps this helps others.\nCheers.",
+          "url": "https://github.com/idaholab/moose/discussions/25092",
+          "updatedAt": "2023-08-04T12:48:03Z",
+          "publishedAt": "2023-08-03T01:10:54Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "Those instructions are meant to be followed by you, and not the system admin.\nAs you are running into, you need to build your own copy of MOOSE, along side your application. The system administrator should only be required to provide you a means of compiling your code (the MPI stack). They should not be responsible for supplying you pre-built versions of MOOSE.\nTo do so would require that they also:\n\nAllow all users of MOOSE to have write permissions to the source directory (bad... very bad idea)\nUpdate MOOSE whenever:\n\nThere is an update to MOOSE and other users on your system need it (multiple times a day!)\nThere is a libMesh update (twice a month)\nThere is a PETSc update (twice a year-ish)\n\n\n\n...which would force all users of MOOSE on this system to also rebuild their applications.\nBasically, it is not feasible to provide a one-version-for-everyone MOOSE to multiple users on a system.\nWhat you need to figure out is how the system admin built MOOSE. You can achieve this by loading the moose environment, and then seeing what else gets loaded, and then loading everything except moose.\nExample:\nmodule purge    # clean up any modules already being loaded\nmodule load moose\nmodule list\n\n$ module list\n\nCurrently Loaded Modules:\n  1) use.moose                    5) patchelf/0.9-8.5.0\n  2) moose-apps                   6) git/2.25.0-gcc-9.2.0-v4mv\n  3) gcc/8.4.0-gcc-4.8.5-jacd     7) miniconda\n  4) mvapich2/2.3.7-1-gcc-8.4.0   8) moose/2023-07-31\nThis tells me that I need to actually load modules \"1-7\" in order to be in an environment where I can build MOOSE.",
+                  "url": "https://github.com/idaholab/moose/discussions/25092#discussioncomment-6638283",
+                  "updatedAt": "2023-08-04T12:48:04Z",
+                  "publishedAt": "2023-08-04T12:48:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Porous Flow] Rate of change of fluid component at each node",
+          "author": {
+            "login": "steam-simulator"
+          },
+          "bodyText": "Hello,\nWhen using the PorousFlow Action (e.g., PorousFlowFullySaturated), we can obtain the rate of change of each fluid component using save_component_rate_in. I\u2019m using a Kernel consisting of PorousFlowMassTimeDerivative and PorousFlowAdvectiveFlux. How do I obtain the rate of change of each component? I think my results (obtained from the variables in the postprocessor) only record the change in components, not their rates. Do I divide my results by the timestep? Please, help.",
+          "url": "https://github.com/idaholab/moose/discussions/25101",
+          "updatedAt": "2023-08-04T16:35:31Z",
+          "publishedAt": "2023-08-03T21:30:19Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "save_component_rate_in makes an AuxVariable(s) with the name(s) given, then uses the save_in parameter in the time Kernels to save the contribution to these AuxVariables.\nI think that the preferred way now is to use the newer tagging system (https://mooseframework.inl.gov/framework_development/tagging.html) to achieve this.",
+                  "url": "https://github.com/idaholab/moose/discussions/25101#discussioncomment-6637165",
+                  "updatedAt": "2023-08-04T10:53:25Z",
+                  "publishedAt": "2023-08-04T10:53:25Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A new term in Navier Stokes equation coupled with Cahn Hilliard equation",
+          "author": {
+            "login": "Wolke926"
+          },
+          "bodyText": "Dear MOOSE experts,\nI want to write a .C file for my own equation for a new term, this is the one I want to add to the Navier-Stokes equation, phi is the order parameter in Cahn Hilliard equation, and the variational derivative of energy function respect phi is chemical potential w.\n\nIn the NS equation, the variable we want to solve is the velocity, so the w(chemical potential) and phi(order parameter) are coupled variables of kernel \"SplitCHWRes\" and kernel \"SplitCHParsed\" respectively, so how to add these variables in params and link these kernels in the Constructor initialization list?\n\n\nThere is the draft code, I marked the uncertain part, can anyone give me some suggestions?\n#include \"SurfaceTension.h\"\nregisterMooseObject(\"NavierStokesApp\", SurfaceTension);\nInputParameters\nSurfaceTension::validParams()\n{\nInputParameters params = ADVectorKernelValue ::validParams();\nparams.addClassDescription(\"Add surface tension term in NS equation\");\nparams.addCoupledVar(\"u\", \"velocity\"); // but the u should be a vetor\nparams.addCoupledVar(\"w\", \"chemical potential\");   // ?\nparams.addCoupledVar(\"phi\", \"order parameter\");    // ?\nreturn params;\n}\nSurfaceTension::SurfaceTension(const InputParameters & parameters)\n: ADVectorKernelvalue(parameters),\nphi(),  //???? the variable in C-H equation\n_grad_w ()     // ?? w is the chemical potential, namely the variable in SplitChWREs\n{\n}\nADRealVectorValue\nSurfaceTension::precomputeQpResidual()\n{\nreturn  _phi [_qp] * _grad_w[_qp] * _test[_i][_qp];\n}",
+          "url": "https://github.com/idaholab/moose/discussions/24993",
+          "updatedAt": "2023-08-03T22:19:47Z",
+          "publishedAt": "2023-07-20T02:39:09Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt should be something like:\n_phi(adCoupledValue(\"phi\"),\n_grad_w(adCoupledGradient(\"w\")\nin the initializer s list\nand in the header:\nconst VariableValue & _phi;\nconst VariableGradient & _grad_w;\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6495066",
+                  "updatedAt": "2023-07-20T04:51:10Z",
+                  "publishedAt": "2023-07-20T04:51:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "Thanks for your suggestions.\nBut I can not find  \"adCoupledValue\" but \"CoupledValue\" like in the file SoretDiffusion.C.\nHere is the .C and .h file. Are there other headers I should include?",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6535493",
+                          "updatedAt": "2023-07-25T02:33:14Z",
+                          "publishedAt": "2023-07-25T02:33:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In the header it should be ADVectorKernelValue not KernelADKernelValue\nit s spelled coupledValue or coupledGradient no capitals at the beginning\nFor the AD version it s\nadCoupledValue and adCoupledGradient",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6536222",
+                          "updatedAt": "2023-07-25T05:09:42Z",
+                          "publishedAt": "2023-07-25T05:09:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "Where is the file ADVectorKernelValue?",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6543488",
+                          "updatedAt": "2023-07-25T18:15:52Z",
+                          "publishedAt": "2023-07-25T18:15:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We probably got the name not quite right. Search the kernels folder for it",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6543640",
+                          "updatedAt": "2023-07-25T18:34:51Z",
+                          "publishedAt": "2023-07-25T18:34:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok I had some time to check and:\n\nADVectorKernelValue does NOT exist. ADKernelValue is a simplified kernel base class that multiplies the \"pre\"residual generated by precomputeQpResidual by the test function. And we do NOT have the vector version of this in the framework. so for now use: ADVectorKernel. It's actually defined in ADKernel.h if you want to take a look.\n\nTo use that base class, you will need to implement computeQpResidual in your derived class instead of precomputeQpResidual",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6585132",
+                          "updatedAt": "2023-07-30T00:02:40Z",
+                          "publishedAt": "2023-07-30T00:02:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "Thanks! @GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6596111",
+                          "updatedAt": "2023-07-31T14:52:41Z",
+                          "publishedAt": "2023-07-31T14:52:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Wolke926"
+                  },
+                  "bodyText": "Sorry, I still got some problems when I compile them, what's the issue in my code?",
+                  "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6608797",
+                  "updatedAt": "2023-08-01T18:12:37Z",
+                  "publishedAt": "2023-08-01T18:12:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ComputeQpResidual should return ADReal not ADRealVectorValue",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6609307",
+                          "updatedAt": "2023-08-01T19:26:31Z",
+                          "publishedAt": "2023-08-01T19:26:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Also you need the correct return type (ADReal) for the declaration of that routine in the header. You have it wrong there with the class name instead of a return type",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6609312",
+                          "updatedAt": "2023-08-01T19:36:19Z",
+                          "publishedAt": "2023-08-01T19:27:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "I modified the code but there are still some errors. Do you think the return type is a vector? Why it shows the \"redefinition of  ADKernelTempl \"?",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6622539",
+                          "updatedAt": "2023-08-03T01:47:23Z",
+                          "publishedAt": "2023-08-03T01:47:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Th\u00e9 d\u00e9claration of the constructor in the source file is wrong. Please look at other kernels for examples",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6622596",
+                          "updatedAt": "2023-08-03T01:58:16Z",
+                          "publishedAt": "2023-08-03T01:58:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "and what does this error mean?\n\" no viable conversion from 'const MooseArray' to 'const MooseArraylibMesh::Real'\n_phi(adCoupledValue (\"phi\")),  \"",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6630764",
+                          "updatedAt": "2023-08-03T18:18:18Z",
+                          "publishedAt": "2023-08-03T18:18:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "SurfaceTension::SurfaceTension(parameters),\nADReal(parameters)\n...\nthis is wrong.\nPlease dont post screenshots of code, next time simply copy-paste",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6631409",
+                          "updatedAt": "2023-08-03T19:57:24Z",
+                          "publishedAt": "2023-08-03T19:57:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Wolke926"
+                          },
+                          "bodyText": "Sorry GiudGiud, I didn't realize the screenshot is less convenient.\nI compared the file of \"ADThermoDiffusion\" with mine and I modified the \"const VariableValue\" to \"const ADVariableValue\" in the header file, the error seems to be reduced.\n\n\n#pragma once\n#include \"ADKernel.h\"\nclass SurfaceTension : public ADKernel\n{\npublic:\nstatic InputParameters validParams();\nSurfaceTension(const InputParameters & parameters);\nprotected:\nvirtual ADReal computeQpResidual() override;\nconst ADVariableValue & _phi;\nconst ADVariableGradient & _grad_w;\n};\n\n#include \"SurfaceTension.h\"\nregisterMooseObject(\"cxyApp\", SurfaceTension);\nInputParameters\nSurfaceTension::validParams()\n{\nInputParameters params = ADKernel::validParams();\nparams.addClassDescription(\"Add surface tension term in NS equation\");\nparams.addCoupledVar(\"u\", \"velocity\");\nparams.addCoupledVar(\"w\", \"the coupled chemical potential\");\nparams.addCoupledVar(\"phi\", \"the coupled order parameter\");\nreturn params;\n}\nSurfaceTension::SurfaceTension(const InputParameters & parameters)\n: ADKernel(parameters),\n_phi(adCoupledValue (\"phi\")),\n_grad_w(adCoupledGradient (\"w\"))\n{\n}\nADReal\nSurfaceTension::computeQpResidual()\n{\nreturn  _phi[_qp] * _grad_w[_qp] * _test[_i][_qp];\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6632162",
+                          "updatedAt": "2023-08-03T21:57:29Z",
+                          "publishedAt": "2023-08-03T21:57:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You re missing an index. You have to index into the component of grad_w maybe?\nThe quantity returned is a vector, and you need to be returning a single ADReal for the residual",
+                          "url": "https://github.com/idaholab/moose/discussions/24993#discussioncomment-6632279",
+                          "updatedAt": "2023-08-03T22:19:47Z",
+                          "publishedAt": "2023-08-03T22:19:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Integral of flux over the surface is constant as BC",
+          "author": {
+            "login": "avtarsinghh1991"
+          },
+          "bodyText": "Hello MOOSE experts,\nI am trying to apply the NeumannBC over the surface of polycrystalline particle for diffusion problem. For the isotropic diffusion, everything is working fine as each node on the surface of the particle is feeling same flux and also the integral of J.n over the particle surface is constant.\nHowever, for the anisotropic case, still using the NeumannBC is giving me the negative concentration over some region. It is because,\nthe individual node on the surface of the particle should feel different flux yet the integral of J.n over the surface should be constant. Any suggestions to implement such boundary condition?\nBest,\nAvtar",
+          "url": "https://github.com/idaholab/moose/discussions/24757",
+          "updatedAt": "2023-08-03T21:14:22Z",
+          "publishedAt": "2023-06-21T05:06:35Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Your understanding of the issue is correct. You'll want to use a Constraint instead of a BC. I dont think a constraint like that has already been implemented. You could follow some of the other constraints and implement one on your own.",
+                  "url": "https://github.com/idaholab/moose/discussions/24757#discussioncomment-6266244",
+                  "updatedAt": "2023-06-23T21:34:54Z",
+                  "publishedAt": "2023-06-23T21:34:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Thanks @hugary1995. I will try to write a subroutine and will get back to you for making sure it is right as I am fairly new to C++. If you have any suggestion on which constraint subroutine I should use as reference, kindly let me know.\nBest,\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/24757#discussioncomment-6283052",
+                          "updatedAt": "2023-06-26T14:42:41Z",
+                          "publishedAt": "2023-06-26T14:41:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hello @hugary1995 and @GiudGiud\nFor the above problem, can I use  AverageValueConstraint for which the postprocessor input can be from SideDiffusiveFluxIntegral?\nLinks to Average Value Constraint and Side Diffusive Flux Integral:\nhttps://mooseframework.inl.gov/source/scalarkernels/AverageValueConstraint.html\nhttps://mooseframework.inl.gov/source/postprocessors/SideDiffusiveFluxIntegral.html\nThanks,\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/24757#discussioncomment-6630274",
+                          "updatedAt": "2023-08-03T17:39:47Z",
+                          "publishedAt": "2023-08-03T17:22:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can try.\nImposing constraints usually makes the solve more difficult numerically so that s one drawback",
+                          "url": "https://github.com/idaholab/moose/discussions/24757#discussioncomment-6631430",
+                          "updatedAt": "2023-08-03T20:00:17Z",
+                          "publishedAt": "2023-08-03T20:00:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Thanks @GiudGiud.\nIs there any other way to tackle the problem?\nI am trying to write a subroutine for it as follows:\n#include \"IntegratedDiffusionBC.h\"\n \n registerMooseObject(\"MooseApp\",IntegratedDiffusionBC);\n \n InputParameters\n IntegratedDiffusionBC::validParams()\n {\n   InputParameters params = IntegratedBC::validParams();\n   params.addClassDescription(\"This class implements a form of the Neumann boundary condition in \"\n                              \"which the boundary term is treated 'implicitly'.\");\n   params.addRequiredParam<Real>(\n          \"value\", \"Given (constant) which we want the integral of the solution variable to match.\");\n   return params;\n }\n \n    \n IntegratedDiffusionBC::IntegratedDiffusionBC(const InputParameters & parameters) : IntegratedBC(parameters),\n\t    _Diff_Matrix(getMaterialProperty<RankTwoTensor>(\"Diff_Matrix\")),\n\t    _value(getParam<Real>(\"value\"))\n {\n }\n \n Real\n IntegratedDiffusionBC::computeQpResidual()\n {\n   return _Diff_Matrix[_qp]*_grad_u[_qp] * _normals[_qp] * _test[_i][_qp] - _value;\n }\n \n Real\n IntegratedDiffusionBC::computeQpJacobian()\n {\n   return _Diff_Matrix[_qp]*(_grad_phi[_j][_qp] * _normals[_qp]) * _test[_i][_qp];\n }\n \n Real\n IntegratedDiffusionBC::computeQpOffDiagJacobian(unsigned /*jvar*/)\n {\n   // off-diagonal derivatives are all zero.\n   return 0.;\n }\n\nAny suggestions?\nThanks,\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/24757#discussioncomment-6631909",
+                          "updatedAt": "2023-08-03T21:14:23Z",
+                          "publishedAt": "2023-08-03T21:14:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error when initializing",
+          "author": {
+            "login": "krb-nantes"
+          },
+          "bodyText": "Hi everyone, I am having an issue when running an RIA case. I first ran the standard steady state case and use the final check point as restart for the RIA file. On Tuesday I ran the RIA file and it worked fine, but it hit the walltime and did not finished, then when I tried to ran again with a longer walltime I started having the following error message when initializing:\nFinished Setting Up                                                                      [  2.63 s] [  300 MB]\nlibMesh terminating:\nmap_find() error: key \"residual_temperature\" not found in file ../src/systems/system.C on line 1448\n[0] ./include/libmesh/utility.h, line 155, compiled Jun 22 2023 at 09:32:30\n\nI already checked both files and there is no difference on their modules. I also updated and recompiled my petsc and libmesh.\nJust for information, I am using the BISON code, and already checked with their team, but no solution so far.\nAnyone has any suggestions of what may cause this issue?",
+          "url": "https://github.com/idaholab/moose/discussions/25098",
+          "updatedAt": "2023-08-03T19:58:18Z",
+          "publishedAt": "2023-08-03T17:09:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "What does RIA mean?",
+                  "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630466",
+                  "updatedAt": "2023-08-03T17:42:36Z",
+                  "publishedAt": "2023-08-03T17:42:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "krb-nantes"
+                          },
+                          "bodyText": "Hi @lindsayad , sorry about that, RIA stands for Reactivity-Initiated Accident. My simulation is of a full length rod, first I do an irradiation and then apply a power pulse that represents the RIA.",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630500",
+                          "updatedAt": "2023-08-03T17:47:03Z",
+                          "publishedAt": "2023-08-03T17:47:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Are you restarting your simulation?",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630520",
+                          "updatedAt": "2023-08-03T17:48:47Z",
+                          "publishedAt": "2023-08-03T17:48:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "krb-nantes"
+                          },
+                          "bodyText": "Yes, I am using on the second simulation a restart from the final time step of the first simulation.",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630540",
+                          "updatedAt": "2023-08-03T17:50:43Z",
+                          "publishedAt": "2023-08-03T17:50:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "are your variables the same between the previous and new simulation? They will need to be",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630553",
+                          "updatedAt": "2023-08-03T17:52:27Z",
+                          "publishedAt": "2023-08-03T17:52:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "krb-nantes"
+                          },
+                          "bodyText": "Yes, variables and models are all the same, the only changes are on [Problem] block, that I added \u201crestart_file_base\u201d and at the [Executioner], I changed the end_time",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630581",
+                          "updatedAt": "2023-08-03T17:54:47Z",
+                          "publishedAt": "2023-08-03T17:54:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Did you have a debug option to show the residual in one simulation and not the other?\nIt looks like this was added in the second one.",
+                  "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630642",
+                  "updatedAt": "2023-08-03T18:03:21Z",
+                  "publishedAt": "2023-08-03T18:03:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "krb-nantes"
+                          },
+                          "bodyText": "@GiudGiud , I changed the Debug options and it worked. It still doesn't make sense to me, as it was working before without the debug options, but I guess it will be sufficient. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6630987",
+                          "updatedAt": "2023-08-03T18:48:35Z",
+                          "publishedAt": "2023-08-03T18:48:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The debug option creates an auxiliary variable. This variable is not present in the initial simulation",
+                          "url": "https://github.com/idaholab/moose/discussions/25098#discussioncomment-6631417",
+                          "updatedAt": "2023-08-03T19:58:18Z",
+                          "publishedAt": "2023-08-03T19:58:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Need help in 2-D homogeneous flow simulation through Navier-Stokes Modules",
+          "author": {
+            "login": "dd19990611"
+          },
+          "bodyText": "I want to simulate coolant flow in a 2-D rectangular channel with a homogeneous flow model. But the calculations did not converge when I add a heat flux BCs and the water phase changes. So I'd like to ask the following questions.\n\n\nIs there any case for two-phase flow calculation for reference?\n\n\nIs there anything wrong with my input card?\n\n\nHow to improve convergence?\n\n\nCan Water97FluidProperties be used in N-S modules?",
+          "url": "https://github.com/idaholab/moose/discussions/25097",
+          "updatedAt": "2023-08-03T16:37:53Z",
+          "publishedAt": "2023-08-03T16:16:13Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dd19990611"
+                  },
+                  "bodyText": "mu = 'mu'\nrho = 'rho'\nk = 'k'\ncp = 'cp'\ninfinite_porosity= 'infinite_porosity'\nvelocity_interp_method = 'rc'\nadvected_interp_method = 'average'\n#bcflux = 0.1e5\n[GlobalParams]\nrhie_chow_user_object = 'rc'\nheat_flux = 5.75e5\n[]\n[Functions]\n[bc_flux]\ntype = ParsedFunction\nvalue = 0.1e5*t\n[]\n[]\n[UserObjects]\n[rc]\ntype = INSFVRhieChowInterpolator\nu = vel_x\nv = vel_y\npressure = pressure\n[]\n[frac_layer]\ntype = LayeredAverage\nvariable = frac\ndirection = y\nnum_layers = 10\n[]\n[]\n[VectorPostprocessors]\n[frac]\ntype = SpatialUserObjectVectorPostprocessor\nuserobject = frac_layer\npoints = '0.0015    0 0\n0.0015 0.01 0\n0.0015 0.02 0\n0.0015 0.03 0\n0.0015 0.04 0\n0.0015 0.05 0\n0.0015 0.06 0\n0.0015 0.07 0\n0.0015 0.08 0\n0.0015 0.09 0\n0.0015 0.10 0'\n[]\n[]\n[Mesh]\n[gen]\ntype = GeneratedMeshGenerator\ndim = 2\nxmin = 0\nxmax = 0.003\nymin = 0\nymax = 0.1\nnx = 30\nny = 500\n[]\n[]\n[Variables]\n[vel_x]\ntype = INSFVVelocityVariable\ninitial_condition = 0\nscaling = 1.0e-3\n[]\n[vel_y]\ntype = INSFVVelocityVariable\ninitial_condition = 0.24\nscaling = 1.0e-3\n[]\n[pressure]\ntype = INSFVPressureVariable\ninitial_condition = 0.1e6\nscaling = 1.0e-5\n[]\n[T_fluid]\ntype = INSFVEnergyVariable\ninitial_condition = 360\nscaling = 1.0e-8\n[]\n[]\n[AuxVariables]\n[U]\norder = CONSTANT\nfamily = MONOMIAL\nfv = true\n[]\n[frac]\norder = CONSTANT\nfamily = MONOMIAL\nfv = true\n[]\n[]\n[AuxKernels]\n[mag]\ntype = VectorMagnitudeAux\nvariable = U\nx = vel_x\ny = vel_y\n[]\n[frac]\ntype = FracAuxkernel\nvariable = frac\ninfinite_porosity = ${infinite_porosity}\n[]\n[]\n[FVKernels]\n[mass]\ntype = INSFVMassAdvection\nvariable = pressure\nadvected_interp_method = ${advected_interp_method}\nvelocity_interp_method = ${velocity_interp_method}\nrho = ${rho}\n[]\n[u_advection]\ntype = INSFVMomentumAdvection\nvariable = vel_x\nvelocity_interp_method = ${velocity_interp_method}\nadvected_interp_method = ${advected_interp_method}\nrho = ${rho}\nmomentum_component = 'x'\n[]\n[u_viscosity]\ntype = INSFVMomentumDiffusion\nvariable = vel_x\nmu = ${mu}\nmomentum_component = 'x'\n[]\n[u_pressure]\ntype = INSFVMomentumPressure\nvariable = vel_x\nmomentum_component = 'x'\npressure = pressure\n[]\n[u_gravity]\ntype = INSFVMomentumGravity\nvariable = vel_x\nmomentum_component = 'x'\ngravity = '0 -1 0'\nrho = ${rho}\n[]\n[u_friction_linear]\ntype = INSFVMomentumFriction\nvariable = vel_x\nlinear_coef_name = friction_coefficient\nmomentum_component = 'x'\n[]\n[u_friction_quad]\ntype = INSFVMomentumFriction\nvariable = vel_x\nquadratic_coef_name = friction_coefficientq\nmomentum_component = 'x'\n[]\n[v_advection]\ntype = INSFVMomentumAdvection\nvariable = vel_y\nvelocity_interp_method = ${velocity_interp_method}\nadvected_interp_method = ${advected_interp_method}\nrho = ${rho}\nmomentum_component = 'y'\n[]\n[v_viscosity]\ntype = INSFVMomentumDiffusion\nvariable = vel_y\nmu = ${mu}\nmomentum_component = 'y'\n[]\n[v_pressure]\ntype = INSFVMomentumPressure\nvariable = vel_y\nmomentum_component = 'y'\npressure = pressure\n[]\n[v_gravity]\ntype = INSFVMomentumGravity\nvariable = vel_y\nmomentum_component = 'y'\ngravity = '0 -1 0'\nrho = ${rho}\n[]\n[v_friction_linear]\ntype = INSFVMomentumFriction\nvariable = vel_y\nlinear_coef_name = friction_coefficient\nmomentum_component = 'y'\n[]\n[v_friction_quad]\ntype = INSFVMomentumFriction\nvariable = vel_y\nquadratic_coef_name = friction_coefficientq\nmomentum_component = 'y'\n[]\n[temp_conduction]\ntype = FVDiffusion\ncoeff = 'k'\nvariable = T_fluid\n[]\n[temp_advection]\ntype = INSFVEnergyAdvection\nvariable = T_fluid\nvelocity_interp_method = ${velocity_interp_method}\nadvected_interp_method = ${advected_interp_method}\n[]\n[]\n[FVBCs]\n[no_slip_x]\ntype = INSFVNoSlipWallBC\nvariable = vel_x\nboundary = 'left right'\nfunction = '0'\n[]\n[inlet_x]\ntype = INSFVInletVelocityBC\nvariable = vel_x\nboundary = 'bottom'\nfunction = 0\n[]\n[no_slip_y]\ntype = INSFVNoSlipWallBC\nvariable = vel_y\nboundary = 'left right'\nfunction = 0\n[]\n[inlet_y]\ntype = INSFVInletVelocityBC\nvariable = vel_y\nboundary = 'bottom'\nfunction = 0.24\n[]\n[inlet_T]\ntype = WCNSFVInletTemperatureBC\nvariable = T_fluid\nboundary = 'bottom'\ntemperature_pp =  360\n[]\n[heat_wall]\ntype = FVFunctionNeumannBC\nvariable = T_fluid\nboundary = 'left right'\nfunction = bc_flux\n[]\n[outlet_P]\ntype = INSFVOutletPressureBC\nvariable = pressure\nboundary = 'top'\nfunction = 0.1e6\n[]\n[]\n[FluidProperties]\n[water]\ntype = Water97FluidProperties\n[]\n[]\n[Materials]\n#inactive = 'mu cp0 k0'\n[speed_material]\ntype = PINSFVSpeedFunctorMaterial\nsuperficial_vel_x = vel_x\nsuperficial_vel_y = vel_y\nporosity = 1\n[]\n[Re_material]\ntype = ReynoldsNumberFunctorMaterial\nspeed = speed\ncharacteristic_length = 0.00545\nrho = ${rho}\nmu = ${mu}\n[]\n[friction_coefficient]\ntype = ExponentialFrictionMaterial\nfriction_factor_name = 'friction_coefficient'\nRe = Re\nc1 = 0.32\nc2 = -0.25\n[]\n[friction_coefficientq]\ntype = ExponentialFrictionMaterial\nfriction_factor_name = 'friction_coefficientq'\nRe = Re\nc1 = 0.64\nc2 = -1.0\n[]\n[ins_fv]\ntype = INSFVEnthalpyMaterial\ntemperature = 'T_fluid'\nrho = ${rho}\n[]\n[infinite_porosity]\ntype = FracFunctorMaterial\npressure = pressure\ntemperature = T_fluid\nfp = water\ntemp = 360\npress = 0.1e6\nvel_x = vel_x\nvel_y = vel_y\nchang = 0.03\nduan = 0.003\n#heat_flux = 5.75e5\n[]\n[rho]\ntype = RhoPTBFunctorMaterial\nfp = water\ntemperature = T_fluid\npressure = pressure\ninfinite_porosity = 0.05 #${infinite_porosity}\n[]\n[mu]\ntype = MufromPTFunctorMaterial\nfp = water\ntemperature = T_fluid\npressure = pressure\ninfinite_porosity = 0.05 #${infinite_porosity}\n[]\n[k0]\ntype = KfromPTFunctorMaterial\nfp = water\ntemperature = T_fluid\npressure = pressure\ninfinite_porosity = 0.05 #${infinite_porosity}\n[]\n[cp0]\ntype = cpfromPTFunctorMaterial\nfp = water\ntemperature = T_fluid\npressure = pressure\ninfinite_porosity = 0.05 #${infinite_porosity}\n[]\n[functor_constants]\ntype = ADGenericFunctorMaterial\nprop_names = 'k0 cp0'\nprop_values = '${k} ${cp}'\n[]\n[]\n[Executioner]\ntype = Transient\nend_time = 10\ndt = 1\nl_max_its = 100\nnl_max_its = 20\nsolve_type = PJFNK\npetsc_options = '-snes_ksp_ew'\npetsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\npetsc_options_value = ' lu       superlu_dist'\nnl_abs_tol = 1e-8\nnl_rel_tol = 1e-10\nline_search = none\nl_tol = 8.0e-3\n[]\n[Outputs]\nexodus = true\ncsv = true\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/25097#discussioncomment-6629742",
+                  "updatedAt": "2023-08-03T16:20:59Z",
+                  "publishedAt": "2023-08-03T16:20:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "We don't have multi-phase modeling in the modules. See #22637 for discussion of the issue",
+                          "url": "https://github.com/idaholab/moose/discussions/25097#discussioncomment-6629891",
+                          "updatedAt": "2023-08-03T16:37:54Z",
+                          "publishedAt": "2023-08-03T16:37:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How do I build my own matrix",
+          "author": {
+            "login": "aaaaaaqing"
+          },
+          "bodyText": "I know that moose framework is very excellent, especially its encapsulation is very excellent, but this also bothers me to use it, because for some reasons, I need to build the matrix by myself, but I do not understand the principle of moose matrix construction and the underlying code, so how should I read and understand it",
+          "url": "https://github.com/idaholab/moose/discussions/25045",
+          "updatedAt": "2023-08-03T12:22:08Z",
+          "publishedAt": "2023-07-27T06:48:32Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@tanoret can comment on this.\n@grmnptr as well",
+                  "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6563563",
+                  "updatedAt": "2023-07-27T09:59:32Z",
+                  "publishedAt": "2023-07-27T09:59:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "thank u\nSo how should I contact them?",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6567680",
+                          "updatedAt": "2023-07-27T16:50:17Z",
+                          "publishedAt": "2023-07-27T16:50:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "they can respond here",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6569248",
+                          "updatedAt": "2023-07-27T20:06:25Z",
+                          "publishedAt": "2023-07-27T20:06:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "What matrix do you want to build? If you want to build the matrix from just some components of your residual/Jacobian objects, e.g. mass/stiffness matrices, then you can achieve this using the tagging system",
+                  "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6567491",
+                  "updatedAt": "2023-07-27T16:28:52Z",
+                  "publishedAt": "2023-07-27T16:28:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "First of all, thank you for your reply. I want to build the Jacobi matrix and residuals I want by myself, the size of this Jacobi matrix is 3N\u27153N (n is the number of nodes), the size of the residuals is 3N, how can I build my own matrix in Moose? I noticed the underlying code in the moose kernel (kernel. C) is implemented in the construction of the matrix, can this be achieved by modifying the underlying code of the moose kernel? Or there are other suggestions.",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6567668",
+                          "updatedAt": "2023-07-27T16:48:49Z",
+                          "publishedAt": "2023-07-27T16:48:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "If you really want to do your own thing, you can write a custom executioner like @grmnptr is doing here",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6569260",
+                          "updatedAt": "2023-07-27T20:08:05Z",
+                          "publishedAt": "2023-07-27T20:08:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "grmnptr"
+                          },
+                          "bodyText": "Thanks @lindsayad ! Yes, if you really need to manipulate the matrices manually, you can access them through the libmesh systems and set values using something like what I do in the linked PR.\nvoid\nSIMPLE::relaxMatrix(SparseMatrix<Number> & matrix,\n                    const Real relaxation_parameter,\n                    NumericVector<Number> & diff_diagonal)\n{\nfor (auto row_i = matrix.row_start(); row_i < matrix.row_stop(); row_i++)\n   matrix.set(row_i, row_i, diff_diagonal(row_i));\nmatrix.close();\n}\n\nNonlinearImplicitSystem & momentum_system =\n      dynamic_cast<NonlinearImplicitSystem &>(_momentum_systems[0]->system());\nSparseMatrix<Number> & mmat = *(momentum_system.matrix);\nNumericVector<Number> & rhs = *(momentum_system.rhs);",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6569293",
+                          "updatedAt": "2023-07-27T20:15:32Z",
+                          "publishedAt": "2023-07-27T20:15:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "Just to make sure one thing: Deriving your own kernels allows you to have your own residual and jacobian for your equation system. This might be what you want.",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6570940",
+                          "updatedAt": "2023-07-28T01:19:53Z",
+                          "publishedAt": "2023-07-28T01:19:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "Thanks for the reply from the experts, but I don't fully understand the code you mentioned.First, I need to know the steps the kernel takes to build residuals and Jacobian matrices, especially when there are coupling terms. Second, when there are multiple custom kernels, how does moose integrate them. Finally, if I want to know if I have a Jacobian matrix and a residual vector, then how can I solve this matrix using moose (because moose is excellent for parallel computing and adaptive grid systems)",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6585804",
+                          "updatedAt": "2023-07-30T05:51:48Z",
+                          "publishedAt": "2023-07-30T05:51:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "If it is convenient to tell me that the code files are constructing matrices (processing multiple custom kernels, processing multiple coupled variables, and assembling multiple matrices into the final matrix), then I can understand the principle by reading the code",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6585808",
+                          "updatedAt": "2023-07-30T05:55:43Z",
+                          "publishedAt": "2023-07-30T05:55:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "look at Kernel.C.\nkernels build diagonal terms by implementing the computeQpJacobian and off-diagonals by computeQpOffDiagJacobian\nkernels are called in an elemental loop, see include/loops/ThreadedElementLoop.h\nin kernel.C/.h, we process these terms and use Assembly routines to propagate these contributions.\nin Assembly.C/.h, you can look at how the matrix is assembled\nthis is documented here:\nhttps://mooseframework.inl.gov/source/base/Assembly.html\nhttps://mooseframework.inl.gov/syntax/Kernels/index.html\nI think you should consider taking Yaqi s advice and try to implement your problem the MOOSE way with regular kernels and boundary conditions (e.g. not Peter's way, that's a very advanced way).",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6586503",
+                          "updatedAt": "2023-07-30T09:26:52Z",
+                          "publishedAt": "2023-07-30T09:26:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "Yes, you are right, the method of using moose is much simpler and suitable for me. But for my problem, I don't know whether moose's method can solve it.\nThe first thing I want to know is whether moose uses full Newtonian coupling to calculate?\nSecondly, there is a residual term in the algorithm I use: _grad_test(i)*W(ij)*F(i)+_grad_test(i)*W(ij)*F(j), where _grad_test(i) is the gradient of the scalar interpolation function (gradient of the test function) of the point i, and W(ij) is the vector interpolation function of the edge ij, F(i) and F(j) is an expression about the values that need to be solved at points i and j. I don't know how to implement this in moose, so I always wanted to bypass moose and directly build a matrix and then put it into moose for solving. If it can be implemented in moose, then I think moose will be awesome",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6592012",
+                          "updatedAt": "2023-07-31T07:40:40Z",
+                          "publishedAt": "2023-07-31T07:40:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We can compute full Jacobians in MOOSE. It s the default for Newton's method iirc.\nSo i and j are quadrature points here?\nIs F analytical? If you had the variable values, can you just compute F directly?\nMOOSE handles quadrature points one by one. So this doesnt look like a classic MOOSE kernel because of the mixed indexing. However with a tad more work you can either:\n\noverride computeResidual instead of computeQpResidual, and have such expressions\nwrite custom computeQpResidual that indexes the other quantities at other quadrature points than the _qp index. They are pre-computed by elements so they are all available",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6592684",
+                          "updatedAt": "2023-07-31T08:57:18Z",
+                          "publishedAt": "2023-07-31T08:51:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "Are there any examples of this, even if you just use vector interpolation functions to discretize variables",
+                          "url": "https://github.com/idaholab/moose/discussions/25045#discussioncomment-6594624",
+                          "updatedAt": "2023-07-31T12:24:47Z",
+                          "publishedAt": "2023-07-31T12:24:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Transient problem custom stop condition",
+          "author": {
+            "login": "ermore"
+          },
+          "bodyText": "Let me describe my problem first, my calculation is a transient problem, and the calculation time is generally 0 to t1. I will use postprocessors to monitor some variables during the calculation process, such as var. I want the calculation to stop when var reaches a certain value. What should I do?",
+          "url": "https://github.com/idaholab/moose/discussions/25094",
+          "updatedAt": "2023-08-03T02:14:35Z",
+          "publishedAt": "2023-08-03T02:01:50Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nUse the Terminator user object to have a termination criterion based on postprocessors\nhttps://mooseframework.inl.gov/source/userobjects/Terminator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25094#discussioncomment-6622705",
+                  "updatedAt": "2023-08-03T02:14:35Z",
+                  "publishedAt": "2023-08-03T02:14:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

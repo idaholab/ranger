@@ -1,0 +1,866 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0xMS0wOFQyMDowMToyMC0wNzowMM4AOA9Y"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Assigning permeability by block then pass it to the element-based compute permeability object [Materials][PorousFlow]",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi guys,\nSo I can assign permeability or any material property base on the elementID #18542\nBut now, some of my projects are given permeability base on the block_ID, I'm wondering if it is possible, if yes, how to assign permeability based on the block_ID then pass it to my own element-based compute permeability object?\nI'm thinking of something as follows\n\nassign perm base on block ID using PorousFlowPermeabilityConst\n\n  [permeability_A]\n    type = PorousFlowPermeabilityConst\n    block = A\n    permeability = '1E-14 0 0   0 1E-14 0   0 0 1E-14'\n  []\n\n  [permeability_B]\n    type = PorousFlowPermeabilityConst\n    block = B\n    permeability = '5E-14 0 0   0 5E-14 0   0 0 5E-14'\n  []\n\n\nstore it to AuxVariable/Auxkernel and keep it constant throughout the simulation (not changing with time)\n\n\nStill not sure how to do this??\nmaybe use PorousFlowPropertyAux then execute_on: initial? or only at t=1?\n\n\nThen pass that AuxVariable to my own element-based compute permeability object\n\nPlease let me know what do you think?\nThank you\nKind regards,\nTraiwit",
+          "url": "https://github.com/idaholab/moose/discussions/19340",
+          "updatedAt": "2022-11-09T16:38:54Z",
+          "publishedAt": "2021-11-09T23:38:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\n\nThat same object I added can do block_id as well (and node id, and nearest-neighbor)\nIt just needs to be extended to write a tensor??\nWhat you wrote seems to work though.\n\n\nIf it s a material property there's a MaterialPropertyAux to move it to an AuxVariable\nThere are declinations of this for vectors, tensors etc\n\n\nWhy an auxvariable specifically?\nWhat does PorousFlowPermeabilityConst define? a matprop?\n\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1616080",
+                  "updatedAt": "2022-11-09T16:39:29Z",
+                  "publishedAt": "2021-11-10T00:25:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hello\n\nThat same object I added can do block_id as well (and node id, and nearest-neighbor)\nIt just needs to be extended to write a tensor??\nWhat you wrote seems to work though.\nIf it s a material property there's a MaterialPropertyAux to move it to an AuxVariable\nThere are declinations of this for vectors, tensors etc\nWhy an auxvariable specifically?\nWhat does PorousFlowPermeabilityConst define? a matprop?\n\nGuillaume\n\nHi @GiudGiud\n1, yes that works fine\n\n\nbut it is defined at different blocks (with different object name [perm_1], [perm_2] ... [perm_n]) now sure how to put them together into 1 AuxVariable/Auxkernel, I found that https://mooseframework.inl.gov/source/auxkernels/PorousFlowPropertyAux.html allows you to do that.\n\n\nPorousFlowPermeabilityConst is a matprop, but yeh if I don't park it somewhere (AuxVariable), it will be overwritten by my own compute perm (let's call it PorousFlowPermeabilityConstCSV for now)",
+                          "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1616094",
+                          "updatedAt": "2022-11-09T16:39:36Z",
+                          "publishedAt": "2021-11-10T00:33:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can block restrict things. For example you can define material properties in one block at a time with the same name.\nOr you can use a MaterialAuxKernel to move a material property with a given name to an auxvariable in a single block, and do that N times to get all them in the same auxvariable\nUmm that s annoying. Does the porous flow module not allow you to use different names? Then there s no concern about overwriting",
+                          "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1616158",
+                          "updatedAt": "2022-11-09T16:39:52Z",
+                          "publishedAt": "2021-11-10T00:55:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @GiudGiud, I almost got what I want to work, I will explain it when it's finished.\nI now have a minor issue now, so PorousFlowPropertyAux doesn't store permeability in a tensor format (or vector format), it only gives me 1 permeability per element.\n  [./permeability_bottom]\n    type = PorousFlowPermeabilityConst\n    block = TETS_BOTTOM_TET4\n    permeability = '2e-9 0 0 0 3e-9 0 0 0 4e-9'\n  [../]\n\n  [./permeability_top]\n    type = PorousFlowPermeabilityConst\n    block = TETS_TOP_TET4\n    permeability = '1e-9 0 0 0 2e-9 0 0 0 3e-9'\n  [../]\n\n  [./permeability_wedge]\n    type = PorousFlowPermeabilityConst\n    block = ALL_WDGS_ELSET_PRISM6\n    permeability = '3e-9 0 0 0 2e-9 0 0 0 3e-9'\n  [../]\n\n[./perm_map]\n variable = 'perm_map'\n type = PorousFlowPropertyAux\n property = permeability\n [../]\n\nis there any other AuxKernel that I should look into? @WilkAndy is our PorousFlow expert, probs know about this?\nThank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1616400",
+                          "updatedAt": "2022-11-09T16:39:53Z",
+                          "publishedAt": "2021-11-10T02:18:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I'm not really sure why you need to define a permeability based on block ids and then a different permeability based on element ids?\nThe problem you will have with the PorousFlowPropertyAux AuxKernel is that the AuxVariable has to be a monomial, so a single real value. You would need one for each non-zero component of the permeability tensor (probably three values needed). You can pick out the value using the row and column params (like MaterialRealTensorValueAux).",
+                  "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1617092",
+                  "updatedAt": "2022-11-09T16:40:00Z",
+                  "publishedAt": "2021-11-10T06:04:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "I'm not really sure why you need to define a permeability based on block ids and then a different permeability based on element ids?\nThe problem you will have with the PorousFlowPropertyAux AuxKernel is that the AuxVariable has to be a monomial, so a single real value. You would need one for each non-zero component of the permeability tensor (probably three values needed). You can pick out the value using the row and column params (like MaterialRealTensorValueAux).\n\nAh I see, in this case, I should have 6 AuxVariables/AuxKernels then if I want to store all the perm tensors?\na quick note about the element ids, I need that because the perm I will pass into the simulation will be calculated based on local damage, and the damage file which is obtained from Abaqus is element-based.",
+                          "url": "https://github.com/idaholab/moose/discussions/19340#discussioncomment-1617325",
+                          "updatedAt": "2022-11-09T16:40:01Z",
+                          "publishedAt": "2021-11-10T07:08:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to initialize a vector of stateful(old) materials?",
+          "author": {
+            "login": "xueyang94"
+          },
+          "bodyText": "Hello,\nI am writing a material class where I want to initialize a vector of stateful materials. What I did is as follows:\n\nIn the validParams list, add params.addRequiredParam<std::vector<MaterialPropertyName>>(\"some_name\", \"a description\");.\nIn the constructor, add _some_old(getMaterialPropertyOld<std::vector<Real>>(\"some_name\")).\nIn the header file, declare const MaterialProperty<std::vector<Real>> & _some_old.\n\nNow in computeQpProperties, I can use _some_old[_qp][i] to directly access the old values without any compiler error. However, I received an error when running the input file: The following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\". One or more Material Properties were not supplied on block 0: some_name, even though I have supplied some_name = 'name1, name2, ...' in the material class block. Could anyone please let me know there this error comes from, and how to fix it? Thanks in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/19209",
+          "updatedAt": "2022-07-06T17:23:25Z",
+          "publishedAt": "2021-10-26T14:21:30Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe issue is that you adding in the Params a vector of material properties.\nBut in the constructor you are trying to retrieve a material property that is vector-valued.\nBased on your other post, I think you are trying to specify the vector as \"mat1 mat2 ...\". This cant be done. You have to declare a material property of type std::vector first, then fill it in another material with the mat1, mat2 etc values. Then you can use it here.\nAlso, prefer to use RealVectorValue over std::vector < Real > for the data type.",
+                  "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1539588",
+                  "updatedAt": "2022-07-06T17:23:22Z",
+                  "publishedAt": "2021-10-26T15:41:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xueyang94"
+                          },
+                          "bodyText": "Thanks for the reply. I actually tried to initialize a vector of old materials the same way as I did in the other post for non-old materials, but the syntax is wrong. For non-old materials, we can do _some_name(getParam<std::vector<MaterialPropertyName>>(\"some_name\")) in the initializer, and also have a _some_prop to fill the values in like you said. However, with old material, I tried _some_old(getMaterialPropertyOld<std::vector<MaterialPropertyName>>(\"some_name\")), but the compiler error is that there is no matching constructor. How should the old material vector syntax be? Appreciate it.",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1541651",
+                          "updatedAt": "2022-07-06T17:23:22Z",
+                          "publishedAt": "2021-10-26T22:18:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The non-old syntax would be:\n_some(getMaterialProperty<std::vector<MaterialPropertyName>>(\"some_name\"))\n_some(getMaterialProperty< std::vector < Real > >(\"some_name\"))\nthis\n_some_name(getParam<std::vector<MaterialPropertyName>>(\"some_name\"))\nis completely different",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1541690",
+                          "updatedAt": "2022-07-06T17:23:22Z",
+                          "publishedAt": "2021-10-26T22:31:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xueyang94"
+                          },
+                          "bodyText": "I am using the getParam for non-old material and it works fine. It is the same as I mentioned in my previous post. The getMaterialProperty won't compile. But either way, what would you suggest to use for old material syntax? _some_old(getMaterialPropertyOld<std::vector<MaterialPropertyName>>(\"some_name\")) does not work...",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1541844",
+                          "updatedAt": "2022-07-06T17:23:28Z",
+                          "publishedAt": "2021-10-26T23:29:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it works to populate a vector of string. It doesnt get you the material property.\nIf you have a vector material property, this is the syntax\n_some_old(getMaterialPropertyOld<RealVectorValue>(\"some_name\"))\n_some_old(getMaterialPropertyOld< std::vector < Real > >(\"some_name\"))",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1541877",
+                          "updatedAt": "2022-08-10T05:56:08Z",
+                          "publishedAt": "2021-10-26T23:39:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "RealVectorValue stores 3-vectors. If Xueyang wants to store a vector of 10 or 20 values (which we have plenty of precedent for), then a property of type std::vector<Real> would be appropriate. But there's a lot of confusion in this thread (for example a material property of type std::vector<MaterialPropertyName> ... what?!)",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1542215",
+                          "updatedAt": "2022-08-10T05:56:08Z",
+                          "publishedAt": "2021-10-27T01:02:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh yeah my bad about RealVectorValue and not noticing the syntax had gotten bad since the initial post. The rest is still valid.",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1542411",
+                          "updatedAt": "2022-08-10T05:56:09Z",
+                          "publishedAt": "2021-10-27T02:17:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "I'm assuming you mean some_name to be a single name of a material property that contains a vector of values (at least thats how you use the parameter. That means it should be\nparams.addRequiredParam<MaterialPropertyName>(\"some_name\", \"a description\");",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1546361",
+                          "updatedAt": "2022-08-10T05:56:09Z",
+                          "publishedAt": "2021-10-27T15:26:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xueyang94"
+                          },
+                          "bodyText": "@dschwen Hi Daniel, some_name is a single name of material property that contains a vector of material property names, not real values. To be specific, it stores the vector of phase concentration names in the KKS local solve. The names of the phase concentrations are user-supplied. For example, in the input file material block, we would have ci_names = 'c1, c2, ...'. Of course, c1 and c2 are computed in my material class.\nI have figured out how to declare and initialize ci_names as a non-old vector of ci (I put it in this post), but I am stuck on the old material vector. I want to initialize _ci_old as a vector of old ci in the material source code, but I am not sure how to use the getMaterialPropertyOld in this case.",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1547359",
+                          "updatedAt": "2022-08-10T05:56:12Z",
+                          "publishedAt": "2021-10-27T16:59:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Has this been solved?\ngetMaterialPropertyOld should be called with the name of the material property. If it s been made a vector then the name of that one.\nIf it's some component like c1, c2 etc then they should be retrieved one by one or made into a vector material property first",
+                          "url": "https://github.com/idaholab/moose/discussions/19209#discussioncomment-1616328",
+                          "updatedAt": "2022-08-10T05:56:36Z",
+                          "publishedAt": "2021-11-10T01:54:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Need a reference for existing plasticity codes",
+          "author": {
+            "login": "mahyarmalek"
+          },
+          "bodyText": "Hello Moose developers,\nI'm trying to implement a cam clay model ( a soil plasticity model) within the template of the plasticity codes that already exist in the library. I need to understand how cappeddruckerprager works, and to do so, I need some documentation or references on which this code has been written.\nThank you,\nMahyar",
+          "url": "https://github.com/idaholab/moose/discussions/19185",
+          "updatedAt": "2023-04-06T08:50:50Z",
+          "publishedAt": "2021-10-22T23:45:54Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "There's some documentation here\nhttps://mooseframework.inl.gov/source/materials/CappedDruckerPragerCosseratStressUpdate.html\nbut I had a look at the source code and it s nothing too complicated.",
+                  "url": "https://github.com/idaholab/moose/discussions/19185#discussioncomment-1616313",
+                  "updatedAt": "2023-04-06T08:51:11Z",
+                  "publishedAt": "2021-11-10T01:50:51Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Thermal expansion",
+          "author": {
+            "login": "amosaha"
+          },
+          "bodyText": "hello,\nI want to couple a problem of heat transfer and thermal expansion. My geometric model is a cylinder. I want to fix the two bottom surfaces of the cylinder.Observe the deformation of the middle section. How should I set the BCS? My code is as follows, fix 1 and fix 2 are the bottom surfaces of the cylinder that I expected to be fixed.\ncode.txt",
+          "url": "https://github.com/idaholab/moose/discussions/19314",
+          "updatedAt": "2022-07-28T15:48:37Z",
+          "publishedAt": "2021-11-08T09:34:33Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou ll find a lot of examples of fixing boundaries in space in the tensor_mechanics module.\nI think you just need to set a dirichlet BC on the relevant displacement variable.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1606573",
+                  "updatedAt": "2022-07-28T15:48:36Z",
+                  "publishedAt": "2021-11-08T15:15:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amosaha"
+                          },
+                          "bodyText": "I want to fix two bottom surfaces, but most of the models are two-dimensional problems. Where can I find relevant examples for reference? My program does not converge after running. I think it may be related to BCS.Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616208",
+                          "updatedAt": "2022-07-28T15:48:40Z",
+                          "publishedAt": "2021-11-10T01:14:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it should work the same in 3D. What is the normal for these two surfaces?",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616244",
+                          "updatedAt": "2022-07-28T15:48:39Z",
+                          "publishedAt": "2021-11-10T01:25:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amosaha"
+                          },
+                          "bodyText": "(0\uff0c0\uff0c1)and(0\uff0c0\uff0c-1). I just limited the z-coordinates of the two faces, and I don't know how to control the entire face.So I didn\u2019t use the normal vector.",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616261",
+                          "updatedAt": "2022-07-28T15:48:39Z",
+                          "publishedAt": "2021-11-10T01:31:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "aren't they in the same plane? You only want to constrain the bottom right?\nregardless a DirichetBC on disp_z should be enough.",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616270",
+                          "updatedAt": "2022-08-30T17:23:23Z",
+                          "publishedAt": "2021-11-10T01:34:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amosaha"
+                          },
+                          "bodyText": "I want to limit the upper and lower bottom surfaces of the cylinders, but only restricting their z coordinate system is not enough.",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616284",
+                          "updatedAt": "2022-08-30T17:23:23Z",
+                          "publishedAt": "2021-11-10T01:38:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you want to restrict them in X and Y too?\nThat just means adding DirichletBC on disp_x and disp_y",
+                          "url": "https://github.com/idaholab/moose/discussions/19314#discussioncomment-1616308",
+                          "updatedAt": "2022-08-30T17:23:23Z",
+                          "publishedAt": "2021-11-10T01:48:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to keep the Indicators and Markers when restoring solutions",
+          "author": {
+            "login": "xiekai-mc"
+          },
+          "bodyText": "Hello\nIn the file Transient.C, line 409-415, when solve is not converged:\n  else\n  {\n    _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);\n    _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);\n    _time_stepper->rejectStep();\n    _time = _time_old;\n  }\nI add  _problem.computeIndicators(), _problem.computeMarkers() and _problem.adaptMesh() here, like this:\n else\n  {\n    if (mesh_error())\n    {\n      _problem.computeIndicators();\n      _problem.computeMarkers();\n    }\n\n    _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);\n    _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);\n    _time_stepper->rejectStep();\n    _time = _time_old;\n\n    if (mesh_error())\n      _problem.adaptMesh();\n  }\nWhat I want to do is:\n\nCompute the indicators and markers of the unconverged step.\nThen restore everything except Indicators and markers.\nRefine the mesh according to the indicators and markers above.\n\nBut indicators and markers seem to be restored as well.\nIs there any way to keep them\uff1f",
+          "url": "https://github.com/idaholab/moose/discussions/18962",
+          "updatedAt": "2022-07-24T13:26:01Z",
+          "publishedAt": "2021-09-29T11:00:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I don't think there is an option to restore only part of the system.\nYou could save a copy of that part of solution vector then set it again.\n    // Save variable previous values\n    NumericVector<Number> old = _nl.getVector(tag_id   OR   variable name);\n\nAre you trying to refine the multiapp or the main app btw",
+                  "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1403393",
+                  "updatedAt": "2022-07-24T13:26:04Z",
+                  "publishedAt": "2021-09-29T14:56:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "I am trying to refine the multiapp and by level_set",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1403760",
+                          "updatedAt": "2022-07-24T13:26:04Z",
+                          "publishedAt": "2021-09-29T15:45:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont understand what you mean by and by level_set.\nAh saving the marker and indicator from the multiapp here may be tough. You'd need to transfer them or something. Even then i dont know that it happens in the right order.",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1403771",
+                          "updatedAt": "2022-07-24T13:26:04Z",
+                          "publishedAt": "2021-09-29T15:47:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "I use the level_set module. It seems to be able to transfer the markers.\n[Transfers]\n  [to_markers]\n    type = LevelSetMeshRefinementTransfer\n    multi_app = fracture\n    variable = marker\n    source_variable = marker\n    check_multiapp_execute_on = false\n  []\n.....\n[Problem]\n  type = LevelSetProblem\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1403835",
+                          "updatedAt": "2022-07-24T13:26:04Z",
+                          "publishedAt": "2021-09-29T15:57:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok but the markers need to be transferred before the restore, after a fail, if we are going to save the variable there.",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1403985",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-09-29T16:27:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "After saving the old solution vector , how to set the new one ?",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1404124",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-09-29T16:52:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "NumericVector<Number> & new = _nl.getVector(tag_id   OR   variable name);\nnew = old;",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1404136",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-09-29T16:54:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "There is an error\n/home/user01/projects/moose/framework/src/executioners/Transient.C:471:54: error: cannot allocate an object of abstract type 'libMesh::NumericVector<double>'\n  471 |       NumericVector<Number> old_d = _nl.getVector(\"d\");",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1409146",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-09-30T13:43:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah that's annoying. I think you'll need to use one of the constructors for one of the derived classes\nSee the documentation for that type, see if you can find something that works\nhttps://libmesh.github.io/doxygen/classlibMesh_1_1NumericVector.html",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1410178",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-09-30T16:39:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "If I refine the mesh before restoring solutions , it is no need to save solution vectors:\nelse\n  {\n    if (mesh_error())\n    {\n      _problem.computeIndicators();\n      _problem.computeMarkers();\n      _problem.adaptMesh();\n    }\n\n    _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);\n    _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);\n    _time_stepper->rejectStep();\n    _time = _time_old;     \n  }\nBut the number of the elements is changed after _problem.adaptMesh(). Is there any way to restore the solutions to the new mesh.",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1423478",
+                          "updatedAt": "2022-07-24T13:30:07Z",
+                          "publishedAt": "2021-10-04T08:16:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xiekai-mc"
+                          },
+                          "bodyText": "This seems to work:\n  else\n  {\n    if (mesh_error())\n    {\n      _problem.computeIndicators();\n      _problem.computeMarkers();\n\n      _problem.adaptMesh();\n\n      // _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);\n      // _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);\n      _time_stepper->rejectStep();\n      _time = _time_old;\n    }\n    else\n    {\n      _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true);\n      _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);\n      _time_stepper->rejectStep();\n      _time = _time_old;\n    }\n  }\nI remove the _problem.restoreMultiApps(EXEC_TIMESTEP_BEGIN, true); and   _problem.restoreMultiApps(EXEC_TIMESTEP_END, true);. What's the use of these two lines \uff1f Is that safe to do this ?",
+                          "url": "https://github.com/idaholab/moose/discussions/18962#discussioncomment-1427711",
+                          "updatedAt": "2022-07-24T13:30:08Z",
+                          "publishedAt": "2021-10-05T02:39:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about Hill Plasticity Stress Update",
+          "author": {
+            "login": "tsda706"
+          },
+          "bodyText": "Hi, I am a student working on a project about anisotropic material. I am very new to plasticity and MOOSE, and I need help to better understand the \"Hill Plasticity Stress Update\".\nIn the given example\n(modules/tensor_mechanics/test/tests/ad_anisotropic_plasticity/ad_aniso_plasticity_x.i)\nthe given yield stress is 0.001, while in the given result\n(modules/tensor_mechanics/test/tests/ad_anisotropic_plasticity/gold/ad_aniso_plasticity_x_out.csv)\nthe initial yield stress is 0.001417, (about sqrt(2) times of the given yield stress).\nI did not make any revision of the input file, and was expecting the initial yield stress the same as 0.001. I am wondering, do I have any misunderstanding of what the input file is doing here, or is there any rotation which could scale the result by sqrt(2) while I did not notice?\nAny suggestion or comment would be appreciated! Many thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/19318",
+          "updatedAt": "2023-03-31T06:35:46Z",
+          "publishedAt": "2021-11-08T16:55:57Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "When you have anisotropic plasticity, the stress components contribute to the yield criterion through some sort of anisotropic coefficients. In this case, you have the Hill's coefficients (F, G, H, L, M, N) modifying the current stress state at the material point to quantify its contribution to the total stress. So, even though you may select 0.001 as the yield stress, that doesn't really mean your uniaxial stress will reach that value at the beginning of plastic yield. However, it must be on the order of magnitude, since the anisotropy coefficients usually don't go beyond a factor of 2 or 3.\nFrom https://mooseframework.inl.gov/source/materials/ADHillPlasticityStressUpdate.html, if you develop that equation and substitute the coefficients (F, G, H, L, M, N)  in the Hill's tensor (\"A\" on that doc page), you can arrive at an equation that will give you a number for sigma_x in that test that you point to. Hopefully, that number is in agreement with the gold file.",
+                  "url": "https://github.com/idaholab/moose/discussions/19318#discussioncomment-1615912",
+                  "updatedAt": "2023-03-31T06:36:08Z",
+                  "publishedAt": "2021-11-09T23:23:11Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tsda706"
+                          },
+                          "bodyText": "Thank you for answering my question. Sorry that I previously did not explain things clearly. I agree that the value of Hill's coefficients would influence the stress components, and according to the definition of Hill's coefficient  (I hope that you do not mind me using Abaqus' explanation), I know that\nF = (sigma_0)^2/2 * (1/(sigma_2)^2 + 1/(sigma_3)^2 - 1/(sigma_1)^2)\nG = (sigma_0)^2/2 * (1/(sigma_3)^2 + 1/(sigma_1)^2 - 1/(sigma_2)^2)\nand\nH = (sigma_0)^2/2 * (1/(sigma_1)^2 + 1/(sigma_2)^2 - 1/(sigma_3)^2).\nwhere sigma_0 is the initial stress, sigma_1, sigma_2 and sigma_3 are the normal yield stresses.\nThen the relation between the yield stress in x direction would be\nG + H = (sigma_0)^2/2 * (2/(sigma_1)^2)=(sigma_0/sigma_1)^2\nor sigma_1 = sigma_0 * sqrt(1/(G+H)).\nI think this derivation also matches what is given in MOOSE's definition of Hill's tensor, as A(1,1)=G+H.\nIn the given example (modules/tensor_mechanics/test/tests/ad_anisotropic_plasticity/ad_aniso_plasticity_x.i)\nF = 0.5829856, G = 0.364424, H = 0.6342174, and sigma_0 ( yield stress) = 0.001\nThen G+H=0.9986414, sigma_1 = sigma_0 * sqrt(1/(G+H))=0.001 * sqrt(1/0.9986414) which approximate to 0.001. That is why I expected the initial yield stress would be 0.001 instead of 0.0014 (the result from the given gold file)\nSo I was thinking, did I make any mistake on the above derivation or did I miss any important component for the calculation?\nThank you again for answering my question!",
+                          "url": "https://github.com/idaholab/moose/discussions/19318#discussioncomment-1615978",
+                          "updatedAt": "2023-03-31T06:36:08Z",
+                          "publishedAt": "2021-11-09T23:45:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "No, you didn't miss anything. There is a factor of 2 (actually a divide-by-2) that we are applying to the current stress contribution (see our doc page), so the definition is slightly different from the page you just pointed to (this explains the math). I think I remember seeing this type of discrepancies out in the literature. Hopefully, it's not too big of a hassle.",
+                          "url": "https://github.com/idaholab/moose/discussions/19318#discussioncomment-1615997",
+                          "updatedAt": "2023-03-31T06:36:08Z",
+                          "publishedAt": "2021-11-09T23:56:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tsda706"
+                          },
+                          "bodyText": "I see what you mean now. This makes a lot of sense. Thank you for the help!",
+                          "url": "https://github.com/idaholab/moose/discussions/19318#discussioncomment-1616060",
+                          "updatedAt": "2023-03-31T06:36:19Z",
+                          "publishedAt": "2021-11-10T00:15:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Incompatible PRs",
+          "author": {
+            "login": "ykvishal"
+          },
+          "bodyText": "Hi\nI want to use centriod option of FeatureVolumeVectorPostprocessor ( #18672) and KDTree for PolycrystalVoronoi (#17733). However, they are not compatible with each other. I get following errors after adding #17733\n\nElem::centroid() has been deprecated. Replace with either Elem::vertex_average() to maintain existing behavior, or the more expensive Elem::true_centroid() in cases where the true 'geometric' centroid is required.\n\n\n*** ERROR ***\nThe following error occurred in the object \"grain_volumes\", of type \"FeatureVolumeVectorPostprocessor\".\n\n\nWhile declaring a VectorPostprocessor value with the name \"centroid_x\",\n\n\na Reporter with the same name has already been declared.\n\n\nVectorPostprocessor \"grain_volumes/centroid_x\":\n\n\nType:\nstd::vector\nProducer:\nFeatureVolumeVectorPostprocessor \"grain_volumes\"\nContext type:\nReporterGeneralContext<std::vector >\nConsumer(s):\nNone\n\nIs it possible to use these 2 PRs simultaneously ?\nThank you.\nVishal",
+          "url": "https://github.com/idaholab/moose/discussions/19337",
+          "updatedAt": "2022-07-05T19:00:15Z",
+          "publishedAt": "2021-11-09T18:38:37Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Yes it is, but you need to replace calls to centroid() with calls to vertex_average() :-)",
+                  "url": "https://github.com/idaholab/moose/discussions/19337#discussioncomment-1615580",
+                  "updatedAt": "2022-07-05T19:00:14Z",
+                  "publishedAt": "2021-11-09T21:54:51Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "To clarify, this was a recent libmesh deprecation. If I remember correctly, centroid never calculated the precise centroid of an element anyways, it has always been a vertex average. To avoid further confusion after adding a correct centroid computation method the old method was deprecated and kept under a different name (vertex_average), and a new true_centroid method was added.",
+                          "url": "https://github.com/idaholab/moose/discussions/19337#discussioncomment-1615587",
+                          "updatedAt": "2023-02-17T09:30:55Z",
+                          "publishedAt": "2021-11-09T21:56:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow: P&T outside range-non linear solver does not converge",
+          "author": {
+            "login": "rksin8"
+          },
+          "bodyText": "Hi,\nI am working on CO2 injection in a brine saturated reservoir problem. The model runs for a few time steps after that it message pressure & temperature outside the tabulated range and it does not converge.\n\nI tried with different capillary and relative permeability relation, mesh refinement, different tabulated range, injection rate as given (nonlinear_convergence_problems) here but still no improvement.  I used the same parameters in Dumux and it works fine.\n\nMy input file: https://github.com/rksin8/co2-bine/blob/main/co2_brine_theis.i\nCould anyone please let me know what causes this error and how to fix it?\nThanks in advance!",
+          "url": "https://github.com/idaholab/moose/discussions/19312",
+          "updatedAt": "2022-07-10T18:37:06Z",
+          "publishedAt": "2021-11-08T03:19:34Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I have to head out for a bit now, but will take a look tonight.",
+                  "url": "https://github.com/idaholab/moose/discussions/19312#discussioncomment-1603777",
+                  "updatedAt": "2022-07-10T18:39:24Z",
+                  "publishedAt": "2021-11-08T05:48:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "In my experience, these issues are mainly caused by something happening at the boundaries. I had a look, and the salt profile at the rightmost boundary was doing something funny. I changed that BC to a simple DirichletBC\n  [right_xnacl]\n    type = DirichletBC\n    variable = xnacl\n    boundary = 'right'\n    value = 0.1\n  []\n\n(and deleted the gravity =  param in each kernel block, which weren't all the same! - the gravity value in the global params block is then used consistently), and the problem ran as expected (note: I did coarsen the mesh to make it a bit faster).\n\nI think the injection rate might not be the same as the Dumux model, though, as this profile is after only ~15 days, so you might want to double check that.",
+                          "url": "https://github.com/idaholab/moose/discussions/19312#discussioncomment-1608487",
+                          "updatedAt": "2022-07-10T18:39:26Z",
+                          "publishedAt": "2021-11-08T20:33:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rksin8"
+                          },
+                          "bodyText": "Hi Chris,\nThank you for your help. Now I am getting results very close to the dumux one.",
+                          "url": "https://github.com/idaholab/moose/discussions/19312#discussioncomment-1611224",
+                          "updatedAt": "2022-07-10T18:40:41Z",
+                          "publishedAt": "2021-11-09T09:26:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Great! It looks like you might need to change the BC for the total mass fraction z at the RHS to get a better match.",
+                          "url": "https://github.com/idaholab/moose/discussions/19312#discussioncomment-1611411",
+                          "updatedAt": "2022-07-10T18:40:55Z",
+                          "publishedAt": "2021-11-09T09:50:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Deleted Question",
+          "author": {
+            "login": "tsda706"
+          },
+          "bodyText": "",
+          "url": "https://github.com/idaholab/moose/discussions/19151",
+          "updatedAt": "2022-11-03T03:00:19Z",
+          "publishedAt": "2021-10-19T15:57:04Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "Use of ADHillElastoPlasticityStressUpdate is experimental and this object is not fully optimized, so it could be slow.  If the material yields isotropically, then the best choice would probably be to use something like IsotropicPlasticityStressUpdate with the proper elasticity tensor. Some code changes may be required though.",
+                  "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1503937",
+                  "updatedAt": "2022-11-03T03:00:19Z",
+                  "publishedAt": "2021-10-19T17:33:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For a) , changing a source file from using a constant to using a function is pretty easy. So if you go that route you will have no problem doing that.",
+                          "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1504436",
+                          "updatedAt": "2022-11-03T03:00:25Z",
+                          "publishedAt": "2021-10-19T19:42:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I m suggesting you modify the source (code) file, not just the input file.",
+                          "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1504592",
+                          "updatedAt": "2022-11-03T03:00:25Z",
+                          "publishedAt": "2021-10-19T20:27:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "Using a hardening function for ADHillElastoPlasticityStressUpdate is not currently supported. It'd require a small code change. Manipulating the input file isn't enough.",
+                          "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1504829",
+                          "updatedAt": "2022-11-03T03:00:25Z",
+                          "publishedAt": "2021-10-19T21:21:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "also what is it a function of?\nUnless it is ONLY space and time, you want to be making this coefficient a material property, not a Function object",
+                          "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1505017",
+                          "updatedAt": "2022-11-03T03:00:36Z",
+                          "publishedAt": "2021-10-19T22:10:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh so no temperature dependence or any local variable, just plastic strain?\nSee the documentation for Function https://mooseframework.inl.gov/syntax/Functions/index.html\nMaterial properties & materials https://mooseframework.inl.gov/syntax/Materials/index.html",
+                          "url": "https://github.com/idaholab/moose/discussions/19151#discussioncomment-1505103",
+                          "updatedAt": "2022-11-03T03:00:36Z",
+                          "publishedAt": "2021-10-19T22:36:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to take necking into uniaxial tension simulation",
+          "author": {
+            "login": "xchengood"
+          },
+          "bodyText": "Dear Moose experts or users,\nCould anyone share any ideas or thoughts about how to take the necking mechanism/phenomenon into the power-law model for uniaxial tension simulation ( https://mooseframework.inl.gov/source/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdate.html) with me? So that I can observe when the fracture will happen on the stress-strain curve. Thank you for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/19325",
+          "updatedAt": "2022-11-14T10:54:00Z",
+          "publishedAt": "2021-11-08T22:01:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Necking is typically due to inelastic mechanisms. Plasticity is one of the mechanisms that will lead to necking. It is not specific to any hardening law. It depends on the geometry and material properties.\nFracture is a different phenomenon that isn't necessarily related to necking. A ductile specimen may fail before or after necking is observed.",
+                  "url": "https://github.com/idaholab/moose/discussions/19325#discussioncomment-1609743",
+                  "updatedAt": "2022-11-14T10:54:00Z",
+                  "publishedAt": "2021-11-09T03:01:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

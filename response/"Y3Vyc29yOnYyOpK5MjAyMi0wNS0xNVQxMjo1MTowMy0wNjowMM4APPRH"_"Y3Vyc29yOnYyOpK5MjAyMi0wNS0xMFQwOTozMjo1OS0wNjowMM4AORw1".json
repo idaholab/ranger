@@ -1,0 +1,1143 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wNS0xMFQwOTozMjo1OS0wNjowMM4AORw1"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "update_and_rebuild_libmesh error: fparser_ad.hh: No such file or directory",
+          "author": {
+            "login": "aruybalid"
+          },
+          "bodyText": "Hi,\nI am trying to install MOOSE on the INL HPC and get the following error upon running  ./update_and_rebuild_libmesh.sh.\n_make[1]: Entering directory `/home/ruybandr/projects/moose/libmesh/build'\n  CXX      src/apps/fparser_parse_opt-fparser_parse.o\nIn file included from ../src/apps/fparser_parse.C:23:\n./include/libmesh/parsed_function.h:34:10: fatal error: libmesh/fparser_ad.hh: No such file or directory\n   34 | #include \"libmesh/fparser_ad.hh\"\n      |          ^~~~~~~~~~~~~~~~~~~~~~~\ncompilation terminated._\n\nAny idea what might be wrong?\nAndre",
+          "url": "https://github.com/idaholab/moose/discussions/20673",
+          "updatedAt": "2022-06-24T04:29:51Z",
+          "publishedAt": "2022-03-30T16:35:39Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWeird. I have fparser_ad.hh under libmesh/include/libmesh.\nDid petsc install ok?\nWhat modules did you load?\nAre you following the INL HPC instructions?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2473378",
+                  "updatedAt": "2022-06-24T04:29:52Z",
+                  "publishedAt": "2022-03-30T20:58:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "petsc installed OK",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2473409",
+                          "updatedAt": "2022-07-04T20:42:05Z",
+                          "publishedAt": "2022-03-30T21:05:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aruybalid"
+                  },
+                  "bodyText": "Hi Guillaume,\nI am following instructions here: https://mooseframework.inl.gov/getting_started/installation/inl_hpc_install_moose.html\nCurrently Loaded Modules:\n\ngcc/9.3.0-gcc-4.8.5-twls   2) openmpi/4.0.5_ucx1.9   3) python/3.7-anaconda-2019.10   4) cmake/3.22.3-gcc-9.3.0-ngra",
+                  "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2473397",
+                  "updatedAt": "2022-07-04T20:42:05Z",
+                  "publishedAt": "2022-03-30T21:02:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You should have a different set of modules at this point, from having ran this:\nmodule load use.moose moose-dev\n(if you do run this command now, make sure to module purge first AND to re-install petsc)\nStill wont explain the libmesh failure..\nAre you on a recent moose commit? What does git show in moose/ say",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2473430",
+                          "updatedAt": "2022-07-04T20:42:05Z",
+                          "publishedAt": "2022-03-30T21:10:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "Hi Guillaume,\nI am using a moose fork from Topher Matthews:\ncommit e0d62f95a9f713f2f8c168162a0a7a72ff2938a9\nAuthor: Topher Matthews <cmatthews@lanl.gov>\nDate:   Mon Mar 28 17:05:04 2022 -0600\n\n    Fix global limit calculation. It's still not perfect, and mising tiles at the extremes may still hit errors, but it should be good for most\n\ndiff --git a/modules/tensor_mechanics/include/materials/LAROMANCEStressUpdateBase.h b/modules/tensor_mechanics/include/materials/LAROMANCEStres\nindex 0cc8d41..3282533 100644\n--- a/modules/tensor_mechanics/include/materials/LAROMANCEStressUpdateBase.h\n+++ b/modules/tensor_mechanics/include/materials/LAROMANCEStressUpdateBase.h\n@@ -126,16 +126,6 @@ protected:\n                             const unsigned int t,\n                             const unsigned int tt,\n                             const unsigned int in_index);\n-  /**\n-   * Method to check input values against applicability windows set by ROM data set.\n-   * @param input Input value\n-   * @param vector for upper and lower WindowFailure enums indicating what to do if input is outside\n-   * of limits\n-   * @param global_limits Vector of lower and upper global limits of the input\n-   */\n-  void checkInputWindow(const GenericReal<is_ad> & input,\n-                        const std::vector<WindowFailure> behavior,\n-                        const std::vector<Real> & global_limits);\n \n   /**\n    * Convert the input variables into the form expected by the ROM Legendre polynomials to have a\n@@ -419,8 +409,8 @@ protected:\n \n   /*\n    * Material specific orientations of tiling\n-   * variables\n-   * @return Vector declaring tiling orientation\n+   * variables. Indexing is partition, then input\n+   * @return Vector of a vector declaring tiling orientation\n    */\n   virtual std::vector<std::vector<unsigned int>> getTilings()\n   {\n@@ -431,8 +421,8 @@ protected:\n\n\nI will load the proper modules and try to install again.",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2473667",
+                          "updatedAt": "2022-07-04T20:42:05Z",
+                          "publishedAt": "2022-03-30T21:50:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aruybalid"
+                  },
+                  "bodyText": "Hi Guillaume,\nI just pulled origin/next and tried to install petsc (successful) and libmesh, but get the same error:\nHere is the version of moose I now have and from which I tried to install libmesh:\nruybandr@sawtooth2:~/projects/moose/scripts$git show\ncommit 824960ff17002d85f032f6ac80037c26bbd12942 (HEAD -> next, origin/next, andre/next)\nMerge: 6e5116d03d 26b0c8f844\nAuthor: Logan Harbour <loganhharbour@gmail.com>\nDate:   Tue Mar 29 10:31:16 2022 -0600\n\n    Merge pull request #20336 from milljm/20335-generic-hash-names\n    \n    Return a hash for a given library",
+                  "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2474069",
+                  "updatedAt": "2022-06-24T04:29:53Z",
+                  "publishedAt": "2022-03-30T23:29:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Thanks for ruling this out.\nWhat does find . -name fparser* return in moose/libmesh?\nand echo $LIBMESH_DIR ?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2474143",
+                          "updatedAt": "2022-06-24T04:29:53Z",
+                          "publishedAt": "2022-03-30T23:52:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "Thanks for the support:\nfind . -name fparser* finds\n./libmesh/tests/fparser\n./libmesh/include/libmesh/fparser_ad.hh\n./libmesh/include/libmesh/fparser.hh\n./libmesh/bin/fparser_parse-devel\n./libmesh/bin/fparser_parse-dbg\n./libmesh/bin/fparser_parse-opt\n./libmesh/src/apps/fparser_parse.C\n./libmesh/installed/include/libmesh/fparser_ad.hh\n./libmesh/installed/include/libmesh/fparser.hh\n./libmesh/installed/bin/fparser_parse-devel\n./libmesh/installed/bin/fparser_parse-dbg\n./libmesh/installed/bin/fparser_parse-opt\n./libmesh/m4/fparser.m4\n./libmesh/contrib/fparser\n./libmesh/contrib/fparser/fparser_gmpint.hh\n./libmesh/contrib/fparser/fparser_ad.cc\n./libmesh/contrib/fparser/fparser_ad.hh\n./libmesh/contrib/fparser/fparser.cc\n./libmesh/contrib/fparser/fparser_mpfr.hh\n./libmesh/contrib/fparser/fparser.hh\n./libmesh/contrib/fparser/docs/fparser.html\n./libmesh/build/tests/fparser\n./libmesh/build/src/apps/.deps/fparser_parse_opt-fparser_parse.Po\n./libmesh/build/src/apps/.deps/fparser_parse_dbg-fparser_parse.Po\n./libmesh/build/src/apps/.deps/fparser_parse_devel-fparser_parse.Po\n./libmesh/build/contrib/fparser\n./python/mms/fparser.py\n\nSo the file is in ./libmesh/include/libmesh/fparser_ad.hh, as you also reported, but it seems to be looking in libmesh/?\necho $LIBMESH_DIR gives:\n/home/ruybandr/projects/moose/libmesh",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2474158",
+                          "updatedAt": "2022-07-04T20:42:07Z",
+                          "publishedAt": "2022-03-30T23:57:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yeah it is just there. I dont get it. Did you modify the LIBRARY_PATH ?\nIs this a fresh install ?\n@milljm you seen this before?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2475362",
+                          "updatedAt": "2022-07-04T20:42:07Z",
+                          "publishedAt": "2022-03-31T05:34:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "I purged modules and loaded the modules as on the instruction page and per your suggestion earlier. Then I pulled the moose/next branch just before running the update_and_rebuild_libmesh.sh script (did petsc before libmesh). I did not alter LIBRARY_PATH.",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2475673",
+                          "updatedAt": "2022-03-31T06:32:37Z",
+                          "publishedAt": "2022-03-31T06:32:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@loganharbour @cticenhour any idea on this?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2480776",
+                          "updatedAt": "2022-03-31T19:05:43Z",
+                          "publishedAt": "2022-03-31T19:05:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "I have also just tried it with idaholab/devel, but ran into the same problem. LIBMESH_DIR is: /home/ruybandr/projects/moose/libmesh, which is exported to $PATH within bashrc. Would it be useful to remove that directory from $PATH and start over to let the installation scripts set the directories as needed?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2480938",
+                          "updatedAt": "2022-03-31T19:35:23Z",
+                          "publishedAt": "2022-03-31T19:35:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont think you need LIBMESH_DIR exported to your PATH. Why was this done?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2480947",
+                          "updatedAt": "2022-03-31T19:37:42Z",
+                          "publishedAt": "2022-03-31T19:37:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aruybalid"
+                          },
+                          "bodyText": "I miscommunicated. Excuse me for the confusion.  I have not added it to $PATH. I just set the LIBMESH_DIR to be /home/ruybandr/projects/moose/libmesh using export inside .bashrc. Is that the right thing to do?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2481540",
+                          "updatedAt": "2022-03-31T21:33:59Z",
+                          "publishedAt": "2022-03-31T21:33:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You shouldn\u2019t have to do this for the update and install script I think. Can you try without?\nIs that path correct btw? What does \u2018ls $LIBMESH_DIR\u2019 return?",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2481559",
+                          "updatedAt": "2022-10-13T02:58:09Z",
+                          "publishedAt": "2022-03-31T21:38:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "While using our vetted version of libMesh (submodule libmesh) it is not necessary to set LIBMESH_DIR. If you find there is a foreign LIBMESH_DIR being set to something not-of-your-making (say from one of our Conda installs), the best way to deal with that, is to unset LIBMESH_DIR, and then build your own (which, is what you are trying to do).\nAs for the error... no, I have not encountered this before. I am still piecing things together...",
+                          "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2481566",
+                          "updatedAt": "2022-10-13T02:58:09Z",
+                          "publishedAt": "2022-03-31T21:40:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aruybalid"
+                  },
+                  "bodyText": "config.log",
+                  "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2488848",
+                  "updatedAt": "2022-07-29T15:04:10Z",
+                  "publishedAt": "2022-04-01T22:12:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Closing this.\nWe managed to get a working build on /scratch, it's still unclear what happens on home/. I ll keep an eye out see if others are affected by this",
+                  "url": "https://github.com/idaholab/moose/discussions/20673#discussioncomment-2754438",
+                  "updatedAt": "2022-07-29T15:04:10Z",
+                  "publishedAt": "2022-05-15T15:14:39Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "chigger example for reading in exodus mesh info",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "Is there an example/test for chigger that gets the nodal coordinates from an exodus mesh and/or variable values (nodal or elemental) based on coordinates? Note I'm thinking about a mechanics problem so I'd be interested in the coordinates on the displaced mesh.",
+          "url": "https://github.com/idaholab/moose/discussions/21013",
+          "updatedAt": "2022-07-06T06:17:57Z",
+          "publishedAt": "2022-05-12T17:19:51Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nLooking at the tests in chigger/tests/displacement, the way to deal with the displaced mesh is to output the displaced exodus directly and read this.\nFor nodal coordinates and variable values I could not find anything in the tests. I think Chigger is more of a plotting tool than a python analysis of exodus files tool personally. But others may disagree.\nAnyway\nin python/chigger/exodus/ExodusSourceLineSampler.py you see code for a probing a variable at a desired location. I think this should do what you need.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21013#discussioncomment-2746691",
+                  "updatedAt": "2022-07-06T06:17:57Z",
+                  "publishedAt": "2022-05-13T16:08:15Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if your final goal is plotting and not probing the file value at a given point then maybe there's a better test.\nTagging @aeslaughter as he remains the expert on this.",
+                          "url": "https://github.com/idaholab/moose/discussions/21013#discussioncomment-2746705",
+                          "updatedAt": "2022-07-06T06:18:14Z",
+                          "publishedAt": "2022-05-13T16:10:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "My interest really isn't plotting at this point. I'd like to do more analysis of the mesh after the fact rather than setting up nodesets and sidesets and postprocessors if it's less effort.",
+                          "url": "https://github.com/idaholab/moose/discussions/21013#discussioncomment-2749631",
+                          "updatedAt": "2022-07-06T06:18:14Z",
+                          "publishedAt": "2022-05-14T03:55:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "One way I do this is to load the results exodus file and run all the postprocessing I need with Problem/solve=false",
+                          "url": "https://github.com/idaholab/moose/discussions/21013#discussioncomment-2749765",
+                          "updatedAt": "2022-07-06T06:18:14Z",
+                          "publishedAt": "2022-05-14T05:10:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Installation error in HPC",
+          "author": {
+            "login": "gmaurya20"
+          },
+          "bodyText": "I have been trying to install MOOSE in HPC. I am using an offline installation instruction given on the MOOSEframework website. These are the version of the prerequisites that I am using to install MOOSE:\nPython-3.7.4\nmpich-3.2\ngcc/ver-9.1.0\nCmake-3.23.1\nwhen I am running the script \" ./scripts/update_and_rebuild_petsc.sh --skip-submodule-update --with-packages-download-dir=~/offline/downloads --prefix=$HOME/libs/petsc \" I am getting error. i ahve attached the screenshot of the error.\nplease help me to solve this error.\nThank You,\nRegards\nGaurav",
+          "url": "https://github.com/idaholab/moose/discussions/21001",
+          "updatedAt": "2022-05-31T15:03:06Z",
+          "publishedAt": "2022-05-11T14:26:21Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "Can you share the configure.log that the output is referencing?",
+                  "url": "https://github.com/idaholab/moose/discussions/21001#discussioncomment-2730926",
+                  "updatedAt": "2022-05-31T15:03:10Z",
+                  "publishedAt": "2022-05-11T14:44:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gmaurya20"
+                          },
+                          "bodyText": "configure.log",
+                          "url": "https://github.com/idaholab/moose/discussions/21001#discussioncomment-2731838",
+                          "updatedAt": "2022-05-31T15:03:10Z",
+                          "publishedAt": "2022-05-11T16:36:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "There seems to be a weird mismatch between GCC versions for mpicc --version vs mpif90 --version:\nExecuting: mpif90 --version\nstdout:\nGNU Fortran (GCC) 4.8.5 20150623 (Red Hat 4.8.5-4)\n\nExecuting: mpicc --version\nstdout:\ngcc (GCC) 9.1.0\n\nThese need to match up... as throughout the build process both of these locations are being included with linker flags. The error also supports this theory:\nPossible ERROR while running linker: exit code 1\nstderr:\n/home/gmaurya20/libs/petsc/lib/libsuperlu_dist.so: undefined reference to `GOMP_loop_nonmonotonic_dynamic_next'\n/home/gmaurya20/libs/petsc/lib/libsuperlu_dist.so: undefined reference to `GOMP_loop_nonmonotonic_guided_start'\n/home/gmaurya20/libs/petsc/lib/libsuperlu_dist.so: undefined reference to `GOMP_loop_nonmonotonic_dynamic_start'\n/home/gmaurya20/libs/petsc/lib/libsuperlu_dist.so: undefined reference to `GOMP_loop_nonmonotonic_guided_next'\n/home/gmaurya20/libs/petsc/lib/libsuperlu_dist.so: undefined reference to `GOMP_taskloop'\n\nWhen I do a search for \"GOMP_loop_nonmonotonic_dynamic_next\" I run into several posts about differences between building and then running against different GCC versions. Ref:  https://gcc.gnu.org/legacy-ml/fortran/2019-05/msg00037.html\nWhat you should do is determine if you can get the same GCC versions for each MPI wrapper:\nmpicc --version\nmpicxx --version\nmpif90 --version\nmpif77 --version\nEach of the above commands should return the same GCC version.",
+                  "url": "https://github.com/idaholab/moose/discussions/21001#discussioncomment-2732585",
+                  "updatedAt": "2022-05-31T15:03:13Z",
+                  "publishedAt": "2022-05-11T18:41:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "gmaurya20"
+                          },
+                          "bodyText": "I installed a new mpich and it worked.",
+                          "url": "https://github.com/idaholab/moose/discussions/21001#discussioncomment-2749718",
+                          "updatedAt": "2022-05-31T15:03:45Z",
+                          "publishedAt": "2022-05-14T04:40:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Multi-block 1d spherical",
+          "author": {
+            "login": "lanzam213"
+          },
+          "bodyText": "Greetings, I have created a multi-block 1d spherical problem to solve transient heat transfer in a sphere encapsulated in 4 concentric shells. My question is if the spherical equation formulation is consistent with a 1d mesh geometry generated with CartesianMeshGenerator . I ask because the (X,Y,Z) coordinates of a Cartesian mesh suggests the spherical formulation could possibly not work, although a solution is achieved, and because I'm unable to open the exodus output file in ParaView. To create the mesh I used CartesianMeshGenerator to define 5 subdomains, as shown below. I appreciate any suggestions.\n[Mesh]\n[./mesh_gen]\ntype = CartesianMeshGenerator\ndim = 1\ndx = '2.5e-4 9.5e-5 4.0e-5 3.5e-5 4.0e-5'\nix = '29 11 5 4 5'\nsubdomain_id = '1 2 3 4 5'\n[../]\n[]\n[./Problem]\ncoord_type = RSPHERICAL\n[../]",
+          "url": "https://github.com/idaholab/moose/discussions/21026",
+          "updatedAt": "2022-07-03T10:47:41Z",
+          "publishedAt": "2022-05-13T22:58:41Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYes this should work. The mesh may look regular 1D but the code performs the necessary adjustments for volume / jacobian computations\nYou can convince yourself by solving a simple problem (diffusion?) and comparing to an analytical solution\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21026#discussioncomment-2749025",
+                  "updatedAt": "2022-07-03T10:47:39Z",
+                  "publishedAt": "2022-05-13T23:16:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "ACInterfaceKobayashi, ACInterfaceKobayashi2 and InterfaceOrientationMaterial.",
+          "author": {
+            "login": "KangChenRui"
+          },
+          "bodyText": "Hi, everyone\nI had a question when use the ACInterfaceKobayashi, ACInterfaceKobayashi2 and InterfaceOrientationMaterial.\nthis is my input file:\ninput.txt\nThe error is as follows:\n\nI haven't found a solution yet, Thanks for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/20886",
+          "updatedAt": "2022-06-09T07:08:42Z",
+          "publishedAt": "2022-04-27T09:53:26Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt seems multiple objects are declaring the same material properties.\nThey are probably not meant to be used together. Please read their documentation and look at the test files for each object to understand which ones should be combined.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20886#discussioncomment-2647497",
+                  "updatedAt": "2022-06-09T07:08:55Z",
+                  "publishedAt": "2022-04-27T15:05:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Just to elaborate, you have multiple instances of the InterfaceOrientationMaterial.\n[Materials]\n  [./material]\n    type = InterfaceOrientationMaterial\n    op = eta1\nmode_number = 6\n  [../]\n  [./material_2]\n    type = InterfaceOrientationMaterial\n\n    op = eta2\nmode_number = 6\n  [../]\n\nEach instantiation is trying to create multiple material properties, including eps, deps, and so forth. You cannot have multiple material properties with the same so that is why you are getting the error.  If you want to use a multi-order parameter solidification model, you are going to need to use or possibly create a different material to do the interfacial energy anisotropy.",
+                  "url": "https://github.com/idaholab/moose/discussions/20886#discussioncomment-2689590",
+                  "updatedAt": "2022-06-09T07:08:56Z",
+                  "publishedAt": "2022-05-04T19:48:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "KangChenRui"
+                          },
+                          "bodyText": "Hi,Larry\nAccording to your suggestion, I created kenerl for each order parameter.\neta1 has three kenerls, ACInterfaceKobayashi1, ACInterfaceKobayashi2 and InterfaceOrientationMaterial\neta2 has three kenerls, ACInterfaceKobayashi1_1, ACInterfaceKobayashi2_1 and InterfaceOrientationMaterial_1\nIt seems that this is troublesome. Do you have any better suggestions?\nThank you for your reply\nChen Rui",
+                          "url": "https://github.com/idaholab/moose/discussions/20886#discussioncomment-2690595",
+                          "updatedAt": "2022-06-09T07:09:33Z",
+                          "publishedAt": "2022-05-05T00:26:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SudiptaBiswas"
+                          },
+                          "bodyText": "Are you solving for a multiphase system? If so, you may consider using InterfaceOrientationMultiphaseMaterial. You can specify different property names for kappa and its derivatives there. If this does not work for you, you can follow these multiphase examples to modify the Kobayashi kernels and associated interface material. You don't need to duplicate codes, you can just make the property names an input parameter.",
+                          "url": "https://github.com/idaholab/moose/discussions/20886#discussioncomment-2740120",
+                          "updatedAt": "2022-06-09T07:09:33Z",
+                          "publishedAt": "2022-05-12T18:17:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SudiptaBiswas"
+                          },
+                          "bodyText": "We have some multiphase examples here if you are interested. https://iopscience.iop.org/article/10.1088/1361-651X/ac46dc",
+                          "url": "https://github.com/idaholab/moose/discussions/20886#discussioncomment-2740154",
+                          "updatedAt": "2022-06-09T07:09:33Z",
+                          "publishedAt": "2022-05-12T18:22:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Modifications to computeValue() in ArrayRankTwoAux.C",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "I am working towards implementing the array auxvariables and auxkernels as suggested in 20213. Looks like the function computeValue() #has to be maintained in a standard as-is manner, as any modifications to this function signature is resulting in a compiler error. Earlier i was trying to force this function to return a 2D vector (of size [48,6] where i store the elemental stresses and other identifiers needed for transfer class) instead of a scalar Real and that backfired me. I wanted to ask here how important is this function when we migrate to array auxkernels and whether it is a good idea to code that up in an another function leaving the computeValue to return just a namesake scalar value.",
+          "url": "https://github.com/idaholab/moose/discussions/20957",
+          "updatedAt": "2022-07-25T09:39:51Z",
+          "publishedAt": "2022-05-05T10:51:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo what is ArrayRankTwoAux inheriting from?\nYou want to make sure to inherit from an array auxkernel, as only those have a computeValue that returns an array.\nA good example is the FunctionArrayAux, with the computeValue below:\nRealEigenVector\nFunctionArrayAux::computeValue()\n{\n  RealEigenVector v(_var.count());\n  const Point & p = isNodal() ? *_current_node : _q_point[_qp];\n  for (unsigned int i = 0; i < _var.count(); ++i)\n    v(i) = _funcs[i]->value(_t, p);\n  return v;\n}",
+                  "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2694313",
+                  "updatedAt": "2022-07-25T09:39:51Z",
+                  "publishedAt": "2022-05-05T14:34:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Hi Guillaume,\nThe new ArrayRankTwoAux i was working on earlier was set to inherit from NodalPatchRecovery (as was the case with RankTwoAux). As you said this will need inheritance from array AuxKernel to return array variables through computeValue(). I can see that my computeValue() in ArrayRankTwoAux now works OK with returning a RealEigenVector (which is a 1D vector equivalent). May i ask that if there is anything we could do here to work with a 2D vector (i intend to do a [48,6] return)? I wish that my computeValue() template looks like below.\ntemplate <bool is_ad> std::vector<std::vector<Real>> ArrayRankTwoAuxTempl<is_ad>::computeValue()\n\nWhat modifications are needed here to make this to work. For your reference here is my array AuxVariable/AuxKernel block in the input file.\n[AuxVariables]\n  [./stress_arav]\n    order = CONSTANT\n    family = MONOMIAL\n    components=48\n  [../]\n[]\n\n[AuxKernels]\n  [./stress_arak]\n    type = ArrayRankTwoAux\n    rank_two_tensor = stress\n    variable = stress_arav\n  [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2695513",
+                          "updatedAt": "2022-07-25T09:40:17Z",
+                          "publishedAt": "2022-05-05T17:04:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "not really. a [48,6] return would mean you are filling some sort of 2D array variable. We dont have that currently in MOOSE.\nArrayVariable just means 1D array of arbitrary size. Vector variable means 1D vector of size LIBMESH_dimension.\nNodalPatchRecovery inherits from AuxKernel not arrayAuxKernel.\nI think you will need to create an array version of this class to make it work",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2696563",
+                          "updatedAt": "2022-07-25T09:40:59Z",
+                          "publishedAt": "2022-05-05T19:56:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Hi Guillaume,\nI tried creating an ArrayAuxKernel that can handle 2D arrays, but the modifications go very deep in to low level MooseVariable classes and furthermore they are scattered everywhere, making it hard to tune the code for such cases. I start with the following set of definitions in AuxKernel.h and tried to connect this with various related entities down the line.\ntypedef std::vector<std::vector<Real>> TwoDRealVector;\ntypedef AuxKernelTempl<TwoDRealVector> Array2DAuxKernel;\n\nThis is an extremely complicated task and will need several layers of modifications before we get this to work. A simple workaround will be to use the existing ArrayKernel that is type defined for AuxKernelTempl<RealEigenVector> which operates on 1D array's. With this approach i can condense my 2D array in to a 1D array say a[m][n]=a[m*n] which has already been tested and found working. Wanted to know whether you are OK with this idea or still want to dig deep in to the functions to find compatibility for a 2D array?\nKind regards,\nArun",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2729753",
+                          "updatedAt": "2022-07-25T09:40:59Z",
+                          "publishedAt": "2022-05-11T12:13:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Also the components parameter in AuxVariables block will not allow creation of 2D arrays in AuxKernels as it may induce a seg fault. May be this will need some tuning as well for e.g an additional parameter to fix the column size for the array.",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2729991",
+                          "updatedAt": "2022-09-13T01:17:17Z",
+                          "publishedAt": "2022-05-11T12:47:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I would really avoid to modify any core moose code. Try to map to the 1D array at the computeValue level (the one inherited from an ArrayAuxKernel) and no earlier.\nWe dont support and currently do not have interest (that I know of, but I m sure someone does) in tensor/matrix variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2734917",
+                          "updatedAt": "2022-09-13T01:17:17Z",
+                          "publishedAt": "2022-05-12T05:04:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Yes, i think AuxKernels based on 1D array seems to be the way moving forward.",
+                          "url": "https://github.com/idaholab/moose/discussions/20957#discussioncomment-2736329",
+                          "updatedAt": "2023-02-09T15:45:45Z",
+                          "publishedAt": "2022-05-12T09:20:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow - Capillary pressure formulation for carbon fibre resin injection.",
+          "author": {
+            "login": "s-dunnim"
+          },
+          "bodyText": "I am using the porous flow module to model resin injection, at around 1 bar, into a dry carbon fibre skeleton, which is under vacuum. I am using a single phase unsaturated model for this, as there is only a negligible amount of air.\n(P = porepressure, Pc = capillary pressure, Pi = injection pressure, S = saturation)\nI am having issues with the capillary pressure formulation; in order to achieve S = 0 with any of the available Pc relationships, I have to use an initial condition P <= -Pc_max (as Pc = -P). Having negative P is clearly not realistic in a system where P is always >= 0 (P = 0 in the vacuum, 0 < P <= Pi in the resin).\n\nIs using capillary pressure to calculate saturation the right approach for this scenario? Most of the domain except the flow front should either be at 0 or 1 saturation; in both cases the notion of capillary pressure seems meaningless.\nIf so, how can I overcome the issues described with the Pc and S relationship? I have considered subtracting Pc_max from P everywhere, as it is only really the pressure gradient driving the flow (so, for example, in the vacuum P=0-Pc_max, and at the injection site P=Pi-Pc_max). I have also considered writing a custom capillary pressure user object for calculating S, however I don't really have any data for how P(/Pc) in the flow front relates S (or indeed if there even is a valid relationship).\nIf not, do you have any suggestions for a better approach? I am considering writing some simple custom kernels, materials etc to implement Darcy flow, and advect an S variable (following a Volume Of Fluid - like approach) instead of calculating it from capillary pressure.\n\nSee my earlier question for more discussion on using the porous flow module with 0 saturation.\nTIA\n\nExample input file\n\n# 2D single phase unsaturated porous flow - rectilinear validation case\n# All units in SI unless otherwise stated\n\n[Mesh]\n    [plate]\n        type = GeneratedMeshGenerator\n        dim = 2\n        xmin = 0\n        xmax = 0.3\n        nx = 30\n        ymin = 0\n        ymax = 0.1\n        ny = 10\n    []\n[]\n\n[UserObjects]\n    [dictator]\n        type = PorousFlowDictator\n        porous_flow_vars = porepressure\n        number_fluid_phases = 1\n        number_fluid_components = 1\n    []\n    [pc]\n        type = PorousFlowCapillaryPressureVG\n        alpha = 1E-4\n        m = 0.9\n        pc_max = 1e5\n    []\n[]\n\n[GlobalParams]\n    PorousFlowDictator = dictator\n    gravity = '0 0 0'\n[]\n\n[Variables]\n    [porepressure]\n        initial_condition = -2E4\n    []\n[]\n\n[Kernels]\n    [dmdt]\n        type = PorousFlowMassTimeDerivative\n        variable = porepressure\n    []\n    [flux]\n        type = PorousFlowAdvectiveFlux\n        variable = porepressure\n    []\n[]\n\n[AuxVariables]\n    [saturation]\n        family = MONOMIAL\n        order = CONSTANT\n    []\n[]\n\n[AuxKernels]\n    [saturation]\n        type = PorousFlowPropertyAux\n        variable = saturation\n        property = saturation\n    []\n[]\n\n[BCs]\n    [injection]\n        type = PorousFlowPiecewiseLinearSink\n        variable = porepressure\n        boundary = left\n        pt_vals = '-1E9 1E9'\n        multipliers = '-1E9 1E9'\n        flux_function = 0.046\n        PT_shift = 0.35E+5\n    []\n[]\n\n[Modules]\n    [FluidProperties]\n        [liquid]\n            type = SimpleFluidProperties\n            viscosity = 0.06\n            density0 = 920\n        []\n    []\n[]\n\n[Materials]\n    [porosity_block0]\n        type = PorousFlowPorosity\n        porosity_zero = 0.7\n    []\n    [permeability_block0]\n        type = PorousFlowPermeabilityConst\n        permeability = '3E-10 0 0   0 3E-10 0   0 0 3E-10'\n    []\n    [saturation_calculator]\n        type = PorousFlow1PhaseP\n        porepressure = porepressure\n        capillary_pressure = pc\n    []\n    [temperature]\n        type = PorousFlowTemperature\n        temperature = 293\n    []\n    [massfrac]\n        type = PorousFlowMassFraction\n    []\n    [liquid]\n        type = PorousFlowSingleComponentFluid\n        fp = liquid\n        phase = 0\n    []\n    [relperm]\n        type = PorousFlowRelativePermeabilityCorey\n        n = 3\n        s_res = 0.1\n        sum_s_res = 0.1\n        phase = 0\n    []\n[]\n\n[Preconditioning]\n    [smp]\n        type = SMP\n        full = true\n        petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n        petsc_options_value = ' lu       mumps'\n    []\n[]\n\n[Executioner]\n    type = Transient\n    solve_type = 'NEWTON'\n    \n    end_time = 200\n    [TimeStepper]\n        type = SolutionTimeAdaptiveDT\n        dt = 1E-3\n    []\n\n    automatic_scaling = true\n[]\n\n[Outputs]\n    exodus = true\n    print_linear_residuals = false\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/21000",
+          "updatedAt": "2022-06-23T11:48:15Z",
+          "publishedAt": "2022-05-11T14:19:18Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "I'm wondering whether this problem really is described by porous-flow physics, and not something else.\nBut, let's assume PorousFlow is the way to go.  I wonder whether you've actually measured Pc and have data to parameterise it?  If not, i think i'd use 2-phase PorousFlow (more computationally expensive, so slower, sorry) with a (P, S) formulation (PorousFlow2PhasePS), and zero capillary pressure (PorousFlowCapillaryPressureConst with pc = 0).  Then start at saturation=1, and think that saturation=low corresponds to resin.  (Or possibly, start at saturation=0 and think that saturation=high corresponds to resin - whether this is computationally better typically depends on your boundary conditions, but you can easily experiment with both.)\nAlternatively, but this is something i don't think i've tried before so can't guarantee it'll work but it'll be computationally faster than the previous paragraph: use your single-phase approach, but use pc = 0 (as in previous paragraph) but start at saturation=1, and consider saturation as representing the saturation of the vacuum, so saturation=low means resin.\na",
+                  "url": "https://github.com/idaholab/moose/discussions/21000#discussioncomment-2733667",
+                  "updatedAt": "2022-06-23T12:27:44Z",
+                  "publishedAt": "2022-05-11T22:19:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "s-dunnim"
+                          },
+                          "bodyText": "Thank you, I'll have a go with both of those suggestions. The literature generally uses Darcy law to model the flow but the effects of capillary pressure are often omitted. Unfortunately I don't (and won't) have any data on Pc, I'm limited really to resin viscosity and density, and fibre porosity and permeability. Hopefully using Pc=0 will help!",
+                          "url": "https://github.com/idaholab/moose/discussions/21000#discussioncomment-2736198",
+                          "updatedAt": "2022-06-23T12:27:45Z",
+                          "publishedAt": "2022-05-12T08:58:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "AuxVariables in Functions",
+          "author": {
+            "login": "Flolaffel"
+          },
+          "bodyText": "Hello,\nI was wondering if there is a way to use an AuxVariable in a function? I'd like to write a function that is dependet on the contact pressure of my system which is stored as an AuxVariable. But the vars/vals functionality in the function-block seems to be restricted to to postprocessors, scalars and other functions. I need the spatial and temporal changes of the contact pressure though, so I tried a NodalValueSampler Vector Postprocessor, but the function-block seems to not check for those.\nIs there another way to do this?",
+          "url": "https://github.com/idaholab/moose/discussions/20984",
+          "updatedAt": "2022-07-22T09:50:18Z",
+          "publishedAt": "2022-05-09T13:03:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Flolaffel"
+                  },
+                  "bodyText": "Ok, I just found the VectorPostprocessorFunction which seems to do exactly what I was looking for",
+                  "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2714625",
+                  "updatedAt": "2022-07-22T09:50:18Z",
+                  "publishedAt": "2022-05-09T13:20:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Typically not. The only function I know of that can use variables instead of just location information is the SolutionFunction\nhttps://mooseframework.inl.gov/moose/source/functions/SolutionFunction.html\nbut that is information from a SolutionUserObject",
+                  "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2723429",
+                  "updatedAt": "2022-07-22T09:50:18Z",
+                  "publishedAt": "2022-05-10T15:04:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "Well my procedure is:\n\nUse a NodalValueSampler to read the contact pressure on a boundary\nI now have a postprocessor that contains the values of my AuxVariable\nUse a VectorPostprocessorFunction that reads the contact pressure from the postprocessor\n\nBut there seems to be a problem here. While the NodalValueSampler updates its values every timestep, the VectorPostprocessorFunction does not. So I have multiple steps where the function doesn't seem to recognize the change in contact pressure. Do you have an idea why this could be happening?",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2728997",
+                          "updatedAt": "2022-07-22T09:50:18Z",
+                          "publishedAt": "2022-05-11T10:00:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is likely because of the order of execution of each object. There is no cross-system dependency resolution.\nYou are using an AuxKernel afterwards too right?\nYou can remedy this to some extent by setting execute_on flags. The linear/nonlinear ones are about as often as you can run each object.  see some docs here\nhttps://mooseframework.inl.gov/source/interfaces/SetupInterface.html\nThe VPPfunction reads directly from the VPP and performs an interpolation so if the Sampler is updated the VPPFunction is necessarily up to date.",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2730155",
+                          "updatedAt": "2022-07-22T09:50:18Z",
+                          "publishedAt": "2022-05-11T13:13:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "No, there is no AuxKernel involved.\nI tried the execute_on flags. VPPfuncion is executed on linear by default. Changing the execution of the VPP to linear also didn't solve the problem.\nPlus the VPP doesn't seem to be causing the problem. It's the VPPfunction that seems to fail to read the VPP.",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2730817",
+                          "updatedAt": "2022-07-22T09:50:22Z",
+                          "publishedAt": "2022-05-11T14:30:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "how do you diagnose that the function isnt being updated?\nIn what object are you using it?\nYou can try commenting out:\n  if (now != _last_update)\n  {\n\nin valueInternal in VPPFunction.C, it's the only thing that prevents updating under very narrow conditions which I dont think you would be meeting.",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2730928",
+                          "updatedAt": "2022-07-22T09:50:25Z",
+                          "publishedAt": "2022-05-11T14:45:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "I'm using the VPPfunction for a DirichletBC and I'm printing it into csv with a LineFunctionSampler.\nSo firstly I see in the exodus file when my BC doesn't change between timesteps and secondly I see the csv output which corresponds to my BC and isn't updated either for several timesteps.",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2730976",
+                          "updatedAt": "2022-07-22T09:50:25Z",
+                          "publishedAt": "2022-05-11T14:51:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "Commenting out the if-statement actually worked. Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2731118",
+                          "updatedAt": "2022-07-22T09:50:24Z",
+                          "publishedAt": "2022-05-11T15:10:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ah ok there must be a bug with it. I ll fix it. Thanks for trying it out",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2731424",
+                          "updatedAt": "2022-07-22T09:50:25Z",
+                          "publishedAt": "2022-05-11T15:47:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok I have the fix in a PR. Should be in in a couple weeks at most",
+                          "url": "https://github.com/idaholab/moose/discussions/20984#discussioncomment-2734902",
+                          "updatedAt": "2022-07-22T09:50:25Z",
+                          "publishedAt": "2022-05-12T05:00:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Porous Flow - 0 liquid saturation?",
+          "author": {
+            "login": "s-dunnim"
+          },
+          "bodyText": "I'm building a model of liquid being injected into a dry porous skeleton. I tried a formulating a single phase, unsaturated model, broadly following the steps in page 10 of the tutorial (I also tried a 2 phase model along the lines of page 11).\nI would like the liquid saturation to start at 0, and increase as liquid is injected and flows throughout the skeleton. However in the capillary pressure documentation, it says \"physically realistic problems rarely explore the Seff\u223c0 region\". It is also clear from the equations given, and the models I have attempted, that 0 saturation is not really possible using the basic Porous Flow functionality.\nIs there a way to get around this using the Porous Flow module, and start at 0 (liquid) saturation?\nTIA\n\nSingle phase unsaturated input file for reference\n\n[Mesh]\n    [plate]\n        type = GeneratedMeshGenerator\n        dim = 2\n        xmin = 0\n        xmax = 1\n        nx = 50\n        ymin = 0\n        ymax = 0.56\n        ny = 28\n    []\n[]\n\n[UserObjects]\n    [dictator]\n        type = PorousFlowDictator\n        porous_flow_vars = porepressure\n        number_fluid_phases = 1\n        number_fluid_components = 1\n    []\n    [pc]\n        type = PorousFlowCapillaryPressureVG\n        alpha = 1E-6\n        m = 0.6\n    []\n[]\n\n[GlobalParams]\n    PorousFlowDictator = dictator\n    gravity = '0 0 0'\n[]\n\n[Variables]\n    [porepressure]\n        initial_condition = 0\n    []\n[]\n\n[Kernels]\n    [dmdt]\n        type = PorousFlowMassTimeDerivative\n        variable = porepressure\n    []\n    [flux]\n        type = PorousFlowAdvectiveFlux\n        variable = porepressure\n    []\n[]\n\n[AuxVariables]\n    [saturation]\n        family = MONOMIAL\n        order = CONSTANT\n    []\n[]\n\n[AuxKernels]\n    [saturation]\n        type = PorousFlowPropertyAux\n        variable = saturation\n        property = saturation\n    []\n[]\n\n[BCs]\n    [injection]\n        type = PorousFlowSink\n        variable = porepressure\n        boundary = left\n        flux_function = -10\n        fluid_phase = 0\n        use_relperm = true\n    []\n[]\n\n[Modules]\n    [FluidProperties]\n        [liquid]\n            type = SimpleFluidProperties\n            bulk_modulus = 2E9\n            viscosity = 1E-3\n            density0 = 1000\n        []\n    []\n[]\n\n[Materials]\n    [porosity]\n        type = PorousFlowPorosity\n        porosity_zero = 0.1\n    []\n    [permeability]\n        type = PorousFlowPermeabilityConst\n        permeability = '1E-14 0 0   0 1E-14 0   0 0 1E-14'\n    []\n    [saturation_calculator]\n        type = PorousFlow1PhaseP\n        porepressure = porepressure\n        capillary_pressure = pc\n    []\n    [temperature]\n        type = PorousFlowTemperature\n        temperature = 293\n    []\n    [massfrac]\n        type = PorousFlowMassFraction\n    []\n    [liquid]\n        type = PorousFlowSingleComponentFluid\n        fp = liquid\n        phase = 0\n    []\n    [relperm]\n        type = PorousFlowRelativePermeabilityCorey\n        n = 3\n        s_res = 0.1\n        sum_s_res = 0.1\n        phase = 0\n    []\n[]\n\n[Preconditioning]\n    [smp]\n        type = SMP\n        full = true\n        petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n        petsc_options_value = ' lu       mumps'\n    []\n[]\n\n[Executioner]\n    type = Transient\n    solve_type = 'NEWTON'\n    \n    end_time = 10\n    dt = 1\n\n    automatic_scaling = true\n[]\n\n[Outputs]\n    exodus = true\n    print_linear_residuals = false\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/20862",
+          "updatedAt": "2022-06-27T08:33:59Z",
+          "publishedAt": "2022-04-25T12:53:32Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "You are correct: liquid saturation = 0 will cause all sorts of headaches for you.  By carefully choosing Variables and capillary curves and relative-permeability curves, I believe you should be able to do it using 2-phase or 1-phase physics, but convergence may be a problem.  Before exploring that (it will be painful) please carefully consider whether zero saturation is truly correct.  Specifically, what experimental evidence do you have that your sample has zero saturation (I suppose zero saturation would require boiling the liquid off)?  If so, do you have a good feeling (experimental evidence) for your capillary pressure and relative-permeability end points, and shape around the end points, since they will crucially dictate the (numerical) behaviour?  Or, if you're not sure the liquid saturation is truly zero, can you start from the residual saturation instead?",
+                  "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2634223",
+                  "updatedAt": "2022-07-01T13:49:36Z",
+                  "publishedAt": "2022-04-25T21:51:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "s-dunnim"
+                          },
+                          "bodyText": "Thank you for the helpful reply. The liquid and porous skeleton in question are resin and a dry carbon fibre layup, so I can be sure the sample begins with 0 liquid saturation - although I suppose this isn't to say the residual saturation would be 0 once the resin is introduced. I don't have any data for the capillary pressure and relative permeability end points, and won't be able to determine this experimentally - the best I could do is review some literature for similar materials.\nI will attempt the problem with some carefully selected curves as you suggest (presumably this will involve a log extension for the capillary pressure/saturation curve to allow the saturation to reach 0 - or one of the lower extensions used on the primary wetting curve in hysteresis?). If that turns out to be unfeasible, I can just try a largely simplified custom implementation of Darcy flow...",
+                          "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2637068",
+                          "updatedAt": "2022-07-01T13:49:40Z",
+                          "publishedAt": "2022-04-26T08:35:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Yep, try the log extension.  We were pretty careful to plot representative curves in the documentation, so hopefully you should be able to choose something sensible.  I wouldn't try customising Darcy just yet.",
+                          "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2637611",
+                          "updatedAt": "2022-07-01T13:49:42Z",
+                          "publishedAt": "2022-04-26T09:48:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "s-dunnim"
+                          },
+                          "bodyText": "Thanks again for the advice.",
+                          "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2637985",
+                          "updatedAt": "2022-07-01T13:49:41Z",
+                          "publishedAt": "2022-04-26T10:42:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Interesting problem and one I suspect that we didn't even think about! Be sure to let us know how it goes.",
+                          "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2646106",
+                          "updatedAt": "2022-07-01T13:50:59Z",
+                          "publishedAt": "2022-04-27T11:59:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "s-dunnim"
+                          },
+                          "bodyText": "@cpgr I have had some limited success by setting the IC for porepressure to be negative (< -Pc_max for my chosen capillary pressure curve), which allows me to start at (close to) 0 saturation, and inject resin from a boundary using a PorousFlowSink. The results I'm getting look OK qualitatively but aren't exactly realistic... I've gone into more detail in a more recent question.",
+                          "url": "https://github.com/idaholab/moose/discussions/20862#discussioncomment-2730895",
+                          "updatedAt": "2022-07-01T13:50:59Z",
+                          "publishedAt": "2022-05-11T14:40:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "ADPiecewiseLinearInterpolationMaterial Question",
+          "author": {
+            "login": "jsevic"
+          },
+          "bodyText": "I was using the ElectricalConductivity material property to compute and return electrical conductivity for both of these kernels below. If my understanding is correct, JouleHeatingSource looks for this material property and HeatConduction in this case is used as the diffusion operator on electrical_conductivity, which in contrast to JouleHeatingSource, must be specified. This sim works fine.\n  [./HeatSrc]\n    type = JouleHeatingSource\n    variable = T\n    elec = V\n  [../]\n  [./electric]\n    type = HeatConduction\n    variable = V\n    diffusion_coefficient = electrical_conductivity\n  [../]\n\n  [./ElectricalConductivity]\n    type = ElectricalConductivity\n    temperature = T\n    block = 0\n    reference_resistivity = 0.001\n    reference_temperature = 293\n    temperature_coefficient = 1e-6\n  [../]\n\nNow I would like instead of assuming a functional expression for electrical_conductivity(T) is to specify (x,y) pairs of T and sigma such that MOOSE will linearly interpolate between these (x,y) pairs. I did this successfully earlier with a custom ExampleMaterial\n  [./ElectricalMaterialProperties_TaO]\n    type = ExampleMaterial\n    block = 'TaO'\n    independent_vals = '100 200 300 400 500'\n    dependent_vals = '4e2 1 0 -1e2 -1e3'\n    #dependent_vals = '10e2 10e2 10e2 10e2 10e2'\n  [../]\n\nI tried the ADPiecewiseLinearInterpolationMaterial to interpolate electrical conductivity that is used in the\n  [./ElectricalConductivity_TaO]\n    type = ADPiecewiseLinearInterpolationMaterial\n    xy_data = '100 4e2\n               200 1\n               300 -1e2\n               400 -1e3\n               1500 -2e3'\n    property = electrical_conductivity\n    variable = T\n    block = 'TaO'\n  [../]\n\nand I get the following error...\nAttempting to declare AD material property electrical_conductivity, but it is already retrieved/declared as a regular material property.\nHow do I tell JouleHeatingSource what electrical conductivity to use?\nThx!",
+          "url": "https://github.com/idaholab/moose/discussions/19631",
+          "updatedAt": "2022-09-10T05:33:00Z",
+          "publishedAt": "2021-12-15T02:42:29Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "Do you still have the ElectricalConductivity material there too?  This is saying that you have another Material that has already declared a non-AD version of that property.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1815583",
+                  "updatedAt": "2022-09-10T05:33:02Z",
+                  "publishedAt": "2021-12-15T18:28:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jsevic"
+                          },
+                          "bodyText": "Doesn't look like it, I have several materials of type ElectricalConductivity except for this material I used ADPiecewiseLinearInterpolationMaterial. I do use GenericConstantMaterial and HeatConductionMaterial on this same material. Do these specify electrical_conductivity as well?",
+                          "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1818710",
+                          "updatedAt": "2022-09-10T05:33:02Z",
+                          "publishedAt": "2021-12-16T00:22:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Just to test, I replaced that material with a generic material and it runs.\n[./ElectricalConductivity_TaO]\ntype = ElectricalConductivity\ntemperature = T\nblock = 'TaO'\nreference_resistivity = 1e-4\nreference_temperature = 293\ntemperature_coefficient = 0\n[../]",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1819245",
+                  "updatedAt": "2022-09-10T05:33:05Z",
+                  "publishedAt": "2021-12-16T01:15:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can change the name used for electrical_conductivity in JouleHeatingSource by adding the parameter\nelectrical_conductivity = new_name\nWhat's happening right now is that JouleHeatingSource is the non AD version of that kernel. So it retrieves the non-AD version of electrical_conductivity. ADPiecewiseInterpolationMaterial defines an AD property. If you want to use AD, use ADJouleHeatingSource (and ADElectricalConductivity)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1824510",
+                  "updatedAt": "2022-09-10T05:33:06Z",
+                  "publishedAt": "2021-12-16T15:46:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Ok thanks let me try. Could I make this a variable that is used elsewhere?\n\u2026\nSent from my iPhone\n On Dec 16, 2021, at 8:46 AM, Guillaume Giudicelli ***@***.***> wrote:\n\n \ufeff\n Hello\n\n You can change the name used for electrical_conductivity in JouleHeatingSource by adding the parameter\n electrical_conductivity = new_name\n\n What's happening right now is that JouleHeatingSource is the non AD version of that kernel. So it retrieves the non-AD version of electrical_conductivity. ADPiecewiseInterpolationMaterial defines an AD property. If you want to use AD, use ADJouleHeatingSource (and ADElectricalConductivity!)\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n Triage notifications on the go with GitHub Mobile for iOS or Android.\n You are receiving this because you authored the thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1847523",
+                  "updatedAt": "2022-09-10T05:33:10Z",
+                  "publishedAt": "2021-12-20T14:28:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nNot sure what you mean.\nIf you mean rename it everywhere, then you can set electrical_conductivity = new_name in the [GlobalParams] block to pass this parameter to every object that will accept it. If you get unexpected failures from this, you can pass --show-input on the command line to see what the input file looks like with all the additional parameters added.\nIf you mean use an auxiliary variable instead of a material property, I m afraid a lot of the objects you are using in your input expect a material property, and conductivities are usually classified as material properties, so it's better not to do that.",
+                          "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1848425",
+                          "updatedAt": "2022-12-15T06:21:09Z",
+                          "publishedAt": "2021-12-20T17:14:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Ok and what about if I want to pass electrical_conductivity to the heat diffusion operator, for example, would that be ok?\n\u2026\nSent from my iPhone\n On Dec 20, 2021, at 10:14 AM, Guillaume Giudicelli ***@***.***> wrote:\n\n \ufeff\n Hello\n\n Not sure what you mean.\n If you mean rename it everywhere, then you can set electrical_conductivity = new_name in the [GlobalParams] block to pass this parameter to every object that will accept it. If you get unexpected failures from this, you can pass --show-input on the command line to see what the input file looks like with all the additional parameters added.\n\n If you mean use an auxiliary variable instead of a material property, I m afraid a lot of the objects you are using in your input expect a material property, and conductivities are usually classified as material properties, so it's better not to do that.\n\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n Triage notifications on the go with GitHub Mobile for iOS or Android.\n You are receiving this because you authored the thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1850106",
+                  "updatedAt": "2022-12-15T06:21:10Z",
+                  "publishedAt": "2021-12-20T23:53:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This one?\nhttps://mooseframework.inl.gov/source/kernels/HeatConduction.html\nIf so then set diffusion_coefficient = electrical_conductivity_name (the new name if you are modifying it)",
+                          "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1850157",
+                          "updatedAt": "2022-12-15T06:21:10Z",
+                          "publishedAt": "2021-12-21T00:09:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Yeah that\u2019s it - cool thx let me try.\n\u2026\nSent from my iPhone\n On Dec 20, 2021, at 5:10 PM, Guillaume Giudicelli ***@***.***> wrote:\n\n \ufeff\n This one?\n https://mooseframework.inl.gov/source/kernels/HeatConduction.html\n If so then set diffusion_coefficient = electrical_conductivity_name (the new name actually)\n\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n Triage notifications on the go with GitHub Mobile for iOS or Android.\n You are receiving this because you authored the thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1853501",
+                  "updatedAt": "2023-04-26T01:08:33Z",
+                  "publishedAt": "2021-12-21T15:41:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Another question - not sure if I should start another thread. I have an electrical conductivity model included in my current app, using the semiconductor model fitted to my data.\n\nNow earlier in my phase field app, I used the CH split parsed kernel and the state variables were w and c. For initial testing, I used c as a proxy for conductivity, and coupled it to a custom diffusion operator kernel that allowed me to pass c. In the current MOOSE release in the heat conduction app there is supplied a diffusion operator kernel that does what my older custom kernel did, so I have been using this new one. I also use it for charge conservation and pass to it electrical_conducrivity and this works as expected, I have replicated my older electrothermal code using the current release of MOOSE.\n\nNow my question is, the app uses electrical_conductivity in two places - the charge conservation kernel and the Joule heating kernel. Since I want to scale electrical_conductivity by c, the concentration from the CH kernel, can I simply replace electrical_conductivity with the product c*electrical_conductivity in the electrical conductivity declaration of each of these two diffusion operator kernels, If not, what should I try?\n\nThank you!\n\u2026\nSent from my iPhone\n On Dec 21, 2021, at 7:41 AM, John Sevic ***@***.***> wrote:\n\n \ufeffYeah that\u2019s it - cool thx let me try.\n\n Sent from my iPhone\n\n>> On Dec 20, 2021, at 5:10 PM, Guillaume Giudicelli ***@***.***> wrote:\n>>\n> \ufeff\n> This one?\n> https://mooseframework.inl.gov/source/kernels/HeatConduction.html\n> If so then set diffusion_coefficient = electrical_conductivity_name (the new name actually)\n>\n> \u2014\n> Reply to this email directly, view it on GitHub, or unsubscribe.\n> Triage notifications on the go with GitHub Mobile for iOS or Android.\n> You are receiving this because you authored the thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1901268",
+                  "updatedAt": "2023-04-26T01:08:34Z",
+                  "publishedAt": "2022-01-03T17:26:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So you want to pass 'c*electrical_conductivty' in the arguments?\nThis wont get parsed automatically.\nI would create a ParsedMaterial with the new definition for the conductivity, then give the name of that new material property in lieu of the conductivities. https://mooseframework.inl.gov/docs/PRs/19934/site/source/materials/ParsedMaterial.html",
+                          "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1901480",
+                          "updatedAt": "2023-04-26T01:08:34Z",
+                          "publishedAt": "2022-01-03T18:10:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "Ok cool let me try thx!\n\u2026\nSent from my iPhone\n On Jan 3, 2022, at 10:10 AM, Guillaume Giudicelli ***@***.***> wrote:\n\n \ufeff\n So you want to pass 'c*electrical_conductivty' in the arguments?\n This wont get parsed automatically.\n I would create a ParsedMaterial with the new definition for the conductivity, then give the name of that new material property in lieu of the conductivities. https://mooseframework.inl.gov/docs/PRs/19934/site/source/materials/ParsedMaterial.html\n\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n Triage notifications on the go with GitHub Mobile for iOS or Android.\n You are receiving this because you authored the thread.",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-1901708",
+                  "updatedAt": "2023-04-26T01:08:34Z",
+                  "publishedAt": "2022-01-03T18:54:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jsevic"
+                  },
+                  "bodyText": "I have a couple of more questions related to this thread, let me know if you want me to start a new thread.\n\nQ1.\nMy current state variables are T, V, c, and w for our phase-field app. I would like to plot current density. Right now I have defined an auxiliary variable rho_e and use it with an auxiliary kernel to produce an output variable for rho_e. If I were to do this approach for computing current density, I would need grad V, is there a way to do this without creating a new (compiled?) kernel?\n\n  [./ElectricalConductivity]\n    # (S/m)\n    # Create our linear electrical conductivity model here to plot.\n    type = ParsedAux\n    variable = rho_e\n    args = 'T c'\n    function = '(800 + 0.8*T^4)*c*(1-c)'\n  [../]\n\n\nQ2.\nFor my current IC c(x,y,0) for concentration, I would like it to be uniform between 0 and 0.3 and 0.7 and 1.0 but 0 in between, is there a way to do this? I saw something called distributions?\n\n\nThank you!\n\u2026\n On Jan 3, 2022, at 11:54 AM, John Sevic ***@***.***> wrote:\n\n Ok cool let me try thx!\n\n\n\n Sent from my iPhone\n\n> On Jan 3, 2022, at 10:10 AM, Guillaume Giudicelli ***@***.***> wrote:\n>\n> \ufeff\n>\n> So you want to pass 'c*electrical_conductivty' in the arguments?\n> This wont get parsed automatically.\n> I would create a ParsedMaterial with the new definition for the conductivity, then give the name of that new material property in lieu of the conductivities. https://mooseframework.inl.gov/docs/PRs/19934/site/source/materials/ParsedMaterial.html <https://mooseframework.inl.gov/docs/PRs/19934/site/source/materials/ParsedMaterial.html>\n> \u2014\n> Reply to this email directly, view it on GitHub <#19631 (reply in thread)>, or unsubscribe <https://github.com/notifications/unsubscribe-auth/ABD6MBX3KNYAHQV2UDMI3PTUUHRBNANCNFSM5KCPYSJA>.\n> Triage notifications on the go with GitHub Mobile for iOS <https://apps.apple.com/app/apple-store/id1477376905?ct=notification-email&mt=8&pt=524675> or Android <https://play.google.com/store/apps/details?id=com.github.android&referrer=utm_campaign%3Dnotification-email%26utm_medium%3Demail%26utm_source%3Dgithub>.\n> You are receiving this because you authored the thread.\n>",
+                  "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-2709721",
+                  "updatedAt": "2023-04-26T01:08:34Z",
+                  "publishedAt": "2022-05-08T15:53:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nQ1\nSo to output the gradient of a variable you can use this:\nhttps://mooseframework.inl.gov/moose/source/auxkernels/VariableGradientComponent.html\nand place the result in each component.\nQ2\nYes certainly.\nI think the easiest way will be to use a ParsedFunction and then use a FunctionIC\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19631#discussioncomment-2723682",
+                          "updatedAt": "2023-04-26T01:08:34Z",
+                          "publishedAt": "2022-05-10T15:32:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

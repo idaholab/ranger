@@ -1,0 +1,989 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNi0yOVQwODowOTo0OS0wNjowMM4AZ7Z1"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Viscoelasticity model in RACCOON",
+          "author": {
+            "login": "rynomcavoy"
+          },
+          "bodyText": "Hi, I didn't see any related discussions on this board so I'm posting a new one on this topic.\nI'm trying to implement a viscoelastic material into RACCOON for fracture simulation. The only related documentation for RACCOON that allows for viscoelasticity without plasticity that I saw is ComputeLargeDeformationStress which takes in an elasticity and viscoelasticity model.\nHowever, some other aspects of the RACCOON + viscoelastic marriage weren't clear. For example, ComputeLargeDeformationStress requires finite deformation measures, and those viscoelastic models that use finite strain measures require cree updates, and it's not clear how to include creep updates in the RACCOON framework. I'm wondering if anyone's seen some documentation anywhere that goes into this in a bit more detailed manner.\nHere's my input file, though there's an ADerror as it stands now:\n*** ERROR ***\n...:173.3:\nThe following error occurred in the MaterialBase 'stress' of type ComputeLargeDeformationStress.\n\nThe declared AD material property 'stress' of type 'RankTwoTensorTempl<double>'\nis already retrieved or declared as a non-AD property of type 'RankTwoTensorTempl<double>'.\n\n`E = 660e6\nnu = 0.3\nK = '${fparse E/3/(1-2*nu)}'\nG = '${fparse E/2/(1+nu)}'\n\nGc = 2.7 #need good values for this\nl = 0.02\n\noutput_name = 'tendon_fracture_predamaged_visco'\n\n[MultiApps]\n  [fracture]\n    type = TransientMultiApp\n    input_files = fracture_predamaged.i\n    cli_args = 'Gc=${Gc};l=${l}'\n    execute_on = 'TIMESTEP_END'\n  []\n[]\n\n[Transfers]\n  [from_d]\n    type = MultiAppCopyTransfer\n    from_multi_app = 'fracture'\n    variable = d\n    source_variable = d\n  []\n  [to_psie]\n    type = MultiAppCopyTransfer\n    to_multi_app = 'fracture'\n    variable = psie\n    source_variable = psie\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  #density = 1e4\n[]\n\n[Mesh]\n  [generated]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 40\n    ny = 20\n    xmax = 2\n    ymax = 1\n  []\n  construct_side_list_from_node_list = true\n  #uniform_refine = 1\n[]\n\n[Adaptivity]\n  marker = marker\n  initial_marker = marker\n  initial_steps = 1\n  stop_time = 0\n  max_h_level = 1\n  [Markers]\n    [marker]\n      type = BoxMarker\n      bottom_left = '0.7 0 0'\n      top_right = '1.3 1 0'\n      outside = DO_NOTHING\n      inside = REFINE\n    []\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n[]\n\n[AuxVariables]\n  [fx]\n  []\n  [d]\n  []\n[]\n\n[ICs]\n  [IC_damage]\n    type = RndBoundingBoxIC\n    x1 = 0.95\n    x2 = 1.05\n    y1 = 0.3\n    y2 = 0.7\n    mx_invalue = 1.0\n    mn_invalue = 0.9\n    mx_outvalue = 0\n    mn_outvalue = 0\n    variable = d\n  [../]\n[]\n\n[Kernels]\n  [SolidMechanics]\n    displacements = 'disp_x disp_y'\n    use_displaced_mesh = true\n    use_automatic_differentiation = true \n  []\n[]\n\n[BCs]\n  [left_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0\n  []\n  [left_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = left\n    value = 0\n  []\n  [right_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = right\n    value = 0\n  []\n  [right_x]\n    type = FunctionNeumannBC\n    function = '5e5 * 0.1 * (1 + sin(2*pi*t*5))'\n    #type = FunctionDirichletBC\n    #function = '0.001 * (sin(2*pi*t*5))'\n    variable = disp_x\n    boundary = right\n  []\n[]\n\n[Materials]\n  [bulk]\n    type = ADGenericConstantMaterial\n    prop_names = 'K G'\n    prop_values = '${K} ${G}'\n  []\n  [degradation]\n    type = PowerDegradationFunction\n    property_name = g\n    expression = (1-d)^p*(1-eta)+eta\n    phase_field = d\n    parameter_names = 'p eta'\n    parameter_values = '2 1e-6'\n  []\n  [./strain]\n    type = ADComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n  [../]\n  [defgrad]\n    type = ComputeDeformationGradient\n  []\n  [elasticity]\n    type = HenckyIsotropicElasticity\n    bulk_modulus = K\n    shear_modulus = G\n    phase_field = d\n    degradation_function = g\n    output_properties = 'elastic_strain psie'\n    outputs = exodus\n  []\n  [viscoelasticity]\n    type = GeneralizedKelvinVoigtModel\n    creep_modulus = '10e9 10e9'\n    creep_viscosity = '1 10'\n    poisson_ratio = 0.3\n    young_modulus = 660e6\n  [../]\n  [stress]\n    type = ComputeLargeDeformationStress\n    elasticity_model = elasticity\n    viscoelasticity_model = viscoelasticity\n    output_properties = 'stress'\n    outputs = exodus\n  []\n[]\n\n[UserObjects]\n  [./update]\n    type = LinearViscoelasticityManager\n    viscoelastic_model = viscoelasticity\n    use_automatic_differentiation = true\n  [../]\n[]\n\n[Postprocessors]\n  [Fx]\n    type = NodalSum\n    variable = fx\n    boundary = right\n  []\n  [damage_max]\n    type = ElementExtremeValue\n    value_type = max\n    variable = d\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  end_time = 1\n  dt = 0.01\n[]\n\n[Outputs]\n  file_base = '${output_name}'\n  exodus = true\n  csv = true\n  print_linear_residuals = false\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/28028",
+          "updatedAt": "2024-07-02T05:14:52Z",
+          "publishedAt": "2024-07-01T06:10:22Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor the current error, ComputeLargeDeformationStress seems to expect stress to be an AD tensor property.\nBut the producer of stress, whichever it is, is producing it as a regular tensor property\nYou will need to use\n[Debug]\n  show_material_props = true\n\nto sort out who is producing what and with what type.",
+                  "url": "https://github.com/idaholab/moose/discussions/28028#discussioncomment-9930954",
+                  "updatedAt": "2024-07-02T01:22:07Z",
+                  "publishedAt": "2024-07-02T01:22:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "Got it. Looks like it was either the GeneralizedKelvinVoigtModel or the LinearViscoelasticityManager. Commenting out either of those two fixes the error, but thne there needs to be another way to include viscous effects.",
+                          "url": "https://github.com/idaholab/moose/discussions/28028#discussioncomment-9931967",
+                          "updatedAt": "2024-07-02T04:50:46Z",
+                          "publishedAt": "2024-07-02T04:50:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Seems only one can be used. Maybe you can try with a prefix (base_name) and some sort of stress combiner matrix, like\nhttps://mooseframework.inl.gov/source/materials/ComputeMultipleInelasticStress.html\n@hugary1995 thoughts?",
+                          "url": "https://github.com/idaholab/moose/discussions/28028#discussioncomment-9932098",
+                          "updatedAt": "2024-07-02T05:14:52Z",
+                          "publishedAt": "2024-07-02T05:14:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Negative Jacobians During Thermal Expansion and Elastic Deformation",
+          "author": {
+            "login": "wrkendrick"
+          },
+          "bodyText": "Hey all,\nI'm running a pretty large mesh (generated via the Reactor module in MOOSE) doing a thermal solve w/ HeatConduction and deformation with IsotropicElasticityTensor, ComputeThermalExpansionEigenstrain, ComputeFiniteStrainElasticStress, and Physics/SolidMechanics/QuasiStatic. I'll provide an example of my use of each below.\nThe problem I'm running in to, is negative Jacobians specifically at certain TRI mesh blocks. The blocks where this happens are the TRIs in created from PolygonConcentricCircleMeshGenerator, almost all occurring in bottom of the geometry (where the reflector is defined). I've seen this happen before where a mesh element is small and the expansion inverts the mesh, but that's not what's happening here. All the volumes in the error report are positive, nothing stands out when I visually inspect the mesh, I even increased the size of the TRI elements and still get the errors.\nHere's the geometry and the specific blocks that get the errors:\n\n\nAny ideas on what's causing this? Feel free to ask questions, I'm a bit in the dark of how to approach debugging this, so any help is very appreciated.\nEdit: Also of note, my first attempt to debug this was setting the thermal expansion coefficient for the entire reflector material to 0. This worked for a handful of non-linear iterations, but eventually failed.\nI'll attach my input and the error output so you can check it out. Apologies in advance for how large the input it, I generate it via a few scripts so it's not very human-readable.\ninput.txt\nproblems.txt\nThanks y'all.",
+          "url": "https://github.com/idaholab/moose/discussions/28023",
+          "updatedAt": "2024-07-02T02:17:37Z",
+          "publishedAt": "2024-06-30T16:40:02Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI can see some really narrow tris in the problem.e mesh. Did you try to coarsen the mesh?\nThe mesh diagnostics generator detects thousands of non-planar sides.\n*** Info ***\nNumber of non-planar element sides detected: 19388\n\nAre these the ones on the outer part of cylinders? I think we expect those to be non planar on a second order mesh. That should be ok if so. We should still check that:\nn_azim * n_pins * n_axial is equal to 19388\ndoes this run with first order?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9919053",
+                  "updatedAt": "2024-06-30T20:26:54Z",
+                  "publishedAt": "2024-06-30T20:26:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wrkendrick"
+                          },
+                          "bodyText": "Apologies, I uploaded incorrectly. Problem.txt is the exodus mesh of the problem subdomains reported from the error output, as you probably figured out. I ran a 2nd order run (slightly different geometry, same errors) and I'll attach the actual error output and the mesh generator file so you can check it out and rebuild the mesh yourself.\ncore_gen.txt\nerror.txt\nI'll check this number of sides.\nI just ran a case with 1st order and it worked with no errors! Does that mean it's a 2nd order problem? Something to do with stress tensor calculations on the 2nd order tri elements?\nI regenerated a new mesh using the quad_center_elements = false for all PolygonConcentricCircleMeshGenerator, so it may get further. I don't see any way to avoid TRI elements in HexagonConcentricCircleAdaptiveBoundaryMeshGenerator so it may still break.",
+                          "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9919763",
+                          "updatedAt": "2024-06-30T23:47:57Z",
+                          "publishedAt": "2024-06-30T23:47:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "did you try with PRISM18?\nTo get those you have to extrude from a lower order TRI. So TRI6 instead of TRI7\nsee tri_element_type in\nhttps://mooseframework.inl.gov/source/meshgenerators/PolygonConcentricCircleMeshGenerator.html\nEDIT I tried and the PeripheralRingMeshGenerator does not support higher order for now. i ll hit up the reactor module team\nEDIT how did you even get PRISM21? I see PRISM18 from the conversion?",
+                          "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9931062",
+                          "updatedAt": "2024-07-02T02:06:38Z",
+                          "publishedAt": "2024-07-02T01:40:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There is two groups of problematic elements in error.txt.\n(hmin = small side, hmax = largest side)\nSome are 0.2 for hmin and 10 for hmax\nand some are 0.03 for hmin and 10 for hmax\nBoth groups have a single side with 1 nullptr element? Do you know why that is? Are they on an actual external boundary of the mesh?\nboth are very thin. If we could have a less fine discretization (with less sectors) I think it could help\nquad_center_elements = false  actually does not help make nice tri elements. With a quad element at the center, the mesh looks better imo\nEDIT I tried and the PeripheralRingMeshGenerator does not support higher order for now. i ll hit up the reactor module team",
+                          "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9931079",
+                          "updatedAt": "2024-07-02T01:57:05Z",
+                          "publishedAt": "2024-07-02T01:44:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Something to do with stress tensor calculations on the 2nd order tri elements?\n\nthat's possible. Or something to do with prism21 being finicky.\nNote that you don't use all 21 nodes, in the error.txt output 3 nodes have no dofs",
+                          "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9931109",
+                          "updatedAt": "2024-07-02T01:51:53Z",
+                          "publishedAt": "2024-07-02T01:51:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Could you please share a version of the thermo-mechanics input that works with the mesh from core_gen.txt out of the box?\nI am getting missing subdomains, I am guessing you used a different mesh for the input.i(txt) file",
+                          "url": "https://github.com/idaholab/moose/discussions/28023#discussioncomment-9931238",
+                          "updatedAt": "2024-07-02T02:17:37Z",
+                          "publishedAt": "2024-07-02T02:17:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mesh object for creating internal surface?",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Hi, I'm trying to create an internal surface in a rectangular mesh to use an interface BC with. This is the setup:\n\n(NB, the surface does not cut through the blue box). Previously, with the case where theta = 0, I had simply created two different blocks in the lower (black) rectangle with BoundingBoxNodeSetGenerator (even though both sides had the same material properties), and then I used SideSetsBetweenSubdomainsGenerator to define the surface.\nNow that I have an angle, is it still possible to do this, or would I need to try to do it directly from the mesh generation software? I was having issues with that in the past (refining specific subregions within the meshing software and still retaining domain names) hence why I did the subdomain definitions within MOOSE.",
+          "url": "https://github.com/idaholab/moose/discussions/28033",
+          "updatedAt": "2024-07-01T21:46:09Z",
+          "publishedAt": "2024-07-01T20:20:32Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you use the ParsedGenerateSideset?\nthis can work with an equation, if the nodes exist already at the right location\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9929642",
+                  "updatedAt": "2024-07-01T20:32:24Z",
+                  "publishedAt": "2024-07-01T20:32:23Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "this should work, thanks. Is there a way to run an input file and have it output the mesh (without running the whole simulation) with the moose-defined sidesets viewable in paraview? Just to be sure that my equation is defining it appropriately.",
+                          "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9929956",
+                          "updatedAt": "2024-07-01T21:27:15Z",
+                          "publishedAt": "2024-07-01T21:27:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "add --mesh-only on the command line after the input file name",
+                          "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9929969",
+                          "updatedAt": "2024-07-01T21:30:18Z",
+                          "publishedAt": "2024-07-01T21:30:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "thanks. but I just realized that actually, this might not work- I'm defining a variable jump so I need to be able to define different variables on each side of the sideset. Would there be a way to split the block into two based on the defined sideset?",
+                          "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9929975",
+                          "updatedAt": "2024-07-01T21:31:35Z",
+                          "publishedAt": "2024-07-01T21:31:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if the expression you use to define the sideset is good enough for ParsedGenerateSideset, then it will work very similarly in ParsedSubdomainGenerator which you can use to split the mesh into blocks",
+                          "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9930035",
+                          "updatedAt": "2024-07-01T21:43:39Z",
+                          "publishedAt": "2024-07-01T21:43:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "hmm okay this should work, thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/28033#discussioncomment-9930044",
+                          "updatedAt": "2024-07-01T21:46:05Z",
+                          "publishedAt": "2024-07-01T21:46:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "The following material properties are declared on block 18 by multiple materials",
+          "author": {
+            "login": "haqfariha"
+          },
+          "bodyText": "I am working on Multiphase field modeling incorporating the elasticity-plasticity model. This is the code I am using:\n[./Stiffness_martix1]\n    type = ComputeElasticityTensorConstantRotationCP\n    C_ijkl = '72300 59400 35800 72300 35800 88400 22000 22000 24000'\n    base_name = matrix1\n    fill_method = symmetric9\n  [../]\n\n\n  [./stress_matrix1]\n    type = ComputeMultipleCrystalPlasticityRotation\n    crystal_plasticity_models = 'trial_xtalpl1'\n    tan_mod_type = exact\n    base_name = matrix1\n  [../]\n\n[./trial_xtalpl1]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 32\n    slip_sys_file_name = slip_sys_tin.txt\n    base_name = matrix1\n    ao = 2.5e-4\n    gss_a = 2\n    r = 1.4\n    h = 60.3\n    gss_initial = 23\n [../]\n\n [./strain_1]\n    type = ComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n    base_name = matrix1\n    eigenstrain_names = eigenstrain1\n  [../]\n\n  [./Stiffness_matrix2]\n    type = ComputeElasticityTensorConstantRotationCP\n    C_ijkl = '72300 59400 35800 72300 35800 88400 22000 22000 24000'\n    base_name = matrix2\n    fill_method = symmetric9\n    euler_angle_1 = 0\n    euler_angle_2 = 45\n    euler_angle_3 = 90\n  [../]\n\n  [./stress_matrix2]\n    type = ComputeMultipleCrystalPlasticityRotation\n    crystal_plasticity_models = 'trial_xtalpl2'\n    tan_mod_type = exact\n    base_name = matrix2\n  [../]\n\n  [./trial_xtalpl2]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 32\n    slip_sys_file_name = slip_sys_tin.txt\n    base_name = matrix2\n    ao = 2.5e-4\n    gss_a = 2\n    r = 1.4\n    h = 60.3\n    gss_initial = 23\n [../]\n\n  [./strain_2]\n    type = ComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n    base_name = matrix2\n    eigenstrain_names = eigenstrain1\n  [../]\n\n  [./Stiffness_ppt]\n    type = ComputeIsotropicElasticityTensor\n    poissons_ratio = 0.3\n    youngs_modulus = 97000\n    base_name = ppt\n  [../]\n\n  [./stress_ppt]\n    type = ComputeFiniteStrainElasticStress\n    base_name = ppt\n  [../]\n\n  [./strain_3]\n    type = ComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n    base_name = ppt\n    eigenstrain_names = eigenstrain1\n  [../]\n\n  [./volumExp_strainmatrix1]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = eta_ppt\n    thermal_expansion_coeff = 0.1\n    stress_free_temperature = 0.0\n    eigenstrain_name = eigenstrain1\n    base_name = matrix1\n  [../]\n\n  [./volumExp_strainmatrix2]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = eta_ppt\n    thermal_expansion_coeff = 0.1\n    stress_free_temperature = 0.0\n    eigenstrain_name = eigenstrain1\n    base_name = matrix2\n  [../]\n\n  [./volumExp_strainppt]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = eta_ppt\n    thermal_expansion_coeff = 0.1\n    stress_free_temperature = 0.0\n    eigenstrain_name = eigenstrain1\n    base_name = ppt\n  [../]\n\n  [./global_stress]\n    type = MultiPhaseStressMaterial\n    phase_base = 'matrix1  matrix2  ppt'\n    h =       'h1   h2   h3'\n  [../]\n[]\n\n[Modules/TensorMechanics/Master]\n      [./generalized_plane_strain]\n        strain = Finite\n        displacements = 'disp_x disp_y'\n        add_variables = true\n        incremental = true\n        temperature = eta_ppt\n        generate_output = 'stress_xx stress_xy stress_xz stress_yx stress_yy stress_yz stress_zx stress_zy stress_zz strain_xx strain_xy strain_xz  strain_yx  strain_yy strain_yz strain_zx strain_zy strain_zz  vonmises_stress'  \n     [../]\n[]`\n\nI worked with 2phase- matrix1, ppt. The code worked fine. Now that I am adding another phase matrix2, I am getting this error:\n`The following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nThe following material properties are declared on block 18 by multiple materials:\n  Material Property             Material Objects\n  Euler_angles                  Stiffness_ppt Stiffness_matrix1 Stiffness_matrix2 generalized_plane_strain_strain global_stress strain_1 strain_2 strain_3 strain_xx_generalized_plane_strain strain_xy_generalized_plane_strain strain_xz_generalized_plane_strain strain_yx_generalized_plane_strain strain_yy_generalized_plane_strain strain_yz_generalized_plane_strain strain_zx_generalized_plane_strain strain_zy_generalized_plane_strain strain_zz_generalized_plane_strain stress_ppt stress_matrix2 stress_xx_generalized_plane_strain stress_xy_generalized_plane_strain stress_xz_generalized_plane_strain stress_yx_generalized_plane_strain stress_yy_generalized_plane_strain stress_yz_generalized_plane_strain stress_zx_generalized_plane_strain stress_zy_generalized_plane_strain stress_zz_generalized_plane_strain trial_xtalpl1 trial_xtalpl2  volumExp_strainppt volumExp_strainmatrix1 volumExp_strainmatrix2 vonmises_stress_generalized_plane_strain `\n\n\nWhat change should I make to fix that error?",
+          "url": "https://github.com/idaholab/moose/discussions/28017",
+          "updatedAt": "2024-07-01T19:58:34Z",
+          "publishedAt": "2024-06-28T20:55:52Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI think Euler_angles did not get properly pre-fixed with the base_name in the materials that defined it.\nShould it be? Euler angles are different for each phase?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28017#discussioncomment-9908856",
+                  "updatedAt": "2024-06-28T21:00:07Z",
+                  "publishedAt": "2024-06-28T21:00:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "haqfariha"
+                          },
+                          "bodyText": "I defined Euler angle - (0,0,0) for phase 1, and (0,45,90) for phase 2 in the code.\n [./Stiffness_martix1]\n    type = ComputeElasticityTensorConstantRotationCP\n    C_ijkl = '72300 59400 35800 72300 35800 88400 22000 22000 24000'\n    base_name = matrix1\n    fill_method = symmetric9\n    euler_angle_1 = 0\n    euler_angle_2 = 0\n    euler_angle_3 = 0\n  [../]\n\n[./Stiffness_matrix2]\n    type = ComputeElasticityTensorConstantRotationCP\n    C_ijkl = '72300 59400 35800 72300 35800 88400 22000 22000 24000'\n    base_name = matrix2\n    fill_method = symmetric9\n    euler_angle_1 = 0\n    euler_angle_2 = 45\n    euler_angle_3 = 90\n  [../]\n\nBut getting the error message. How can I pre-fix the Euler angles with the base_name in the materials that you mentioned in your comment?",
+                          "url": "https://github.com/idaholab/moose/discussions/28017#discussioncomment-9929362",
+                          "updatedAt": "2024-07-01T19:59:07Z",
+                          "publishedAt": "2024-07-01T19:43:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you'll have change the code to add the base_name prefix to the name in declareProperty....(base_name + \"euler_angles\")",
+                          "url": "https://github.com/idaholab/moose/discussions/28017#discussioncomment-9929445",
+                          "updatedAt": "2024-07-01T19:58:34Z",
+                          "publishedAt": "2024-07-01T19:58:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "temperature out of range in Water97FluidProperties",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "I want to do a thermal hydraulics problem which is in follwing:\n\nin the THM part, there is input file.\ninlet_T = 308.15 # K\nm_dot_in = 12.13 # kg/s\npress = '${fparse 101325 + 1e3 * 9.8 * 7.4}' # Pa\n\n# pipe\nA_pipe = '${fparse 2 * 0.0215^2 * 1.7312 - pi * 0.0181^2}'\nD_h = '${fparse 4 * A_pipe / (pi * 0.0352)}'\nlength = 0.39 #m\n\n[GlobalParams]\n  initial_p = ${press}\n  initial_vel = 0.204#m/s\n  initial_T = ${inlet_T}\n  gravity_vector = '0 0 0'\n\n  rdg_slope_reconstruction = full\n  closures = thm_closures\n  fp = water\n[]\n\n[Closures]\n  [thm_closures]\n    type = Closures1PhaseNone\n  []\n[]\n\n[FluidProperties]\n  [water]\n    type = Water97FluidProperties\n  []\n[]\n\n\n[AuxVariables]\n  [T_wall]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [T]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n[]\n\n[AuxKernels]\n  [Tw_aux]\n    type = ADMaterialRealAux\n    block = pipe\n    variable = T_wall\n    property = T_wall\n  []\n[]\n\n[Materials]\n  # wall friction closure\n  [f_mat]\n    type = ADWallFrictionChurchillMaterial\n    block = pipe\n    D_h = D_h\n    f_D = f_D\n    vel = vel\n    rho = rho\n    mu = mu\n  []\n  \n  # Re = \\rho * vel * D_h / mu\n  [Re_mat]\n    type = ADReynoldsNumberMaterial\n    Re = Re \n    rho = rho \n    D_h = D_h\n    mu = mu\n    vel = vel\n    block = pipe\n  []\n  # Pr = C_p  * mu / k \n  [Pr_mat]\n    type = ADPrandtlNumberMaterial\n    Pr = Pr \n    cp = cp\n    mu = mu\n    k = k\n    block = pipe\n  []\n  [Nu_mat]\n    type = ADParsedMaterial\n    block = pipe\n    # Dittus-Boelter\n    expression = '0.021 * pow(Re, 0.8) * pow(Pr, 0.4)'\n    property_name = 'Nu'\n    material_property_names = 'Re Pr'\n  []\n  [Hw_mat]\n    type = ADConvectiveHeatTransferCoefficientMaterial\n    D_h = D_h\n    k = k\n    Nu = Nu\n    Hw = Hw\n    block = pipe\n  []\n  [T_wall]\n    type = ADTemperatureWall3EqnMaterial\n    Hw = Hw\n    T = T\n    q_wall = q_wall\n  []\n[]\n\n\n[Components]\n  [inlet]\n    type = InletMassFlowRateTemperature1Phase\n    input = 'pipe:in'\n    m_dot = ${m_dot_in}\n    T = ${inlet_T}\n  []\n  [pipe]\n    type = FlowChannel1Phase\n    position = '0 0 0'\n    orientation = '0 0 1'\n    length = ${length}\n    n_elems = 39 \n    A = ${A_pipe} \n    D_h = ${D_h} \n  []\n  [hxconn]\n    type = HeatTransferFromExternalAppHeatFlux1Phase\n    flow_channel = pipe\n    P_hf = ${fparse pi * 0.0181 * 2}\n  []\n  [outlet]\n    type = Outlet1Phase\n    input = 'pipe:out'\n    p = ${press}\n  []\n[]\n\n[Preconditioning]\n  [pc]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n  line_search = basic\n\n  start_time = 0\n  end_time = 31536000\n\n  steady_state_detection = true\n  steady_state_tolerance = 1e-8\n\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-8\n  nl_max_its = 25\n  [TimeStepper]\n    type = FunctionDT\n    function = dts\n  []\n[]\n\n[Functions]\n  [dts]  \n    type = PiecewiseLinear\n    x = '0 60 3600 86400 31536000'\n    y = '10 10 360 86400 86400'\n  []\n[]\n\n[Outputs]\n  exodus = true\n\n  [console]\n    type = Console\n    max_rows = 1\n    outlier_variable_norms = false\n  []\n  print_linear_residuals = false\n[]\nthe wrong is\nlibMesh terminating:\nTemperature -376998 is out of range in water: inRegion()\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n\nand I try to use gdb follow code, I find the temperature is right in RhoEAFromPressureTemperatureVelocityIC, why temperature wrong in Water97FluidProperties? Thanks for you help.",
+          "url": "https://github.com/idaholab/moose/discussions/28019",
+          "updatedAt": "2024-07-04T09:26:28Z",
+          "publishedAt": "2024-06-29T08:41:44Z",
+          "category": {
+            "name": "Q&A Modules: Thermal Hydraulics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDo you have a backtrace from gdb? This would help us look at the routines in Water97FP\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9912485",
+                  "updatedAt": "2024-06-29T14:53:33Z",
+                  "publishedAt": "2024-06-29T14:53:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "wangzhaohao"
+                  },
+                  "bodyText": "Sure, I am not very understand the GDB, so i write the steps which I have done clearly.\nI reed the debug part in MOOSE web,\nb MPI_Abort\nbt\nand part of output is\n 0x00007fffef624092 in Water97FluidProperties::inRegion (this=0x555555d0def0, pressure=173845, temperature=-376997.58328186366)\n    at /home/wang/projects/moose/modules/fluid_properties/src/fluidproperties/Water97FluidProperties.C:1157\n#6  0x00007fffef680d22 in Water97FluidProperties::rho_from_p_T_template<MetaPhysicL::DualNumber<double, MetaPhysicL::NumberArray<2ul, double>, false> > (this=0x555555d0def0, pressure=..., temperature=...)\n    at /home/wang/projects/moose/modules/fluid_properties/build/header_symlinks/Water97FluidProperties.h:2557\n#7  0x00007fffef6636af in Water97FluidProperties::rho_from_p_T_template<double>(double const&, double const&, double&, double&, double&) const::{lambda(auto:1 const&, auto:2 const&)#1}::operator()<MetaPhysicL::DualNumber<double, MetaPhysicL::NumberArray<2ul, double>, false>, MetaPhysicL::DualNumber<double, MetaPhysicL::NumberArray<2ul, double>, false> >(MetaPhysicL::DualNumber<double, MetaPhysicL::NumberArray<2ul, double>, false> const&, MetaPhysicL::DualNumber<double, MetaPhysicL::NumberArray<2ul, double>, false> const&) const (this=0x555555d0def0, pressure=..., temperature=...)\n    at /home/wang/projects/moose/modules/fluid_properties/build/header_symlinks/Water97FluidProperties.h:2003\n#15 0x00007ffff105de05 in RhoEAFromPressureTemperatureFunctionVelocityIC::value (this=0x555555f28320, p=...)\n    at /home/wang/projects/moose/modules/thermal_hydraulics/src/ics/RhoEAFromPressureTemperatureFunctionVelocityIC.C:46\nso I set breakpoints in RhoEAFromPressureTemperatureFunctionVelocityI and Water97FluidProperties\nThread 1 \"pulse-dbg\" hit Breakpoint 3, RhoEAFromPressureTemperatureFunctionVelocityIC::value (this=0x555555f28320, p=...)\n    at /home/wang/projects/moose/modules/thermal_hydraulics/src/ics/RhoEAFromPressureTemperatureFunctionVelocityIC.C:46\n46        const Real e = _fp.e_from_p_rho(_p[_qp], rho);\n(gdb) info locals\nvel = 0.20399999999999999\nrho = 994.07047349434276\ne = 6.9533462538108351e-310\n(gdb) print _T[_qp]\n$1 = (const double &) @0x5555562eda50: 308.14999999999992\n(gdb) n\nCurrently Executing\n  Performing Initial Setup\n    Projecting Initial Solutions\nThread 1 \"pulse-dbg\" hit Breakpoint 4, Water97FluidProperties::inRegion (this=0x555555d0def0, pressure=173845, temperature=-376997.58328186366)\n    at /home/wang/projects/moose/modules/fluid_properties/src/fluidproperties/Water97FluidProperties.C:1157\n1157        mooseException(\"Temperature \", temperature, \" is out of range in \", name(), \": inRegion()\");\n(gdb) info locals\nregion = 32767\n(gdb) print temperature\n$2 = -376997.58328186366\n(gdb) \nI don't konw the Water97 how to get the temperature, because I not find such as coupledVariable function in Water97FluidProperties.C.",
+                  "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9916631",
+                  "updatedAt": "2024-06-30T12:27:57Z",
+                  "publishedAt": "2024-06-30T12:27:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYou'll want to set a breakpoint on RhoEAFromPressureTemperatureFunctionVelocityIC.C:46 and see which location is problematic. Clearly the one you first stopped on was  not, T was 308.\nBut later at another qp, likely in another element, T is -376997.58328186366",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9917546",
+                          "updatedAt": "2024-06-30T15:34:09Z",
+                          "publishedAt": "2024-06-30T15:34:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "Yes, you said is what i did, there is my breakpoint info\n1       breakpoint     keep y   0x00007ffff105de0e in RhoEAFromPressureTemperatureFunctionVelocityIC::value(libMesh::Point const&) \n                                                   at /home/wang/projects/moose/modules/thermal_hydraulics/src/ics/RhoEAFromPressureTemperatureFunctionVelocityIC.C:47\n2       breakpoint     keep y   0x00007fffef624029 in Water97FluidProperties::inRegion(double, double) const \n                                                   at /home/wang/projects/moose/modules/fluid_properties/src/fluidproperties/Water97FluidProperties.C:1157\n\nso how to find where the temperature going bad?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920202",
+                          "updatedAt": "2024-07-01T01:26:06Z",
+                          "publishedAt": "2024-07-01T01:26:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok so in the code for that IC object you can see that the temperature is retrieved as a coupledValue, which means it's computed in that object.\nputting breakpoints in RhoEAFromPressureTemperatureFunctionVelocityIC wont tell us much.\nI think we need to find the auxkernel which computes temperature.\nRegardless, this is an initialization issue. If you fix the intial conditions everywhere, the problem will go away",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920284",
+                          "updatedAt": "2024-07-01T01:48:58Z",
+                          "publishedAt": "2024-07-01T01:45:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "Hello\nI did this, First I have a look at 'Water97FluidProperties' , relate code is this\nunsigned int\nWater97FluidProperties::inRegion(const Real pressure, const Real temperature) const\n{\n  // Valid for 273.15 K <= T <= 1073.15 K, p <= 100 MPa\n  //          1073.15 K <= T <= 2273.15 K, p <= 50 Mpa\n  if (temperature >= 273.15 && temperature <= 1073.15)\n  {\n    if (pressure < vaporPressure(273.15) || pressure > 100.0e6)\n      mooseException(\"Pressure \", pressure, \" is out of range in \", name(), \": inRegion()\");\n  }\n  else if (temperature > 1073.15 && temperature <= 2273.15)\n  {\n    if (pressure < 0.0 || pressure > 50.0e6)\n      mooseException(\"Pressure \", pressure, \" is out of range in \", name(), \": inRegion()\");\n  }\n  else\n    mooseException(\"Temperature \", temperature, \" is out of range in \", name(), \": inRegion()\");\n\n  // Determine the phase region that the (P, T) point lies in\n  unsigned int region;\n\nwhere the temperature is directly called. so i try to find parent class SingleFluidProperties, which is also not, and the parent parent class SinglePhaseFluidProperties , Sadly, I can find where code set temperature, it seems that all member functions can call the parameter temperature. Can you help me?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920470",
+                          "updatedAt": "2024-07-01T02:19:47Z",
+                          "publishedAt": "2024-07-01T02:19:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "I think we need to find the auxkernel which computes temperature.\nis the TemperatureAux? in /home/wang/projects/moose/modules/fluid_properties/src/auxkernels/TemperatureAux.C?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920479",
+                          "updatedAt": "2024-07-01T02:21:42Z",
+                          "publishedAt": "2024-07-01T02:21:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "is there a TemperatureAux in your simulation?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920541",
+                          "updatedAt": "2024-07-01T02:38:00Z",
+                          "publishedAt": "2024-07-01T02:37:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "t seems that all member functions can call the parameter temperature\n\nWhile it is computed by the FluidProperty, likely from a T_from_v_e routine, I think it's best to first track in your simulation what is setting the temperature and how",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920547",
+                          "updatedAt": "2024-07-01T02:39:08Z",
+                          "publishedAt": "2024-07-01T02:39:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "no, I only set\ninlet_T = 308.15 # K\ninitial_T = ${inlet_T}\n\nIf I set the initial_condition of T, there is wrong\n*** ERROR ***\nThe initial condition 'T_moose' is being defined on a block that already has an initial condition defined.\n\nI know what's you mean, but I don't konw how to track the variable temperature",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920673",
+                          "updatedAt": "2024-07-01T03:04:59Z",
+                          "publishedAt": "2024-07-01T03:04:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "I find where set the temperature, I resee the GDB and find up method.\n    at /home/wang/projects/moose/modules/fluid_properties/build/header_symlinks/Water97FluidProperties.h:2436\n2436      const auto temperature = T_drhodT_from_p_rho(p, rho).first;\nand use step to see the T_drhodT_from_p_rho(p, rho).first\nwhere the code is\ntemplate <typename T>\nstd::pair<T, T>\nWater97FluidProperties::T_drhodT_from_p_rho(const T & p, const T & rho) const\n{\n  // For NewtonSolve\n  // y = rho\n  // x = p\n  // z = T\n  auto lambda =\n      [this](const T & p, const T & temperature, T & rho, T & drho_dp, T & drho_dtemperature)\n  { rho_from_p_T_template(p, temperature, rho, drho_dp, drho_dtemperature); };\n  return FluidPropertiesUtils::NewtonSolve(\n      p, rho, _T_initial_guess, _tolerance, lambda, name() + \"::T_drhodT_from_p_rho\");\n}\nso something wrong in FluidPropertiesUtils::NewtonSolve function, try to output the parameters variable p rho _T_intial_guess tolerance, all is right. SO, I need to have a look at NewtonSolve?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920811",
+                          "updatedAt": "2024-07-01T03:31:51Z",
+                          "publishedAt": "2024-07-01T03:31:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can step in NewtonSolve in NewtonInversion to see how the newton solve is doing.\nThis is a 1D newton solve so it should be very simple.\nI dont imagine something is wrong there though.\n\np rho _T_intial_guess tolerance, all is right.\n\nwhat are p and rho ? If you compute rho(p, T=-30000) do you get close to the rho there?",
+                          "url": "https://github.com/idaholab/moose/discussions/28019#discussioncomment-9920882",
+                          "updatedAt": "2024-07-01T03:47:14Z",
+                          "publishedAt": "2024-07-01T03:47:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can a RealVectorValue be passed to cleavage_plane_normal in the ACInterfaceCleavageFracture",
+          "author": {
+            "login": "LifengGan"
+          },
+          "bodyText": "Dear all moose users,\nHow can a RealVectorValue be passed to cleavage_plane_normal in the ACInterfaceCleavageFracture?\nI am calculating the cleavage_plane_normal in a material properties as RealVectorValue, which is the stress_direction\nthen constructed  this in [AuxKernels] as a AuxVariables\n[./direction_1]\n    type = MaterialRealVectorValueAux\n    property = stress_direction\n    variable = direction_1\n    component = 0\n    execute_on = TIMESTEP_END\n  [../]\n  [./direction_2]\n    type = MaterialRealVectorValueAux\n    property = stress_direction\n    variable = direction_2\n    component = 1\n    execute_on = TIMESTEP_END\n  [../]\n  [./direction_3]\n    type = MaterialRealVectorValueAux\n    property = stress_direction\n    variable = direction_3\n    component = 2\n    execute_on = TIMESTEP_END\n  [../]\n  [./build_vector]\n    type = BuildArrayVariableAux\n    variable = vector\n    component_variables = 'direction_1 direction_2 direction_3'\n  [../]\n\nbut  I got error in the step of passing the value into cleavage_plane_normal\n\" connot convert filed 'Kernels/ACInterfaceCleavageFracture/cleavage_plane_normal' value vector to float\"\n[./ACInterfaceCleavageFracture]\n    type = ACInterfaceCleavageFracture\n    variable = c\n    beta_penalty = 1\n    cleavage_plane_normal = vector\n [../]\n\nHow can I make this come true?\nBest regards,\nLifeng",
+          "url": "https://github.com/idaholab/moose/discussions/28022",
+          "updatedAt": "2024-07-01T03:08:47Z",
+          "publishedAt": "2024-06-30T08:08:35Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt expects a single constant value:\n  params.addRequiredParam<RealVectorValue>(\"cleavage_plane_normal\",\n                                           \"Normal to the weak cleavage plane\");\n\nit does not expect a vector variable.\nIf you want to use a vector variable, likely because you want a spatial dependence, you will need to create a copy of this kernel, with a different name, and change the code a little bit to use:\nparams.addCoupledVar(\"cleavage_plane_normal\", \"description\");\n\nfor the parameter\nand then use the vector routines from the Coupleable API\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28022#discussioncomment-9917572",
+                  "updatedAt": "2024-06-30T15:37:48Z",
+                  "publishedAt": "2024-06-30T15:37:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LifengGan"
+                          },
+                          "bodyText": "hello,\nWhat if i just want it simple?\nit expects in form of  cleavage_plane_normal = '0.707 0.707 0'\nbut I cannot make it with cleavage_plane_normal  = 'direction_1 direction_2 direction_3'\nwhere the direction_i is output from MaterialRealVectorValueAux using component = i\nLifeng",
+                          "url": "https://github.com/idaholab/moose/discussions/28022#discussioncomment-9920513",
+                          "updatedAt": "2024-07-01T02:31:49Z",
+                          "publishedAt": "2024-07-01T02:31:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no you cant do that without changing the code.\nReplacing the constant vector with a material property is the same amount of effort as using a field variable",
+                          "url": "https://github.com/idaholab/moose/discussions/28022#discussioncomment-9920603",
+                          "updatedAt": "2024-07-01T02:49:16Z",
+                          "publishedAt": "2024-07-01T02:49:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "LifengGan"
+                          },
+                          "bodyText": "Thanks for the answer\nit works by changing the code ACInterfaceCleavageFracture with\n_cleavage_plane_normal(getMaterialPropertyByName<RealVectorValue>(\"cleavage_plane_normal\"))\nLifeng",
+                          "url": "https://github.com/idaholab/moose/discussions/28022#discussioncomment-9920702",
+                          "updatedAt": "2024-07-01T03:08:46Z",
+                          "publishedAt": "2024-07-01T03:08:45Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[need help about individual Elemental value] A weird point about interior structure of moose",
+          "author": {
+            "login": "Ttw0626"
+          },
+          "bodyText": "Hi, moose-developers,\nQuestion description:\nafter a lot of attempts by myself, I cannot understand\nHow to handle with the elemental communication between Material and UserObject ?\n\n\nevidence 1:\nTry AbaqusUserElement  UO  with external uel.f\n[which only output current element ID with jelem=elem->id()+1],\nthe output on terminal as shown in below:\n\nmesh information:\n\n                           Parallelism:\n                                    Num Processors:            4\n                                    Num Threads:               1\n                           Mesh:\n                                    Parallel Type:             replicated\n                                    Mesh Dimension:            3\n                                    Spatial Dimension:         3\n                           Nodes:\n                                    Total:                     64\n                                    Local:                     30\n                                    Min/Max/Avg:               6/30/16\n                           Elems:\n                                    Total:                     27\n                                    Local:                     8\n                                    Min/Max/Avg:               6/8/6\n                                    Num Subdomains:            1\n                                    Num Partitions:            4\n                                    Partitioner:               metis\n\n\n\nOutput [1. the execute_on EXEC_PRE_KERNELS; 2. each processor outputs all elements totally 27 elements]:\n\n                            Time Step 0, time = 0\n\n                            Time Step 1, time = 10, dt = 10\n                            Element number is:            1\n                            Element number is:           13\n                            Element number is:           14\n                            Element number is:           15\n                            Element number is:           17\n                            Element number is:            2\n                            Element number is:            3\n                            Element number is:           10\n                            Element number is:           18\n                            Element number is:            4\n                            Element number is:           16\n                            Element number is:           11\n                            Element number is:           22\n                            Element number is:           24\n                            Element number is:            5\n                            Element number is:           12\n                            Element number is:            6\n                            Element number is:           23\n                            Element number is:           26\n                            Element number is:           19\n                            Element number is:           27\n                            Element number is:            7\n                            Element number is:           25\n                            Element number is:           20\n                            Element number is:            8\n                            Element number is:           21\n                            Element number is:            9\n\n                            Element number is:           13\n                            Element number is:           15\n                            Element number is:            1\n                            Element number is:            2\n                            Element number is:           10\n                            Element number is:           14\n                            Element number is:           17\n                            Element number is:            3\n                            Element number is:           18\n                            Element number is:           11\n                            Element number is:           16\n                            Element number is:            4\n                            Element number is:            5\n                            Element number is:           22\n                            Element number is:           24\n                            Element number is:           12\n                            Element number is:            6\n                            Element number is:           23\n                            Element number is:           26\n                            Element number is:           19\n                            Element number is:            7\n                            Element number is:           20\n                            Element number is:           27\n                            Element number is:           25\n                            Element number is:            8\n                            Element number is:           21\n                            Element number is:            9\n\n                            Element number is:            1\n                            Element number is:           13\n                            Element number is:           15\n                            Element number is:            2\n                            Element number is:           17\n                            Element number is:           10\n                            Element number is:           14\n                            Element number is:            3\n                            Element number is:           16\n                            Element number is:           18\n                            Element number is:           11\n                            Element number is:            4\n                            Element number is:           12\n                            Element number is:           22\n                            Element number is:           24\n                            Element number is:            5\n                            Element number is:           26\n                            Element number is:           19\n                            Element number is:           23\n                            Element number is:            6\n                            Element number is:           25\n                            Element number is:           27\n                            Element number is:           20\n                            Element number is:            7\n                            Element number is:           21\n                            Element number is:            8\n                            Element number is:            9\n\n                            Element number is:            1\n                            Element number is:           13\n                            Element number is:           15\n                            Element number is:            2\n                            Element number is:           17\n                            Element number is:           10\n                            Element number is:            3\n                            Element number is:           14\n                            Element number is:           11\n                            Element number is:           18\n                            Element number is:            4\n                            Element number is:           16\n                            Element number is:            5\n                            Element number is:           12\n                            Element number is:           24\n                            Element number is:           22\n                            Element number is:            6\n                            Element number is:           19\n                            Element number is:           26\n                            Element number is:           23\n                            Element number is:            7\n                            Element number is:           20\n                            Element number is:           27\n                            Element number is:           25\n                            Element number is:            8\n                            Element number is:           21\n                            Element number is:            9\n\n\n\nConclusion:\nI do not know it's expected result of the abaqus user-element implementation in moose or not. However, it seems like each processor called the plugin uel.f across all 27 elements, but we clearly see the correct parallel partition with 4 cpus.\nQuestion 1:\nFrom the above background about AbaqusUserElement, If I deleted the DynamicLibraryLoader function especially for uel.f Plugin, I wanna directly output the jelem=elem->id()+1 within UELThread.C w/o plugin function _uel():\n\n                  std::cout << \"Element number is           \" << jelem << \"\\n\";\n\n\nthe new wrong Output is not the same as the above old Output with plugin uel.f, I cannot understand this difference, how can I get the same Output without plugin ?\nnew wrong Output:\n\n                            Time Step 0, time = 0\n\n                            Time Step 1, time = 10, dt = 10\n                            Element number is:            1\n                            Element number is:           13\n                            Element number is:           14\n                            Element number is:           15\n                            Element number is:           17\n                            Element number is:            2\n                            Element number is:            3\n                            Element number is:           10\n\n\nThe new wrong Output only for one processor and also executed on EXEC_PRE_KERNELS.\n\n\n\nevidence 2:\nTry sub- UO class based on parent class ElementUserObject\n[which only output current element ID with _current_elem->id()+1],\nthe output on terminal as shown in below:\n\nmesh information [same]:\n\n                           Parallelism:\n                                    Num Processors:            4\n                                    Num Threads:               1\n                           Mesh:\n                                    Parallel Type:             replicated\n                                    Mesh Dimension:            3\n                                    Spatial Dimension:         3\n                           Nodes:\n                                    Total:                     64\n                                    Local:                     30\n                                    Min/Max/Avg:               6/30/16\n                           Elems:\n                                    Total:                     27\n                                    Local:                     8\n                                    Min/Max/Avg:               6/8/6\n                                    Num Subdomains:            1\n                                    Num Partitions:            4\n                                    Partitioner:               metis\n\n\n\nOutput [1. the execute_on EXEC_PRE_KERNELS]:\n\n                            Time Step 0, time = 0\n\n                            Time Step 1, time = 10, dt = 10\n                            Element number is:           10\n\n\n\nConclusion:\nthis output is totally incorrect. From my view, I just wanna output the individual ElementID of each element. This is to say, the threadJoin( ) and finalize( ) are not necessary for this expectation. In AbaqusUserElement UO, it did not use the the threadJoin( ) and finalize( ) as well.\n\n\n\nQuestion:\nFrom the two evidence 1, 2, The only AbaqusUserElement can output ElementID of all elements but duplicated.\nAlthough this ElementID example is simple, it's important to implement elemental value individually. Is there any way to focus on only each element ? by the way, I understood the UOs BlockAverageValue and HomogenizationConstraints, which calculated Elemental value from quadrature points loop, threadJoining into shared map container, and gatherSum to global value. However, it is different from the expectation of this discussion, I just wanna perform the quadrature points loop, calculate each Elemental value, and output it element by element. This idea maybe the same as Elemental value postprocessor for Paraview visualization.\nthe descent trend :\ndomain (FEProblem) (global)   --->  subProblems (processors)  --->  subDomains (blocks) (each processor)\nElements (block) (each processor)  --->  quadrature points (Element) (each processor)  --->\nquadrature point (each processor), is my understanding correct ?\nMaybe I can try output each ElementID within computeProperties() , the result could be correct ?\n\n\nThanks, if developers need any info., plz feel free let me know.\nbest regards,\ntianwen",
+          "url": "https://github.com/idaholab/moose/discussions/27983",
+          "updatedAt": "2024-06-30T08:01:09Z",
+          "publishedAt": "2024-06-25T13:06:15Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\nHow to handle with the elemental communication between Material and UserObject ?\n\nThere are two directions here.\nFrom material to UO:\n\nmaterials precompute material properties, which UOs can just retrieve a reference to with getMaterialProperty\n\nFrom UO to material:\n\nmaterials can retrieve pointers to user objects of any type using the templated getUserObject<> so they can call any public API on those\n\nFor the AbaqusElementUO questions I dont know. @dschwen",
+                  "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9873043",
+                  "updatedAt": "2024-06-25T15:27:33Z",
+                  "publishedAt": "2024-06-25T15:27:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ttw0626"
+                          },
+                          "bodyText": "hi, giud, I understood your kind answers. Thanks.\nI think I did not explain my question very well.\n\n\nthese operations make sense to me, we can get the Material properties and the data calculated within UOs\nvia getMaterialProperty<>() and getUserObject<>(). The example BlockAverageValue in moose\nexplained it nicely.\n\n\nI wanna dicuss Two situations, how to get expected output ? :\n\n\nIf I wanna output individually the ElementID of each element, could I just need to do this I/O operation within\ncomputeProperties() ? but I confused that \"the computeProperties() is work on element or (subdomains) processor ?\"\n\n\nalthough it's duplicated job, I wanna store one MaterialProperty[_qp] of each quadrature point within one shared\nmap container (std::map<dof_id_type, std::vector<Real>>   map[elementID][quadraturePoints]) via UO, and then, to get this\nmaterialProperty of each quadrature point at Materials via\n(Real thisMaterialProperty = UO.getMap(_current_element->id())[_qp]).\n\n\n\n\nFrom the first case, the expected output should be Element Number is    x looped over each element and output this string number of elements times on terminal.\nFrom the second case, the output of materialProperty from UO stored and the output of materialProperty by directly declareMaterialProperty in computeQpProperties() should be the same, but I tried before, it's not same. There is not any\ncommunication between element by element and processor by processor, so I did not use threadJoin() and finalize().\nIf I got any misunderstanding, plz tell me ! Thanks",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9876935",
+                          "updatedAt": "2024-06-26T00:51:37Z",
+                          "publishedAt": "2024-06-26T00:51:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ttw0626"
+                          },
+                          "bodyText": "Updated...........\nI tried directly output ElementID via computeProperties() or computeQpProperties() if and only if _tid=0 && _qp=0 condition.\nThe output of thread ID = 0 (maybe master) presented including 0th partial outputs of ElementID, two case are the same.\ndose the terminal output have a constraint only for threadID 0 ? only threadID 0 processor will output on terminal.\nhow can I output ElementID of all elements ?\ncould I explain it if I did not do threadJoin( ) and finalize( ) within UO, the only threadID0 read the data of UO at materials ?",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9877362",
+                          "updatedAt": "2024-06-26T02:19:22Z",
+                          "publishedAt": "2024-06-26T02:19:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "use --keep-cout on the command line to keep all the output.\nI dont think we stop output from other threads, but we do stop output from other mpi processes.",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9885364",
+                          "updatedAt": "2024-06-26T17:04:14Z",
+                          "publishedAt": "2024-06-26T17:04:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "f I wanna output individually the ElementID of each element, could I just need to do this I/O operation within\ncomputeProperties() ? but I confused that \"the computeProperties() is work on element or (subdomains) processor ?\"\n\nfor what purpose? To look at it in a CSV?\nUse an Element...VPP for that. They will output the id and locations\n\nalthough it's duplicated job, I wanna store one MaterialProperty[_qp] of each quadrature point within one shared\nmap container (std::map<dof_id_type, std::vector>   map[elementID][quadraturePoints]) via UO, and then, to get this\nmaterialProperty of each quadrature point at Materials via\n(Real thisMaterialProperty = UO.getMap(_current_element->id())[_qp]).\n\nusing a map for material properties is unconventional and not really necessary. You'll need to be careful to execute the User Object early enough that the map is ready for wherever you plan to use it\nAre you using threads? Or MPI? Or both?\nFor forming a map of all properties, I expect you may need to use threadJoin() for threads to perform a reduction of that map, though unless you want to distribute the map, I expect you do not need to use finalize()",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9885519",
+                          "updatedAt": "2024-06-26T17:22:29Z",
+                          "publishedAt": "2024-06-26T17:22:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ttw0626"
+                          },
+                          "bodyText": "use --keep-cout on the command line to keep all the output. I dont think we stop output from other threads, but we do stop output from other mpi processes.\n\nhi giud, this make sense to me, Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9889388",
+                          "updatedAt": "2024-06-27T04:08:01Z",
+                          "publishedAt": "2024-06-27T04:08:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ttw0626"
+                          },
+                          "bodyText": "f I wanna output individually the ElementID of each element, could I just need to do this I/O operation within\ncomputeProperties() ? but I confused that \"the computeProperties() is work on element or (subdomains) processor ?\"\n\nfor what purpose? To look at it in a CSV? Use an Element...VPP for that. They will output the id and locations\n\nalthough it's duplicated job, I wanna store one MaterialProperty[_qp] of each quadrature point within one shared\nmap container (std::map<dof_id_type, std::vector>   map[elementID][quadraturePoints]) via UO, and then, to get this\nmaterialProperty of each quadrature point at Materials via\n(Real thisMaterialProperty = UO.getMap(_current_element->id())[_qp]).\n\nusing a map for material properties is unconventional and not really necessary. You'll need to be careful to execute the User Object early enough that the map is ready for wherever you plan to use it\nAre you using threads? Or MPI? Or both? For forming a map of all properties, I expect you may need to use threadJoin() for threads to perform a reduction of that map, though unless you want to distribute the map, I expect you do not need to use finalize()\n\n\n\n(1) it's just simple test for my purpose, NVM. I will explain my purpose in below. sorry for this confusion.\n\n\n(2) What I wanna do is, for instance, we consider HEX8 lagrangian element with 8 quadrature points\n\n\n[1] calculate one scalar material property at quadrature point [_qp] in ComputeQpProperties(), such as hydrostatic stress. this done at time increment n.\n\n\n\n[2] extra this hydrostatic stress material property < Real > and store them into a mapStored within UO by mapStored[elementIDs][quadrature points], as giud you said using getMaterialProperty<>\nfor instance, this material property at 0th quadrature point within 4th element, which stored in mapStored[4][0].\n\n\n[3] do some elemental operations with 8 quadrature points from above stored mapStored, after that, we calculated a new material property < RealVectorValue > at each quadrature point. store these new material properties into mapNew [elementIDs][quadrature points], which contains < RealVectorValue >.\n\n\n\n[4] we focus on time increment n+1 and go back to Material System. To obtain this mapNew in ComputeQpProperties() as giud you said using getUserObject<>. this new calculated < RealVectorValue > by UO will be used to calculate another MaterialProperty in current timestep, such as flux, and provide to computeQpResidual and computeQpJacobian.\n\n\n\n\nThis is what I ask the question about individual Elemental value, all UO operations just use quadrature points of same elements like tiny User-Element.\nI already tried some followed above procedure, The result is strongly changed with different processors (MPI) used.\nI did not use threads only MPI, is that means I do not need to use threadJoin( ) and finalize( ) ?\nregards,\ntianwen",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9889853",
+                          "updatedAt": "2024-06-27T05:41:32Z",
+                          "publishedAt": "2024-06-27T05:41:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "To use threads you must implement threadJoin whenever a reduction operation is needed.\nTo use MPI / processes, similar for finalize()\n\nThe result is strongly changed with different processors (MPI) used\n\nThe element numbering is different in parallel. Use allow_renumbering = false in the Mesh block to keep the same ordering\n\n[3] do some elemental operations with 8 quadrature points from above stored mapStored, after that, we calculated a new material property < RealVectorValue > at each quadrature point. store these new material properties into mapNew [elementIDs][quadrature points], which contains < RealVectorValue >.\n\nI would recommend creating a second material property for the property retrieved by a UO then, this will simplify the logic.\nI think you have the workflow well set up already?\nDid you check that the user object is expected before the kernels/bcs/etc that need this custom material property?",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9898765",
+                          "updatedAt": "2024-06-27T21:46:19Z",
+                          "publishedAt": "2024-06-27T21:46:18Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ttw0626"
+                          },
+                          "bodyText": "Hi, giud, I re-view the Moose workshop slides and tried some different UOs-based.\nfor now, I got the correct results. the KeyPoint from my view, we should maintain the same data storage map over all processors, this is my previous misunderstanding. the replicated mesh as default.\nThanks for your all suggestions and help. I will mark as answer.\nbest regards,\ntianwen",
+                          "url": "https://github.com/idaholab/moose/discussions/27983#discussioncomment-9915535",
+                          "updatedAt": "2024-06-30T08:00:36Z",
+                          "publishedAt": "2024-06-30T08:00:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How external Fortran programs are programmed into mooseprojects",
+          "author": {
+            "login": "lvkas521424"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello\uff0c everyone.\nI am currently trying to get moose to compile one of my external Fortran programs, which has been modified to be compiled by gfortran as per your previous suggestion. However, I am currently experiencing some problems with the compilation process. How does compiling a Fortran program with moose generate the .mod file, when I see it compiling he reminds me of the missing  .mod file. So in order to compile successfully I have to copy the .mod compiled externally into it, which I think is a very stupid way, so I would like to ask you for help.\nHere is the compilation script I wrote\uff0c SCAPN is  my external program.\n\nyours\nlvjiahui",
+          "url": "https://github.com/idaholab/moose/discussions/28013",
+          "updatedAt": "2024-06-29T23:28:02Z",
+          "publishedAt": "2024-06-28T09:08:08Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@permcody @milljm\nI think you can find examples of compiling fortran programs in moose in the solid_mechanics module\nlook at examples/examples/uel_build_tests\nhttps://github.com/idaholab/moose/tree/next/modules/solid_mechanics/examples/uel_build_tests",
+                  "url": "https://github.com/idaholab/moose/discussions/28013#discussioncomment-9906469",
+                  "updatedAt": "2024-06-28T15:37:43Z",
+                  "publishedAt": "2024-06-28T15:37:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "We need more details. Are you pulling in a few routines, or are you\nplanning on coupling in a complete project?\n\u2026\nOn Fri, Jun 28, 2024 at 9:38\u202fAM Guillaume Giudicelli < ***@***.***> wrote:\n @permcody <https://github.com/permcody> @milljm\n <https://github.com/milljm>\n\n I think you can find examples of compiling fortran programs in moose in\n the solid_mechanics module\n look at examples/examples/uel_build_tests\n\n https://github.com/idaholab/moose/tree/next/modules/solid_mechanics/examples/uel_build_tests\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#28013 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AAXFOIB4CYHDTEYXLCFIRJTZJV7N3AVCNFSM6AAAAABKBO2GWWVHI2DSMVQWIX3LMV43SRDJONRXK43TNFXW4Q3PNVWWK3TUHM4TSMBWGQ3DS>\n .\n You are receiving this because you were mentioned.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/28013#discussioncomment-9914204",
+                  "updatedAt": "2024-06-29T23:28:03Z",
+                  "publishedAt": "2024-06-29T23:28:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Two viscoelastic subdomains: material properties declared on block by multiple materials",
+          "author": {
+            "login": "rynomcavoy"
+          },
+          "bodyText": "After looking at some related tickets: 22281, etc., I still don't know how to proceed. I'm trying to run a file of uniaxial tension in a viscoelastic rectangle with a small region inside of it having different material parameters:\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  #density = 1e4\n[]\n\n[Mesh]\n  [generated]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 40\n    ny = 20\n    xmax = 2\n    ymax = 1\n  []\n  [block1]\n    type = SubdomainBoundingBoxGenerator\n    input = generated\n    block_id = 1\n    bottom_left = '0.9 0.3 0'\n    top_right = '1.1 0.7 0'\n    location = OUTSIDE\n  []\n  [block2]\n    type = SubdomainBoundingBoxGenerator\n    input = block1\n    block_id = 2\n    bottom_left = '0.9 0.3 0'\n    top_right = '1.1 0.7 0'\n    location = INSIDE\n  []\n[]\n\n[Physics/SolidMechanics/QuasiStatic]\n  [all]\n    strain = SMALL\n    add_variables = true\n    generate_output = 'stress_xx stress_yx stress_yy vonmises_stress'\n  []\n[]\n\n[BCs]\n  [left_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0\n  []\n  [left_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = left\n    value = 0\n  []\n  [right_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = right\n    value = 0\n  []\n  [right_x]\n    type = FunctionNeumannBC\n    variable = disp_x\n    boundary = right\n    function = '600e6 * 0.2 * (1 + sin(2 * pi * t * 5))'\n  []\n[]\n\n[Materials]\n  [outer_mat]\n    type = GeneralizedKelvinVoigtModel\n    creep_modulus = 660e6\n    creep_viscosity = 1\n    young_modulus = 660e6\n    poisson_ratio = 0.3\n    block = 1\n  []\n  [inner_mat]\n    type = GeneralizedKelvinVoigtModel\n    creep_modulus = 100e4\n    creep_viscosity = 2\n    young_modulus = 100e4\n    poisson_ratio = 0.3\n    block = 2\n  []\n  [stress]\n    type = ComputeMultipleInelasticStress\n    inelastic_models = 'creep'\n  []\n  [creep]\n    type = LinearViscoelasticStressUpdate\n  []\n  [strain]\n    type = ComputeSmallStrain\n    displacements = 'disp_x disp_y'\n  []\n[]\n\n[UserObjects]\n  [update_out]\n    type = LinearViscoelasticityManager\n    viscoelastic_model = 'outer_mat'\n  []\n  [update_inner]\n    type = LinearViscoelasticityManager\n    viscoelastic_model = 'inner_mat'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  end_time = 1\n  dt = 0.01\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nBut an error occurs:\n `*** ERROR ***\nThe following error occurred in the Problem 'MOOSE Problem' of type FEProblem.\n\nThe following material properties are declared on block 1 by multiple materials:\n  Material Property             Material Objects\n  mechanical_strain             all_strain strain \n  total_strain                  all_strain strain `\n\nI tried to use base_names e.g. here but that only gave more errors. Any help appreciated.",
+          "url": "https://github.com/idaholab/moose/discussions/28018",
+          "updatedAt": "2024-07-01T06:01:29Z",
+          "publishedAt": "2024-06-29T01:42:41Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe 'strain' material you defined overlaps with the 'strain' material that is created by the Physics\n[Physics/SolidMechanics/QuasiStatic]\n  [all]\n    strain = SMALL\n    add_variables = true\n    generate_output = 'stress_xx stress_yx stress_yy vonmises_stress'\n  []\n[]\n\nI dont think you need both. I think you could delete the material and select the strain model in the Physics block\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9910074",
+                  "updatedAt": "2024-06-29T03:31:37Z",
+                  "publishedAt": "2024-06-29T03:31:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "Commenting out the strain material gives a separate error:\n*** ERROR ***\nThe following error occurred in the Problem 'MOOSE Problem' of type FEProblem.\n\nMaterial property 'strain_increment', requested by 'stress' is not defined on block 1\nMaterial property 'rotation_increment', requested by 'stress' is not defined on block 1\nMaterial property 'strain_increment', requested by 'stress' is not defined on block 1\nMaterial property 'strain_increment', requested by 'stress' is not defined on block 2\nMaterial property 'rotation_increment', requested by 'stress' is not defined on block 2\nMaterial property 'strain_increment', requested by 'stress' is not defined on block 2\n```",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9910253",
+                          "updatedAt": "2024-06-29T21:08:41Z",
+                          "publishedAt": "2024-06-29T04:39:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Can you make the physics use an incremental strain model?\nThose properties are only defined for incremental models",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9912338",
+                          "updatedAt": "2024-06-29T14:15:18Z",
+                          "publishedAt": "2024-06-29T14:15:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "No the Physics module only allows small or finite as inputs:\n*** ERROR *** Invalid option \"INCREMENTAL\" in MooseEnum.  Valid options (not case-sensitive) are \"SMALL FINITE\".",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913003",
+                          "updatedAt": "2024-06-29T17:14:59Z",
+                          "publishedAt": "2024-06-29T17:14:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "set incremental = true",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913174",
+                          "updatedAt": "2024-06-29T18:03:20Z",
+                          "publishedAt": "2024-06-29T18:03:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "I went back to using the normal mechanics kernel and the simpler LinearViscoelasticStress and a new error message is occuring:\n*** ERROR *** Incompatible material and object blocks: /home/rmcavoy/projects/raptor/tendon/cgpt.i:102: (Materials/outer_mat/block) material defined on blocks 1,  block: object needs material on blocks 1, 2, \nRelevant input file:\n`\n[Mesh]\n[generated]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 40\nny = 20\nxmax = 2\nymax = 1\n[]\n[block1]\ntype = SubdomainBoundingBoxGenerator\ninput = generated\nblock_id = 1\nbottom_left = '0.9 0.3 0'\ntop_right = '1.1 0.7 0'\nlocation = OUTSIDE\n[]\n[block2]\ntype = SubdomainBoundingBoxGenerator\ninput = block1\nblock_id = 2\nbottom_left = '0.9 0.3 0'\ntop_right = '1.1 0.7 0'\nlocation = INSIDE\n[]\n[]\n[Variables]\n[./disp_x]\norder = FIRST\nfamily = LAGRANGE\n[../]\n[./disp_y]\norder = FIRST\nfamily = LAGRANGE\n[../]\n[]\n[Kernels]\n[SolidMechanics]\ndisplacements = 'disp_x disp_y'\nuse_displaced_mesh = true\n[../]\n[]\n[BCs]\n[left_x]\ntype = DirichletBC\nvariable = disp_x\nboundary = left\nvalue = 0\n[]\n[left_y]\ntype = DirichletBC\nvariable = disp_y\nboundary = left\nvalue = 0\n[]\n[right_y]\ntype = DirichletBC\nvariable = disp_y\nboundary = right\nvalue = 0\n[]\n[right_x]\ntype = FunctionNeumannBC\nvariable = disp_x\nboundary = right\nfunction = '600e6 * 0.2 * (1 + sin(2 * pi * t * 5))'\n[]\n[]\n[Materials]\n[outer_mat]\ntype = GeneralizedKelvinVoigtModel\ncreep_modulus = 660e6\ncreep_viscosity = 1\nyoung_modulus = 660e6\npoisson_ratio = 0.3\nblock = 1\n[]\n[inner_mat]\ntype = GeneralizedKelvinVoigtModel\ncreep_modulus = 100e4\ncreep_viscosity = 2\nyoung_modulus = 100e4\npoisson_ratio = 0.3\nblock = 2\n[]\n[stress]\ntype = ComputeLinearViscoelasticStress\n[]\n[strain]\ntype = ComputeSmallStrain\ndisplacements = 'disp_x disp_y'\n[]\n[]\n[UserObjects]\n[update_out]\ntype = LinearViscoelasticityManager\nviscoelastic_model = 'outer_mat'\n[]\n[update_inner]\ntype = LinearViscoelasticityManager\nviscoelastic_model = 'inner_mat'\n[]\n[]\n[Executioner]\ntype = Transient\nsolve_type = NEWTON\npetsc_options_iname = '-pc_type'\npetsc_options_value = 'lu'\nend_time = 1\ndt = 0.01\n[]\n[Outputs]\nexodus = true\n[]\n`",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913176",
+                          "updatedAt": "2024-06-29T18:04:57Z",
+                          "publishedAt": "2024-06-29T18:04:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "set incremental = true\n\nStill, nope:\n*** ERROR *** Incompatible material and object blocks: /home/rmcavoy/projects/raptor/tendon/cgpt.i:85: (Materials/outer_mat/block) material defined on blocks 1,  block: object needs material on blocks 1, 2,",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913187",
+                          "updatedAt": "2024-06-29T18:08:31Z",
+                          "publishedAt": "2024-06-29T18:08:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the property defined by 'outer_mat' is being request on two blocks '1,2' when it only defines it on block 1\nmaybe you are missing another material to define the same property as outer_mat?",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913639",
+                          "updatedAt": "2024-06-29T20:24:19Z",
+                          "publishedAt": "2024-06-29T20:24:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "set incremental = true\n\nStill, nope:\n*** ERROR *** Incompatible material and object blocks: /home/rmcavoy/projects/raptor/tendon/cgpt.i:85: (Materials/outer_mat/block) material defined on blocks 1, block: object needs material on blocks 1, 2, \n\nIs this from your new input or from the input with the Physics?",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913861",
+                          "updatedAt": "2024-06-29T21:09:07Z",
+                          "publishedAt": "2024-06-29T21:09:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rynomcavoy"
+                          },
+                          "bodyText": "Input with Physics",
+                          "url": "https://github.com/idaholab/moose/discussions/28018#discussioncomment-9913977",
+                          "updatedAt": "2024-06-29T21:45:24Z",
+                          "publishedAt": "2024-06-29T21:45:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "how to impose the deformation output by abaqus to Moose",
+          "author": {
+            "login": "HairyLittleBoy"
+          },
+          "bodyText": "Hi\nI build a cubic volume in Moose and want it to deform the way same as the simulation result obtained with ABAQUS, which means the displacements of each surface (or vertex) of the cubic be the same as ABAQUS.\nI directly give the displacement to each surface like:\n[BCs]\n  [tdisp1]\n    type = DirichletBC\n    variable = disp_x\n    boundary = bottom\n    value = 0.003\n  []\n  [tdisp2]\n    type = DirichletBC\n    variable = disp_y\n    boundary = bottom\n    value = 0.0236\n  []\n  [tdisp3]\n    type = DirichletBC\n    variable = disp_z\n    boundary = bottom\n    value = 0.0236\n  []\n\n\n  [tdisp4]\n    type = DirichletBC\n    variable = disp_x\n    boundary = top\n    value = 0.0236\n  []\n  [tdisp5]\n    type = DirichletBC\n    variable = disp_y\n    boundary = top\n    value = 0.0236\n  []\n  [tdisp6]\n    type = DirichletBC\n    variable = disp_z\n    boundary = top\n    value = 0.0236\n  []  \n \n  [tdisp7]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0302\n  []\n  [tdisp8]\n    type = DirichletBC\n    variable = disp_y\n    boundary = left\n    value =  0.003\n  []\n  [tdisp9]\n    type = DirichletBC\n    variable = disp_z\n    boundary = left\n    value =  -0.0112\n  [] \n\n  [tdisp10]\n    type = DirichletBC\n    variable = disp_x\n    boundary = right\n    value = 0.003\n  []\n  [tdisp11]\n    type = DirichletBC\n    variable = disp_y\n    boundary = right\n    value = 0.003\n  []\n  [tdisp12]\n    type = DirichletBC\n    variable = disp_z\n    boundary = right\n    value = 0.003\n  [] \n\n\n  [tdisp13]\n    type = DirichletBC\n    variable = disp_x\n    boundary = back\n    value = 0.0322\n  []\n  [tdisp14]\n    type = DirichletBC\n    variable = disp_y\n    boundary = back\n    value = 0.0322\n  []\n  [tdisp15]\n    type = DirichletBC\n    variable = disp_z\n    boundary = back\n    value = -0.0132\n  [] \n\n  \n  [tdisp16]\n    type = DirichletBC\n    variable = disp_x\n    boundary = front\n    value = 0.0259\n  []\n  [tdisp17]\n    type = DirichletBC\n    variable = disp_y\n    boundary = front\n    value = 0.0259\n  []\n  [tdisp18]\n    type = DirichletBC\n    variable = disp_z\n    boundary = front\n    value =  0.0259\n  [] \n[]\n\nhowever, it always does not converge at iteration 0. The same situation when I prescibe the displacement to the 8 vertexes\nAlso, if the deformation gradient can be defined, it might also works, I found following discussion but still not understande how to do, may need some details.\nhttps://github.com/idaholab/moose/discussions/19487",
+          "url": "https://github.com/idaholab/moose/discussions/27836",
+          "updatedAt": "2024-06-29T14:09:56Z",
+          "publishedAt": "2024-06-09T07:37:50Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you set preset=false to all these boundary conditions and see if it converges?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9720042",
+                  "updatedAt": "2024-06-09T16:41:09Z",
+                  "publishedAt": "2024-06-09T16:41:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HairyLittleBoy"
+                          },
+                          "bodyText": "thank you for your reply. No it doesn't work. I am applying a crystal plastic simulation of pure Ti in ABAQUS by using a UMAT without twinning mechanism, so I'm trying to export the deformation from ABAQUS result and give them to Moose. However, my boundary condition setting leads to divergence even I set preset=false. I think I will do my CP simulation of indentation totally within Moose. The discussions #16716, the input example (modules/contact/examples/3d_berkovich/indenter_berkovich_friction.i) and the vedios by Nicol\u00f2 Grilli (https://www.youtube.com/watch?v=qG7EoX34hZ8) may help.",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9784760",
+                          "updatedAt": "2024-06-16T04:11:19Z",
+                          "publishedAt": "2024-06-16T04:11:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HairyLittleBoy"
+                          },
+                          "bodyText": "Also, after I read the modules/contact/examples/3d_berkovich/indenter_berkovich_friction.i, I cannot find the definition of crystal orientation nowhere, how can I give each grain an orientation (through bunger euler angle or orientation matrix) ? @GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9806486",
+                          "updatedAt": "2024-06-18T15:35:40Z",
+                          "publishedAt": "2024-06-18T13:30:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HairyLittleBoy"
+                          },
+                          "bodyText": "after a few searching, I found this :\n/solid_mechanics/src/userobjects/EulerAngleFileReader.C\n\nbut what I'm interested in is the modified Kalidindi model for hcp :\n[Materials]\n    [elasticity_tensor]\n       type = ComputeElasticityTensorCP\n       C_ijkl = '1.622e5 9.18e4 6.88e4 1.622e5 6.88e4 1.805e5 4.67e4 4.67e4 4.67e4' \n    fill_method = symmetric9\n  []\n  [stress]\n    type = ComputeMultipleCrystalPlasticityStress\n    crystal_plasticity_models = 'twin_xtalpl'\n    tan_mod_type = exact\n  []\n  [twin_xtalpl]\n    type = CrystalPlasticityTwinningKalidindiUpdate\n    base_name = twin\n    crystal_lattice_type = HCP\n    unit_cell_dimension = '2.934e-7 2.934e-7 4.657e-7' \n    number_slip_systems = 6\n    slip_sys_file_name = 'hcp_tensile_twin_systems.txt'\n    initial_twin_lattice_friction = 1140\n    non_coplanar_coefficient_twin_hardening = 10000\n    coplanar_coefficient_twin_hardening = 1000\n    characteristic_twin_shear = 0.167\n  []\n[]\n\nCrystalPlasticityTwinningKalidindiUpdate is under [Material] instead of [UserObjects], Can I apply the \"EulerAngleFileReader\" to define the orientation of crystal ?",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9807846",
+                          "updatedAt": "2024-06-18T15:44:50Z",
+                          "publishedAt": "2024-06-18T15:29:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThe reader is a user object because that's all it does, read the angles from a file iirc.\nNow the materials have to pull in the UserObject (using getUserObject on the problem) to query the angles.\nIf this has not been implemented for Kalindi, then you'll need to implement that",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9808057",
+                          "updatedAt": "2024-06-18T15:46:26Z",
+                          "publishedAt": "2024-06-18T15:46:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sapitts"
+                          },
+                          "bodyText": "Use the parameters in ComputeElasticityTensorCP to provide the euler angles, options include:\n\neuler_angle_1, euler_angle_2, and euler_angle_3\neuler_angle_variables\nread_prop_user_object, or\nrotation_matrix\nSee the many example input files listed at the bottom of the documentation page for how to use one of these options: https://mooseframework.inl.gov/source/materials/crystal_plasticity/ComputeElasticityTensorCP.html\n\nIf you are looking for a HCP specific constitutive model, I recommend the CrystalPlasticityHCPDislocationSlipBeyerleinUpdate. The twinning Kalidindi model with the HCP lattice is intended only for regression testing purposes",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9876940",
+                          "updatedAt": "2024-06-26T00:52:55Z",
+                          "publishedAt": "2024-06-26T00:52:54Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HairyLittleBoy"
+                          },
+                          "bodyText": "thank you @sapitts , I will try that !",
+                          "url": "https://github.com/idaholab/moose/discussions/27836#discussioncomment-9912324",
+                          "updatedAt": "2024-06-29T14:09:50Z",
+                          "publishedAt": "2024-06-29T14:09:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1094 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0wMi0yMlQwMzoxODoxMS0wNzowMM4AMTh5"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Solving Tangent linear System",
+          "author": {
+            "login": "nikhilgv91"
+          },
+          "bodyText": "Hello,\nMy goal is to perform PDE-constrained optimization, and I am using MOOSE to perform the simulations. In addition to the simulation result, I would like to compute the solution of the 'Tangent Linear System' using MOOSE. A short explanation for what I would like to do:\nMy PDE: F (T,v) = 0\nT : state variable\nv : control variable (real number)\nTangent linear system: [dF(T,v) / dT] * x = - [dF(T,v) / dv] ; linear solve for x\nThe matrix dF(T,v) / dT is the jacobian of the original PDE. I would like to know if I can modify the executioner (or other appropriate object) so that the tangent linear system can be solved right after the \"original\" MOOSE solve in a single run of the simulation.\nI am aware that MOOSE can perform matrix-free solves, but for my problem I am using a NEWTON solve.\nThanks in advance!\nKind regards,\nNikhil",
+          "url": "https://github.com/idaholab/moose/discussions/16934",
+          "updatedAt": "2023-06-28T10:23:13Z",
+          "publishedAt": "2021-02-09T16:23:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "YaqiWang"
+                  },
+                  "bodyText": "Yes. You can modify executioners in whatever way. Once you have [dF(T,v) / dT] and [dF(T,v) / dv], you can directly use PETSc to solve for x. If dF(T,v) / dT is fixed in this solve, you do not have to use MOOSE's PJFNK machinery which could be messy with your \"original\" system. I feel you can evaluate dF(T,v) / dv pretty easily with MOOSE residual evaluation and Control for v. Just my suggestions.",
+                  "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-353746",
+                  "updatedAt": "2023-06-28T10:23:28Z",
+                  "publishedAt": "2021-02-09T16:58:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "Thanks for  your reply!\nI went through to code to try and figure out how the MOOSE performs the solves. I realized that the snes solve routines are called by the petsc_nonlinear_solver object in libmesh. I am not sure where (or if) the jacobian is constructed. Could you please give me some hint?",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-355758",
+                          "updatedAt": "2024-04-22T21:05:03Z",
+                          "publishedAt": "2021-02-10T08:35:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "The jacobian or matrix is stored here: SparseMatrix<Number> * FEProblem::getNonlinearSystem()::sys()::matrix. It is probably constructed by SNES wrapped in the petsc_nonlinear_solver during solve. The Jacobian or matrix in the nonlinear implicit system is a PetscMatrix<Real>  which has a member function mat() to return a raw PETSc matrix pointer in type of Mat. But MOOSE allows you to construct a matrix by yourself with the function Moose::compute_jacobian in NonlinearSystem.C. This is my understanding.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-357094",
+                          "updatedAt": "2024-04-22T21:05:04Z",
+                          "publishedAt": "2021-02-10T16:05:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "I was able to access the jacobian as a SparseMatrix object. You mentioned in your earlier message that a vector can be computed using MOOSE residual evaluation. Could you please give more info about that? I see that there is a computeResidual function in NonlinearSystem class. Can this function be triggered through a kernel with a specific tag defined in the input file?",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-359649",
+                          "updatedAt": "2024-04-22T21:05:03Z",
+                          "publishedAt": "2021-02-11T14:12:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "There is a tagging system: https://mooseframework.inl.gov/framework_development/tagging.html",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-359994",
+                          "updatedAt": "2023-06-28T10:23:28Z",
+                          "publishedAt": "2021-02-11T16:00:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "Thanks for this hint. Are there more detailed tutorials on the use of tagging? I looked at some input files in the module tests that uses tagging, but I don't understand it very well.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-360553",
+                          "updatedAt": "2023-06-28T10:23:28Z",
+                          "publishedAt": "2021-02-11T19:12:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YaqiWang"
+                          },
+                          "bodyText": "I was thinking to use two residual evaluations to evaluate that one with v another with v+epsilon. Then take the difference of the two divided by epsilon.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-360642",
+                          "updatedAt": "2023-06-28T10:23:28Z",
+                          "publishedAt": "2021-02-11T19:43:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "The analytical derivative is trivial to compute, so I would prefer to assemble the residual using the analytical expression.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-360738",
+                          "updatedAt": "2023-06-28T10:23:31Z",
+                          "publishedAt": "2021-02-11T20:21:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "@aeslaughter and @YaqiWang thanks for your respective suggestions! I was able to solve the Tangent Linear System. I will mark this thread as the solution to my query.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-401223",
+                          "updatedAt": "2023-06-28T10:23:31Z",
+                          "publishedAt": "2021-02-24T13:15:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@zachmprince @lynnmunday How does this relate to your optimization work?",
+                  "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-355541",
+                  "updatedAt": "2023-06-28T10:23:31Z",
+                  "publishedAt": "2021-02-10T06:42:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "This is somewhat related. @lynnmunday could speak more to it. Basically we are approximating  [dF(T,v) / dv]  using an adjoint equation evaluation, at least that is my understanding.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-360423",
+                          "updatedAt": "2023-06-28T10:23:32Z",
+                          "publishedAt": "2021-02-11T18:21:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "Is PDE-constrained optimization already already part of the modules?",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-360933",
+                          "updatedAt": "2023-06-28T10:23:32Z",
+                          "publishedAt": "2021-02-11T21:14:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "We have an app that is doing pde constrained optimization but it needs cleaned up with better testing before we can merge it into moose.  I think we would have it merged in by the end of March.  We are use TAO to do the optimization and we are providing it with a forward and gradient solve.  The gradient solve is computed from the adjoint which we get by just solving the system a second time with the adjoint loads and bcs.  We do this with the multiapp system.",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-387029",
+                          "updatedAt": "2023-06-28T10:23:32Z",
+                          "publishedAt": "2021-02-19T21:32:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nikhilgv91"
+                          },
+                          "bodyText": "@lynnmunday Thanks for the detailed reply!",
+                          "url": "https://github.com/idaholab/moose/discussions/16934#discussioncomment-398258",
+                          "updatedAt": "2023-06-28T10:23:32Z",
+                          "publishedAt": "2021-02-23T16:35:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Thermodynamic Properties of CO2 - R.Span and W.Wagner",
+          "author": {
+            "login": "andreubernadserra"
+          },
+          "bodyText": "The values for _a4 and _gamma3 in header file CO2FluidProperties.h differ slightly from those reported in the original reference:\n\nThe last value of the  _a4 array is 3.000 (instead of the implemented 3.500) according to Table 31 of the cited reference.\nThe last value of the  _gamma3 array is 1.22 (instead of the implemented 1.25) according to mentioned table.\n\nWere these values modified on purpose? Nevertheless, this should have no impact on the calculations.\nThanks in advance and have a nice day!",
+          "url": "https://github.com/idaholab/moose/discussions/17104",
+          "updatedAt": "2022-06-14T07:21:11Z",
+          "publishedAt": "2021-02-23T09:54:29Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "@cpgr ?",
+                  "url": "https://github.com/idaholab/moose/discussions/17104#discussioncomment-396837",
+                  "updatedAt": "2022-06-14T07:21:16Z",
+                  "publishedAt": "2021-02-23T10:21:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I would assume these are simply typos I made when I was writing it! It probably (hopefully) won't affect the calculations appreciably as you say, but should be fixed up. Thanks for spotting it!",
+                  "url": "https://github.com/idaholab/moose/discussions/17104#discussioncomment-396916",
+                  "updatedAt": "2022-06-14T07:21:10Z",
+                  "publishedAt": "2021-02-23T10:49:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I've fixed this in #17119. Thanks again for spotting this!",
+                  "url": "https://github.com/idaholab/moose/discussions/17104#discussioncomment-399799",
+                  "updatedAt": "2022-06-14T07:21:32Z",
+                  "publishedAt": "2021-02-24T02:09:08Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "andreubernadserra"
+                          },
+                          "bodyText": "Thank you for the prompt response. Greetings from Barcelona!",
+                          "url": "https://github.com/idaholab/moose/discussions/17104#discussioncomment-400684",
+                          "updatedAt": "2022-06-14T07:21:32Z",
+                          "publishedAt": "2021-02-24T10:18:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to display displacement?",
+          "author": {
+            "login": "zhang-rite"
+          },
+          "bodyText": "Hi\nHere is a native question. My problem has primary variables \"disp_r disp_z\". In default output exodus file, there shows a variable of \"disp_\". Now I want to see the differential displacement of each step to a special time (_initial).\nThe questions are\n\nHow to make \"disp_r\" and \"disp_z\" can be visualized separately by exodus file?\nhow can I define \"disp_r_initial\" in auxkernel or in kernel or in some other ways then I can calculate the difference?\n\nI know the way for strain and stress. I just don't know how to do this for primary variables. Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/17122",
+          "updatedAt": "2024-10-31T21:05:46Z",
+          "publishedAt": "2021-02-24T04:44:50Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Seems like i'm your personal assistant!  :-)\n\n\nThis is a paraview question.  Look up the top of the paraview window.  You should see a box containing a list of variables you can display.  One of them will be \"disp_\" as you have noticed already.  Click it.  Then look to the right of this box, and you should see a box with \"Magnitude; x; y; z\" in it.  Choose your desired component (your disp_r will be called \"x\" by paraview)\n\n\nUse ParsedAux and execute on initial.  Eg\n\n\n [disp_r_initial]\n    type = ParsedAux\n    args = disp_r\n    function = disp_r\n    variable = disp_r_initial\n    execute_on = initial\n  []\n\nYou can also define\n [disp_r_change]\n    type = ParsedAux\n    args = 'disp_r disp_r_initial'\n    function = 'disp_r - disp_r_initial'\n    variable = disp_r_change\n []",
+                  "url": "https://github.com/idaholab/moose/discussions/17122#discussioncomment-400061",
+                  "updatedAt": "2024-10-31T21:05:46Z",
+                  "publishedAt": "2021-02-24T05:19:11Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Wow, Andy, thanks again and again \ud83d\ude04 !",
+                          "url": "https://github.com/idaholab/moose/discussions/17122#discussioncomment-400117",
+                          "updatedAt": "2024-10-31T21:06:02Z",
+                          "publishedAt": "2021-02-24T06:09:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to improve the convergence?",
+          "author": {
+            "login": "zhang-rite"
+          },
+          "bodyText": "Hi MOOSE developers and users\nNow I test a 2D RZ hydro-mechanical model.\nHowever, the problem cannot get converged. Could you help me point out the problem. Thank you.\nHere is the github link",
+          "url": "https://github.com/idaholab/moose/discussions/17091",
+          "updatedAt": "2022-06-17T18:00:03Z",
+          "publishedAt": "2021-02-22T09:45:47Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Have you read these pages:\nhttps://mooseframework.inl.gov/modules/porous_flow/solvers.html\nhttps://mooseframework.inl.gov/modules/porous_flow/convergence.html\nhttps://mooseframework.inl.gov/modules/porous_flow/nonlinear_convergence_problems.html\n?\na",
+                  "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-395141",
+                  "updatedAt": "2022-06-17T18:00:05Z",
+                  "publishedAt": "2021-02-22T21:05:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Andy, thank you again.\nNow I have read the recommended pages and modified the input file slightly.\nNow the problem can be converged to a value (with residual for pressure =43.8) but cannot be reduced further, no matter how I change the options.\n(One error previously I made was misuse of \"z\" instead of \"y\" for rz coordinate).\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-396545",
+                          "updatedAt": "2022-06-17T18:00:06Z",
+                          "publishedAt": "2021-02-23T07:56:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "This is a steady run!",
+                          "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-396547",
+                          "updatedAt": "2022-06-17T18:00:06Z",
+                          "publishedAt": "2021-02-23T07:56:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "The \"disp_\" looks strange. The pattern of pressure and strain seem good.\nI cannot find any improper setting of BCs in the model.\n[BCs]\n  [top]\n    type = FunctionDirichletBC\n    variable = pwater\n    boundary = 'top'\n    # use_displaced_mesh = false\n    function = '101325-y*9810'\n  []    \n     \n  [xmax_drained]\n    type = FunctionDirichletBC\n    variable = pwater\n    boundary = 'right'\n    function = '101325-y*9810'  \n    # use_displaced_mesh = false \n  []  \n\n  [./fixed_outer_r]\n    type = PresetBC\n    variable = disp_r\n    value = 0\n    boundary = right\n    # use_displaced_mesh = false\n  [../]\n\n  [./fixed_outer_l]\n    type = PresetBC\n    variable = disp_r\n    value = 0\n    boundary = 'left' \n    # use_displaced_mesh = false\n  [../]\n\n  [./fixed_bottom_z]\n    type = PresetBC\n    variable = disp_z\n    value = 0\n    boundary = bottom\n    # use_displaced_mesh = false\n  [../]  \n\n  [./top_z]\n    type = Pressure\n    variable = disp_z\n    component = 1\n    function = '-2386.0*9.81*y'\n    use_displaced_mesh = false\n    boundary = 'top'\n  [../]  \n[]\n\n\n[Preconditioning]\n  [./test]\n    type = SMP\n    full = true\n    petsc_options_iname = '-ksp_type -pc_type -sub_pc_type -pc_factor_shift_type  -snes_atol -snes_rtol'\n    petsc_options_value = 'gmres      lu       mumps        NONZERO                4.4e1     1E-10'\n    petsc_options = '-snes_converged_reason -ksp_diagonal_scale -ksp_diagonal_scale_fix -ksp_gmres_modifiedgramschmidt -snes_linesearch_monitor'\n\n  [../]\n[]\n[Executioner]\n  type = Steady\n  solve_type = Newton\n  l_max_its  = 200\n  nl_max_its = 500\n  automatic_scaling = True\n  compute_scaling_once = False\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-396579",
+                          "updatedAt": "2022-06-17T18:00:06Z",
+                          "publishedAt": "2021-02-23T08:11:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "@zhang-rite , i had a look at your input file.  It obviously uses an old version of MOOSE (it does not even run with modern MOOSE) which is not recommended.  Anyway, modernising the input file isn't hard and doesn't make any difference to the result in this case.\nThe overall point is: you have converged! The solution is found, to the precision available on your computer.\nYou can probably squeeze better precision from the problem by\n\naltering the permeability (the steady-state doesn't depend on perm in this case) or elasticity tensor , since these things are so small/big that they result in bad precision loss\npaying particular attention to scaling (eg, perhaps set scaling = 1E-6 for the disp_r and disp_z terms, and don't use automatic_scaling)\nperhaps some flags in the Kernels (eg full_upwind_threshold and fallback_scheme)\n\nbut the result won't be much different.  If you're unhappy with the result then you'll have to muck around with the mesh (large elements obviously have different contributions to the residual than small elements), or maybe do a subsequent transient run with super long time steps (won't make much difference but might make you feel better), or similar.",
+                  "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-396835",
+                  "updatedAt": "2022-06-17T18:00:06Z",
+                  "publishedAt": "2021-02-23T10:20:39Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "I just want to add: remember your volume is huge (~1E12) so the minimum residual as listed at https://mooseframework.inl.gov/modules/porous_flow/convergence.html will be quite large",
+                          "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-396864",
+                          "updatedAt": "2022-06-29T13:24:26Z",
+                          "publishedAt": "2021-02-23T10:32:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Andy, many thanks! Following the suggestions, the residual is slightly reduced.\nNow the transient run (without fluid injection) following the stead-state run still has variable changes, but just slightly. Thus it is ok for continued fluid injection.",
+                          "url": "https://github.com/idaholab/moose/discussions/17091#discussioncomment-400011",
+                          "updatedAt": "2022-06-29T13:24:26Z",
+                          "publishedAt": "2021-02-24T04:20:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Bulk free energy specification & ADAllenCahn",
+          "author": {
+            "login": "Leni-Yeo"
+          },
+          "bodyText": "Good morning, my name is Leni. I am a student and relatively new in using MOOSE / Phase Field and have few questions for anyone able to help.\n\n\nI am trying to do a simulation for polycrystal grain growth. I saw the example that applies the polycrystalvariables and polycrystalkernel actions. I modified the polycrystalkernel action to include the following kernels: ADAllenCahn, ADTimeDerivative, and ADACInterfaceKobayashi2 for a basic simulation. My trouble comes in with the bulk free energy [gr^2 * (gr - 1)^2)] that I need to specify as a function material. I tried to write it as a derivative parsed material directly under the Materials block but since we have many order parameters set up with the polycrystalvariables action (gr0, gr1, gr2,...), the software does not recognizes the variable in the equation. I am wondering if there is a specific format in writing the equation in the input file to refer to all the parameters or if there is any specific kernel that already produces this outcome that I may have missed.\n\n\nThe bulk free energy that I am using only depends on the order parameter [gr^2 * (gr - 1)^2)] which I can use the ADAllenCahn kernel to implement. But I was wondering if there is a version of the ADAllenCahn kernel that takes into account bulk free energy equations with parameters/arguments other than the order parameter. I know the AllenCahn Kernel does that but I am asking about one that has automatic differentiation applied in .\n\n\nI attached my input file and the kernel action I am using to set up the kernels.\nfiles.zip",
+          "url": "https://github.com/idaholab/moose/discussions/17093",
+          "updatedAt": "2022-07-07T06:33:26Z",
+          "publishedAt": "2021-02-22T18:23:13Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "SudiptaBiswas"
+                  },
+                  "bodyText": "Symbolic representation in the input file doesn't work. You have to provide the bulk energy for all the order parameters. For isotropic grain growth, you can use the GrainGorwthAction  with use_automatic_differentiation = true to activate the AD objects.",
+                  "url": "https://github.com/idaholab/moose/discussions/17093#discussioncomment-398566",
+                  "updatedAt": "2022-07-07T06:33:34Z",
+                  "publishedAt": "2021-02-23T17:56:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Leni-Yeo"
+                          },
+                          "bodyText": "I see, thank you for the help.",
+                          "url": "https://github.com/idaholab/moose/discussions/17093#discussioncomment-398814",
+                          "updatedAt": "2022-07-07T06:33:34Z",
+                          "publishedAt": "2021-02-23T18:58:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Print the matrix in the MOOSE module",
+          "author": {
+            "login": "jinca"
+          },
+          "bodyText": "Hello guys,\nMay I ask how to print the type of the matrix used in the kernel?\nIs OK to use the following?:\nFor NEWTON, you might use  petsc_options_iname = -ksp_view_mat\nFor PJFNK, you might use  petsc_options_iname = -ksp_view_pmat\nThanks in advance,\nJulita",
+          "url": "https://github.com/idaholab/moose/discussions/17089",
+          "updatedAt": "2022-10-10T17:57:07Z",
+          "publishedAt": "2021-02-21T23:08:46Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@fdkong Can you help out here?",
+                  "url": "https://github.com/idaholab/moose/discussions/17089#discussioncomment-398620",
+                  "updatedAt": "2022-10-10T17:57:07Z",
+                  "publishedAt": "2021-02-23T18:13:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "fdkong"
+                  },
+                  "bodyText": "May I ask how to print the type of the matrix used in the kernel?\n\nThe matrix type is MPIAIJ (https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Mat/MATMPIAIJ.html) for parallel simulations, and SeqAIJ (https://www.mcs.anl.gov/petsc/petsc-current/docs/manualpages/Mat/MATSEQAIJ.html) for sequential simulations.  We do not explore other matrix types.\n\nFor NEWTON, you might use petsc_options_iname = -ksp_view_mat\nFor PJFNK, you might use petsc_options_iname = -ksp_view_pmat\n\nRegardless, you could use  -ksp_view_pmat to print out matrix elements on the screen. But I want to point out this print is just for debugging. That being said, the option is often employed to print out a small matrix for checking if the code works correctly.\nIf you want to dump a large matrix and use it in other codes, you need to use a binary file (-ksp_view_pmat binary). In general, I do NOT think it is a good idea to dump a large matrix unless you have a strong motivation. Instead, you should directly couple MOOSE to other codes to accomplish this.",
+                  "url": "https://github.com/idaholab/moose/discussions/17089#discussioncomment-398688",
+                  "updatedAt": "2022-10-10T17:57:10Z",
+                  "publishedAt": "2021-02-23T18:30:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Navier-Stokes Set-up",
+          "author": {
+            "login": "adfboyd"
+          },
+          "bodyText": "Hello, I'm a student and new user of Moose.\nI am trying to set up a fluid simulation of flow moving past a sphere, and struggling to find where to get started (setting up BCs, objects, etc). I have watched some of the seminar, but am still struggling!\nAny advice on where to look would be much appreciated, thank you in advance!\n(If this is the wrong category I apologize, I'm happy to move it)",
+          "url": "https://github.com/idaholab/moose/discussions/17017",
+          "updatedAt": "2023-01-26T22:41:18Z",
+          "publishedAt": "2021-02-16T13:04:59Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ABallisat"
+                  },
+                  "bodyText": "Have a look at the tests in the Navier Stokes module, the input files for tests are good examples of how to use all the various MOOSE components.",
+                  "url": "https://github.com/idaholab/moose/discussions/17017#discussioncomment-374016",
+                  "updatedAt": "2023-01-26T22:41:18Z",
+                  "publishedAt": "2021-02-16T15:32:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "We have a tutorial that will walk you through the basic steps of creating an application from scratch. This should help you grasp the core concepts, which you can apply to your problem.\nhttps://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial01_app_development/index.html",
+                  "url": "https://github.com/idaholab/moose/discussions/17017#discussioncomment-374285",
+                  "updatedAt": "2023-01-26T22:41:22Z",
+                  "publishedAt": "2021-02-16T16:54:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "You are in the correct category! Is your flow incompressible or not? Do you want to use the finite element method or finite volume method?",
+                  "url": "https://github.com/idaholab/moose/discussions/17017#discussioncomment-375539",
+                  "updatedAt": "2023-01-26T22:41:23Z",
+                  "publishedAt": "2021-02-17T00:20:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "adfboyd"
+                          },
+                          "bodyText": "Sorry for the late reply! We want incompressible flow and to use finite volume method if possible.",
+                          "url": "https://github.com/idaholab/moose/discussions/17017#discussioncomment-396910",
+                          "updatedAt": "2023-02-17T10:56:36Z",
+                          "publishedAt": "2021-02-23T10:46:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You should have a look at the tests in\n/modules/navier_stokes/test/tests/finite_volume/ins/ for examples of this.\nNote that this capability is fairly new in the framework so feel free to make PRs if you have new kernels, BCs or closures that could be useful to others.",
+                          "url": "https://github.com/idaholab/moose/discussions/17017#discussioncomment-397638",
+                          "updatedAt": "2023-02-17T10:56:36Z",
+                          "publishedAt": "2021-02-23T14:27:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Aquifer types in PorousFlow",
+          "author": {
+            "login": "AmandaLug"
+          },
+          "bodyText": "Dear MOOSE,\nHow can I add layers to my PorousFlow models? I'm using the mesh system of MOOSE. And, how can I layer up different types of aquifers, for example: A unconfined aquifer followed by a confined aquifer and then a leaky aquifer and so on?\nThanks!\nAmanda",
+          "url": "https://github.com/idaholab/moose/discussions/17053",
+          "updatedAt": "2023-10-06T15:38:40Z",
+          "publishedAt": "2021-02-18T14:28:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "AmandaLug"
+                  },
+                  "bodyText": "So figured how to add layers in the groundwater documentation... Sorry! But I still have the aquifer types question \ud83d\ude15.\nAmanda",
+                  "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-381368",
+                  "updatedAt": "2023-10-06T15:38:56Z",
+                  "publishedAt": "2021-02-18T15:34:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@WilkAndy Can you help out here?",
+                  "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-381789",
+                  "updatedAt": "2023-10-06T15:39:01Z",
+                  "publishedAt": "2021-02-18T17:40:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "In hypothetical models, this is reasonably easy.  You can see some models at https://mooseframework.inl.gov/modules/porous_flow/groundwater_models.html where aquitards and aquifers have been defined:\n\nCreate your mesh so that it has different \"blocks\" (also called \"subdomains\")\nPrescribe different hydraulic properties, such as porosity and permeability, to those blocks\n\nThat's all.  I'm not sure exactly what your \"leaky aquifer\" is... if you mean just something that's half-way between an aquifer and an aquitard, then it'll just need \"half-way\" permeability, but if you mean something containing a drain (or equivalent) you'll need\n\nApply suitable boundary conditions or point-sinks so appropriate layers to simulate regional groundwater flow or flow to a sink.\n\nThe problems come when you're trying to do more sophisticated models with topography and hydrostratigraphy that have complicated geometry.  Then (1) is often quite difficult, in fact (1) often takes the largest fraction of numerical-model-building time in my experience.  But then (2) and (3) follow pretty quickly.",
+                  "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-382405",
+                  "updatedAt": "2023-10-06T15:39:06Z",
+                  "publishedAt": "2021-02-18T21:19:46Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AmandaLug"
+                          },
+                          "bodyText": "Thanks. I understand, I got how to add different layer in simple geometries.\nWith my question I meant different types of aquifer confinement. I was thinking about it and probably the best way to confine a aquifer is to add thin low-conductivity layers at the top and bottom of the aquifer that I wanna confine. If that makes sense for you...\nCreating different geometries sounds complicated! Do you have or know further references to read about it?\nAmanda",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-392857",
+                          "updatedAt": "2023-10-06T15:39:08Z",
+                          "publishedAt": "2021-02-22T09:23:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "You are correct about the low-conductivity layers.  In fact, that is basically the definition of a \"confined aquifer\".  The aquitards need not be thin in reality - it is fairly common to have a 10m thick clay band appearing within a sedimentary lithology, and that layer could have conductivity lower than 1E-3 milliDarcy (=1E-18 m^2), meaning water takes about 1000 years to naturally percolate through it.",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-395169",
+                          "updatedAt": "2023-10-06T15:39:27Z",
+                          "publishedAt": "2021-02-22T21:13:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "I don't know of any good references that describe building model meshes.  Often they are so customised.  The meshes are often built on layers coming from geology-modelling software such as Leapfrog3D, GoCad, Petrel, ArcGIS.\na",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-395180",
+                          "updatedAt": "2023-10-06T15:39:31Z",
+                          "publishedAt": "2021-02-22T21:18:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AmandaLug"
+                          },
+                          "bodyText": "This is great. Thanks Andy for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-396612",
+                          "updatedAt": "2023-10-06T15:39:58Z",
+                          "publishedAt": "2021-02-23T08:31:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Welcome to MOOSE, @AmandaLug .   You'll probably find it hard-going initially, but after a time you'll be familiar with all the concepts and it'll become second-nature.  Are you working at a university?  Are you a groundwater hydrogeologist, or something else?",
+                  "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-382406",
+                  "updatedAt": "2023-10-06T15:40:33Z",
+                  "publishedAt": "2021-02-18T21:19:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "This can help you understand developing using MOOSE: https://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial01_app_development/index.html",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-387064",
+                          "updatedAt": "2023-10-06T15:40:37Z",
+                          "publishedAt": "2021-02-19T21:47:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AmandaLug"
+                          },
+                          "bodyText": "Thanks again!\nYeah is taking some time to get familiar to PorousFlow. I'm a geophysics, I work for a small consultancy company in Brazil. But I enjoy learning new things!. I came across MOOSE last year in a seminar.\nI'm not really experienced in modeling, I appreciate your complete response.\nAmanda",
+                          "url": "https://github.com/idaholab/moose/discussions/17053#discussioncomment-392877",
+                          "updatedAt": "2023-10-06T15:40:38Z",
+                          "publishedAt": "2021-02-22T09:31:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Two-phase porous media flow: Strange pressure field",
+          "author": {
+            "login": "zhang-rite"
+          },
+          "bodyText": "Hi MOOSE Porous media team\nI am now testing a simple 2D CO2 injection problem (coupled with mechanics and with gravity effect on) based on the \"modules/porous_flow/examples/thm_example/2D.i\" example.\nThe model simply has an aquifer with a high permeability (1e-12 m2) between upper caprock and bottom both with low permeability (1e-19 m2).\n\nAs expected, while CO2 injection, under bouncy forces, the CO2 plume gradually moves to upper regions on in the aquifer. However, the strange thing is in the change of fluid pressure field, which is much large in the caprock than expected.\nCould you help me point out the problem? Thank you.\n\nThe input file link\n(The pressure change (to the hydrostatic pressure) is denoted \"pgas2\". )",
+          "url": "https://github.com/idaholab/moose/discussions/17049",
+          "updatedAt": "2022-10-24T21:53:04Z",
+          "publishedAt": "2021-02-18T04:40:57Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "No answer, just some questions\n\nwhy don't you have a PorousFlowEffectiveStressCoupling Kernel for disp_z ?\nHave you checked your sidesets in your mesh?  Viz, the 'left' and 'injection_area' sidesets?\nwhy are your bulk moduli so high?\nHave you checked your initial conditions?\nAre the displacements as expected?\n\na",
+                  "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-379977",
+                  "updatedAt": "2022-10-24T21:53:14Z",
+                  "publishedAt": "2021-02-18T05:42:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Andy, thank you very much for quick reply. Following your questions I have revised the input file and done modeling again.\n\nwhy don't you have a PorousFlowEffectiveStressCoupling Kernel for disp_z ?\n\n\nNow I have added, however no apparent effect for above mentioned pressure field.\n\n\nHave you checked your sidesets in your mesh? Viz, the 'left' and 'injection_area' sidesets?\n\n\n\nIt seems the 'injection area' functions. This figure shows that the pressure field during initial pressure build up (no CO2 enter into the aquifer domain). We see the pressure build up well in vertical range of the aquifer.\nThe above mentioned pressure anomaly appeared after CO2 plume migrated to upper aquifer.\n\n\nwhy are your bulk moduli so high?\n\n\nOh, I Just followed the example \"modules/porous_flow/examples/thm_example/2D.i\" without checking \ud83d\ude02. Now I have changed they to low values; however, the pressure problem remains.\n\n\nHave you checked your initial conditions?\n\n\nI specially use another run to get an hydrostatic initial conditions. Link here\n\nThe problem. Here I do not know how to inherit the initialized strain field to the following run.\n\nIn the initial run\n\n  [./strain]\n    type = ComputeAxisymmetricRZSmallStrain\n    eigenstrain_names = 'ini_stress'\n  [../]\n  [./ini_strain]\n    type = ComputeEigenstrainFromInitialStress\n    initial_stress = '-12.8E6 0 0  0 -12.8E6 0  0 0 -12.8E6'\n    eigenstrain_name = ini_stress\n  [../]\n\n\n\nIn the subsequent CO2 injection run, I commented out the \"ini_strain\" block.\n\n  [./strain]\n    type = ComputeAxisymmetricRZSmallStrain\n    # eigenstrain_names = 'ini_stress'\n  [../]\n  # [./ini_strain]\n  #   type = ComputeEigenstrainFromInitialStress\n  #   # initial_stress = '-12.8E6 0 0  0 -12.8E6 0  0 0 -12.8E6'\n  #   # eigenstrain_name = ini_stress\n  # [../]\n\n\nNow I have changed the setting in the subsequent CO2 injection run the same as the initial run.  The result seems better.\nCould tell me what is the right way for inheriting strain stress field from the initial run?\n\n\n\nAre the displacements as expected?\n\n\nThe strain field has the same problem as the pressure field.",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-380119",
+                          "updatedAt": "2022-10-24T21:53:14Z",
+                          "publishedAt": "2021-02-18T07:25:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Else is there a way to read \"ini_strain\" from output file of an initialization run? I want to get more realistic vertical stress by an initialization run.\nLike SolutionFunction? initial_from_file_var?",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-380212",
+                          "updatedAt": "2022-10-24T21:53:32Z",
+                          "publishedAt": "2021-02-18T08:25:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "In https://mooseframework.inl.gov/source/materials/ComputeEigenstrainFromInitialStress.html, there writes \"Using AuxVariables to set the initial stress may be advantageous when reading from a solution file using a SolutionAux.\"\nSo the idea is through \"SolutionUserObject\" -> \"AuxVariables\" -> \"initial_stress_aux\"?\nI wish there is an example using \"initial_stress_aux\" with restarting run.",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-380292",
+                          "updatedAt": "2022-10-24T21:53:32Z",
+                          "publishedAt": "2021-02-18T09:01:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "You're correct.  The initial run has to save its stress field into AuxVariables, then, in the second run, you have to use a SolutionUserObject to read those into initial_stress_aux.  I thought i had included an example of that in the MOOSE repo as i do it all the time in my work, but it's not there in full.  You can combine the ideas from the following, however:\nmodules/tensor_mechanics/test/tests/initial_stress/gravity_with_aux.i\ntest/tests/auxkernels/solution_aux/solution_aux_exodus.i",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-380415",
+                          "updatedAt": "2022-10-24T21:53:32Z",
+                          "publishedAt": "2021-02-18T09:48:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zhang-rite"
+                  },
+                  "bodyText": "Andy, thank you again for the help.\nI find, as your suggested way, after load and initialize strain using the output of a previous run (already reached steady state), there are still gradual changes in displacement (and strain and stress) always ( since run even after a very long time run) while without fluid injection.\nI do keep all the boundary conditions and mesh the same as the initialization run.\nI just want to the get gravity equilibrium fields of stress-strain and pressure before injection.\nCould you help me point out the problem. The file link.\nBest,\nYi Zhang",
+                  "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-382958",
+                  "updatedAt": "2022-10-24T21:53:35Z",
+                  "publishedAt": "2021-02-19T02:37:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "There are two possibilities here:\n\nYou've made a mistake\nYou have not made a mistake, and the result is expected, and annoying, and i'm not sure how to eliminate the problem.\n\nTo determine whether (1) or (2) is the case, look at your stresses and displacements - are they changing by very much (without fluid injection)?\nThe result is expected because when writing/reading  exodus files you are averaging stress over an element.  However, internally within MOOSE, stress is represented at the quadpoints of the element (there are 4 in each element in your case).  For the initial configuration, MOOSE finds the stresses at those quadpoints, then averages them to write to the exodus file.  Then you read those averaged versions and assign those averaged versions to each quadpoint.  Then MOOSE sees the result is not in exact equilibrium, and changes the stresses (and displacements) slightly to achieve equilibrium (so you're back at the true equilibrium situation MOOSE computed in the initial simulation).\nWhat i've done in cases like this is to create some \"change_disp\" AuxVariables that record the change in displacement after the first timestep.  But that's a bit of a hack.    Hopefully those disps and stress changes are so small you can ignore them.",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-382986",
+                          "updatedAt": "2022-10-24T21:53:35Z",
+                          "publishedAt": "2021-02-19T02:54:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Andy, thanks!\nCurrently I may get the differential change to first timestep by using ParsedAux in AuxKernels with execute_on = initial and doing subtraction in another ParsedAux. But how could I check the differential changes in displacement after first timestep (relative to the step 2)?\nIs there something like execute_on = step 2?",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-383090",
+                          "updatedAt": "2022-10-24T21:53:40Z",
+                          "publishedAt": "2021-02-19T04:16:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "You could use Controls.  Turn the AuxKernel off after a time.  Controls are a really useful feature of MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-383137",
+                          "updatedAt": "2022-10-24T21:53:40Z",
+                          "publishedAt": "2021-02-19T05:08:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Here's a better example: https://mooseframework.inl.gov/source/controls/TimePeriod.html",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-383138",
+                          "updatedAt": "2022-10-24T21:53:40Z",
+                          "publishedAt": "2021-02-19T05:08:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zhang-rite"
+                  },
+                  "bodyText": "By viewing using Paraview, I find the gradual changes in displacement (or strain, pressure) occur at the transition between the high-permeability aquifer zone and low-permeability zones. The reason is still unknow. Perhaps the error comes from the physics setting some where. I have not found the improper setting.\n\nI will try Controls system. Thanks!",
+                  "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-383544",
+                  "updatedAt": "2022-10-24T21:53:40Z",
+                  "publishedAt": "2021-02-19T08:39:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zhang-rite"
+                  },
+                  "bodyText": "I had tested another whole day today, but still cannot work out the problem. Is there a two-phase flow mechanical coupled problem with first gravity equilibrium? (I wish). Thank you.",
+                  "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-388334",
+                  "updatedAt": "2022-10-24T21:53:43Z",
+                  "publishedAt": "2021-02-20T13:15:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zhang-rite"
+                          },
+                          "bodyText": "Is there any recommended strategy for setting an initial gravity equilibrium for hydromechanical problems?",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-392211",
+                          "updatedAt": "2022-10-24T21:53:43Z",
+                          "publishedAt": "2021-02-22T02:07:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Sorry for not answering sooner.  I'm pretty sure you haven't made a mistake, @zhang-rite , and i'm pretty sure that your problem isn't related to 2-phase flow.  (You could try a single-phase version just to check - there are examples in the tests of porous flow.  If the problem is 2-phase flow related it's probably a bug in your input file, but i can't see one.)  Alternatives to what you're doing already are recover/restart (https://mooseframework.inl.gov/application_usage/restart_recover.html) or: (a) read from your steady-state; (b) do a very long-time transient without injecting to get the quadpoint stresses almost-perfect; (c) then start injecting.",
+                          "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-395193",
+                          "updatedAt": "2022-10-24T21:53:43Z",
+                          "publishedAt": "2021-02-22T21:26:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "zhang-rite"
+                  },
+                  "bodyText": "Andy, thank you very much for your help!\nYes, the initialization can be viewed as a 1-phase problem. Now I am trying to do as the suggested way--starting from 1-phase steady state run. However, I again encountered problem for the convergence, which I have posted in another discussion.\n#17091\nI will also try the \"recover/restart\" way.",
+                  "url": "https://github.com/idaholab/moose/discussions/17049#discussioncomment-396565",
+                  "updatedAt": "2022-10-24T21:53:43Z",
+                  "publishedAt": "2021-02-23T08:05:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "What happened to SecondDerivativeImplicitEuler ?",
+          "author": {
+            "login": "mangerij"
+          },
+          "bodyText": "Hi,\nI vaguely remember that there used to be a SecondDerivativeImplicitEuler.C Kernel in solid_mechanics before it was migrated. Is this somewhere? Was it removed?\nThanks,\nJohn",
+          "url": "https://github.com/idaholab/moose/discussions/17034",
+          "updatedAt": "2023-09-30T06:05:32Z",
+          "publishedAt": "2021-02-17T09:55:22Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "@sapitts Do you know this answer?",
+                  "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-381809",
+                  "updatedAt": "2023-09-30T06:05:32Z",
+                  "publishedAt": "2021-02-18T17:48:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sapitts"
+                          },
+                          "bodyText": "Looks like that particular Kernel was deprecated and not migrated over to tensor mechanics. It could be that similar functionality exists elsewhere in MOOSE, but where I do not know. Perhaps @cbolisetti or @jasondhales might know?",
+                          "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-382093",
+                          "updatedAt": "2023-09-30T06:05:39Z",
+                          "publishedAt": "2021-02-18T19:22:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "I don't know :( Maybe @bwspenc?",
+                          "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-392336",
+                          "updatedAt": "2023-09-30T06:05:39Z",
+                          "publishedAt": "2021-02-22T03:30:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mangerij"
+                          },
+                          "bodyText": "Well it would be nice to have it back... I remember it worked correctly.",
+                          "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-392874",
+                          "updatedAt": "2023-09-30T06:05:40Z",
+                          "publishedAt": "2021-02-22T09:30:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "If you are talking about this one: https://github.com/idaholab/moose/blob/mlpack-15154/modules/solid_mechanics/src/kernels/SecondDerivativeImplicitEuler.C , this is now simply a special case of the InertialForce kernel.\nThe inertial force kernel uses NewmarkBeta time integrator. A special case is\n\ndensity = 1.\neta = 0, alpha = 0. No damping.\nGamma = 0.5, beta = 0.25. These are default parameters of NemarkBeta.\n\nwhich reduces to second order implicit euler.",
+                  "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-392993",
+                  "updatedAt": "2023-09-30T06:05:39Z",
+                  "publishedAt": "2021-02-22T09:58:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mangerij"
+                          },
+                          "bodyText": "excellent.. Good to know here.",
+                          "url": "https://github.com/idaholab/moose/discussions/17034#discussioncomment-393048",
+                          "updatedAt": "2023-09-30T06:05:39Z",
+                          "publishedAt": "2021-02-22T10:18:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

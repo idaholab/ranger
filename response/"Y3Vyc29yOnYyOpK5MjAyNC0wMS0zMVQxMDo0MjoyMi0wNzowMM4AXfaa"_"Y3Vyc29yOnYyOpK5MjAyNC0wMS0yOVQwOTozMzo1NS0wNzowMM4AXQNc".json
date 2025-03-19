@@ -1,0 +1,883 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMS0yOVQwOTozMzo1NS0wNzowMM4AXQNc"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Questions about MeshGenerator and UserObject Interaction in Actions",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "Hello everyone,\nI recently wrote a MeshGenerator that stores some necessary information in the form of a vector. One of my UserObjects requires this information to perform specific operations. However, I cannot declare a vector variable in the input.i file to receive this information. Therefore, I am considering using actions to add both the MeshGenerator and UserObject and facilitate the exchange of information between them. My knowledge of actions is limited, and I have only attempted to use actions to add kernels and variables in the past. Now, I have three questions:\n1. Immediate Execution of Appended MeshGenerator:\nWhen using _app.appendMeshGenerator in the act() function, will the relevant MeshGenerator operations be executed immediately? Or does this function merely declare the MeshGenerator, postponing execution? I initially planned to call _app.appendMeshGenerator and then declare a vector object in the action to receive the needed information from the MeshGenerator, passing it to my UserObject. If the MeshGenerator is not executed immediately, how can I obtain the required vector information?\n2. Action Destruction after Task Completion:\nAfter an action completes all its tasks, is the action automatically destroyed?\n3.  MeshGenerator Lifetime when Declared in input.i:\nIf I choose to declare the MeshGenerator in the input.i file, will the MeshGenerator object be destroyed once the mesh generation is completed? This concern arises as I need to access the information saved by the MeshGenerator in the action, necessitating the continued existence of the MeshGenerator object when the action is executed.\nThank you in advance for your guidance and assistance.",
+          "url": "https://github.com/idaholab/moose/discussions/26690",
+          "updatedAt": "2024-01-31T05:21:37Z",
+          "publishedAt": "2024-01-30T13:25:51Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFirst, if you don't mind, let's make sure you actually need to do it this way.\nWhat is the size of this vector? Is this something that has a value for every element? (if so, a field variable makes more sense. If it s a vector of indices, extra element integer ids, stored on elements, also make more sense).\nHow big is this vector? Could it be defined in the input instead?\nDoes this vector depend on the output of the mesh generation process? Or does it guide the mesh generation process as well as the UO?\n\nNo appending mesh generators will only schedule it for execution when mesh generation happens. Calling meshgenerator::execute() executes the mesh generator but you should not do that outside of the mesh generation process.\n\nThe mesh generators are actually constructed and executed very early in the simulation. I think an Action would be a fine place to store the vector, as Actions are constructed early as well (unlike user objects)\n\n\nno the actions stick around. We have talked about destructing them but never did\n\n\nSame for mesh generators. We have talked about releasing that memory but have not done it\n\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8309680",
+                  "updatedAt": "2024-01-30T17:56:10Z",
+                  "publishedAt": "2024-01-30T17:56:09Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Yes, I do need to store the data in the form of a vector.\nI'm working with two nested meshes, and the CoarseMeshExtraElementIDGenerator can only map between elements using extra_id. Since I also need to understand the adjacency relationships between different elements in the coarse mesh, I'm attempting to store this information in the form of a vector<vector<>> (where vector[coarse_elem_id][coarse_elem_side]=neighbor).\nPreviously, I considered saving the coarse mesh (thanks to your previous help, I learned that I can save the coarse mesh as well) and directly providing it to my UserObject. However, it seems that functions directly manipulating the mesh are member functions of MeshGenerator. Implementing this operation in the UserObject might require substantial modifications.\nCurrently, I have an urgent need, so I opted to use a vector to store this information, which is the most familiar and quickest approach for me. I modified the code of CoarseMeshExtraElementIDGenerator to help me extract this information from the coarse mesh. Therefore, this vector variable depends on the output of the mesh generation but has no influence to its execution.",
+                          "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8314463",
+                          "updatedAt": "2024-01-31T03:42:38Z",
+                          "publishedAt": "2024-01-31T03:28:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Using the save_in mesh capability, you could retrieve a pointer to elements (from the id) in the coarse mesh and use the ->side_ptr(coarse_side_index) to get the side element.\nWhy does the user object have to modify the mesh? The coarse mesh cannot be fully specified at the time of its generation?\nI think giving either a pointer to or a copy of this vector of vector to the action is reasonable. Then the UO can retrieve it from there",
+                          "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8314697",
+                          "updatedAt": "2024-01-31T04:55:11Z",
+                          "publishedAt": "2024-01-31T04:15:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Why does the user object have to modify the mesh? The coarse mesh cannot be fully specified at the time of its generation?\n\nThis is because, when searching for the definition of the getMeshByName function in VSCode, I found that it is a member function of MeshGenerator. It's possible that my search was not thorough enough.\n\nI think giving either a pointer to or a copy of this vector of vector the action is reasonable. Then the UO can retrieve it from there\n\nThank you so much for your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8314856",
+                          "updatedAt": "2024-01-31T04:50:24Z",
+                          "publishedAt": "2024-01-31T04:50:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "getMeshByName is only for mesh generators.\n\n  /**\n   * Get the saved mesh by name\n   */\n  [[nodiscard]] std::unique_ptr<MeshBase> getSavedMesh(const std::string & name);\n\nfrom the MeshGeneratorSystem, should be accessible from anywhere.\nYou can get the system with\n_app.getMeshGeneratorSystem()",
+                          "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8314894",
+                          "updatedAt": "2024-01-31T04:58:24Z",
+                          "publishedAt": "2024-01-31T04:58:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hityyds"
+                          },
+                          "bodyText": "Thank you once more; this is precisely what I was looking for.",
+                          "url": "https://github.com/idaholab/moose/discussions/26690#discussioncomment-8314990",
+                          "updatedAt": "2024-01-31T05:21:37Z",
+                          "publishedAt": "2024-01-31T05:21:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Sideset updater",
+          "author": {
+            "login": "lyyc199586"
+          },
+          "bodyText": "Do we have a sideset updater now? Useful to enforce boundary conditions on time-varying boundaries",
+          "url": "https://github.com/idaholab/moose/discussions/26694",
+          "updatedAt": "2024-01-30T20:21:47Z",
+          "publishedAt": "2024-01-30T20:11:24Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "You mean this: #26456 ? It's not merged yet. I still need to finish up the PR. The functionality should be complete, but it needs tests docs and SQA. Use it at your own risk.",
+                  "url": "https://github.com/idaholab/moose/discussions/26694#discussioncomment-8310937",
+                  "updatedAt": "2024-01-30T20:13:18Z",
+                  "publishedAt": "2024-01-30T20:13:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lyyc199586"
+                          },
+                          "bodyText": "got it",
+                          "url": "https://github.com/idaholab/moose/discussions/26694#discussioncomment-8310997",
+                          "updatedAt": "2024-01-30T20:21:47Z",
+                          "publishedAt": "2024-01-30T20:21:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Plane Stress with Central Difference",
+          "author": {
+            "login": "lyyc199586"
+          },
+          "bodyText": "Trying to do plane stress elastodynamic simulations with central difference:\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  # implicit = false\n[]\n\n[Mesh]\n  [gmg]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 2\n    ny = 2\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [strain_zz]\n  []\n[]\n\n[Kernels]\n  [solid_x]\n    type = ADDynamicStressDivergenceTensors\n    variable = disp_x\n    component = 0\n  []\n  [solid_y]\n    type = ADDynamicStressDivergenceTensors\n    variable = disp_y\n    component = 1\n  []\n  [inertia_x]\n    type = InertialForce\n    variable = disp_x\n  []\n  [inertia_y]\n    type = InertialForce\n    variable = disp_y\n  []\n  [plane_stress]\n    type = ADWeakPlaneStress\n    variable = 'strain_zz'\n  []\n[]\n\n[BCs]\n  [fix_right]\n    type = DirichletBC\n    variable = disp_x\n    boundary = right\n    value = 0.0\n  []\n  [load_left]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.01\n  []\n[]\n\n[Materials]\n  [elasticity]\n    type = ADComputeIsotropicElasticityTensor\n    poissons_ratio = 0.24\n    youngs_modulus = 20e3\n  []\n  [stress_block]\n    type = ADComputeLinearElasticStress\n    output_properties = 'stress'\n    outputs = exodus\n  []\n  [strain]\n    type = ADComputePlaneSmallStrain\n    out_of_plane_strain = 'strain_zz'\n    output_properties = 'mechanical_strain'\n    outputs = exodus\n  []\n  [density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = 2.74e-9\n  []\n[]\n\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 1e-7\n  dt = 1e-8\n\n  [TimeIntegrator]\n    type = CentralDifference\n    solve_type = lumped\n  []\n[]\n\n[Outputs]\n  exodus = true\n[]\nThis didn't cause any error, but the strain_zz is actually not calculated (0 everywhere), and stress_zz is not 0:",
+          "url": "https://github.com/idaholab/moose/discussions/26691",
+          "updatedAt": "2024-01-30T17:30:02Z",
+          "publishedAt": "2024-01-30T16:26:54Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero",
+                  "url": "https://github.com/idaholab/moose/discussions/26691#discussioncomment-8309384",
+                  "updatedAt": "2024-01-30T17:30:02Z",
+                  "publishedAt": "2024-01-30T17:30:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to get the left side material properties value in DG kernel",
+          "author": {
+            "login": "SomnusYu"
+          },
+          "bodyText": "Hi all,\nI'm solving a 1-D problem in ADDG kernel and I need to get the material properties value at left element and right element. I know that we can get the material properties value at the right element by using getNeighborADMaterialProperty (for current element value using getADMaterialProperty). I would like to know how to get the material properties value at the left element.\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/26663",
+          "updatedAt": "2024-01-30T17:24:44Z",
+          "publishedAt": "2024-01-29T09:27:43Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDGKernels act on quadrature points on internal side. So there are only two elements to consider: the current element and the neighbor. You cannot be considering at a single quadrature point both the current, the left and the right neighbors.\nSee the docs for more info\nhttps://mooseframework.inl.gov/syntax/DGKernels/index.html\nWhat are you trying to do here? Get a spatial derivative with 3 element values?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8286758",
+                  "updatedAt": "2024-01-29T16:56:36Z",
+                  "publishedAt": "2024-01-29T16:56:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "Yes, I would like to calculate a spatial derivative: \u2202alpha/\u2202x = (alpha_i+1/2 - alpha_i-1/2)/\u0394x = (alpha_i+1 - alpha_i-1)/(2\u0394x) So it needs to get alpha_i+1(right element) and alpha_i-1(left element).",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8294533",
+                          "updatedAt": "2024-01-30T01:42:25Z",
+                          "publishedAt": "2024-01-30T01:42:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Could you use a non-centered spatial derivative?\nOn the right do: (alpha_right - alpha_current-elem) / dx",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8294668",
+                          "updatedAt": "2024-01-30T02:01:38Z",
+                          "publishedAt": "2024-01-30T02:01:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "On the right do: (alpha_right - alpha_current-elem) / dx\n\nIn this way, I just need to calculate the spatial derivative in DGKernel by:\n    case Moose::Element:\n        re = alpha_current-elem * _test[_i][_qp];\n        break;\n\n    case Moose::Neighbor:\n        re = -alpha_right * _test_neighbor[_i][_qp];\n        break;\n\n\nIs that right?",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8294991",
+                          "updatedAt": "2024-01-30T02:15:57Z",
+                          "publishedAt": "2024-01-30T02:15:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is for the residual?\nWhat is the strong form of this equation term?",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8295016",
+                          "updatedAt": "2024-01-30T02:19:56Z",
+                          "publishedAt": "2024-01-30T02:19:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "The equation is a little complex.\n\n\n\nI have already finished the conserved term:\u2202F/\u2202x. I still need to construct the non-conserved term, that's \u2202alpha/\u2202x.",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8295062",
+                          "updatedAt": "2024-01-30T02:25:57Z",
+                          "publishedAt": "2024-01-30T02:25:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This looks right to me.\nUnless you want to evaluate alpha on the face instead. In which case I would see this?\n        re = (alpha_current-elem + alpha_neighbor) / 2 * _test[_i][_qp];",
+                          "url": "https://github.com/idaholab/moose/discussions/26663#discussioncomment-8309324",
+                          "updatedAt": "2024-01-30T17:24:44Z",
+                          "publishedAt": "2024-01-30T17:24:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Hanging nodes on TET4 elements",
+          "author": {
+            "login": "doquang"
+          },
+          "bodyText": "When performing mesh refinement on TET4 elements. Sometimes I see multiple hanging nodes one edge/face.\nIs it normal? Do we have any options to force the mesh refinement to create only one hanging node on each edge/face?",
+          "url": "https://github.com/idaholab/moose/discussions/26527",
+          "updatedAt": "2024-01-30T17:11:46Z",
+          "publishedAt": "2024-01-10T14:10:06Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou have one element refined twice next to an unrefined element.\nThis is not supposed to happen. Is the mesh well stitched (no non-conformalities, no duplicate nodes)? Did you pass parameters to allow this?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8080569",
+                  "updatedAt": "2024-01-10T14:12:54Z",
+                  "publishedAt": "2024-01-10T14:12:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "Mesh created by netgen. So I assume that there are no non-conformalities and no duplicate nodes. The results look okay to me. Contour lines are continuous between those elements.",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8080640",
+                          "updatedAt": "2024-01-10T14:18:34Z",
+                          "publishedAt": "2024-01-10T14:18:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@roystgnr do we support two levels of adaptivity difference across a side?\nand\n\nDo we have any options to force the mesh refinement to create only one hanging node on each edge/face?",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8080749",
+                          "updatedAt": "2024-01-10T14:28:12Z",
+                          "publishedAt": "2024-01-10T14:28:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Theoretically we support any number of levels of adaptivity difference across a side.  In practice, though, I don't think we have any test coverage of it (because our standard MeshRefinement usage does a number of smoothing steps which include one that restricts mismatch to one level between neighbors), so I wouldn't trust it before adding some analytic or manufactured tests.\nNote though that just because you see two levels of adaptivity difference across an edge doesn't mean there's more than one level of adaptivity difference across a face.  In 3D it's quite common for refinement to create multiple hanging nodes on an edge, because you commonly have 4 (or 5, or with tets 6 or more) elements around that edge, and so the coarsest of them might have neighbors' neighbors with 2 more levels of refinement or neighbors' neighbors' neighbors with 3 more levels of refinement.  We do have a decent amount of test coverage of these sorts of cases.\nWith a tet there's no way to create one hanging node on a face; one level of refinement between Tet4 gives you 3 hanging nodes on edges with 0 non-edge hanging nodes on the face interior; between Tet10 one level of refinement gives you 3 hanging nodes on coarse-face+fine-edges.  To create meshes with no more than one level of mismatch on a face, you just use the default libMesh settings; you have to set MeshRefinement::face_level_mismatch_limit() = 0 to get unlimited levels of mismatch instead.\nThe default libMesh setting for edge mismatch is unlimited, though.  MeshRefinement::edge_level_mismatch_limit() = 1 would be the option to use to change that.\nI'm not seeing any MOOSE interface to either setting, but it wouldn't be hard to add one if we wanted.",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8081056",
+                          "updatedAt": "2024-01-10T14:50:18Z",
+                          "publishedAt": "2024-01-10T14:50:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Oh, man.  Here's something that just clicked with me too late:\n\ncreated by netgen\n\nYou mean the refinement pattern too, not just the coarse mesh?\nIf you're reading a tet mesh that's non-conforming from a file format that doesn't have an inheritance tree leading down to a conforming coarse mesh (i.e. pretty much any format except our own .xda/.xdr/.cda/.cdr), we do NOT support that.  We will calculate INCORRECT RESULTS on that.  I'll elaborate in another comment.",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8081115",
+                          "updatedAt": "2024-01-10T14:55:50Z",
+                          "publishedAt": "2024-01-10T14:55:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Generally mesh formats do not have any direct information about the element-to-element topology.  You do not see any a priori specification that element A is a neighbor of element B.  This is an issue for a finite element code, which needs to know e.g. whether solutions are supposed to be continuous between those elements or are allowed to go discontinuous between them.\nWhat we have to do is reconstruct the element-to-element topology from the element-to-node topology.  If we see that side 1 of A has the same nodes (up to a rotation/flip) as side 3 of B, then we conclude that neighbor 1 of A is B and neighbor 3 of B is A.  All is well.\nIf we refine B, so now it has children B0, B1 ... B7, but we're using our own file formats so we still know that B exists and that it's the parent of those children, all is still well.  This is a non-conforming mesh, but it comes from a conforming mesh that we can reconstruct the topology of.  Since we still know that neighbor 3 of B is A, we can look at the 4 children on side 3 of B and we can determine which of those should also have A as a neighbor.  When we're looking at each of those children later we can then see that it has a coarser neighbor on that side, so we know to calculate constraint equations for the \"hanging node\" DoFs on that side created by the refinement.\nIf we refine B, but we then discard it because we're using a file format that only stores B0 through B7, all is now broken.  Literally, the connection between those elements is broken apart.  As far as that mesh reader is concerned, you have defined a slit mesh, which is a perfectly valid sort of mesh to create, so we will happily construct it for you to compute on.  We will then compute answers that will be correct for the slit mesh, and thus incorrect for the slit-free mesh you thought you were creating.  The hanging nodes in between the refined elements and their coarse should-have-been-neighbor will be free to vary unconstrained by the coarse element nodes around them, and the resulting solution will be a disaster.  If you're lucky it'll be an obvious disaster and you won't trust it; if you're unlucky the solution will look correct to the naked eye but will be like 10% off.",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8081466",
+                          "updatedAt": "2024-01-10T15:11:10Z",
+                          "publishedAt": "2024-01-10T15:11:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "doquang"
+                  },
+                  "bodyText": "Oh, man. Here's something that just clicked with me too late:\n\ncreated by netgen\n\nYou mean the refinement pattern too, not just the coarse mesh?\n\nI used netgen to create the coarse mesh, exported it to MSH, and load it into moose. The rest (mesh refinement) is done by moose/libmesh.",
+                  "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8085644",
+                  "updatedAt": "2024-01-10T20:15:43Z",
+                  "publishedAt": "2024-01-10T20:15:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "@GiudGiud - Is there any news about MOOSE interface to use the libMesh options:\nMeshRefinement::face_level_mismatch_limit() = 0\nMeshRefinement::edge_level_mismatch_limit() = 1",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8299371",
+                          "updatedAt": "2024-01-30T07:55:28Z",
+                          "publishedAt": "2024-01-30T07:55:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No we have not added those.\nYou could add a simple parameter to the Adaptivity action (AdaptivityAction.C) to set them. It would be 10 mins of work to set it up and 3 more minutes to recompile MOOSE",
+                          "url": "https://github.com/idaholab/moose/discussions/26527#discussioncomment-8309155",
+                          "updatedAt": "2024-01-30T17:11:47Z",
+                          "publishedAt": "2024-01-30T17:11:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Setup the [TestHarness] where you compare the node value",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi guys,\nI'm very new to TestHarness I know only the way suggested in the example (diffusion test)\nhttps://mooseframework.inl.gov/moose/python/TestHarness.html\njust wondering if it is possible to do the test where I want to compare and check the nodes value, lets say the test will pass if they are the same (or within 1% different). [this is to always check our nodal constraint object, to check if it's still work with current version of MOOSE]\nI have the list of all the node pairs for this test [Below], I'm just not sure how to implement this\nmasterNd, slaveNd_0\n5,\t21\n6,\t22\n7,\t23\n8,\t24\n13,\t25\n14,\t26\n15,\t27\n16,\t28\nPlease let me know if you have any suggestion.\nThank you!\nTraiwit",
+          "url": "https://github.com/idaholab/moose/discussions/26662",
+          "updatedAt": "2024-01-30T01:12:49Z",
+          "publishedAt": "2024-01-28T22:53:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo you want the test to only a check a few nodal values for a given variable?\nIf the list is not very long, I would do:\n\na CSVDiff test\nwith a NodalValueSampler on a custom sideset that contains all the nodes you care about.\n\nNow for a 1% tolerance, you will want to increate rel_tol from 5e-6 to 1e-2. That parameter goes in the tests file, inside the relevant test sub-block\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26662#discussioncomment-8276752",
+                  "updatedAt": "2024-01-29T04:16:21Z",
+                  "publishedAt": "2024-01-29T04:16:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @GiudGiud\nCSVDiff couldn't do what I want, I want to compare nodes value after the simulation is done\nnot the .csv in the gold folder and the .csv produced by the test_run\nHowever, I managed to use RunCommand with .py script instead and it kinda works\nThank you!\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/26662#discussioncomment-8294173",
+                          "updatedAt": "2024-01-30T01:12:47Z",
+                          "publishedAt": "2024-01-30T01:12:47Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Component of water in PorousFlow Kernels",
+          "author": {
+            "login": "navier-rgb"
+          },
+          "bodyText": "Hello, It\u2019s probably trivial, but I want to be sure. If I\u2019m using the PorousFlow kernels, for example, PorousFlowMassTimeDerivative and PorousFlowDispersiveFlux, what is the assignment order of the fluid components, assuming I\u2019m using three components: water, a, b? Is water the last component or the first (component 0)? Thanks.",
+          "url": "https://github.com/idaholab/moose/discussions/26671",
+          "updatedAt": "2024-01-30T01:00:39Z",
+          "publishedAt": "2024-01-29T17:38:05Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe ordering of the components is set by the ordering of the variables in the PorousFlowDictator user object. Do you have one in your simulation?\nFor example in that input\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'pp sat'\n    number_fluid_phases = 2\n    number_fluid_components = 2\n  []\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26671#discussioncomment-8288825",
+                  "updatedAt": "2024-01-29T18:54:29Z",
+                  "publishedAt": "2024-01-29T18:54:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "navier-rgb"
+                          },
+                          "bodyText": "I see. So, will I have the following, assuming I\u2019m using the PorousFlowMassTimeDerivative Kernel?\n [kernels] \n  [mass_Na]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = sat\n  [] \n  [mass_Na]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 1\n    variable = pp\n  []\n[] \n\nOr variable pp will have fluid_component = 0 instead?",
+                          "url": "https://github.com/idaholab/moose/discussions/26671#discussioncomment-8288927",
+                          "updatedAt": "2024-01-29T19:05:11Z",
+                          "publishedAt": "2024-01-29T19:05:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you need to set the fluid component always.\nI m not sure why it has a default @cpgr",
+                          "url": "https://github.com/idaholab/moose/discussions/26671#discussioncomment-8289732",
+                          "updatedAt": "2024-01-29T19:48:16Z",
+                          "publishedAt": "2024-01-29T19:48:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "The PDE's are written as fluid component mass balances (so one equation for each fluid component, summed over all fluid phases, see https://mooseframework.inl.gov/modules/porous_flow/governing_equations.html). The index you assign each component just has to be consistent between the kernels and the mass fraction material (usually PorousFlowMassFraction), so that it uses the correct fraction of mass for each component.\nThe default fluid component (and fluid phase) index is 0, as the most basic model is one fluid in one phase, so I guess it was done to make the inout files for this basic case as simple as possible.",
+                          "url": "https://github.com/idaholab/moose/discussions/26671#discussioncomment-8291035",
+                          "updatedAt": "2024-01-29T21:13:41Z",
+                          "publishedAt": "2024-01-29T21:13:40Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "navier-rgb"
+                          },
+                          "bodyText": "thanks @cpgr @GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/26671#discussioncomment-8294087",
+                          "updatedAt": "2024-01-30T01:00:34Z",
+                          "publishedAt": "2024-01-30T01:00:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to restart from .xda files?",
+          "author": {
+            "login": "MusannaGalib"
+          },
+          "bodyText": "Hello,\nI installed MOOSE without XDR ( ./scripts/update_and_rebuild_libmesh.sh --disable-xdr-required) as the cluster does not have the libtirpc-devel package. I used  binary = false in my checkpoint files which generates 0008_mesh.cpa  0008.rd-0  0008.xda  0008.xda.0000.\n0008_mesh.cpa folder contains header.cpa  split-1-0.cpa . I am attaching the files here.\nI tried to restart using mpiexec -n 1 /home/galibubc/projects/rrg-mponga/galibubc/MOOSE_128p_2020/dendrite/dendrite-opt -i input.i --recover input_checkpt_cp/0008 >log.txt  which gives the following error that it is looking for xdr/cpr files.\nERROR: Neither one of the following files can be located:\n\t'input_checkpt_cp/0008_mesh.cpr/1/header.cpr' nor\n\t'input_checkpt_cp/0008_mesh.cpr'\n\n[Outputs]\n  exodus = true\n  csv = true\n  interval = 2\n  execute_on = 'TIMESTEP_END'\n  [./other]        # creates input_other.e\n     type = Exodus\n     interval = 60\n  [../]\n  [./checkpt]\n  type = Checkpoint\n  binary = false\n  num_files = 2\n  interval = 2\n  [../]\n  perf_graph = true\n[]\n\nheader.cpa.txt\nsplit-1-0.cpa.txt\n0008.xda.txt",
+          "url": "https://github.com/idaholab/moose/discussions/26673",
+          "updatedAt": "2024-01-29T22:36:32Z",
+          "publishedAt": "2024-01-29T18:20:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont see binary as an option to the Checkpoint block\nhttps://mooseframework.inl.gov/source/outputs/Checkpoint.html\nWhere did you find this parameter?\ncpr is hardcoded in MOOSE. See mooseApp.C\nconst std::string &\nMooseApp::checkpointSuffix()\n{\n  static const std::string suffix = \"-mesh.cpr\";\n  return suffix;\n}\n\nYou d need to change at least that to get cpa to work\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8288730",
+                  "updatedAt": "2024-01-29T18:47:57Z",
+                  "publishedAt": "2024-01-29T18:47:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Hello.\nI found it here.\n#20479 (comment)\n#21334\nIs changing \"-mesh.cpr\" to \"-mesh.cpa\" in moose/framework/src/base/MooseApp.C  and rebuilding will work?\nconst std::string &\nMooseApp::checkpointSuffix()\n{\n  static const std::string suffix = \"-mesh.cpa\";\n  return suffix;\n}\n\nAlso, this code is available for the latest version of MOOSE. I am using an older branch and can't find the static const std::string suffix = \"-mesh.cpa\"; in this branch  2020-01-24-release.",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8289303",
+                          "updatedAt": "2024-01-29T19:31:46Z",
+                          "publishedAt": "2024-01-29T19:31:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The checkpoint system is being reworked, hence the changes\nI dont think that's the only thing you will need to change to get .cpa to run but you can start with that",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8289721",
+                          "updatedAt": "2024-01-29T19:47:22Z",
+                          "publishedAt": "2024-01-29T19:47:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Can you give me some suggestions? #21334 (reply in thread) as it says, just by loading from xda works without rebuilding.\nAlso, do you have any suggestions about the following if the code needs to be modified?\nFor 2020-01-24-release grep -r 'cpr' * gives the following.\nactions/SplitMeshAction.C:  // 2.) .cpr file extension -> binary\nactions/SplitMeshAction.C:    if (split_file_arg_ext == \"cpr\")\nactions/SplitMeshAction.C:                 \", must not end in a file extension other than .cpr or .cpa\");\nactions/SplitMeshAction.C:    // extension, and then append either .cpr or .cpa depending on the\nactions/SplitMeshAction.C:    fname = MooseUtils::stripExtension(fname) + (checkpoint_binary_flag ? \".cpr\" : \".cpa\");\nactions/SetupMeshAction.C:  // between .cpr and .cpa\nactions/SetupMeshAction.C:  // If split_file already has the .cpr or .cpa extension, we go with\nactions/SetupMeshAction.C:  // that, otherwise we strip off the extension and append \".cpr\".\nactions/SetupMeshAction.C:  if (split_file != \"\" && split_file_ext != \"cpr\" && split_file_ext != \"cpa\")\nactions/SetupMeshAction.C:    split_file = MooseUtils::stripExtension(split_file) + \".cpr\";\nactions/SetupMeshAction.C:          MooseUtils::stripExtension(moose_object_params.get<MeshFileName>(\"file\")) + \".cpr\";\nactions/MeshOnlyAction.C:  else if (mesh_file.find(\".cpr\") + 4 == mesh_file.size())\nBinary file base/.libs/MooseApp.x86_64-pc-linux-gnu.opt.o matches\nbase/MooseApp.C:                                          \"Use a different file extension, other than cpr, \"\nbase/MooseApp.C:    _restart_recover_suffix(\"cpr\"),\nmesh/MooseMesh.C:MooseMesh::setIsCustomPartitionerRequested(bool cpr)\nmesh/MooseMesh.C:  _custom_partitioner_requested = cpr;\nmesh/FileMesh.C:                        _file_name.rfind(\".cpr\") < _file_name.size();\noutputs/Checkpoint.C:    // Delete checkpoint files (_mesh.cpr)\nutils/MooseUtils.C:  const static std::vector<std::string> extensions{\"cpr\"};\nBinary file utils/.libs/MooseUtils.x86_64-pc-linux-gnu.opt.o matches\n\nFor the master branch it gives\nactions/SplitMeshAction.C:  // 2.) .cpr file extension -> binary\nactions/SplitMeshAction.C:    if (split_file_arg_ext == \"cpr\")\nactions/SplitMeshAction.C:                 \", must not end in a file extension other than .cpr or .cpa\");\nactions/SplitMeshAction.C:    // extension, and then append either .cpr or .cpa depending on the\nactions/SplitMeshAction.C:    fname = MooseUtils::stripExtension(fname) + (checkpoint_binary_flag ? \".cpr\" : \".cpa\");\nactions/SetupMeshAction.C:  // between .cpr and .cpa\nactions/SetupMeshAction.C:  // If split_file already has the .cpr or .cpa extension, we go with\nactions/SetupMeshAction.C:  // that, otherwise we strip off the extension and append \".cpr\".\nactions/SetupMeshAction.C:  if (split_file != \"\" && split_file_ext != \"cpr\" && split_file_ext != \"cpa\")\nactions/SetupMeshAction.C:    split_file = MooseUtils::stripExtension(split_file) + \".cpr\";\nactions/SetupMeshAction.C:          MooseUtils::stripExtension(moose_object_params.get<MeshFileName>(\"file\")) + \".cpr\";\nactions/MeshOnlyAction.C:  else if (mesh_file.find(\".cpr\") + 4 == mesh_file.size())\nbase/MooseApp.C:                                          \"Use a different file extension, other than cpr, \"\nbase/MooseApp.C:    _restart_recover_suffix(\"cpr\"),\nBinary file base/.libs/MooseApp.x86_64-pc-linux-gnu.opt.o matches\nmesh/FileMesh.C:                        _file_name.rfind(\".cpr\") < _file_name.size();\nmesh/MooseMesh.C:MooseMesh::setIsCustomPartitionerRequested(bool cpr)\nmesh/MooseMesh.C:  _custom_partitioner_requested = cpr;\noutputs/Checkpoint.C:    // Delete checkpoint files (_mesh.cpr)\nutils/MooseUtils.C:  const static std::vector<std::string> extensions{\"cpr\"};\nBinary file utils/.libs/MooseUtils.x86_64-pc-linux-gnu.opt.o matches",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8289941",
+                          "updatedAt": "2024-01-29T20:11:13Z",
+                          "publishedAt": "2024-01-29T20:11:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is master from a while ago. So maybe .cpa works for you still.\nCan you look at this line\nbase/MooseApp.C:                                          \"Use a different file extension, other than cpr, \"\n\nto see what parameter you need to set to change the extension",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8290287",
+                          "updatedAt": "2024-01-29T20:22:17Z",
+                          "publishedAt": "2024-01-29T20:22:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Thanks. I checked base/MooseApp.C:   Should I change anything here?\n  params.addCommandLineParam<std::string>(\"recover\",\n                                          \"--recover [file_base]\",\n                                          \"Continue the calculation.  If file_base is omitted then \"\n                                          \"the most recent recovery file will be utilized\");\n\n  params.addCommandLineParam<std::string>(\"recoversuffix\",\n                                          \"--recoversuffix [suffix]\",\n                                          \"Use a different file extension, other than cpr, \"\n                                          \"for a recovery file\");",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8290534",
+                          "updatedAt": "2024-01-29T20:35:45Z",
+                          "publishedAt": "2024-01-29T20:35:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No try adding on the command line\nso\nmpiexec -n 1 /home/galibubc/projects/rrg-mponga/galibubc/MOOSE_128p_2020/dendrite/dendrite-opt -i input.i --recover input_checkpt_cp/0008 --recoversuffix cpa",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8290920",
+                          "updatedAt": "2024-01-29T21:02:44Z",
+                          "publishedAt": "2024-01-29T21:01:58Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "It worked. Thanks a lot",
+                          "url": "https://github.com/idaholab/moose/discussions/26673#discussioncomment-8292305",
+                          "updatedAt": "2024-01-29T22:36:27Z",
+                          "publishedAt": "2024-01-29T22:36:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Print Input-File Variable in Console",
+          "author": {
+            "login": "jmeier"
+          },
+          "bodyText": "Dear Moose-Community,\nin a Moose-Input file one can define variables (e.g. by just writing  bla = \"blubb\"). Is there a way to to print the name of the variable and its value to the console?\nFor now I'm using a function as shown below and --show-input. But is there a sane way to do this?\n[Functions]\n\t[FakeUser_VariableBla]\n\t\ttype = ParsedFunction\n\t\texpression = 'a'\n\t\tsymbol_names = 'a'\n\t\tsymbol_values = '1'\n\t\tcontrol_tags = ${bla}\n\t[]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/26667",
+          "updatedAt": "2024-01-29T17:59:07Z",
+          "publishedAt": "2024-01-29T13:33:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo you want to make the parser more verbose? I dont think there is an option.\nIf there was or if we added one, you would add it to the [Debug] parameter show_parser (to set to true)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26667#discussioncomment-8286537",
+                  "updatedAt": "2024-01-29T16:51:48Z",
+                  "publishedAt": "2024-01-29T16:51:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear Guillaume\nYes, exactly. I was looking for this because of #26664.\nThanks & Kind regards, J\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/26667#discussioncomment-8286987",
+                          "updatedAt": "2024-01-29T17:14:41Z",
+                          "publishedAt": "2024-01-29T17:14:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is #26664 fixed?\nMy guess on this one is that there is a missing bracket / quote. Please ping me there if you dont find the problem",
+                          "url": "https://github.com/idaholab/moose/discussions/26667#discussioncomment-8287088",
+                          "updatedAt": "2024-01-29T17:22:02Z",
+                          "publishedAt": "2024-01-29T17:22:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear Guillaume,\nNo, #26664 is not fixed up until now. And till now, I did not find a mistake (like a missing bracket).\nKind regards, J\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/26667#discussioncomment-8287806",
+                          "updatedAt": "2024-01-29T17:51:05Z",
+                          "publishedAt": "2024-01-29T17:51:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok let s discuss there",
+                          "url": "https://github.com/idaholab/moose/discussions/26667#discussioncomment-8287904",
+                          "updatedAt": "2024-01-29T17:59:07Z",
+                          "publishedAt": "2024-01-29T17:59:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "CP slow computation",
+          "author": {
+            "login": "amassaf"
+          },
+          "bodyText": "Hello,\nI am trying to run this simulation with crystal plasticity and it's very slow even though it's only 20 grains and not a very fine mesh, could you please advise on how to make it run faster? thank you!\n[Mesh] \n  [gmg]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 150\n    ny = 150\n    xmax = 1\n    ymax = 1\n    elem_type = tri3\n  []\n    \n[]\n\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]  \n[Variables]\n  [./disp_x]\n  [../]\n  [./disp_y] \n  [../]\n[]  \n    \n[Modules]\n[./TensorMechanics]\n    [./Master]\n      [./All]\n        add_variables = true\n        strain = FINITE # SMALL\n        save_in = 'resid_x resid_y'\n        additional_generate_output = stress_yy\n      [../]\n    [../]\n[../]\n[]\n\n[BCs]\n [./bottomy]\n    type = DirichletBC\n    variable = disp_y\n    boundary =bottom\n    value = 0.0\n   [../]\n  [./topy]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = top\n    function ='-1.0e-3*t'\n   [../]\n  [./rightx]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'right'\n    value = 0.0\n   [../]\n[]\n\n\n\n[Materials]\n  [./elasticity_tensor]\n    type = ComputeElasticityTensorCP\n    C_ijkl = '43.582e3  15.18e3  15.18e3  43.582e3 15.18e3  43.582e3   14.701e3 14.701e3  14.701e3'\n    fill_method = symmetric9\n    read_prop_user_object = prop_read\n  [../]\n   [stress_copper]\n    type = ComputeMultipleCrystalPlasticityStress\n    crystal_plasticity_models = 'trial_xtalpl'\n    tan_mod_type = exact\n    maximum_substep_iteration = 10\n  []\n  [trial_xtalpl]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 12\n    slip_sys_file_name = input_slip_sys.txt\n    ao = 1.0e-3\n    gss_a =5.0\n    gss_initial = 5\n    h = 1000.0\n    r =1.\n    xm = 0.05\n    t_sat = 10.\n    resistance_tol = 0.05\n    slip_increment_tolerance = 0.02\n    stol = 0.01\n    use_displaced_mesh = true\n  []\n[]\n\n[AuxVariables]\n[./resid_x]\n  [../]\n  [./resid_y]\n  [../]\n[]\n\n[UserObjects]\n  [./prop_read]\n    type = PropertyReadFile\n    prop_file_name = 'input_euler.txt'\n    nprop = 4\n    read_type = grain\n    nvoronoi = 20\n    use_random_voronoi = true\n    rand_seed = 777\n    rve_type = periodic\n  [../]\n[]\n\n\n[Preconditioning]\n  [./smp]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n  petsc_options_value = 'lu       superlu_dist                 '\n  automatic_scaling = true\n\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n  l_max_its = 10\n  dt = 1e-2\n  end_time = 200.0\n\n[]\n\n[Outputs]\n  exodus = true\n  interval = 1\n  [./table]\n    interval = 1\n    type = CSV\n   # delimiter = ' '\n  [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/26598",
+          "updatedAt": "2024-01-29T16:33:55Z",
+          "publishedAt": "2024-01-19T15:28:39Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou should take a look at improving the preconditioning. You are using a robust default, but it s not the most efficient approach.\nThe next thing would be to implement smart time stepping strategies. Is this simulation relaxing towards a steady state ?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8182916",
+                  "updatedAt": "2024-01-19T15:33:10Z",
+                  "publishedAt": "2024-01-19T15:33:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "In this case, the nonlinear system is actually fairly small, and the solve is relatively cheaper compared to the material update, i.e. crystal plasticity.",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8227002",
+                          "updatedAt": "2024-01-24T01:08:32Z",
+                          "publishedAt": "2024-01-24T01:08:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Tagging @sapitts for moose cp...",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8227008",
+                          "updatedAt": "2024-01-24T01:09:16Z",
+                          "publishedAt": "2024-01-24T01:09:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "@amassaf\nCan you try with setting preset = false in your object topy inside block BCs.",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8238220",
+                          "updatedAt": "2024-01-24T22:10:42Z",
+                          "publishedAt": "2024-01-24T22:10:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amassaf"
+                          },
+                          "bodyText": "Ok, thank you I will try that.",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8242176",
+                          "updatedAt": "2024-01-25T08:29:03Z",
+                          "publishedAt": "2024-01-25T08:29:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "@amassaf  the simulation time does not depend on the number of grains but on the number of elements.\nI see you are running with about 20k elements, for instance with 24 cpus, I would expect that simulation to take about 1 hour for each 1% strain load, this is the order of magnitude of what you should expect.\nSince you say slow but you don't specify computing time it is difficult to say.\nI notice your yield strength seems to be set as quite low, assuming you are using MPa units.\nI don't know of any metal that would exhibit gss_initial = 5 MPa and  t_sat = 10 MPa\nIn crystal plasticity, at least in the scheme implemented in MOOSE, the smaller the xm, the harder the convergence.\nEven though there are some papers showing numerical schemes to improve the convergence for larger exponents,\nI am not aware of any open source implementation, see for instance:\nhttps://www.sciencedirect.com/science/article/pii/S0045782522001475\nI suggest start from xm = 0.1\nUltimately changing xm is useful mostly if you are investigating the strain rate dependence,\notherwise 0.1 will be fine for most applications at constant strain rate.\nAs @GiudGiud says change the precondition to PJFNK,\nit is proven in this paper that it is a more efficient strategy:\nhttps://link.springer.com/article/10.1007/s00466-012-0741-7\nBest Regards,\nNicol\u00f2",
+                  "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8262633",
+                  "updatedAt": "2024-01-27T00:21:18Z",
+                  "publishedAt": "2024-01-27T00:21:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amassaf"
+                          },
+                          "bodyText": "We have 2k elements per grain which is conventional meshing. If this needs 24 cpus, then it's going to be impossible to compute more than 200 grains using MOOSE.\nAs for the material parameters, we are not working with a metal, but with rocks.",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8280851",
+                          "updatedAt": "2024-01-29T11:27:17Z",
+                          "publishedAt": "2024-01-29T11:27:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "@amassaf a 400k elements simulation with crystal plasticity is certainly possible but requires parallelization to run in a reasonable time, small machines and single processor simulations are not suitable. This has little to do with the particular FE software because most of the computation cost of crystal plasticity is the material model and not the stress equilibrium calculation. You will find a similar computational time with Abaqus UMAT. All that said, the computational time is directly proportional to the applied strain magnitude. If you increase xm you will see you can adopt a larger time step and still get convergence. Also your maximum_substep_iteration is too large, keep it to 2 max and decrease the time step instead if you see unconverged steps.",
+                          "url": "https://github.com/idaholab/moose/discussions/26598#discussioncomment-8286294",
+                          "updatedAt": "2024-01-29T16:33:56Z",
+                          "publishedAt": "2024-01-29T16:33:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

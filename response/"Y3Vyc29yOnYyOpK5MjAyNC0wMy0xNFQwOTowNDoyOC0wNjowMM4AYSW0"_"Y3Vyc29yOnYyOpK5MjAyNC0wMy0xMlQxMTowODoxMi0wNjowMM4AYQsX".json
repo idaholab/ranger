@@ -1,0 +1,880 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMy0xMlQxMTowODoxMi0wNjowMM4AYQsX"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "BlockSubdomainModifier?",
+          "author": {
+            "login": "jmeier"
+          },
+          "bodyText": "Dear Community,\nFollowing the procedure recommended here, I would like to propose a \"BlockSubdomainModifier\" for discussion.\nMotivation and current situation\nWith the group of \"XYZSubdomainModifiers\" Moose provides a tool to re-assign elements to different subdomains (blocks) during an simulation run. In tensor mechanis, this approach might be used to model the removal/excavation and refill. For geometrical complex models, the most efficient way defining the volumes to be excavated/refilled might be defined by means of subdomains. This leads to the task of moving whole blocks from one subdomain to another at pre-known points in time in a Moose-model. For this purpose the use of a CoupledVarThresholdElementSubdomainModifier is shown in #26941.\nAs shown in #26941, to just move one block once to another subdomain a Moose input file needs at least an AuxVariable, an FunctionAux, and a CoupledVarThresholdElementSubdomainModifier. Na\u00efvely one could argue, it takes 36 lines of code to reassign a single block once to another subdomain - which is a source of error on its own. In geotechnical or mining applications it is necessary to reassign several blocks during one simulation.\nProposed BlockSubdomainModifier\nTo ease re-assignment, make Moose input files shorter, and reduce potential sources of error I'd like to propose an BlockSubdomainModifier. The BlockSubdomainModifier inherits from ElementSubdomainModifier (and therefore inheriting also the handling of the boundaries). The new UserObject takes a path to a CSV formates file containing the information on when to move which block where. Therefore, only one UserObject will be needed for all block reassignments in a given model.\nSnipped of the input file using the proposed BlockSubdomainModifier:\n[UserObjects]\n  [BlockSubdomainModifier1]\n    type = BlockSubdomainModifier\n    file_name = 'stages-tab.csv'\n    header = 'ON'\n    execute_on = 'INITIAL TIMESTEP_BEGIN'\n  []\n[]\n\nThe corresponding CSV-File may contain a header and 3 columns (time, source-subdomain, and destination-subdomain):\ntime,   BlockFrom,  BlockTo\n0.40,   Box1,       8\n0.20,   Box2,       8\n0.60,   8,          Box1\n\nAs can be seen in the CSV above, also subdomain-names are permissible (to improve readability and debugging). To allow for this, this proposal also includes the implementation of the DelimitedFileReaderOfString which is copied from the DelimitedFileReader (and removed all the stuff connected to conversion to double).\nImpact to existing Moose apps\nAs this proposal only adds functionality and does not change any existing code, existing Moose apps should be able to cope with the proposed changes without any problems.\nI would be delighted if you could consider this proposal.\nEdit Please find the code here including:\n\nBlockSubdomainModifier.C\nDelimitedFileReaderOfString.C",
+          "url": "https://github.com/idaholab/moose/discussions/26952",
+          "updatedAt": "2024-07-30T06:04:12Z",
+          "publishedAt": "2024-03-04T12:23:59Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe'll want @hugary1995 's opinion on this and possibly @lindsayad for awareness / re-direction to other stakeholders at least.\nMaybe @dschwen ?\nThese are good ideas overall and I think you have figured out a lot of the implementation already.\nOne problem is the name. A block is the same as a subdomain so a BlockSubdomainModifier is not something that is easily understandable.\nGiven the design I would say: TimedSubdomainModifier.\nThis conveys well that there are no other decision criteria on when to change the mesh. Also since there's \"Element\" in the name, it s understood that entire subdomains will change at once.\nI can see simple input parameters as an alternative to the CSV file for simple problems. And for your large problem, use the CSV file option.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8672276",
+                  "updatedAt": "2024-03-04T21:43:50Z",
+                  "publishedAt": "2024-03-04T21:42:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "This seems reasonable to me",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8675196",
+                          "updatedAt": "2024-03-05T05:57:00Z",
+                          "publishedAt": "2024-03-05T05:56:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear @GiudGiud,\nI am happy about the positive feedback so far.\nFor the naming:\nAgreed, TimedSubdomainModifier describes the UserObject more meaningfully and better.\nSimple input parameters as an alternative to the CSV:\nI assume that the TimedSubdomainModifier should then behave in the same way as PiecewiseConstant (having xy_data and data_file), for example? Not by means of a TimedSubdomainModifier (taking the data directly via parameter) and a TimedSubdomainModifierCSV using a CSV file?\nJ\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8692934",
+                          "updatedAt": "2024-03-06T12:04:27Z",
+                          "publishedAt": "2024-03-06T12:03:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nPiecewise constant is an example of a dual input object yes.\nI would prefer splitting the parameters for the input file parameters.\nSo 3 vector parameters\nOld blocks\nNew blocks\nBlock_swap_time\nIt s more readable imo\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8694197",
+                          "updatedAt": "2024-03-06T13:52:40Z",
+                          "publishedAt": "2024-03-06T13:52:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "This sounds like a great idea to me, and the proposed design seems reasonable to me.\nAdding to @GiudGiud 's suggestion, I'd like to see part of the proposed capability moved into an intermediate class. So, instead of a concrete TimedSubdomainModifier, I suggest you create an intermediate abstract class called TimedElementSubdomainModifier, which doesn't perform the actual job. Add an additional input parameter times or target_times in TimedElementSubdomainModifier. All the logic related to target times should go into this intermediate class. For example, we should allow users to specify the target times with a vector, i.e. target_times = '0.2 0.4 0.6'. Once you have this intermediate class, let the existing ThresholdElementSubdomainModifier inherit from it, so that the new capability you add will also benefit all the existing modifiers.\nThe inheritance diagram I'm imagining (could be improved, for sure) is\n                  ElementSubdomainModifier\n                             |\n                 TimedElementSubdomainModifier\n                        |              |  \nThresholdElementSubdomainModifier    CSVSubdomainModifier\n              |\nCoupledVarThresholdElementSubdomainModifier",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8694525",
+                          "updatedAt": "2024-03-06T14:21:46Z",
+                          "publishedAt": "2024-03-06T14:21:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jmeier"
+                  },
+                  "bodyText": "Dear all,\nThank you, @GiudGiud, @lindsayad, and @hugary1995 for the positive feedback!\nFollowing the suggestions of @GiudGiud and @hugary1995 I've created a new branch: TimedSubdomainModifier\nThe changes are:\n\nThe user object is now called TimedSubdomainModifier .h-file -c-file\nThe TimedSubdomainModifier now inherits of the newly created TimedElementSubdomainModifier .h-file .c-file\nThe TimedSubdomainModifier now has properties to provide the times ans blocks directly in the input file -or- via file name using a CSV file. Please see below.\nThe TimedElementSubdomainModifier does some work related to the timestamps (sorting them, providing t_from_exclusive and t_to_inclusive for the function onComputeSubdomainID\nThe DelimitedFileReaderOfString remains unchanged .h-file  .c-file\nBlocks may be given via id or name (applies to the vector parameters and the CSV as well) to ease readability and model debugging.\n\nWith this changes the usage of the TimedSubdomainModifier looks like:\n[UserObjects]\n    [SubdomainModifier1]\n      type = TimedSubdomainModifier\n      times       = '0.4  0.2 '\n      blocks_from = 'Box1 Box2'\n      blocks_to   = '8    8   '\n      execute_on = 'INITIAL TIMESTEP_BEGIN'\n    []\n[]\n\nOr like this:\n[UserObjects]\n    [SubdomainModifier1]\n      type = TimedSubdomainModifier\n      data_file = 'stages-tab.csv'\n      header = 'ON'\n      execute_on = 'INITIAL TIMESTEP_BEGIN'\n    []\n[]\n\nWhat do you think?",
+                  "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8782214",
+                  "updatedAt": "2024-03-14T06:54:29Z",
+                  "publishedAt": "2024-03-14T06:54:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nuser interface looks great. Will you make a PR to contribute your work to MOOSE? I can review the code then\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8787224",
+                          "updatedAt": "2024-03-14T14:38:35Z",
+                          "publishedAt": "2024-03-14T14:38:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear @GiudGiud,\nPlease find my PR here: #27092\nKind regards,\nJ\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/26952#discussioncomment-8787324",
+                          "updatedAt": "2024-03-14T14:47:45Z",
+                          "publishedAt": "2024-03-14T14:47:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Optimizing material parameters using postprocessor values",
+          "author": {
+            "login": "andrisfreimanis"
+          },
+          "bodyText": "Dear All,\nI am looking for a way to fit a simulated stress-strain curve to an experimental stress-strain curve by optimizing material parameters. I saw that the Optimization module has examples on material inversion, however, they optimize point-based values and I didn't see anything that would work with postprocessor (global) values.\nMy use-case would be a crystal plasticity simulation. For example, CrystalPlasticityKalidindiUpdate material model. I know all parameters, except exponent n and preexponent gammaDot0. At each timestep two postprocessors calculate global average stress and strain. I want to compare these calculated stress-strain values to experimental stress-strain values. Then, change the exponent and preexponent material parameters to minimize the error between simulated-experimental stress-strain values. Is something like this possible using the Optimization module?\nBest regards\nAndris",
+          "url": "https://github.com/idaholab/moose/discussions/27087",
+          "updatedAt": "2024-03-14T11:44:23Z",
+          "publishedAt": "2024-03-14T11:39:50Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "maxnezdyur"
+                  },
+                  "bodyText": "I would look at this example: https://mooseframework.inl.gov/modules/optimization/examples/shapeOpt_Annulus.html\nIgnore the parts about the constraints, but given a postprocessor that is your objective value, you can use the derivative free nelder-mead, or the finite-differencing gradient option to optimize the parameters to get you the lowest postprocessor value.",
+                  "url": "https://github.com/idaholab/moose/discussions/27087#discussioncomment-8785159",
+                  "updatedAt": "2024-03-14T11:44:24Z",
+                  "publishedAt": "2024-03-14T11:44:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow deactivate capillarity",
+          "author": {
+            "login": "burritotukituki"
+          },
+          "bodyText": "Hi,\nI am running a benchmark in PorousFlow and ModFlow. Looks like in Modflow the basic implementation of unsaturated flow does not considerate capillarity. Is it possible to deactivate capillarity in PorousFlow to compare results?\nCheers!",
+          "url": "https://github.com/idaholab/moose/discussions/27062",
+          "updatedAt": "2024-03-14T09:03:49Z",
+          "publishedAt": "2024-03-12T15:55:22Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cpgr",
+                  "url": "https://github.com/idaholab/moose/discussions/27062#discussioncomment-8762125",
+                  "updatedAt": "2024-03-12T16:06:16Z",
+                  "publishedAt": "2024-03-12T16:06:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "You could set it to zero using PorousFlowCapillaryPressureConst?",
+                          "url": "https://github.com/idaholab/moose/discussions/27062#discussioncomment-8765683",
+                          "updatedAt": "2024-03-12T22:40:48Z",
+                          "publishedAt": "2024-03-12T22:40:47Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "burritotukituki"
+                  },
+                  "bodyText": "ups, I guess that works :)",
+                  "url": "https://github.com/idaholab/moose/discussions/27062#discussioncomment-8783495",
+                  "updatedAt": "2024-03-14T09:03:41Z",
+                  "publishedAt": "2024-03-14T09:03:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Applying Main App Adaptive Mesh to Sub App in MultiApp",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Dear MOOSE experts,\nI'm currently working on transfer adaptive mesh refinement from a main application into a sub-application within a MultiApp. We found that LevelSetMeshRefinementTransfer can meet such requirements, but it is located in the level set module instead of the moose module. Based on the provided reference calculation example (parent.i), I wrote my own calculation example file.\nHowever, upon implementing a similar setup in our custom application, we've encountered an issue where the mesh adaptivity does not seem to be executed within the sub-application. Additionally, as shown in the attached image,\n\nthe markers intended for transfer do not appear to be successfully replicated in the sub-app.\nI'm seeking guidance on the following points:\n\nCould there be specific considerations or settings that I might have overlooked in applying LevelSetMeshRefinementTransfer to ensure successful mesh refinement and marker transfer to the sub-app?\nIs the Level Set Module's LevelSetMeshRefinementTransfer inherently applicable to other apps, or are there strategies to generalize its application for use with other MOOSE-based Apps?\n\nAny insights, suggestions, or references to similar cases would be immensely appreciated. Our goal is to effectively leverage MOOSE's capabilities for our project, and resolving this issue is crucial for our progress.\nThank you in advance for your support and guidance.\nBest regards,\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/27057",
+          "updatedAt": "2024-03-14T07:00:12Z",
+          "publishedAt": "2024-03-12T03:41:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you transfer the marker on timestep-begin? Then execute adaptivity during the time step.\nI think the timing of execution is the challenging part here\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8754458",
+                  "updatedAt": "2024-03-12T04:17:40Z",
+                  "publishedAt": "2024-03-12T04:17:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi Guillaume,\nThank you for your suggestion regarding the timing of marker transfer and adaptivity execution. Following your advice, I attempted to configure the execution of the MultiApp to occur at both timestep_begin and timestep_end to see if it would facilitate the successful transfer of markers into the sub-app. Unfortunately, this adjustment did not lead to the markers being executed within the sub-application as intended.\nFurther investigation into the issue revealed some additional insights. I inserted breakpoints within the LevelSetMeshRefinementTransfer code to monitor its execution flow. Through this method, I observed that LevelSetMeshRefinementTransfer::initialSetup() is being called and executed as expected. However, LevelSetMeshRefinementTransfer::execute(), which is crucial for the actual transfer of adaptivity information, does not seem to be triggered at all. This observation contrasts with the behavior seen in the reference example (parent.i), where LevelSetMeshRefinementTransfer::execute() is executed effectively.\nMoreover, I encountered a limitation regarding the execution_on parameter within the LevelSetMeshRefinementTransfer. It appears that this parameter is private to LevelSetMeshRefinementTransfer and thus cannot be explicitly set in the input file.\nGiven these observations, it seems we are facing a more complex challenge related to the execution mechanism of the LevelSetMeshRefinementTransfer. Any further insights or recommendations on how to ensure the execute() method is triggered appropriately would be greatly appreciated.\nThank you once again for your support and for helping to steer the investigation in the right direction.\nBest regards,\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8755515",
+                          "updatedAt": "2024-03-12T07:05:51Z",
+                          "publishedAt": "2024-03-12T07:05:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI dont think we need the levelset mesh refinement transfer to transfer markers but I may be wrong. I thought I saw a different post last year transfering a marker with a regular transfer. Do you really want an exact synchronization of the two meshes or can they be offset by one time step?\n\nMoreover, I encountered a limitation regarding the execution_on parameter within the LevelSetMeshRefinementTransfer. It appears that this parameter is private to LevelSetMeshRefinementTransfer and thus cannot be explicitly set in the input file.\n\nThis may be. I can imagine we only use this transfer during rounds of adaptivity for the main app. I checked and the execution flags are hard set to:\n{LevelSet::EXEC_COMPUTE_MARKERS, LevelSet::EXEC_ADAPT_MESH};\n\nso to execute it, you need to make sure the adaptivity is active in the main app. Maybe force it to run with minimum iteration parameters if that's available?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8767806",
+                          "updatedAt": "2024-03-13T04:25:07Z",
+                          "publishedAt": "2024-03-13T04:25:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi Guillaume,\nThank your very much for your enthusiastic help. Below is my reply to your suggestions,\n\nI thought I saw a different post last year transfering a marker with a regular transfer.\n\nYou mean we use a regular method to transfer a marker and then run adaptivity in the sub-app, right? hugary1995 does this by directly transferring the variable used to evaluate the error in ref1 and ref2.\n\nDo you really want an exact synchronization of the two meshes or can they be offset by one time step?\n\nI believe  the correct approach is to initially run the main-app, followed by the transferring the mark information to the sub-app. Subsequently, we should transfer the relevent data to the sub-app, enabling the sub-app's mesh configuration aligns with that of the main-app.\n\nso to execute it, you need to make sure the adaptivity is active in the main app. Maybe force it to run with minimum iteration parameters if that's available?\n\nYeah, I can confirm that the adaptivity mesh is executed at each time step in the main app, but LevelSetMeshRefinementTransfer::execute() is not found to be called in the sub-app. Also, in #18813, @aeslaughter said, \"I created LevelSetMeshRefinementTransfer 5 years ago for this same concept. There might be a better way to do it now, but if not you can take a look at it for some inspiration.\" Perhaps he can provide more detailed advice.\nIn general, there are two idea. One is to directly transfer variables (e.g. bnds) based on hugary1995's methodl, and other is to use LevelSetMeshRefinementTransfer. I think the latter method is the best method, but there are still some issues to address. This necessitates further guidance for you and aeslaughter.\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8780714",
+                          "updatedAt": "2024-03-14T02:42:34Z",
+                          "publishedAt": "2024-03-14T02:42:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I can look into why the example does not execute the transfer as expected.\nCould you please reduce the calculation example file down to a MOOSE-only minimal example?",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8780791",
+                          "updatedAt": "2024-03-14T02:54:05Z",
+                          "publishedAt": "2024-03-14T02:54:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi Guillaume, I have reduced the the calculation example file down to a MOOSE-only minimal example.",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8781052",
+                          "updatedAt": "2024-03-14T03:36:08Z",
+                          "publishedAt": "2024-03-14T03:36:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Thanks!\nI m looking at the transfer but you should look at this error I hit using the devel version of the executable:\n\n\nAssertion `_mesh.queryElemPtr(elem->id()) == elem' failed\nAre you calling this method with a displaced mesh element?\nat /Users/giudgl/projects/moose/framework/src/problems/FEProblemBase.C, line 1922\nStack frames: 24\n0: 0   libmesh_devel.0.dylib               0x0000000110f762d0 libMesh::print_trace(std::__1::basic_ostream<char, std::__1::char_traits<char>>&) + 1044\n1: 1   libmoose-devel.0.dylib              0x0000000106c35bdc FEProblemBase::reinitElemPhys(libMesh::Elem const*, std::__1::vector<libMesh::Point, std::__1::allocator<libMesh::Point>> const&, unsigned int) + 912\n2: 2   libphase_field-devel.0.dylib        0x00000001095a45a8 GrainTracker::updateFieldInfo() + 1004\n3: 3   libphase_field-devel.0.dylib        0x00000001095b72b0 GrainTracker::finalize() + 816\n4: 4   libmoose-devel.0.dylib              0x0000000106bf76c4 FEProblemBase::joinAndFinalize(TheWarehouse::QueryCache<>, bool) + 556\n5: 5   libmoose-devel.0.dylib              0x0000000106bf50bc FEProblemBase::computeUserObjectsInternal(MooseEnumItem const&, Moose::AuxGroup const&, TheWarehouse::QueryCache<>&) + 6044\n6: 6   libmoose-devel.0.dylib              0x0000000106bf3670 FEProblemBase::computeUserObjects(MooseEnumItem const&, Moose::AuxGroup const&) + 232\n7: 7   libmoose-devel.0.dylib              0x0000000106befe78 FEProblemBase::execute(MooseEnumItem const&) + 300\n8: 8   libmoose-devel.0.dylib              0x000000010655c114 FixedPointSolve::solveStep(double&, double&, std::__1::set<unsigned long long, std::__1::less<unsigned long long>, std::__1::allocator<unsigned long long>> const&) + 860\n9: 9   libmoose-devel.0.dylib              0x000000010655a304 FixedPointSolve::solve() + 3552\n10: 10  libmoose-devel.0.dylib              0x000000010717926c TimeStepper::step() + 44\n11: 11  libmoose-devel.0.dylib              0x000000010655f92c Transient::takeStep(double) + 180\n12: 12  libmoose-devel.0.dylib              0x00000001070adf60 TransientMultiApp::solveStep(double, double, bool) + 2280\n13: 13  libmoose-devel.0.dylib              0x0000000106bfe8c0 FEProblemBase::execMultiApps(MooseEnumItem, bool) + 1272\n14: 14  libmoose-devel.0.dylib              0x000000010655c6d4 FixedPointSolve::solveStep(double&, double&, std::__1::set<unsigned long long, std::__1::less<unsigned long long>, std::__1::allocator<unsigned long long>> const&) + 2332\n15: 15  libmoose-devel.0.dylib              0x000000010655a304 FixedPointSolve::solve() + 3552\n16: 16  libmoose-devel.0.dylib              0x000000010717926c TimeStepper::step() + 44\n17: 17  libmoose-devel.0.dylib              0x000000010655f92c Transient::takeStep(double) + 180\n18: 18  libmoose-devel.0.dylib              0x000000010656acd8 Transient::execute() + 152\n19: 19  libmoose-devel.0.dylib              0x00000001075c43f4 MooseApp::executeExecutioner() + 684\n20: 20  libmoose-devel.0.dylib              0x00000001075bc9d8 MooseApp::run() + 4584\n21: 21  combined-devel                      0x0000000102defbf8 void Moose::main<CombinedTestApp>(int, char**) + 152\n22: 22  combined-devel                      0x0000000102defb54 main + 12\n23: 23  dyld                                0x000000019a5ea0e0 start + 2360\n[0] /Users/giudgl/projects/moose/framework/src/problems/FEProblemBase.C, line 1922, compiled Mar 11 2024 at 13:29:51\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n\n\nI think there's some feature in GrainTracker that does not support displaced meshes that you are using with displaced meshes",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8781251",
+                          "updatedAt": "2024-03-14T04:18:55Z",
+                          "publishedAt": "2024-03-14T04:18:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For the transfer, you have to add this\n[Problem]\n  type = LevelSetProblem\n[]\n\nto make the level set mesh refinement transfers work",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8781310",
+                          "updatedAt": "2024-03-14T04:30:10Z",
+                          "publishedAt": "2024-03-14T04:30:09Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Thank you for your guidance!\nThe issue has been resolved. Adding this specified lines in main-app. I appreciate your help!\nBesides,\n\nI think there's some feature in GrainTracker that does not support displaced meshes that you are using with displaced meshes\n\nIn fact, GrainTrack can support displaced meshes I think.\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/27057#discussioncomment-8782262",
+                          "updatedAt": "2024-03-14T07:08:53Z",
+                          "publishedAt": "2024-03-14T07:00:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "C++ Development Practice",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "In an effort to increase my ability to comprehend and apply C++ programming to my MOOSE applications, I would like to make and test the output for coding such as \"Hello World\". Is it possible to make and test simple programs, not associated with numerical analysis in the MOOSE environment, or do I need to install a dedicated C++ compiler?",
+          "url": "https://github.com/idaholab/moose/discussions/27074",
+          "updatedAt": "2024-03-13T16:27:57Z",
+          "publishedAt": "2024-03-13T15:17:32Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use the compilers we shipped with the conda packages to compile simple programs as well.\nThere's a hello world script here https://mooseframework.inl.gov/help/faq/build_issues.html\nyou can use\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27074#discussioncomment-8775547",
+                  "updatedAt": "2024-03-13T15:52:28Z",
+                  "publishedAt": "2024-03-13T15:52:26Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Great! Thank you for the verification and the provided link.",
+                          "url": "https://github.com/idaholab/moose/discussions/27074#discussioncomment-8775988",
+                          "updatedAt": "2024-03-13T16:27:58Z",
+                          "publishedAt": "2024-03-13T16:27:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Flow reversal problem",
+          "author": {
+            "login": "abhi1587"
+          },
+          "bodyText": "Hi, I am trying to simulate a conjugate heat transfer problem with the time-dependent mass flow rate in a pipe with m1, m2, and m3 mass flow rates in different periods of simulation.\nm1 and m3 being finite positive values and m2 is 0. Attached is the script.\nThe issue is when the mass flow is reduced to 0, the center line velocity reduces to a negative value and so does the temperature. The figures are attached.\nIt would be helpful if anyone could take a look at my script and point out the issue in it or suggest some checks to perform.\nThanks\nSimulation_main.txt\nMesh.txt",
+          "url": "https://github.com/idaholab/moose/discussions/26977",
+          "updatedAt": "2024-03-13T15:09:20Z",
+          "publishedAt": "2024-03-05T16:53:50Z",
+          "category": {
+            "name": "Q&A Modules: Thermal Hydraulics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "@joshuahansel Could you help us with this test setup when you get a chance? @abhi1587 is seeing a decrease in solid temperature even when the fluid flow is turned off, and we suspect it's coming from the negative velocity. Thanks.",
+                  "url": "https://github.com/idaholab/moose/discussions/26977#discussioncomment-8721779",
+                  "updatedAt": "2024-03-08T16:03:49Z",
+                  "publishedAt": "2024-03-08T16:03:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "I'm sorry, I started to look at your input and then ran into some VSCode issues and moved to something else while that was getting worked out.\nCould you try a larger number of axial elements than 3? 100 would be nice. I realize you may have convergence issues because of your 3D heat structure coupling not having full Jacobians. While troubleshooting, can you switch to a 2D cylindrical heat structure. That'll converge nicely. Here's an example:\nmoose/modules/thermal_hydraulics/test/tests/components/heat_transfer_heat_structure_1phase/phy.T_wall_transfer_3eqn_x.i\n\nI suspect this is maybe caused by boundary conditions too close to each other and fighting, plus maybe the equation of state you're using, which I'm not super familiar with. Second step would be to change that to something else.",
+                  "url": "https://github.com/idaholab/moose/discussions/26977#discussioncomment-8760928",
+                  "updatedAt": "2024-03-12T14:40:48Z",
+                  "publishedAt": "2024-03-12T14:40:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abhi1587"
+                          },
+                          "bodyText": "Thanks, Joshua. Changing the equation of state solved the issue. I will look into the documentation for how are these models affecting the solution.",
+                          "url": "https://github.com/idaholab/moose/discussions/26977#discussioncomment-8774744",
+                          "updatedAt": "2024-03-13T15:09:21Z",
+                          "publishedAt": "2024-03-13T15:09:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to solve the gradient of the Userobject object and introduce it into the kernel ConservativeAdvection\uff1f",
+          "author": {
+            "login": "ztlovehpl"
+          },
+          "bodyText": "I am a newbie in the field of MOOSE and C+.\nAfter importing the Userobject into the kernel object, how do I find the gradient of the object?\n'''params.addRequiredParam(\"convolution\", \"RadialGreensConvolution user object\");\n...\n_convolution(getUserObject(\"convolution\").getConvolution())\n'''\nThe governing equation is \u2207\u2219(n * \u2207C),  n is Density field to be solved\uff0c C is scalar field associated with n\uff0cGet its value using RadialGreensConvolution from module magpie\u3002\nI looked at the GenericFunctorGradientMaterial.h/C file and Function.h/C. I don\u2019t know if I can directly use the gradient() method to get the gradient. If so, how should I do it?",
+          "url": "https://github.com/idaholab/moose/discussions/27033",
+          "updatedAt": "2024-03-13T14:48:52Z",
+          "publishedAt": "2024-03-08T07:30:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nA user object isn't a field. You could implement a gradient routine on it but it s probably not the right option.\nIs the field you want the gradient for a variable? A material property ?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8721289",
+                  "updatedAt": "2024-03-08T15:18:35Z",
+                  "publishedAt": "2024-03-08T15:18:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ztlovehpl"
+                          },
+                          "bodyText": "Thanks for your reply\nIt is a material property calculated from variables\u3002\nDo you mean that I can convert the userobject object into material and then calculate the gradient of material?\n##in the Magpie\n\nthe property is calculated by UserObject-RadialGreensConvolution\u3002 I want to calculate the gradient of convolution and and introduce the results into the kernel",
+                          "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8726310",
+                          "updatedAt": "2024-03-09T02:09:16Z",
+                          "publishedAt": "2024-03-09T02:09:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI would add a new routine to this user object that computed this gradient\nThen in the kernel you use getUserObject (a fe_problem routine) templated with the specific type of this user object to retrieve a pointer to this user object. From this pointer you can call the gradient routine\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8729775",
+                          "updatedAt": "2024-03-09T14:37:42Z",
+                          "publishedAt": "2024-03-09T14:37:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ztlovehpl"
+                          },
+                          "bodyText": "Thank you so much\uff01\uff01\uff01",
+                          "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8739692",
+                          "updatedAt": "2024-03-11T02:20:09Z",
+                          "publishedAt": "2024-03-11T02:20:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ztlovehpl"
+                          },
+                          "bodyText": "Hello,Dr.Guillaume\nI want to know how long it will take to complete the work.\nI need to use this gradient to further develop my kernel\ntaozhang",
+                          "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8769716",
+                          "updatedAt": "2024-03-13T08:41:51Z",
+                          "publishedAt": "2024-03-13T08:41:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you are comfortable with C++ less than a day",
+                          "url": "https://github.com/idaholab/moose/discussions/27033#discussioncomment-8774438",
+                          "updatedAt": "2024-03-13T14:48:53Z",
+                          "publishedAt": "2024-03-13T14:48:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mesh issue: higher order U using a Cubit mesh in THM coupling",
+          "author": {
+            "login": "Khaksarkn"
+          },
+          "bodyText": "Hi, I am trying to use a second-order displacement with first-order pressure and temperature in my mesh. This is the part of the input file I use. It is OK with meshes generated by MOOSE's generated mesh, but it gives me this weird shape when I do this with Cubit's generated mesh. It assumes zero for values where displacement exists but p and T don't. Can you help me specify this to avoid this issue? Thanks.\njust doing second_order = true  results in this issue. even without order = SECOND.\nIs it something I should do with Cubit? or some other specification I need to do in the input file?\nI believe that it is not a visualization issue. MOOSE is confusing the file mesh. if it was just a visualization issue, the displacements should been correct but displacement results are also meaningless. So, I guess there is an issue with how I specify the input file.\n[Mesh]\n  type = FileMesh\n  file = fiveBores.e\n\n  second_order = true \n[]\n\n[Variables]\n  [temperature]\n    initial_condition = 274.15\n    family = LAGRANGE\n    order = FIRST\n  []\n  [porePressure]\n    family = LAGRANGE\n    order = FIRST\n  []\n\n  [disp_x]\n    family = LAGRANGE\n    order = SECOND\n  []\n  [disp_y]\n    family = LAGRANGE\n    order = SECOND\n  []\n\n\nBut this way of giving the mesh is completely OK in visualization:\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 5\n  ny = 5\n  xmin = -1\n  xmax = 1\n  ymin = -2\n  ymax = 0\n  second_order = true \n[]\n\n[Variables]\n  [temperature]\n    initial_condition = 274.15\n    family = LAGRANGE\n    order = FIRST\n    scaling = 1e3\n  []\n  [porePressure]\n    family = LAGRANGE\n    order = FIRST\n    scaling = 1e9\n  []\n\n  [disp_x]\n    family = LAGRANGE\n    order = SECOND\n  []\n  [disp_y]\n    family = LAGRANGE\n    order = SECOND\n  []",
+          "url": "https://github.com/idaholab/moose/discussions/27063",
+          "updatedAt": "2024-03-12T22:59:20Z",
+          "publishedAt": "2024-03-12T19:08:50Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "ComputeThermalExpansionEigenstrain with temperature dependent coefficient",
+          "author": {
+            "login": "eduardogrodriguez89"
+          },
+          "bodyText": "Hi\nI am trying to compute thermal expansion eigenstrain $\\epsilon = \\alpha  (T - T_{stress} )$ to determine the displacement of a bar in 1D.\nThe bar is fixed on the left side and the temperature is increased to determine the displacement on the right side caused by temperature.\nIf a determine the displacement manually using:\n$\\delta L = \\alpha  L(T - T_{stress} )$   and   $\\alpha$ = 12e-6 $\u00baC^{-1}$,  L = 10cm ,  dt=25 \u00baC\n$\\delta L$ = 0.003 cm\nBut when I calculate it with MOOSE, I get a different result\n$\\delta L_{moose}$ = 0.0057cm\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+\n|time ----------------| disp_x_bar1 | ---------p1---------|--- strain_xx ---        | temperature    |\n+----------------+----------------+----------------+----------------+----------------+\n|   5.000000e+00 |   5.571429e-03 |   0.000000e+00 |   5.571429e-04 |   2.500000e+01 |\n+----------------+----------------+----------------+----------------+----------------+\nI would like to know if my code is ok or why I get these different results?\nHere is the code and mesh\nbar1_1d.zip\nbarra_1D_temp.zip\n[Mesh]\n    [base]\n        type = FileMeshGenerator\n        file = 'bar1_1d.msh'\n    []\n[]\n[GlobalParams]\n     displacements = 'disp_x'\n[]\n[AuxVariables]\n   [temp]\n   []\n[]\n[Functions]\n  [temperature_load]\n    type = ParsedFunction\n    expression =5.0*t\n  []\n[]\n[Modules]\n  [TensorMechanics]\n    [Master]\n      [all]\n        strain = SMALL\n        incremental = true\n        add_variables = true\n        eigenstrain_names = eigenstrain\n        generate_output = 'strain_xx'\n      []\n    []\n  []\n[]\n[AuxKernels]\n  [tempfuncaux]\n    type = FunctionAux\n    variable = temp\n    function = temperature_load\n  []\n[]\n[BCs]\n  [point_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = p1\n    value = 0.0\n  []\n[]\n[Materials]\n  [elasticity_tensor_1]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 120e6\n    poissons_ratio = 0.3\n    block = 'bar_1'\n  []  \n  [small_stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n  [thermal_expansion_strain_1]\n    type = ComputeThermalExpansionEigenstrain\n    stress_free_temperature = 0\n    thermal_expansion_coeff = 12e-6\n    temperature = temp\n    eigenstrain_name = eigenstrain\n    block = 'bar_1'\n  []\n[]\n[Executioner]\n  type = Transient\n  solve_type = 'newton'\n  line_search = none\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  l_max_its = 4\n  l_tol = 1e-14\n  nl_max_its = 30\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n  start_time = 0.0\n  end_time = 5\n  dt = 0.1\n  dtmin = 0.1\n[]\n[Outputs]\n  exodus = true\n[]\n[Postprocessors]\n  [strain_xx]\n    type = ElementAverageValue\n    variable = strain_xx\n    execute_on = 'initial timestep_end'\n  []\n  [disp_x_bar1]\n    type = PointValue\n    point = '10 0 0'\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [p1]\n    type = PointValue\n    point = '0 0 0'\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [temperature]\n    type = AverageNodalVariableValue\n    variable = temp\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/26996",
+          "updatedAt": "2024-03-13T12:21:05Z",
+          "publishedAt": "2024-03-06T14:54:28Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt s going to be tied to how the load is applied.\nWhy did you select         incremental = true?\n@bwspenc in case I'm wrong\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8695364",
+                  "updatedAt": "2024-03-06T15:21:22Z",
+                  "publishedAt": "2024-03-06T15:21:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "eduardogrodriguez89"
+                          },
+                          "bodyText": "I try to replicate the code in #25572\nIf I change incremental = false\nI get the following  error\n*** ERROR ***\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\nMaterial property 'strain_increment', requested by 'small_stress' is not defined on block bar_1\nMaterial property 'rotation_increment', requested by 'small_stress' is not defined on block bar_1\nMaterial property 'strain_increment', requested by 'small_stress_face' is not defined on block bar_1\nMaterial property 'rotation_increment', requested by 'small_stress_face' is not defined on block bar_1\nMaterial property 'strain_increment', requested by 'small_stress_neighbor' is not defined on block bar_1\nMaterial property 'rotation_increment', requested by 'small_stress_neighbor' is not defined on block bar_1",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8698759",
+                          "updatedAt": "2024-03-06T20:30:02Z",
+                          "publishedAt": "2024-03-06T20:30:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "eduardogrodriguez89"
+                          },
+                          "bodyText": "Why did you select         incremental = true?\n@GiudGiud\nI also based my code on that example.\nhttps://mooseframework.inl.gov/source/materials/ComputeThermalExpansionEigenstrain.html\n(modules/solid_mechanics/test/tests/thermal_expansion/constant_expansion_coeff.i)",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8721143",
+                          "updatedAt": "2024-03-08T15:06:41Z",
+                          "publishedAt": "2024-03-08T15:06:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yeah this makes sense.\nThoughts @bwspenc on why displacement is 2x the analytical ?",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8721164",
+                          "updatedAt": "2024-03-08T15:09:17Z",
+                          "publishedAt": "2024-03-08T15:09:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@eduardogrodriguez89 is the mesh converged?\nIf you add uniform refine = 1 in the mesh block does the result change",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8721178",
+                          "updatedAt": "2024-03-08T15:10:01Z",
+                          "publishedAt": "2024-03-08T15:10:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "eduardogrodriguez89"
+                          },
+                          "bodyText": "The mesh converged.\nI added uniform refine = 1 to the mesh block and I got the same result.",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8722941",
+                          "updatedAt": "2024-03-08T17:53:00Z",
+                          "publishedAt": "2024-03-08T17:53:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "eduardogrodriguez89"
+                          },
+                          "bodyText": "I have done more simulations and a question has arisen.\nIn the postprocessor block, I have asked to display the eigenstrain_xx and the strain_xx. Since the example is only thermal, shouldn't the eigenstrain_xx be equal to strain_xx? Because I visualize that both are different.\nthermal_eigenstrain = $\\alpha  (T-T_{stress})$ $~~~~~~ \\alpha$ = 12e-6  1/\u00baC , $(T-T_{stress})=30\u00baC$\nthermal_eigenstrain = 3.600000e-04\nAny recommendations with the code?\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n| time           | disp_x_p2      | eigenstrain_xx | p1             | strain_xx      | strain_yy      | stress_xx      | stress_yy      | temperature    |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n\n|   3.000000e+00 |   4.680000e-03 |   3.600000e-04 |   0.000000e+00 |   4.680000e-04 |   4.680000e-04 |   4.952610e-07 |  -1.593754e-08 |   3.000000e+01 |\n+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+----------------+\n\neigenstrain_xx = 3.600000e-04\nstrain_xx = 4.680000e-04\n\n[Mesh]\n  [bar]\n    type = GeneratedMeshGenerator\n    nx = 500\n    ny=5\n    ymax=0.1\n    xmax = 10 \n    dim = 2\n  []\n[]\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n[AuxVariables]\n  [temp]\n    initial_condition = 0.0\n  []\n  [eigenstrain_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n[Functions]\n  [temperature_load]\n    type = ParsedFunction\n    expression ='10.0*(t+0)'\n  []\n[]\n[Physics]\n  [SolidMechanics]\n    [QuasiStatic]\n      [all]\n        strain = SMALL\n        add_variables = true\n        eigenstrain_names = eigenstrain\n        generate_output = 'strain_xx stress_xx strain_yy stress_yy'\n      []\n    []\n  []\n[]\n[AuxKernels]\n  [tempfuncaux]\n    type = FunctionAux\n    variable = temp\n    function = temperature_load\n  []\n  [eigenstrain_xx]\n    type = RankTwoAux\n    rank_two_tensor = eigenstrain\n    variable = eigenstrain_xx\n    index_i = 0\n    index_j = 0\n    execute_on = 'initial timestep_end'\n  []\n[]\n[BCs]\n  [point1_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0\n  []\n[]\n[Materials]\n  [elasticity_tensor_1]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 200e9\n    poissons_ratio = 0.3\n  []  \n  [small_stress]\n    type = ComputeLinearElasticStress\n  []\n  [thermal_expansion_strain_1]\n    type = ComputeThermalExpansionEigenstrain\n    stress_free_temperature = 0\n    thermal_expansion_coeff = 12e-6\n    temperature = temp\n    eigenstrain_name = eigenstrain\n  []\n[]\n[Executioner]\n  type = Transient\n  solve_type = 'newton'\n  #line_search = none\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n  l_max_its = 4\n  l_tol = 1e-12\n  nl_max_its = 30\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n  start_time = 0.0\n  end_time = 3\n  dt = 0.1\n  dtmin = 0.1\n[]\n[Outputs]\n  exodus = true\n[]\n[Postprocessors]\n  [strain_xx]\n    type = ElementAverageValue\n    variable = strain_xx\n    execute_on = 'initial timestep_end'\n  []\n  [strain_yy]\n    type = ElementAverageValue\n    variable = strain_yy\n    execute_on = 'initial timestep_end'\n  []\n  [stress_xx]\n    type = ElementAverageValue\n    variable = stress_xx\n    execute_on = 'initial timestep_end'\n  []\n  [stress_yy]\n    type = ElementAverageValue\n    variable = stress_yy\n    execute_on = 'initial timestep_end'\n  []\n  [disp_x_p2]\n    type = PointValue\n    point = '10 0 0'\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [p1]\n    type = PointValue\n    point = '0 0 0'\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [temperature]\n    type = AverageNodalVariableValue\n    variable = temp\n  []\n  [eigenstrain_xx]\n    type = ElementAverageValue\n    variable = eigenstrain_xx\n    execute_on = 'initial timestep_end'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8746539",
+                          "updatedAt": "2024-03-11T14:09:38Z",
+                          "publishedAt": "2024-03-11T14:09:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@dschwen knows about eigenstrains",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8750071",
+                          "updatedAt": "2024-03-11T18:40:26Z",
+                          "publishedAt": "2024-03-11T18:40:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "@eduardogrodriguez89  You forgot the Poisson's ratio. The thermal strain is volumetric and you need to consider the Poisson's effect.   You can set poisson ratio = 0.0 to verify.",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8761473",
+                          "updatedAt": "2024-03-12T15:19:33Z",
+                          "publishedAt": "2024-03-12T15:18:53Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "eduardogrodriguez89"
+                          },
+                          "bodyText": "It works. Thanks",
+                          "url": "https://github.com/idaholab/moose/discussions/26996#discussioncomment-8764881",
+                          "updatedAt": "2024-03-12T20:40:49Z",
+                          "publishedAt": "2024-03-12T20:40:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error while running a job",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "Dear MOOSE team,\nI get this error in my .out file when I submit a job on my school's cluster. Is there a solution for it or I should contact my cluster's administrators. Below is the error:\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/hit/libhit-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/hit/libhit-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/electromagnetics/lib/libelectromagnetics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/electromagnetics/lib/libelectromagnetics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/functional_expansion_tools/lib/libfunctional_expansion_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/functional_expansion_tools/lib/libfunctional_expansion_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/geochemistry/lib/libgeochemistry-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/geochemistry/lib/libgeochemistry-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/level_set/lib/liblevel_set-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/level_set/lib/liblevel_set-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/reactor/lib/libreactor-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/reactor/lib/libreactor-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/richards/lib/librichards-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/richards/lib/librichards-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/stochastic_tools/lib/libstochastic_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/stochastic_tools/lib/libstochastic_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fsi/lib/libfsi-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fsi/lib/libfsi-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/optimization/lib/liboptimization-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/optimization/lib/liboptimization-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/peridynamics/lib/libperidynamics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/peridynamics/lib/libperidynamics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/phase_field/lib/libphase_field-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/phase_field/lib/libphase_field-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/porous_flow/lib/libporous_flow-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/porous_flow/lib/libporous_flow-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/scalar_transport/lib/libscalar_transport-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/scalar_transport/lib/libscalar_transport-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/chemical_reactions/lib/libchemical_reactions-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/chemical_reactions/lib/libchemical_reactions-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/thermal_hydraulics/lib/libthermal_hydraulics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/thermal_hydraulics/lib/libthermal_hydraulics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/navier_stokes/lib/libnavier_stokes-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/navier_stokes/lib/libnavier_stokes-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fluid_properties/lib/libfluid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fluid_properties/lib/libfluid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/rdg/lib/librdg-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/rdg/lib/librdg-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/solid_properties/lib/libsolid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/solid_properties/lib/libsolid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/misc/lib/libmisc-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/misc/lib/libmisc-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/xfem/lib/libxfem-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/xfem/lib/libxfem-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwaspcore.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasplsp.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwaspcore.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasplsp.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasphalite.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasphalite.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.11)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.11)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libpetsc.so.3.20)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libpetsc.so.3.20)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libstrumpack.so.7.1)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libstrumpack.so.7.1)",
+          "url": "https://github.com/idaholab/moose/discussions/27052",
+          "updatedAt": "2024-03-12T17:10:50Z",
+          "publishedAt": "2024-03-11T22:52:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe environment in which MOOSE/ BISON was compiled and the one you are using it dont match.\nMaybe you are simply missing some modules? Or loaded extra ones which dont match what was used for compilation?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8752940",
+                  "updatedAt": "2024-03-12T00:03:30Z",
+                  "publishedAt": "2024-03-12T00:03:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I just realized i do not have the materials and kernels directory in my src and include directory respectively when i check inside my application. Does this mean my application did not compile well or there is no proper executable.",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8753723",
+                          "updatedAt": "2024-03-12T02:18:36Z",
+                          "publishedAt": "2024-03-12T02:18:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nShould there be some?\nWhich application are you talking about? Bison? Do you have access to the source code?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8754402",
+                          "updatedAt": "2024-03-12T04:06:53Z",
+                          "publishedAt": "2024-03-12T04:06:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "my application name is belson? Yeah I have the source code and header file for my input script",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8760775",
+                          "updatedAt": "2024-03-12T14:30:25Z",
+                          "publishedAt": "2024-03-12T14:30:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "or do i create these directories myself?",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8761232",
+                          "updatedAt": "2024-03-12T15:02:52Z",
+                          "publishedAt": "2024-03-12T15:02:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh my bad, I misread Bison instead of belson.\nSource code should be inside the application folder, in belson/src/(kernels/materials/functions/...) for .C files and belson/include(/...) for .h files",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8761804",
+                          "updatedAt": "2024-03-12T15:41:50Z",
+                          "publishedAt": "2024-03-12T15:41:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I am going to try and recompile in the same environment i run it. I will send the feedback here",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8761937",
+                          "updatedAt": "2024-03-12T15:52:13Z",
+                          "publishedAt": "2024-03-12T15:52:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I try recompiling and it did not work. Note I have already added my source code and header file in their respective folders. Below is the feedback when I try recompiling\n(base) [emmanuel324@tinkercliffs1 My Project]$ cd ../\n(base) [emmanuel324@tinkercliffs1 belson]$ module reset\nResetting modules to system default. Reseting $MODULEPATH back to system default. All extra directories will be removed from $MODULEPATH.\n(base) [emmanuel324@tinkercliffs1 belson]$ module load apps site/tinkercliffs/easybuild/setup\n(base) [emmanuel324@tinkercliffs1 belson]$ module load apps site/tinkercliffs-rome/easybuild/setup\n(base) [emmanuel324@tinkercliffs1 belson]$ module load OpenMPI CMake\n(base) [emmanuel324@tinkercliffs1 belson]$ export CC=mpicc CXX=mpicxx FC=mpif90 F90=mpif90 F77=mpif77\n(base) [emmanuel324@tinkercliffs1 belson]$ mamba activate python-stack\n(python-stack) [emmanuel324@tinkercliffs1 belson]$ make -j4\nNot compiling MOOSE with NEML2 because NEML2_DIR is not a valid NEML2 checkout and/or libtorch is not enabled.\n(python-stack) [emmanuel324@tinkercliffs1 belson]$",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8761998",
+                          "updatedAt": "2024-03-12T16:04:23Z",
+                          "publishedAt": "2024-03-12T15:56:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is not an error\nNot compiling MOOSE with NEML2 because NEML2_DIR is not a valid NEML2 checkout and/or libtorch is not enabled.\n\nit did not recompile because it s already compiled.\nin belson, do you see a belson-opt executable?",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8762119",
+                          "updatedAt": "2024-03-12T16:05:36Z",
+                          "publishedAt": "2024-03-12T16:05:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Yeah my bad it was compiled but i still get the same error even after compiling in the same environment.\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/hit/libhit-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/belson/lib/libbelson-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/electromagnetics/lib/libelectromagnetics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/functional_expansion_tools/lib/libfunctional_expansion_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/geochemistry/lib/libgeochemistry-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/level_set/lib/liblevel_set-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/reactor/lib/libreactor-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/richards/lib/librichards-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/stochastic_tools/lib/libstochastic_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fsi/lib/libfsi-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/optimization/lib/liboptimization-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/peridynamics/lib/libperidynamics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/phase_field/lib/libphase_field-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/porous_flow/lib/libporous_flow-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/scalar_transport/lib/libscalar_transport-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/chemical_reactions/lib/libchemical_reactions-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/thermal_hydraulics/lib/libthermal_hydraulics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/framework/libmoose-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/navier_stokes/lib/libnavier_stokes-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/hit/libhit-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fluid_properties/lib/libfluid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/belson/lib/libbelson-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/rdg/lib/librdg-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/solid_properties/lib/libsolid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/electromagnetics/lib/libelectromagnetics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/misc/lib/libmisc-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/functional_expansion_tools/lib/libfunctional_expansion_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/xfem/lib/libxfem-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/geochemistry/lib/libgeochemistry-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/level_set/lib/liblevel_set-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/reactor/lib/libreactor-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/richards/lib/librichards-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwaspcore.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasplsp.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/stochastic_tools/lib/libstochastic_tools-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasphalite.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/modules/contact/lib/libcontact-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fsi/lib/libfsi-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/optimization/lib/liboptimization-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/peridynamics/lib/libperidynamics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/phase_field/lib/libphase_field-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.11)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/porous_flow/lib/libporous_flow-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/scalar_transport/lib/libscalar_transport-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libpetsc.so.3.20)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/chemical_reactions/lib/libchemical_reactions-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/thermal_hydraulics/lib/libthermal_hydraulics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libstrumpack.so.7.1)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/navier_stokes/lib/libnavier_stokes-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/fluid_properties/lib/libfluid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/rdg/lib/librdg-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/solid_properties/lib/libsolid_properties-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/misc/lib/libmisc-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/xfem/lib/libxfem-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwaspcore.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasplsp.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/framework/contrib/wasp/install/lib/libwasphalite.so.04)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `CXXABI_1.3.13' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.11)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libpetsc.so.3.20)\n/home/emmanuel324/projects/belson/belson-opt: /apps/easybuild/software/tinkercliffs-rome/GCCcore/10.3.0/lib64/libstdc++.so.6: version `GLIBCXX_3.4.29' not found (required by /home/emmanuel324/projects/moose/petsc/arch-moose/lib/libstrumpack.so.7.1)\n--------------------------------------------------------------------------\nPrimary job  terminated normally, but 1 process returned\na non-zero exit code. Per user-direction, the job has been aborted.\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nmpirun detected that one or more processes exited with non-zero status, thus causing\nthe job to be terminated. The first process to do so was:\n\n  Process name: [[47535,1],0]\n  Exit code:    1\n--------------------------------------------------------------------------",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8762288",
+                          "updatedAt": "2024-05-15T18:02:29Z",
+                          "publishedAt": "2024-03-12T16:19:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "please use triple quotes to paste logs nicely\nthis looks like 2 mpis\ndid you report the output of the moose/scripts/diagnostic script yet?",
+                          "url": "https://github.com/idaholab/moose/discussions/27052#discussioncomment-8762707",
+                          "updatedAt": "2024-03-12T16:54:59Z",
+                          "publishedAt": "2024-03-12T16:54:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
