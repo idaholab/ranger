@@ -1,0 +1,823 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wMy0xOFQxMDoyMzowMy0wNjowMM4AYYfP"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "How to convert variable of CONSTANT, MONOMIAL to FIRST, LAGRANGE in auxkernel?",
+          "author": {
+            "login": "SomnusYu"
+          },
+          "bodyText": "Hi all,\nI notice that the type of flow channel variables in THM are CONSTANT, and MONOMIAL, which is in a stepped shape. I would like to show them as continuous functions, like the variable type of FIRST, and LAGRANGE. Is there any auxkernel to do this? Or I must use a postprocessor?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/27130",
+          "updatedAt": "2024-03-19T06:21:27Z",
+          "publishedAt": "2024-03-19T03:37:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use the ProjectionAux to make L2-norm minimizing (in most cases) projections between variable types. It can go from CONSTANT MONOMIAL to FIRST LAGRANGE with an auxiliary variable for the FIRST LAGRANGE\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27130#discussioncomment-8835436",
+                  "updatedAt": "2024-03-19T03:41:43Z",
+                  "publishedAt": "2024-03-19T03:41:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "Thanks, I will have a try!",
+                          "url": "https://github.com/idaholab/moose/discussions/27130#discussioncomment-8835441",
+                          "updatedAt": "2024-03-19T03:42:38Z",
+                          "publishedAt": "2024-03-19T03:42:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "New kernel: ExplicitDynamicsContact. why deformation occurs before contact\uff1f",
+          "author": {
+            "login": "Yasunaoka"
+          },
+          "bodyText": "Hello MOOSE Community\nI recently found out that the long-awaited ExplicitDynamicsContact kernel is now available, and I've created an input file with reference to the official example\n#use miug mius mm\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  allow_renumbering = false\n  displacements = 'disp_x disp_y'\n  [specimen]\n    type = AnnularMeshGenerator\n    rmax = 5\n    rmin = 3.5\n    nt = 320\n    nr = 21\n    boundary_name_prefix = 'specimen'\n    quad_subdomain_id = 1\n    tri_subdomain_id = 9\n  []\n  [stopper]\n    type = AnnularMeshGenerator\n    rmax = 1.75\n    rmin = 0\n    nt = 40\n    nr = 7\n    boundary_id_offset = 4\n    boundary_name_prefix = 'stopper'\n    quad_subdomain_id = 2\n    tri_subdomain_id = 3\n  []\n  [collect_meshes]\n    type = MeshCollectionGenerator\n    inputs = ' specimen stopper'\n  []\n[]\n\n\n[Variables]\n  [disp_x]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [disp_y]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[AuxVariables]\n  [c]\n  []\n  [shearband_driving_force]\n    order = CONSTANT\n    family = MONOMIAL\n    [AuxKernel]\n      type = MaterialRealAux\n      property = local_energy_dev\n    []\n  []\n  [vonmises]\n    order = CONSTANT\n    family = MONOMIAL\n    [AuxKernel]\n      type = RankTwoScalarAux\n      rank_two_tensor = stress\n      variable = vonmises\n      scalar_type = VonMisesStress\n    []\n  []\n  [pressure]\n    order = CONSTANT\n    family = MONOMIAL\n    [AuxKernel]\n      type = RankTwoScalarAux\n      rank_two_tensor = stress\n      variable = pressure\n      scalar_type = Hydrostatic\n    []\n  []\n  [EPS]\n    order = CONSTANT\n    family = MONOMIAL\n    [AuxKernel]\n      type = MaterialRealAux\n      property = eqv_plastic_strain\n      variable = EPS\n    []\n  []\n  [yield_factor]\n    order = CONSTANT\n    family = MONOMIAL\n    [AuxKernel]\n      type = MaterialRealAux\n      property = yield_factor\n      variable = yield_factor\n    []\n  []\n  [accel_x]\n  []\n  [vel_x]\n  []\n  [accel_y]\n  []\n  [vel_y]\n  []\n[]\n\n\n[AuxKernels]\n  [accel_x]\n      type = TestNewmarkTI\n      variable = accel_x\n      displacement = disp_x\n      first = false\n  []\n  [vel_x]\n      type = TestNewmarkTI\n      variable = vel_x\n      displacement = disp_x\n  []\n  [accel_y]\n      type = TestNewmarkTI\n      variable = accel_y\n      displacement = disp_y\n      first = false\n  []\n  [vel_y]\n      type = TestNewmarkTI\n      variable = vel_y\n      displacement = disp_y\n  []\n[]\n\n[ExplicitDynamicsContact]\n  [my_contact]\n    model = frictionless\n    primary = stopper_rmax\n    secondary = specimen_rmin \n    penalty = 1.0e2\n  []\n[]\n\n[Kernels]\n  [DynamicSolidMechanics]\n    displacements = 'disp_x disp_y'\n    volumetric_locking_correction = true\n    stiffness_damping_coefficient = 0.04\n    strain = FINITE\n    incremental = true\n    out_of_plane_direction = z\n    planar_formulation = PLANE_STRAIN\n    decomposition_method = HughesWinget\n  []\n  [inertia_x]\n    type = InertialForce\n    variable = disp_x\n  []\n  [inertia_y]\n    type = InertialForce\n    variable = disp_y\n  []   \n[]\n\n[BCs]\n  [Pressure]\n      [outter_surface]\n          boundary = 'specimen_rmax'\n          function = current_pulse\n          displacements = 'disp_x disp_y'\n      []\n  []\n  [x_fixed]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'stopper_rmin'\n    value = 0.0\n    preset = false\n  []\n  [y_fixed]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'stopper_rmin'\n    value = 0.0\n    preset = false\n  []\n[]\n\n[Functions]\n  [current_pulse]\n      #4Gpa=4e9n/m^2=4e9 kg/(m*s^2)=4e9 kg/(e3e12mm*mius^2)=4e3 miug/(mm*mius^2)\n      type = PiecewiseLinear\n      x = '0\t0.1\t0.2\t0.3\t0.4\t0.5\t0.6\t0.7\t0.8\t0.9\t1\t1.1\t1.2\t1.3\t1.4\t1.5\t1.6\t1.7\t1.8\t1.9\t2\t2.1\t2.2\t2.3\t2.4\t2.5\t2.6\t2.7\t2.8\t2.9\t3\t3.1\t3.2\t3.3\t3.4\t3.5\t3.6\t3.7\t3.8\t3.9\t4\t4.1\t4.2\t4.3\t4.4\t4.5\t4.6\t4.7\t4.8\t4.9\t5\t5.1\t5.2\t5.3\t5.4\t5.5\t5.6\t5.7\t5.8\t5.9\t6\t6.1\t6.2\t6.3\t6.4\t6.5\t6.6\t6.7\t6.8\t6.9\t7\t7.1\t7.2\t7.3\t7.4\t7.5\t7.6\t7.7\t7.8\t7.9\t8\t8.1\t8.2\t8.3\t8.4\t8.5\t8.6\t8.7\t8.8\t8.9\t9\t9.1\t9.2\t9.3\t9.4\t9.5\t9.6\t9.7\t9.8\t9.9\t10\t10.1\t10.2\t10.3\t10.4\t10.5\t10.6\t10.7\t10.8\t10.9\t11\t11.1\t11.2\t11.3\t11.4\t11.5\t11.6\t11.7\t11.8\t11.9\t12\t12.1\t12.2\t12.3\t12.4\t12.5\t12.6\t12.7\t12.8\t12.9\t13\t13.1\t13.2\t13.3\t13.4\t13.5\t13.6\t13.7\t13.8\t13.9\t14\t14.1\t14.2\t14.3\t14.4\t14.5\t14.6\t14.7\t14.8\t14.9\t15\t15.1\t15.2\t15.3\t15.4\t15.5\t15.6\t15.7\t15.8\t15.9\t16\t16.1\t16.2\t16.3\t16.4\t16.5\t16.6\t16.7\t16.8\t16.9\t17\t17.1\t17.2\t17.3\t17.4\t17.5\t17.6\t17.7\t17.8\t17.9\t18\t18.1\t18.2\t18.3\t18.4\t18.5\t18.6\t18.7\t18.8\t18.9\t19\t19.1\t19.2\t19.3\t19.4\t19.5\t19.6\t19.7\t19.8\t19.9\t20'\n\n      y = '4.02E-02\t4.03E-02\t3.96E-02\t3.93E-02\t2.76E-02\t-8.19E-03\t-8.96E-02\t-2.25E-01\t-4.23E-01\t-6.42E-01\t-8.92E-01\t-1.06E+00\t-1.00E+00\t-5.29E-01\t4.22E-01\t2.00E+00\t4.27E+00\t7.34E+00\t1.12E+01\t1.59E+01\t2.15E+01\t2.80E+01\t3.54E+01\t4.36E+01\t5.25E+01\t6.20E+01\t7.22E+01\t8.31E+01\t9.45E+01\t1.07E+02\t1.19E+02\t1.33E+02\t1.47E+02\t1.61E+02\t1.76E+02\t1.91E+02\t2.07E+02\t2.23E+02\t2.40E+02\t2.56E+02\t2.73E+02\t2.90E+02\t3.07E+02\t3.24E+02\t3.41E+02\t3.59E+02\t3.76E+02\t3.94E+02\t4.11E+02\t4.28E+02\t4.46E+02\t4.63E+02\t4.81E+02\t4.99E+02\t5.17E+02\t5.34E+02\t5.52E+02\t5.69E+02\t5.86E+02\t6.02E+02\t6.19E+02\t6.35E+02\t6.51E+02\t6.67E+02\t6.83E+02\t6.98E+02\t7.13E+02\t7.27E+02\t7.41E+02\t7.55E+02\t7.69E+02\t7.82E+02\t7.95E+02\t8.07E+02\t8.18E+02\t8.29E+02\t8.39E+02\t8.48E+02\t8.56E+02\t8.64E+02\t8.70E+02\t8.75E+02\t8.80E+02\t8.84E+02\t8.87E+02\t8.89E+02\t8.90E+02\t8.90E+02\t8.89E+02\t8.87E+02\t8.84E+02\t8.80E+02\t8.75E+02\t8.68E+02\t8.60E+02\t8.52E+02\t8.43E+02\t8.32E+02\t8.21E+02\t8.09E+02\t7.96E+02\t7.83E+02\t7.69E+02\t7.55E+02\t7.40E+02\t7.26E+02\t7.12E+02\t6.97E+02\t6.82E+02\t6.67E+02\t6.50E+02\t6.33E+02\t6.15E+02\t5.97E+02\t5.79E+02\t5.61E+02\t5.42E+02\t5.23E+02\t5.03E+02\t4.83E+02\t4.64E+02\t4.45E+02\t4.26E+02\t4.07E+02\t3.88E+02\t3.70E+02\t3.52E+02\t3.35E+02\t3.17E+02\t3.00E+02\t2.82E+02\t2.65E+02\t2.49E+02\t2.33E+02\t2.17E+02\t2.02E+02\t1.87E+02\t1.72E+02\t1.59E+02\t1.45E+02\t1.32E+02\t1.20E+02\t1.08E+02\t9.71E+01\t8.63E+01\t7.61E+01\t6.63E+01\t5.69E+01\t4.83E+01\t4.03E+01\t3.31E+01\t2.66E+01\t2.09E+01\t1.59E+01\t1.15E+01\t7.91E+00\t4.95E+00\t2.66E+00\t9.90E-01\t4.47E-02\t-2.36E-01\t2.15E-01\t1.34E+00\t3.22E+00\t5.72E+00\t8.89E+00\t1.27E+01\t1.72E+01\t2.23E+01\t2.81E+01\t3.47E+01\t4.18E+01\t4.97E+01\t5.81E+01\t6.73E+01\t7.71E+01\t8.72E+01\t9.79E+01\t1.09E+02\t1.20E+02\t1.32E+02\t1.44E+02\t1.57E+02\t1.70E+02\t1.83E+02\t1.96E+02\t2.10E+02\t2.24E+02\t2.38E+02\t2.52E+02\t2.67E+02\t2.82E+02\t2.97E+02\t3.12E+02\t3.27E+02\t3.42E+02\t3.56E+02\t3.71E+02\t3.85E+02\t3.99E+02\t4.13E+02'\n  []\n[]\n\n[Materials]\n  [density]\n    type = Density\n    displacements = 'disp_x disp_y'\n    density = 7.9e3 #miug/mm^3\n  []\n  [strain]\n    type = ComputeFiniteStrain\n    displacements = 'disp_x disp_y'\n    implicit = false\n    decomposition_method = HughesWinget\n    volumetric_locking_correction = true\n  []\n  [elasticity_tensor_specimen]\n    type = ComputeIsotropicElasticityTensor\n    shear_modulus = 77.5e3\n    poissons_ratio = 0.3\n    block = 1\n  []\n  [elasticity_tensor_stopper]\n    type = ComputeIsotropicElasticityTensor\n    shear_modulus = 44e3\n    poissons_ratio = 0.3\n    block = '2  3'\n  []\n  [damage_stress_specimen]\n    type = JCEOSnl\n    A = 110#Mpa\n    B = 1500\n    n = 0.36\n    C = 0.014\n    reference_strain_rate = 1\n    m = 0.81\n    T_m = 1800#kelvin\n    T_r = 298\n    T_i = 298\n    SpecHeat = 500e-6 #1e-6mm^2/(mius^2*kelvin)=1*m*m/(s*s*kelvin)\n    D_i = 7.9e3\n    ShearModule = 77.5e3\n    C0 = 4569e-3 #1e-3 mm/mius = 1m/s\n    S1 = 1.49\n    gamma0 = 2.17\n    a = 0\n    c = c\n    D_name = 'degradation'\n    shearband_driving_force_name = local_energy_dev\n    block = 1\n  []\n  [damage_stress_stopper]\n    type = JCEOSnl\n    A = 90#Mpa\n    B = 292\n    n = 0.31\n    C = 0.025\n    reference_strain_rate = 1\n    m = 1.09\n    T_m = 1358#kelvin\n    T_r = 298\n    T_i = 298\n    SpecHeat = 386e-6 #1e-6mm^2/(mius^2*kelvin)=1*m*m/(s*s*kelvin)\n    D_i = 8.92e3\n    ShearModule = 44e3\n    C0 = 3940e-3 #1e-3 mm/mius = 1m/s\n    S1 = 1.489\n    gamma0 = 2.02\n    a = 0\n    c = c\n    D_name = 'degradation'\n    shearband_driving_force_name = local_energy_dev\n    block = '2  3'\n  []\n  [degradation]#a1\n    type = DerivativeParsedMaterial\n    property_name = degradation\n    coupled_variables = 'c'\n    expression = '((1.0-c)^2)/(((1.0-c)^2)+a1*c*(1-0.5*c))'\n    constant_names       = 'a1'\n    constant_expressions = '0.8'\n    derivative_order = 2\n  []\n  [wave_speed]\n    type = WaveSpeed\n  []\n[]\n\n\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 20\n  dt = 0.005\n  [TimeIntegrator]\n    type = CentralDifference\n  []\n[]\n\n\n[Outputs]\n  exodus = true\n[]\n\nHowever, I found it very strange that even though the pressure is only applied on the exterior of the specimen and the specimen and stopper are not in contact, there is already stress generated on the stopper.\n\n\n\n\nI'm wondering if there's something wrong with my input file setup, can you give me a little help please?",
+          "url": "https://github.com/idaholab/moose/discussions/27120",
+          "updatedAt": "2024-03-19T03:39:19Z",
+          "publishedAt": "2024-03-18T15:16:20Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero",
+                  "url": "https://github.com/idaholab/moose/discussions/27120#discussioncomment-8829690",
+                  "updatedAt": "2024-03-18T15:29:30Z",
+                  "publishedAt": "2024-03-18T15:29:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "recuero"
+                  },
+                  "bodyText": "The explicit contact capabilities that MOOSE currently has are experimental. There is a warning in the action or constraint to that effect. It may not conserve the energy upon impact. So it's still work in progress.\nHowever, I think that your issue is that you have tets of outrageous aspect ratios at the center of the sphere and the simulation is going unstable. I would mesh that circle with quads exclusively and be extremely careful with your contact results as explicit contact is not ready for prime time.",
+                  "url": "https://github.com/idaholab/moose/discussions/27120#discussioncomment-8834815",
+                  "updatedAt": "2024-03-19T01:57:25Z",
+                  "publishedAt": "2024-03-19T01:57:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "Wait... In addition to that, you should use the critical time step size postprocessor to drive the simulation. Otherwise, the time step you select may be too large for your elements. Your simulation would break around the smaller elements, which is what you are seeing.",
+                          "url": "https://github.com/idaholab/moose/discussions/27120#discussioncomment-8834839",
+                          "updatedAt": "2024-03-19T02:01:37Z",
+                          "publishedAt": "2024-03-19T02:01:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Hi, while troubleshooting the setup issue I cancelled critical timestep, the time step 0.005 is approximately equal to 0.4*critical timestep. nevertheless, I re-added critical timestep and modified the geometry of the stopper to make the mesh have a nice aspect ratio via growth_r.\n\n  [stopper]\n    type = AnnularMeshGenerator\n    rmax = 1.75\n    rmin = 0.25\n    nt = 30\n    nr = 16\n    growth_r = 1.05\n    boundary_id_offset = 4\n    boundary_name_prefix = 'stopper'\n    quad_subdomain_id = 2\n    tri_subdomain_id = 10\n  []\n\n\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 20\n  [TimeStepper]\n    type = PostprocessorDT\n    postprocessor = time_step\n  []\n  [TimeIntegrator]\n    type = CentralDifference\n  []\n[]\n\n[Postprocessors]\n  [time_step]\n    type = CriticalTimeStep\n    factor = 0.8\n    execute_on = 'INITIAL TIMESTEP_END'\n  []\n[]\n\n\n\n\nHowever the results are still incomprehensible, so maybe it's not a good time to use explicitdynamiccontact for dynamic impact problems.",
+                          "url": "https://github.com/idaholab/moose/discussions/27120#discussioncomment-8835337",
+                          "updatedAt": "2024-03-19T03:23:18Z",
+                          "publishedAt": "2024-03-19T03:23:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "If there is no contact between surfaces, the results you are getting are not the result of the new explicit dynamic constraint. For example, the image at the bottom appears to show instabilities around the outer ring without contact.",
+                          "url": "https://github.com/idaholab/moose/discussions/27120#discussioncomment-8835421",
+                          "updatedAt": "2024-03-19T03:39:20Z",
+                          "publishedAt": "2024-03-19T03:39:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How do we get the nucleation to be at the grain boundary and not overlap",
+          "author": {
+            "login": "YXY101676"
+          },
+          "bodyText": "Hi,\nI'm using Discrete Nucleation for a recrystallization problem.I wonder how do we get the nucleation to be at the grain boundary and not overlap?\nThanks\nYXY",
+          "url": "https://github.com/idaholab/moose/discussions/27129",
+          "updatedAt": "2024-03-19T02:17:09Z",
+          "publishedAt": "2024-03-19T02:17:08Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question on Conditional Controls",
+          "author": {
+            "login": "pengfejeac"
+          },
+          "bodyText": "Greetings!\nI'm working on a problem that requires switching between conditions for more than one time and I'm kinda confused about which control/function should I apply. The rough idea is as follows:\nLet's say I apply \"HeatConduction\" kernels/bcs to describe the temperature of an object and what I wish to do is: When the object's overall temperature reaches 50 degree, I will turn off the heater object(or boundaries) and when the temperature drops below 0 degree, I will turn the heater back on. The switching process will repeat itself for a couple of times.\nI'm aware that there's a control object called \"ConditionalEnableControl\", but it seems like it will switch condition for only once, which is not suitable for my case. I'm perfectly fine with creating my own kernels/objects in Moose if that's necessary.\nAny help will be much appreciated!",
+          "url": "https://github.com/idaholab/moose/discussions/27100",
+          "updatedAt": "2024-03-19T01:30:14Z",
+          "publishedAt": "2024-03-15T09:33:36Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou should use a conditional control object for that.\nBake the logic with the two thresholds in a ParsedFunction\nhttps://mooseframework.inl.gov/moose/source/controls/ConditionalFunctionEnableControl.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8803889",
+                  "updatedAt": "2024-03-16T15:08:32Z",
+                  "publishedAt": "2024-03-15T15:45:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "pengfejeac"
+                          },
+                          "bodyText": "I see, thanks! So if I'm switching values of heat source, I can use Real function control. But if I'm switching between different conditions, for example, Dirichlet BC and Neumann BC, then I will have to use Bool function control right?\nBy the way, could Parsed Function take values from post processor?",
+                          "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8808973",
+                          "updatedAt": "2024-03-16T02:37:33Z",
+                          "publishedAt": "2024-03-16T02:37:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYes, to change the value you ll want to use this control\nhttps://mooseframework.inl.gov/moose/source/controls/RealFunctionControl.html\nto change the status of 'active/inactive' of an object, you ll want to use this one\nhttps://mooseframework.inl.gov/moose/source/controls/ConditionalFunctionEnableControl.html\nParsedFunction can accept postprocessors, with the symbol_names / values parameters\nhttps://mooseframework.inl.gov/moose/source/functions/MooseParsedFunction.html",
+                          "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8812384",
+                          "updatedAt": "2024-03-16T15:08:24Z",
+                          "publishedAt": "2024-03-16T15:08:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "pengfejeac"
+                          },
+                          "bodyText": "That works! Thanks a lot for your help! I just have another quick question on performance of such Control actions: I tend to use Iterative solver in most of the cases and when the problem is well conditioned and well constructed, \"dt\" could get very large. So the \"turning point\"(the moment to enable/disable stuffs) of Control action will not be very accurate, do you have any idea on how to fix this issue other than using fixed dt throughout the process?",
+                          "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8824224",
+                          "updatedAt": "2024-03-18T07:53:08Z",
+                          "publishedAt": "2024-03-18T07:53:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nSo you can execute controls within a time step, on nonlinear iterations. I am not sure I would recommend doing so, as this could cause the nonlinear solve to 'ping pong' between active and inactive on some objects.\nI think the clean way to do this would be to use a Terminator to fail a time step (with some additional logic to allow it if dt < 1s for example) when the condition for the Control switch occurs.\nhttps://mooseframework.inl.gov/source/userobjects/Terminator.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8828710",
+                          "updatedAt": "2024-03-18T14:20:16Z",
+                          "publishedAt": "2024-03-18T14:20:14Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "pengfejeac"
+                          },
+                          "bodyText": "Terminator with a soft stop sounds like a very reasonable way to do this, I'll give it a shot! Thanks again for your help! I really appreciate it.",
+                          "url": "https://github.com/idaholab/moose/discussions/27100#discussioncomment-8834643",
+                          "updatedAt": "2024-03-19T01:30:12Z",
+                          "publishedAt": "2024-03-19T01:30:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about threadJoin and finalize in FlowChannelHeatStructureCouplerUserObject",
+          "author": {
+            "login": "SomnusYu"
+          },
+          "bodyText": "Hi all,\nI'm confused about the function of FlowChannelHeatStructureCouplerUserObject::threadJoin(const UserObject & uo) and FlowChannelHeatStructureCouplerUserObject::finalize() in THM.\n#https://mooseframework.inl.gov/docs/doxygen/modules/FlowChannelHeatStructureCouplerUserObject_8C_source.html\nFrom my point of view, FlowChannelHeatStructureCouplerUserObject::execute() can finish all we want and we do not need any information in threadJoin() and finalize(), why do we need the threadJoin() and finalize()?\nI just try to guess the reason:\nThe aim of FlowChannelHeatStructureCouplerUserObject is to construct a full getCachedQuantityMaps().\nIf we just have 1 thread, we do not need the threadJoin() and finalize() function.\nEach MPI can include lots of threads. But if we have lots of threads and 1 MPI, for the threadJoin() function, we are not sure which threads calculate which elements. So we need to give the value of different threads to this main thread. After all the threadJoin() calculations, we could get a full map that can be used in Kernel, Material, and so on. In this case, finalize() is useless.\nIf we have lots of MPI, we do not know which MPI calculates which elements. In each MPI, we just get a part of the full map. So we need to gather all parts of the map together to construct a full map that can be used in Kernel, Material, and so on. So we need the finalize() function.\nIs that right? Could anyone kindly tell me? Thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/27116",
+          "updatedAt": "2024-03-19T00:50:18Z",
+          "publishedAt": "2024-03-18T08:33:34Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\nIf we just have 1 thread, we do not need the threadJoin()\n\nyes this is correct. And\nIf we just have 1 MPI process, we do not need the finalize()\n\nthis is often true but not always. Some user objects do guenuine work in the finalize routine.\nEverything you said makes sense to me. @joshuahansel  if you can double-check\nThis map is used for the purpose you mentioned and also for handling ghosting of DOFs across MPI processes. MPI processes need to know what DOF indices their immediate neighbor elements are on, the map helps with that.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27116#discussioncomment-8829329",
+                  "updatedAt": "2024-03-18T15:02:26Z",
+                  "publishedAt": "2024-03-18T15:02:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "Thanks a lot!",
+                          "url": "https://github.com/idaholab/moose/discussions/27116#discussioncomment-8834379",
+                          "updatedAt": "2024-03-19T00:49:40Z",
+                          "publishedAt": "2024-03-19T00:49:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "The UO needs to communicate the pieces of the map across threads and ranks because it executes only on the flow channel elements but is used by residual objects on both the flow channel and heat structure sides. So if for example the flow channel is on one thread/rank and the HS on the other, then you'd have a problem for the HS - the map entry wouldn't exist.\nEverything you and Guillaume said is correct, except that finalize() may be necessary to implement even for 1 rank, as Guillaume pointed out (for example, a post-processor computing an average over all of the elements).",
+                  "url": "https://github.com/idaholab/moose/discussions/27116#discussioncomment-8829851",
+                  "updatedAt": "2024-03-18T15:41:57Z",
+                  "publishedAt": "2024-03-18T15:41:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "I got it! Thanks a lot!",
+                          "url": "https://github.com/idaholab/moose/discussions/27116#discussioncomment-8834382",
+                          "updatedAt": "2024-03-19T00:50:01Z",
+                          "publishedAt": "2024-03-19T00:50:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "incorrect hydrostatic pressure",
+          "author": {
+            "login": "nlosacco"
+          },
+          "bodyText": "Hi all,\njust trying to get the hydrostatic pwp distribution in a 10 m soil column. I set gravity = 10. and density = 1000.\nWhy am I getting the wrong pwp at the bottom? It should be u = 1.E+5, while I get u=9.392233e+04. Can someone tell me what I'm missing here? Please see the attached input:\n[Mesh]\n  [soil]\n   type = GeneratedMeshGenerator\n    dim = 2\n    elem_type = QUAD4\n    nx = 4\n    ny = 20\n    xmax = 2.\n    ymax = 10.\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  gravity = '0. -10. 0.'\n[]\n\n[Variables]\n  [u]\n    family = LAGRANGE\n    order = FIRST\n  []\n[]\n\n[PorousFlowBasicTHM]\n  porepressure = u\n  coupling_type = Hydro\n  fp = the_simple_fluid\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    bulk_modulus = 2E9\n    viscosity = .001\n    density0 = 1000.\n  []\n[]\n[Materials]\n  [porosity]\n    type = PorousFlowPorosity\n    porosity_zero = 0.1\n  []\n  [permeability_aquifer]\n    type = PorousFlowPermeabilityConst\n    permeability = '1.E-3 0 0   0 1.E-3 0   0 0 1.E-3'\n  []\n[]\n\n[BCs]\n  [top]\n     type = DirichletBC\n     variable = u\n     value = 0.\n     boundary = top\n  []\n[]\n\n[Postprocessors]\n   [aaa]\n     type = PointValue\n     point = '0. 0. 0.'\n     variable = u\n   []\n[]\n\n[Executioner]\n   type = Steady\n   solve_type = Newton\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/27118",
+          "updatedAt": "2024-03-18T20:55:04Z",
+          "publishedAt": "2024-03-18T11:50:43Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs this result converged spatially (mesh-wise)? and nonlinear-solve wise?\nwhat does the convergence log look like?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8828659",
+                  "updatedAt": "2024-03-18T14:15:45Z",
+                  "publishedAt": "2024-03-18T14:15:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "Yeah, I mean... the pwp profile with depth should have slope 1.E+4 and instead it has slope 0.93E+4. This is consistently observed in much more complex domains/meshes. If I use a PorousFlowFullySaturatedDarcyBase, instead of PorousFlowBasicTHM, the pwp is predicted correctly!\nBut then, when I move to a complex Transient analysis (simulation of a falling head test), the analysis does not converge (while it does converge with PorousFlowBasicTHM",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8828934",
+                          "updatedAt": "2024-03-18T14:34:44Z",
+                          "publishedAt": "2024-03-18T14:34:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@cpgr will know the differences in implementation of these two approaches.\nI would say try to refine the mesh and make sure the nonlinear solve is converged for now.",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8828972",
+                          "updatedAt": "2024-03-18T14:38:16Z",
+                          "publishedAt": "2024-03-18T14:38:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "mesh refined (10*n elms), nl_abs_tol = 1.E-20, tried both first and second order elements.\nResult does not change at all",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8829108",
+                          "updatedAt": "2024-03-18T14:47:27Z",
+                          "publishedAt": "2024-03-18T14:47:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok good to know, thanks for checking\nIf you want to investigate this yourself you can use Debug/show_actions and Debug/show_execution_order=ALWAYS to see how the simulation with PorousFlowBasicTHM differs from the one with PorousFlowFullySaturatedDarcyBase",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8829189",
+                          "updatedAt": "2024-03-18T14:53:05Z",
+                          "publishedAt": "2024-03-18T14:52:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "thanks for the suggestion, I'll certainly do, for sake of curiosity.\nIn any case, setting temperature = 0 (whatever the physical meaning is) for PorousFlowBasicTHM (default is 293), yields the correct value. Hence, I guess there are some hidden dependencies on temperature... maybe I missed it, but I think this should be clarified in the docs",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8829310",
+                          "updatedAt": "2024-03-18T15:00:37Z",
+                          "publishedAt": "2024-03-18T15:00:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "1runer"
+                          },
+                          "bodyText": "Hi @nlosacco\nSome comments:\nFluidProperties in MOOSE are never constant, so e.g. you have to consider the change in density as function of pressure and temperature. You can modify the fluid compressibility to make the fluid stiffer. You can output the fluid density as AuxVariable to check the density in your simulation.\nPorousFlowTHM action uses PorousFlowFullySaturatedMassTimeDerivative and assumes pressure as variable to solve. Furthermore standard in the action is that the mass balance is NOT multiplied by density (on both sides) which makes the equation linear and quasi-static in each timestep.\nOn the other hand if you use PorousFlowMassTimeDerivative, e.g. by using the PorousFlowUnsaturated Action, the equations solve for the density change and you have a \"real\" transient simulation.\nEDIT:\nThe best to fit you results might be to use PorousFlowTHM action and change the FluidProperties to a high bulk modulus (stiff water) and thermal_expansion to 0.",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8829506",
+                          "updatedAt": "2024-03-18T15:21:57Z",
+                          "publishedAt": "2024-03-18T15:16:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "Hi @1runer\nI already tried and set a very high bulk modulus (about 1E3 GPa) and thermal_expansion = 0, but yet the result didn't change, unless temperature=0",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8829628",
+                          "updatedAt": "2024-03-18T15:25:01Z",
+                          "publishedAt": "2024-03-18T15:25:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "@1runer is certainly correct here - the fluid density isn't 1000 kg/m3 in your case. If you set thermal_expansion = 0 and re-run it, it should give you the expected result (I know you said that it didn't but I know it will).",
+                          "url": "https://github.com/idaholab/moose/discussions/27118#discussioncomment-8833046",
+                          "updatedAt": "2024-03-18T20:55:04Z",
+                          "publishedAt": "2024-03-18T20:55:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Run on parallel in a local HPC",
+          "author": {
+            "login": "eduardogrodriguez89"
+          },
+          "bodyText": "When I ran a Moose parallel computation on a HPC cluster, using the following .sh file\n#!/bin/bash\n#SBATCH --job-name=erodriguez89\n#SBATCH --partition=short\n#SBATCH --nodes=1\n#SBATCH --ntasks-per-node=64\n#SBATCH --cpus-per-task=1\n#SBATCH --time=00-01:00\nconda activate moose\ncd ~/projects/homogenization\nsrun ./homogenization-opt -i ~/projects/examples/TEMP_RVE_2D.i > pantalla_c1\n\nI get the following out\n\nParallelism:\nNum Processors: 1\nNum Threads: 1\n\nI have tried various combinations of ntasks-per-node and cpus-per-task values but it always seems to run with only one.\nhttps://mooseframework.inl.gov/getting_started/installation/hpc_install_moose.html   I installed moose in this way\nhttps://mooseframework.inl.gov/getting_started/hpc_new_users.html  I created my app in this way\nDo I have to configure something else to run?\nThanks",
+          "url": "https://github.com/idaholab/moose/discussions/27119",
+          "updatedAt": "2024-03-18T20:07:50Z",
+          "publishedAt": "2024-03-18T13:19:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "This part of your script is a bit odd:\n#SBATCH --cpus-per-task=1\n#SBATCH --time=00-01:00\nconda activate moose                    <------------\ncd ~/projects/homogenization\nsrun ./homogenization-opt -i ~/projects/examples/TEMP_RVE_2D.i > pantalla_c1\n\nIf this Conda environment contains what I think it contains, then you are attempting to use an MPI implentation supplied by our Conda packages, instead of your HPC Cluster. SLURM in this case, is limiting your process to serial operations.\nAlso, If you modified the above to the following instead (force using multiple cores):\n#SBATCH --cpus-per-task=1\n#SBATCH --time=00-01:00\nconda activate moose\ncd ~/projects/homogenization\nmpiexec -n 64 ./homogenization-opt -i ~/projects/examples/TEMP_RVE_2D.i > pantalla_c1\n\nI suspect SLRUM will complain (because you are now attempting to use an unsupported MPI implementation).\nThe solution here is to not use Conda. Instead using your clusters specific MPI implementation. Usually in the form of module load.\nEdit:\nThis will mean basically starting over unfortunately. You will need to build PETSc, libMesh, WASP, MOOSE, and your application over again (once you figure out what modules to load).",
+                  "url": "https://github.com/idaholab/moose/discussions/27119#discussioncomment-8828241",
+                  "updatedAt": "2024-03-18T13:46:26Z",
+                  "publishedAt": "2024-03-18T13:44:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "I had similar experience while using srun to launch an MPI job by srun -n $SLURM_NTASKS. It does not launch the job with multiple processors. I used mpirun instead.\nCheck which wrappers are available in the bin of the condo environment that you are using for moose. E.g., at ~/miniforge/envs/moose/bin/\nIf mpirun or mpiexec is there, try using it. For me, this one works without any issue:\n#!/bin/bash\n#SBATCH --time=16:00:00\n#SBATCH --nodes=1\n#SBATCH --ntasks-per-node=64\n#SBATCH --job-name moose_app # job name\n#\n# load modulefiles\nsource ~/miniforge/etc/profile.d/conda.sh\nconda activate moose\n\n# run the app\nmpirun -n $SLURM_NTASKS  ~/PathToTheApp/moose_app-opt -i ~/PathToTheInputScript/InputScript.i",
+                          "url": "https://github.com/idaholab/moose/discussions/27119#discussioncomment-8830610",
+                          "updatedAt": "2024-03-18T16:43:23Z",
+                          "publishedAt": "2024-03-18T16:43:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "While using our Conda packages is a possible solution, and sometimes works, you may miss out on the performance offered by using your HPC Cluster's.\nSome HPC Clusters are simply configured to not allow any MPI wrapper other than the one purpose-built for that cluster. Ref: #26029",
+                          "url": "https://github.com/idaholab/moose/discussions/27119#discussioncomment-8830778",
+                          "updatedAt": "2024-03-18T16:57:02Z",
+                          "publishedAt": "2024-03-18T16:57:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "schakrabortygithub"
+                          },
+                          "bodyText": "@milljm, that makes sense. I might be missing some efficiency from the HPC as well by not using the system-provided MPI library. I will check.",
+                          "url": "https://github.com/idaholab/moose/discussions/27119#discussioncomment-8832670",
+                          "updatedAt": "2024-03-18T20:07:51Z",
+                          "publishedAt": "2024-03-18T20:07:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Issues with Solid Mechanics module",
+          "author": {
+            "login": "joshua-block"
+          },
+          "bodyText": "Bug Description\nI recently updated and rebuilt MOOSE on a cluster. I noticed that the Tensor Mechanics module is deprecated and is to be replaced by the Solid Mechanics module. However, when I create a new app and test using an example (part_1.1.i) in \"moose/modules/solid_mechanics/tutorials/basics/\", it returns the following error:\n\ufffd[31m\n*** ERROR ***\nA 'ComputeIsotropicElasticityTensor' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\ufffd[39m\n\nSteps to Reproduce\n#Tensor Mechanics tutorial: the basics\n#Step 1, part 1\n#2D simulation of uniaxial tension with linear elasticity\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Mesh]\n  file = necking_quad4.e\n[]\n\n[Physics/SolidMechanics/QuasiStatic]\n  [./block1]\n    strain = SMALL #Small linearized strain, automatically set to XY coordinates\n    add_variables = true #Add the variables from the displacement string in GlobalParams\n  [../]\n[]\n\n[Materials]\n  [./elasticity_tensor]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 2.1e5\n    poissons_ratio = 0.3\n  [../]\n  [./stress]\n    type = ComputeLinearElasticStress\n  [../]\n[]\n\n[BCs]\n  [./left]\n    type = DirichletBC\n    variable = disp_x\n    boundary = left\n    value = 0.0\n  [../]\n  [./bottom]\n    type = DirichletBC\n    variable = disp_y\n    boundary = bottom\n    value = 0.0\n  [../]\n  [./top]\n    type = DirichletBC\n    variable = disp_y\n    boundary = top\n    value = 0.05\n  [../]\n[]\n\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n  [../]\n[]\n\n[Executioner]\n  type = Steady\n\n  solve_type = 'NEWTON'\n\n  petsc_options = '-snes_ksp_ew'\n  petsc_options_iname = '-pc_type -sub_pc_type -pc_asm_overlap -ksp_gmres_restart'\n  petsc_options_value = 'asm lu 1 101'\n[]\n\n[Outputs]\n  exodus = true\n  perf_graph = true\n[]\n\n\nImpact\nWhen running my own input files, I have noticed similar errors where other code from the Solid Mechanics files \"is not a registered object\". Example, \"A 'CrystalPlasticitySlipRateGSS' is not a registered object.\"\n[Optional] Diagnostics\nNo response",
+          "url": "https://github.com/idaholab/moose/discussions/27082",
+          "updatedAt": "2024-03-18T19:05:02Z",
+          "publishedAt": "2024-03-14T00:05:38Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "abarun22"
+                  },
+                  "bodyText": "Similar issue in my recent installation done yesterday for the following input case in the repo: test/tests/multiapps/quadrature_point_multiapp/quadrature_point_multiapp.i.\n*** ERROR ***\nA 'QuadraturePointMultiApp' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.^[[39m",
+                  "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8784151",
+                  "updatedAt": "2024-03-14T10:00:13Z",
+                  "publishedAt": "2024-03-14T10:00:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Hi @joshua-block and @abarun22 , I wasn't able to reproduce the error when running either input file you mentioned. (That is not to say the issue is invalid...) Could you please copy your Makefile here? I want to make sure you are using SOLID_MECHANICS := yes instead of TENSOR_MECHANICS := yes inside the Makefile.",
+                  "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8786634",
+                  "updatedAt": "2024-03-14T13:48:10Z",
+                  "publishedAt": "2024-03-14T13:48:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@abarun22 this is a framework object that you are missing. it cant be tied to any module name change\nI would do the classic:\n\ncd projects/<app name >\ngit commit -a to save all my work in the repo\ngit clean -Xfd\nthen recompile",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8787102",
+                          "updatedAt": "2024-03-14T14:28:19Z",
+                          "publishedAt": "2024-03-14T14:28:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Oh ya, that's a good point.",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8787157",
+                          "updatedAt": "2024-03-14T14:33:42Z",
+                          "publishedAt": "2024-03-14T14:33:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshua-block"
+                          },
+                          "bodyText": "###############################################################################\n################### MOOSE Application Standard Makefile #######################\n###############################################################################\n#\n# Optional Environment variables\n# MOOSE_DIR        - Root directory of the MOOSE project\n#\n###############################################################################\n# Use the MOOSE submodule if it exists and MOOSE_DIR is not set\nMOOSE_SUBMODULE    := $(CURDIR)/moose\nifneq ($(wildcard $(MOOSE_SUBMODULE)/framework/Makefile),)\n  MOOSE_DIR        ?= $(MOOSE_SUBMODULE)\nelse\n  MOOSE_DIR        ?= $(shell dirname `pwd`)/moose\nendif\n\n# framework\nFRAMEWORK_DIR      := $(MOOSE_DIR)/framework\ninclude $(FRAMEWORK_DIR)/build.mk\ninclude $(FRAMEWORK_DIR)/moose.mk\n\n################################## MODULES ####################################\n# To use certain physics included with MOOSE, set variables below to\n# yes as needed.  Or set ALL_MODULES to yes to turn on everything (overrides\n# other set variables).\n\nALL_MODULES                 := yes\n\nCHEMICAL_REACTIONS          := yes\nCONTACT                     := yes\nELECTROMAGNETICS            := yes\nEXTERNAL_PETSC_SOLVER       := yes\nFLUID_PROPERTIES            := yes\nFSI                         := yes\nFUNCTIONAL_EXPANSION_TOOLS  := yes\nGEOCHEMISTRY                := yes\nHEAT_TRANSFER               := yes\nLEVEL_SET                   := yes\nMISC                        := yes\nNAVIER_STOKES               := yes\nOPTIMIZATION                := yes\nPERIDYNAMICS                := yes\nPHASE_FIELD                 := yes\nPOROUS_FLOW                 := yes\nRAY_TRACING                 := yes\nREACTOR                     := yes\nRDG                         := yes\nRICHARDS                    := yes\nSOLID_MECHANICS             := yes\nSTOCHASTIC_TOOLS            := yes\nTHERMAL_HYDRAULICS          := yes\nXFEM                        := yes\n\ninclude $(MOOSE_DIR)/modules/modules.mk\n###############################################################################\n\n# dep apps\nAPPLICATION_DIR    := $(CURDIR)\nAPPLICATION_NAME   := test1\nBUILD_EXEC         := yes\nGEN_REVISION       := no\ninclude            $(FRAMEWORK_DIR)/app.mk\n\n###############################################################################\n# Additional special case targets should be added here",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8788320",
+                          "updatedAt": "2024-03-14T16:36:10Z",
+                          "publishedAt": "2024-03-14T15:59:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "makefile s fine (a little over the top to use every module)\nI would do the commit & clean approach",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8788765",
+                          "updatedAt": "2024-03-14T16:36:42Z",
+                          "publishedAt": "2024-03-14T16:36:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "I tried the commit and clean approach and ended up with same issue.\nMakefile looks all OK\nALL_MODULES                 := no\n\nCHEMICAL_REACTIONS          := yes\nCONTACT                     := yes\nELECTROMAGNETICS            := no\nEXTERNAL_PETSC_SOLVER       := yes\nFLUID_PROPERTIES            := no\nFSI                         := no\nFUNCTIONAL_EXPANSION_TOOLS  := yes\nGEOCHEMISTRY                := no\nHEAT_TRANSFER               := yes\nLEVEL_SET                   := no\nMISC                        := yes\nNAVIER_STOKES               := no\nOPTIMIZATION                := yes\nPERIDYNAMICS                := yes\nPHASE_FIELD                 := yes\nPOROUS_FLOW                 := no\nRAY_TRACING                 := no\nREACTOR                     := yes\nRDG                         := yes\nRICHARDS                    := yes\nSTOCHASTIC_TOOLS            := yes\nTHERMAL_HYDRAULICS          := no\nSOLID_MECHANICS             := yes\nXFEM                        := yes\n``",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8788959",
+                          "updatedAt": "2024-03-14T16:47:59Z",
+                          "publishedAt": "2024-03-14T16:47:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok what is the current commit for MOOSE that you are using? It s in the header of each simulation log, or it comes from a git show in moose/\nDo you get a deprecation message from the way the objects are registered in your XYZApp.C file? You could try updating that.",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8789476",
+                          "updatedAt": "2024-03-14T17:29:18Z",
+                          "publishedAt": "2024-03-14T17:29:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "I am pasting here the executing log here, that might help us diagnose the problem.\nHope this helps.\nMerge commit 'df242497995b674f3a9d49328bad7b9c76b8ab52'\n\nLoading rhel8/default-sar\n  Loading requirement: dot rhel8/slurm singularity/current rhel8/global\n    cuda/11.4 intel-oneapi-compilers/2022.1.0/gcc/b6zld2mz\n    intel-oneapi-mpi/2021.6.0/intel/guxuvcpm\n\n\ufffd[31m\n*** ERROR ***\nA 'QuadraturePointMultiApp' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\ufffd[39m\n\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)\n3: Factory::reportUnregisteredError(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) const\n4: Factory::getValidParams(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&) const\n5: MooseObjectAction::MooseObjectAction(InputParameters const&)\n6: AddMultiAppAction::AddMultiAppAction(InputParameters const&)\n7: RegistryEntry<AddMultiAppAction>::buildAction(InputParameters const&)\n8: ActionFactory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: Moose::Builder::walkRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, hit::Node*)\n10: Moose::Builder::walk(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, hit::Node*)\n11: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n12: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n13: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n14: Moose::Builder::build()\n15: MooseApp::setupOptions()\n16: MooseApp::run()\n17: /home/ir-bala2/rds/rds-ukaea-ap001/arunpb/myappstoc/myappstoc-opt() [0x4037ae]\n18: __libc_start_main\n19: /home/ir-bala2/rds/rds-ukaea-ap001/arunpb/myappstoc/myappstoc-opt() [0x40362e]\nAbort(1) on node 0 (rank 0 in comm 0): application called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nsrun: error: cpu-r-9: task 0: Exited with exit code 1",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8826627",
+                          "updatedAt": "2024-03-18T11:28:13Z",
+                          "publishedAt": "2024-03-18T11:28:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok the commit is recent enough.\nSomething is still not right. what does\nldd /home/ir-bala2/rds/rds-ukaea-ap001/arunpb/myappstoc/myappstoc-opt\n\nreturn ?\nalso can we get the full log to see if there are messages upstream of the error\n\nDo you get a deprecation message from the way the objects are registered in your XYZApp.C file? You could try updating that.",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8828422",
+                          "updatedAt": "2024-03-18T14:13:24Z",
+                          "publishedAt": "2024-03-18T13:58:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "ldd /home/ir-bala2/rds/rds-ukaea-ap001/arunpb/myappstoc/myappstoc-opt\n\tlinux-vdso.so.1 =>  (0x00007ffd045a7000)\n\tlibmyappstoc_test-opt.so.0 => /rds/project/iris_vol2/rds-ukaea-ap001/arunpb/myappstoc/test/lib/libmyappstoc_test-opt.so.0 (0x00002ac6d0fdf000)\n\tlibmoose-opt.so.0 => /home/ir-bala2/moose_dev/moose/framework/libmoose-opt.so.0 (0x00002ac6d11f9000)\n\tlibpcre-opt.so.0 => /home/ir-bala2/moose_dev/moose/framework/contrib/pcre/libpcre-opt.so.0 (0x00002ac6d4e50000)\n\tlibhit-opt.so.0 => /home/ir-bala2/moose_dev/moose/framework/contrib/hit/libhit-opt.so.0 (0x00002ac6d5079000)\n\tlibmyappstoc-opt.so.0 => /rds/project/iris_vol2/rds-ukaea-ap001/arunpb/myappstoc/lib/libmyappstoc-opt.so.0 (0x00002ac6d5311000)\n\tlibmodule_loader_with_cr_eps_fet_ray_rdg_rct_rich_st_ht_sm_con_misc_opt_pd_pf_xfem-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/module_loader/lib/libmodule_loader_with_cr_eps_fet_ray_rdg_rct_rich_st_ht_sm_con_misc_opt_pd_pf_xfem-opt.so.0 (0x00002ac6d5526000)\n\tlibchemical_reactions-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/chemical_reactions/lib/libchemical_reactions-opt.so.0 (0x00002ac6d573c000)\n\tlibexternal_petsc_solver-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/external_petsc_solver/lib/libexternal_petsc_solver-opt.so.0 (0x00002ac6d5ad7000)\n\tlibfunctional_expansion_tools-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/functional_expansion_tools/lib/libfunctional_expansion_tools-opt.so.0 (0x00002ac6d5d2f000)\n\tlibrdg-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/rdg/lib/librdg-opt.so.0 (0x00002ac6d602d000)\n\tlibreactor-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/reactor/lib/libreactor-opt.so.0 (0x00002ac6d6331000)\n\tlibrichards-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/richards/lib/librichards-opt.so.0 (0x00002ac6d684a000)\n\tlibstochastic_tools-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/stochastic_tools/lib/libstochastic_tools-opt.so.0 (0x00002ac6d6d92000)\n\tlibheat_transfer-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/heat_transfer/lib/libheat_transfer-opt.so.0 (0x00002ac6d78f2000)\n\tlibray_tracing-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0 (0x00002ac6d80c6000)\n\tlibcontact-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/contact/lib/libcontact-opt.so.0 (0x00002ac6d859b000)\n\tlibmisc-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/misc/lib/libmisc-opt.so.0 (0x00002ac6d8b5d000)\n\tliboptimization-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/optimization/lib/liboptimization-opt.so.0 (0x00002ac6d8e0b000)\n\tlibperidynamics-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/peridynamics/lib/libperidynamics-opt.so.0 (0x00002ac6d92b6000)\n\tlibphase_field-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/phase_field/lib/libphase_field-opt.so.0 (0x00002ac6d97ab000)\n\tlibxfem-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/xfem/lib/libxfem-opt.so.0 (0x00002ac6da5bf000)\n\tlibsolid_mechanics-opt.so.0 => /home/ir-bala2/moose_dev/moose/modules/solid_mechanics/lib/libsolid_mechanics-opt.so.0 (0x00002ac6dabb6000)\n\tlibwasphit.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwasphit.so.04 (0x00002ac6dc0d9000)\n\tlibwasplsp.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwasplsp.so.04 (0x00002ac6dc32a000)\n\tlibwaspson.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspson.so.04 (0x00002ac6dc593000)\n\tlibwaspcore.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspcore.so.04 (0x00002ac6dc7e4000)\n\tlibwaspsiren.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspsiren.so.04 (0x00002ac6dca0b000)\n\tlibwasphalite.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwasphalite.so.04 (0x00002ac6dcc29000)\n\tlibwaspjson.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspjson.so.04 (0x00002ac6dcecd000)\n\tlibwasphive.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwasphive.so.04 (0x00002ac6dd115000)\n\tlibwaspddi.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspddi.so.04 (0x00002ac6dd31f000)\n\tlibwaspexpr.so.04 => /home/ir-bala2/moose_dev/moose/framework/contrib/wasp/install/lib/libwaspexpr.so.04 (0x00002ac6dd53f000)\n\tlibmesh_opt.so.0 => /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0 (0x00002ac6dd778000)\n\tlibnetcdf.so.13 => /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/lib/libnetcdf.so.13 (0x00002ac6dfb12000)\n\tlibtimpi_opt.so.11 => /home/ir-bala2/moose_dev/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.11 (0x00002ac6dfe10000)\n\tlibslepc.so.3.20 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libslepc.so.3.20 (0x00002ac6e0021000)\n\tlibpetsc.so.3.20 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libpetsc.so.3.20 (0x00002ac6e06d4000)\n\tlibHYPRE-2.29.0.so => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libHYPRE-2.29.0.so (0x00002ac6e2c81000)\n\tlibstrumpack.so.7.1 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libstrumpack.so.7.1 (0x00002ac6e35f8000)\n\tlibscalapack.so.2.2 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libscalapack.so.2.2 (0x00002ac6e4e97000)\n\tlibsuperlu_dist.so.8 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libsuperlu_dist.so.8 (0x00002ac6e5995000)\n\tlibparmetis.so => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libparmetis.so (0x00002ac6e5ebb000)\n\tlibmetis.so => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libmetis.so (0x00002ac6e6117000)\n\tlibhdf5_hl.so.200 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libhdf5_hl.so.200 (0x00002ac6e63a7000)\n\tlibhdf5.so.200 => /home/ir-bala2/moose_dev/moose/petsc/arch-moose/lib/libhdf5.so.200 (0x00002ac6e65ce000)\n\tlibz.so.1 => /lib64/libz.so.1 (0x00002ac6e6ce6000)\n\tlibX11.so.6 => /lib64/libX11.so.6 (0x00002ac6e6efc000)\n\tlibifport.so.5 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libifport.so.5 (0x00002ac6e723a000)\n\tlibquadmath.so.0 => /lib64/libquadmath.so.0 (0x00002ac6e7468000)\n\tlibmpicxx.so.12 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/mpi/intel64/lib/libmpicxx.so.12 (0x00002ac6e76a4000)\n\tlibmpifort.so.12 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/mpi/intel64/lib/libmpifort.so.12 (0x00002ac6e78c4000)\n\tlibmpi.so.12 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/mpi/intel64/lib/release/libmpi.so.12 (0x00002ac6e7c83000)\n\tlibdl.so.2 => /lib64/libdl.so.2 (0x00002ac6e8e9f000)\n\tlibrt.so.1 => /lib64/librt.so.1 (0x00002ac6e90a3000)\n\tlibpthread.so.0 => /lib64/libpthread.so.0 (0x00002ac6e92ab000)\n\tlibimf.so => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libimf.so (0x00002ac6e94c7000)\n\tlibsvml.so => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libsvml.so (0x00002ac6e9b4a000)\n\tlibirng.so => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libirng.so (0x00002ac6eb5fc000)\n\tlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00002ac6eb966000)\n\tlibm.so.6 => /lib64/libm.so.6 (0x00002ac6ebc6e000)\n\tlibcilkrts.so.5 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libcilkrts.so.5 (0x00002ac6ebf70000)\n\tlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00002ac6ec1ad000)\n\tlibirc.so => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libirc.so (0x00002ac6ec3c3000)\n\tlibtirpc.so.3 => not found\n\tlibiomp5.so => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libiomp5.so (0x00002ac6ec63a000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00002ac6eca40000)\n\tlibintlc.so.5 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libintlc.so.5 (0x00002ac6ece0e000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00002ac6d0dbb000)\n\tlibtirpc.so.3 => not found\n\tlibtirpc.so.3 => not found\n\tlibtirpc.so.3 => not found\n\tlibtirpc.so.3 => not found\n\tlibifcoremt.so.5 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/compiler/lib/intel64_lin/libifcoremt.so.5 (0x00002ac6ed086000)\n\tlibxcb.so.1 => /lib64/libxcb.so.1 (0x00002ac6ed422000)\n\tlibfabric.so.1 => /usr/local/Cluster-Apps/intel/2020.2/compilers_and_libraries_2020.2.254/linux/mpi/intel64/libfabric/lib/libfabric.so.1 (0x00002ac6ed64a000)\n\tlibXau.so.6 => /lib64/libXau.so.6 (0x00002ac6ed88c000)\n\n\nalso can we get the full log to see if there are messages upstream of the error\nI'm afraid that one was a full log",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8832103",
+                          "updatedAt": "2024-03-18T18:58:15Z",
+                          "publishedAt": "2024-03-18T18:58:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I see a lot of unsupported intel compilers in there. @milljm any of this use is problematic? Or is it an intel-compiler installed gcc compiler which should be fine?",
+                          "url": "https://github.com/idaholab/moose/discussions/27082#discussioncomment-8832150",
+                          "updatedAt": "2024-03-18T19:05:02Z",
+                          "publishedAt": "2024-03-18T19:05:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Define a line of nodesets: gmsh",
+          "author": {
+            "login": "burritotukituki"
+          },
+          "bodyText": "Hi,\nI'm currently tackling a groundwater flow problem where flux moves from left to right. My aim is to establish hydraulic head boundary conditions by defining the pressure at the bottom left and right nodes. While this method works seamlessly in 2D models utilizing ExtraNodesetGenerator, transitioning to a 3D model introduces the need to define a line of nodesets instead of individual nodes.\nI employ Gmsh for mesh generation, but I'm encountering difficulties in defining the line of nodesets. Specifically, when attempting to generate a 1D physical group in a 3D mesh using in gmsh\naddPhysicalGroup(1, [1], name=\"left_BC\")\nI encounter an error upon attempting to import the mesh into MOOSE:\n*** ERROR *** Invalid dimension dim = 4 [0] ../src/fe/fe_base.C, line 405, compiled Mar  3 2023 at 07:21:18\nAny idea what it going on?",
+          "url": "https://github.com/idaholab/moose/discussions/27061",
+          "updatedAt": "2024-03-18T18:32:48Z",
+          "publishedAt": "2024-03-12T15:48:36Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n@jwpeterson seems you wrote a lot of the GMSH reader. Do you know how nodesets should be created in Gmsh to be loaded into libMesh as nodesets?\n@burritotukituki if the shape of the nodeset is simple enough, you can define it in MOOSE instead with the mesh generators\nhttps://mooseframework.inl.gov/syntax/Mesh/index.html\nGuillaume\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8762209",
+                  "updatedAt": "2024-03-12T16:12:33Z",
+                  "publishedAt": "2024-03-12T16:12:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "burritotukituki"
+                          },
+                          "bodyText": "This kind of model typically have very complex natural boundaries... Thanks!!",
+                          "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8762608",
+                          "updatedAt": "2024-03-12T16:46:36Z",
+                          "publishedAt": "2024-03-12T16:46:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jwpeterson"
+                          },
+                          "bodyText": "Hello @GiudGiud,\nSorry for the slow reply, I was out of the office last week. I looked at the gmsh_io.C code, and I found that nodes are being added to nodesets for any 0-dimensional elements that are present in the mesh. For Gmsh files with version < 4.0, for example, we do the following:\n                // Handle 0-dimensional elements (points) by adding\n                // them to the BoundaryInfo object with\n                // boundary_id == physical.\n                else\n                {\n                  // This seems like it should always be the same\n                  // number as the 'id' we already read in on this\n                  // line.  At least it was in the example gmsh\n                  // file I had...\n                  in >> node_id;\n                  mesh.get_boundary_info().add_node\n                    (nodetrans[node_id],\n                     static_cast<boundary_id_type>(physical));\n                }\n\nIt also appears that we handle setting nodeset names based on the information in the PhysicalNames section.\n              // If it's zero-dimensional then it's a nodeset\n              else if (phys_dim == 0)\n                mesh.get_boundary_info().nodeset_name(cast_int<boundary_id_type>(phys_id)) = phys_name;\n\nSo I think that if @burritotukituki adds the nodes that he wants to be in a nodeset as zero-dimensional \"elements\" in the Gmsh file, then he might have more luck? I would also suggest that they provide a small version of the .msh file that is not working for them so that we can investigate further.",
+                          "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8831851",
+                          "updatedAt": "2024-03-18T18:32:50Z",
+                          "publishedAt": "2024-03-18T18:32:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "@burritotukituki\nDid you check the .msh file you generated?\nYou should have something like the following in the very first lines:\nThe first column is the dimension, second the nodeset number, third the physical name given\n$PhysicalNames\n8\n0 2 \"point\"\n1 3 \"line\"\n2 4 \"plane\"\n2 5 \"left\"\n2 6 \"right\"\n2 7 \"bottom\"\n2 8 \"top\"\n3 1 \"block\"\n$EndPhysicalNames\n\nI don't use the python interface and instead the classical .geo file, therefore I cannot help you with the input structure.",
+                  "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8764521",
+                  "updatedAt": "2024-03-12T19:58:40Z",
+                  "publishedAt": "2024-03-12T19:58:22Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "burritotukituki"
+                  },
+                  "bodyText": "Hi @1runer and @GiudGiud\nYes I tried what you suggest, many thanks. I think there is some kind of bug in libMesh, when you import a 3D mesh with a zero dimensional or one dimensional physical property is not being recognized and of course the simulation fails.\nWhere can I report this bug?",
+                  "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8783575",
+                  "updatedAt": "2024-03-14T09:09:31Z",
+                  "publishedAt": "2024-03-14T09:09:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "1runer"
+                          },
+                          "bodyText": "Do you have an MWE with a simple mesh and input-file? I would like to reproduce this.\nThe code block in my previous post is from a Gmsh mesh I use currently without problems.\nThe only problem is that the names get lost during import and you have to call the nodesets by its particular number (e.g. \"3\" for the line feature).",
+                          "url": "https://github.com/idaholab/moose/discussions/27061#discussioncomment-8786748",
+                          "updatedAt": "2024-03-14T13:56:44Z",
+                          "publishedAt": "2024-03-14T13:56:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "reservoir modeling",
+          "author": {
+            "login": "mortezaep"
+          },
+          "bodyText": "Hi Everyone\nI have a question regarding a simple doublet reservoir modeling. In this simulation, I used 'PorousFlowPointSourceFromPostprocessor' and 'PorousFlowPointEnthalpySourceFromPostprocessor' for mass and energy injection and 'PorousFlowPolyLineSink' for energy/mass extraction. Now I have four questions:\n\nWhile 'PorousFlowPolyLineSink' allows for using point_file, it is not possible to set it in 'PorousFlowPointSourceFromPostprocessor'. So, I had to set it 9 times for 9 perforations of my injection well! How can I avoid this repetition?\nIs it possible to distribute flow over a line uniformly, without setting several points? If yes, can you refer to an input file implementing this?\nWhat is the point of setting line_length? I think we only care about line_length*flux and separating them seems to be meaningless.\nwhat happens when we set p_or_t_vals = 0.0?\n\nThank you in advance! The input file is below, as well as the .bh file.\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 3\n    nx = 60\n    ny = 10\n    nz = 10\n    xmin = -1500\n    xmax = 1500\n    ymin = -1000\n    ymax = 1000\n    zmin = -100\n    zmax = 0\n  []\n  # [injection_node1]\n  #   input = gen\n  #   type = ExtraNodesetGenerator\n  #   new_boundary = injection_node\n  #   coord = '-500 0 -50'\n  # []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  gravity = '0 0 -9.8'\n[]\n\n[Variables]\n  [porepressure]\n    initial_condition = 30E6\n  []\n  [temperature]\n    initial_condition = 383.15\n    scaling = 1E-6 # fluid enthalpy is roughly 1E6\n  []\n[]\n\n [BCs]\n   [temperature]\n     type = DirichletBC\n     variable = temperature\n     value = 383.15\n     boundary = 'left right front back top bottom'\n   []\n   [temperature2]\n    type = DirichletBC\n    variable = porepressure\n    value = 30E6\n    boundary = 'top'\n  []\n  #  [pressure]\n  #   type = DirichletBC\n  #   variable = porepressure\n  #   value = 32000000\n  #   boundary = injection_node\n  # []\n  # [pressure]\n  #   type = DirichletBC\n  #   variable = porepressure\n  #   value = 32000000\n  #   boundary = 'left right front top bottom'\n  # []\n []\n\n[Functions]\n  [mass_flux_in_func]\n    type = ParsedFunction\n    expression = '5.0'\n  []\n  [mass_flux_out_func]\n    type = ParsedFunction\n    expression = '-5.0'\n  []\n  [T_in_func]\n    type = ParsedFunction\n    expression = '313.15'\n  []\n[]\n\n\n[DiracKernels]\n  [inject_mass1]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -30'\n  []\n  [inject_mass2]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -35'\n  []\n  [inject_mass3]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -40'\n  []\n  [inject_mass4]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -45'\n  []\n  [inject_mass5]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -50'\n  []\n  [inject_mass6]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -55'\n  []\n  [inject_mass7]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -60'\n  []\n  [inject_mass8]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -65'\n  []\n  [inject_mass9]\n    type = PorousFlowPointSourceFromPostprocessor\n    variable = porepressure\n    mass_flux = mass_flux_in\n    point = '-500 0 -70'\n  []\n  [inject_heat1]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -30'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat2]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -35'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat3]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -40'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat4]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -45'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat5]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -50'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat6]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -55'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat7]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -60'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat8]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -65'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [inject_heat9]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = mass_flux_in\n    point = '-500 0 -70'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n\n  [produce_H2O_1]\n    type = PorousFlowPolyLineSink\n    SumQuantityUO = produced_mass_H2O1\n    fluxes = 1\n    p_or_t_vals = 0.0\n    line_length = 5.0\n    point_file = 3.bh\n    variable = porepressure\n  []\n\n  [remove_heat_at_production_well_1]\n    type = PorousFlowPolyLineSink\n    SumQuantityUO = produced_heat1\n    fluxes = 1\n    p_or_t_vals = 0.0\n    line_length = 5.0\n    use_enthalpy = true\n    point_file = 3.bh\n    variable = temperature\n  []\n[]\n\n[Kernels]\n  [mass_dot]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = porepressure\n  []\n  [mass_flux]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = porepressure\n  []\n  [energy_dot]\n    type = PorousFlowEnergyTimeDerivative\n    variable = temperature\n  []\n  [heat_advection]\n    type = PorousFlowHeatAdvection\n    variable = temperature\n  []\n  [heat_conduction]\n    type = PorousFlowHeatConduction\n    variable = temperature\n  []\n[]\n\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'temperature porepressure'  \n    number_fluid_phases = 1\n    number_fluid_components = 1\n  []\n  [pc]\n    type = PorousFlowCapillaryPressureConst\n  []\n\t[injected_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_heat]\n    type = PorousFlowSumQuantity\n  []\n    [produced_mass_H2O1]\n    type = PorousFlowSumQuantity\n  []\n\n  [produced_heat1]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Postprocessors]\n  [mass_flux_in]\n    type = FunctionValuePostprocessor\n    function = mass_flux_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [mass_flux_out]\n    type = FunctionValuePostprocessor\n    function = mass_flux_out_func\n    execute_on = 'initial timestep_begin'\n  []\n  [T_in]\n    type = FunctionValuePostprocessor\n    function = T_in_func\n    execute_on = 'initial timestep_begin'\n  []\n  [./temp_pro]\n    type = PointValue\n    point = '500 0 0'\n    variable = 'temperature'\n  [../]\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    thermal_expansion = 7E-4\n    bulk_modulus = 2.5E9\n    viscosity = 5E-4\n    density0 = 1000\n    cv = 4000.0\n    cp = 4000.0\n  []\n[]\n\n[Materials]\n  [temperature]\n    type = PorousFlowTemperature\n    temperature = temperature\n  []\n  [phase]\n    type = PorousFlow1PhaseP \n    porepressure = porepressure\n    capillary_pressure = pc\n  []\n  [massfrac]\n    type = PorousFlowMassFraction\n  []\n  [water]\n    type = PorousFlowSingleComponentFluid\n    fp = the_simple_fluid\n    phase = 0\n  []\n  [porosity]\n    type=PorousFlowPorosityConst\n    porosity = 0.1  \n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '1e-13 0 0  0 1e-13 0  0 0 1e-13' \n  []\n  [relperm]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 0\n    phase = 0\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '2.5 0 0  0 2.5 0  0 0 2.5' \n  []\n  [internal_energy]\n    type = PorousFlowMatrixInternalEnergy\n    specific_heat_capacity = 920 \n    density = 2600 \n  []\n  [undrained_density]\n    type = GenericConstantMaterial\n    prop_names = density\n    prop_values = 2400 \n  [] \n[]\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  []\n  [preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n[]\n\n# [Executioner]\n#   type = Transient\n#   solve_type = Newton\n#   end_time = 900000000\n#   # dt = 2E5\n#   dt = 2E5\n#   nl_abs_tol = 1e-9\n# []\n\n[Executioner]\n  type = Transient\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 3600\n    growth_factor = 2\n  [../]\n  dtmax = 864000\n  end_time = 935360000\n  solve_type = NEWTON\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nand 3.bh is\n1 500 0 -30\n1 500 0 -35\n1 500 0 -40\n1 500 0 -45\n1 500 0 -50\n1 500 0 -55\n1 500 0 -60\n1 500 0 -65\n1 500 0 -70",
+          "url": "https://github.com/idaholab/moose/discussions/27122",
+          "updatedAt": "2024-03-18T16:23:04Z",
+          "publishedAt": "2024-03-18T16:23:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      }
+    ]
+  }
+}

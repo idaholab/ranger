@@ -1,0 +1,1395 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNC0yNlQxMDo0NjoxNi0wNjowMM4AWnyS"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "What is the right way to map the temperature from an external app to the THM",
+          "author": {
+            "login": "makeclean"
+          },
+          "bodyText": "So, we have a thermo-mechanical problem which has cooling channels running inside of it, we want to use the THM module to model the coolant flow, and ideall pass the solid temperature into the THM SubApp. Its working right now, where we set T_solid to a fixed value inside the THM app, and the temperature is updated correctly, however it isn't clear to me how we should do it properly, I can send the temperature from the parent application with something like;\n[MultiApps]\n  [thm]\n    type = TransientMultiApp\n    app_type = ThermalHydraulicsApp\n    input_files = 'chimera-thm-steady.i'\n    execute_on = 'TIMESTEP_END'\n    interpolate_transfers = true\n    sub_cycling = true\n    max_failures = 10\n    detect_steady_state = true\n  []\n[]\n\n[Transfers]\n  [t_to_parent]\n    type = MultiAppNearestNodeTransfer\n    from_multi_app = thm\n    fixed_meshes = true\n    source_variable = 'T'\n    variable = temp\n    target_boundary = 'innerpipe'\n  []\n  [t_wall_to_child]\n    type = MultiAppNearestNodeTransfer\n    to_multi_app = thm\n    fixed_meshes = true\n    source_variable = 'temp'\n    variable = 'temp_from_parent'\n  []\n[]\n\nIn the associated SubApp;\n  [vel_magnitude]\n    type = MooseVariableFVReal\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [temp_from_parent]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[Functions]\n  [t_wall_mat]\n    type = ParsedFunction\n    expression = 'temp'\n    symbol_names = 'temp'\n    symbol_values = 'temp_from_parent'\n  []\n[]\n\nOne of the issues, is using a LAGRANGE variable then the temp_from_parent variable isn't a SCALAR variable and thus the SubApp isn't happy.\nWhat is the correct way for one to transfer the temperature data from the boundary which surrounds a set of pipes, to the pipes themselves. The structure and pipes can be seen in the below figure, in the example below the temperature is solved, and then the THM solve happens, and the Temperature, T, is passed back to the main app.",
+          "url": "https://github.com/idaholab/moose/discussions/26189",
+          "updatedAt": "2024-04-29T08:01:20Z",
+          "publishedAt": "2023-11-29T16:13:32Z",
+          "category": {
+            "name": "Q&A Modules: Thermal Hydraulics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "I did try it with HeatStructureFromFile3D and HeatTransferFromHeatStructure3D1Phase however the coolant channels don't quite line up along a cartesian axis, out of curiosity, does anyone know why thats a requirement? Maybe @joshuahansel ?",
+                  "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7709648",
+                  "updatedAt": "2023-11-29T20:22:51Z",
+                  "publishedAt": "2023-11-29T20:22:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Under the hood, we use NearestPointLayeredSideAverage to make the azimuthal averages to correspond to the 1D channel elements. The family of layered average UOs all use this x-y-or-z assumption. I think this was just for ease of implementation. I don't think there is a technical barrier to extending these UOs to allow an arbitrary axis.\nI'll answer your other question too shortly.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710392",
+                          "updatedAt": "2023-11-29T21:29:15Z",
+                          "publishedAt": "2023-11-29T21:29:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "MeshDivisions might help if you're looking for arbitrary spatial cuts",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710469",
+                          "updatedAt": "2023-11-29T21:35:41Z",
+                          "publishedAt": "2023-11-29T21:35:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Do you mean it would help generalize the layered average UOs?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710603",
+                          "updatedAt": "2023-11-29T21:46:34Z",
+                          "publishedAt": "2023-11-29T21:46:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yeah. A mesh division can define any arbritrary region and you can average over these regions. So bent pipe, twisted, anything, can be written into the mesh division and the UO retrieves the index of the bin to perform the average.\nThe UO:\nhttps://mooseframework.inl.gov/source/vectorpostprocessors/MeshDivisionFunctorReductionVectorPostprocessor.html\nFor example this binned mesh division can take any functor so really any function of X Y and Z!\nhttps://mooseframework.inl.gov/source/meshdivisions/FunctorBinnedValuesDivision.html",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710836",
+                          "updatedAt": "2023-11-29T22:04:34Z",
+                          "publishedAt": "2023-11-29T22:04:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think the CylindricalGridDivision can do a non-aligned axis already?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7711033",
+                          "updatedAt": "2023-11-29T22:28:34Z",
+                          "publishedAt": "2023-11-29T22:28:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Based on my recent experience, for a thermal coupling, I recommend this general strategy:\n\ncompute and apply heat flux in the parent app\ntransfer flux to THM\ntransfer temperature from THM\n\nI do not recommend using MultiAppNearestNodeTransfer as you have done because I think you might end up coupling to a random-ish node for each 1D channel element (whichever node around the hole happens to be closest). I would use MultiAppGeneralFieldUserObjectTransfer instead, with the UO being one of those layered average ones; however, I think you'll have the same problem you mentioned above (needing to be aligned with x, y, or z).\nI might need some help on the recommendation here @GiudGiud.",
+                  "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710580",
+                  "updatedAt": "2023-11-29T21:44:10Z",
+                  "publishedAt": "2023-11-29T21:44:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "See idaholab/virtual_test_bed#268 for what I've done recently for this type of transfer.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710660",
+                          "updatedAt": "2023-11-29T21:50:08Z",
+                          "publishedAt": "2023-11-29T21:50:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Well thats helpful, could you point me in the direction where I could best attack the problem to solve the pipes not being aligned along an axis? I've found where it complains, but not where that axis is used to compute something in UO?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7710700",
+                          "updatedAt": "2023-11-29T21:53:16Z",
+                          "publishedAt": "2023-11-29T21:53:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "Hi @joshuahansel,\nI have two questions:\n(1) If I am transferring THM temperature to a parent app boundary (called innerpipe), this is the equivalent of a dirichlet BC. I do not need to explicitly add the DirichletBC or any BC at all for this boundary, since the boundary is receiving temperature values from the data transfer (where we specify to_boundaries = \"innerpipe\"). Is this right? But I see in your example you have a BC in the parent app, but I guess this is to account for the extra physics caused by the gap between parent and THM.\n(2) Do you have any idea how to get the boundary heat flux for the parent app for a general geometry? The SideDiffusiveFluxIntegral seems to be perfect, but only returns a single value (the integral). I cannot really tell in the code where the integral is computed (seems to be abstracted to something else, when I look at the functions computeQpIntegral, the outputs seem they should be a scalar at each qp.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8604419",
+                          "updatedAt": "2024-02-27T12:01:23Z",
+                          "publishedAt": "2024-02-27T12:01:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Transferring does not in itself provide any BC. You add BCs to do stuff with the transferred temperature. You transfer into an aux variable, not a solution variable, so the transfer is not a Dirichlet BC.\n\n\nRight, SideDiffusiveFluxIntegral is a PP that would give you the total heat rate by integrating conduction heat flux over the boundary. As for how to get boundary heat flux, I need more info: what do you want to do with the heat flux? Do you want to just apply it as a BC, or do you want to output it or what?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8605432",
+                          "updatedAt": "2024-02-27T13:40:26Z",
+                          "publishedAt": "2024-02-27T13:40:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "Okay, that makes more sense. I have done this now (for parent app we have FunctorDirichletBC on innerpipe).\n\n\nWe want to find the heat flux on innerpipe, which we will transfer to THM for use in HeatTransferFromExternalAppHeatFlux1Phase. The flow channel will be receive a distance-weighted average of heat fluxes on the nearest faces of the parent app. So it is pretty much for using as a BC in THM to answer your question.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8607599",
+                          "updatedAt": "2024-02-27T16:23:57Z",
+                          "publishedAt": "2024-02-27T16:22:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Ok got it. So basically we need to do a transfer of heat flux to an aux variable that lives on the 1D channel block. So based on the other threads in this discussion, it sounds like the recommended solution from @GiudGiud 2 threads down in this discussion is to make a new layered (side) average UO that follows your pipe, which he has suggestions for how to accomplish:\n#26189 (reply in thread)\nBasically you will be generalizing LayeredSideDiffusiveFluxAverage, which is the layered side UO you want but currently only works with straight pipes. With that UO in hand, you would then use MultiAppGeneralFieldUserObjectTransfer.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8608110",
+                          "updatedAt": "2024-02-27T17:01:04Z",
+                          "publishedAt": "2024-02-27T17:01:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "I am not sure about that. If we do something similar to LayeredSideDiffusiveFluxAverage, it will just send the flux value averaged over the entire boundary, no?\nIn the figure in @makeclean's original post, we will have multiple connected flow channels (sorry, i should have mentioned this). Each one will need the flux only of the nearest faces on the boundary. Otherwise, LayeredSideDiffusiveFluxAverage will account for faces in a completely different part of the domain (but still part of the innerpipe boundary).\nPretty much want I want is an aux field that is 0 everywhere except the innerpipe boundary, where I then just have $n \\cdot k \\nabla T$.\nThe average of the nearby elements (on the parent app) will then computed within MultiAppGeneralFieldNearestLocationTransfer and sent to our THM like so:\n#parent app\n[Transfers]\n  [temp_from_parent_to_child]\n    type = MultiAppGeneralFieldNearestLocationTransferWithDistanceWeightedAverage\n    # type = MultiAppGeneralFieldNearestLocationTransfer\n    to_multi_app = flow_channel\n    distance_weighted_average = true\n    source_variable = temp \n    from_boundaries = \"innerpipe\"\n    variable = q_wall \n    num_nearest_points = 200\n  []\n[]\n\n#THM app \n[Components]\n  [hxconn]\n    type = HeatTransferFromExternalAppHeatFlux1Phase\n    flow_channel = pipe1\n    Hw = water-htc-function\n    P_hf = 0.1\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8608795",
+                          "updatedAt": "2024-02-27T17:52:56Z",
+                          "publishedAt": "2024-02-27T17:52:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "I think what I was looking for was DiffusionAuxFlux, found in CARDINAL examples.\n[AuxVariables]\n  [aux_flux]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n[]\n \n[AuxKernels]\n  [aux_flux]\n    type = DiffusionFluxAux\n    diffusion_variable = temp\n    component = normal\n    diffusivity = thermal_conductivity\n    variable = aux_flux\n    boundary = '1'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8629543",
+                          "updatedAt": "2024-02-29T11:24:17Z",
+                          "publishedAt": "2024-02-29T11:24:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I am not sure about that. If we do something similar to LayeredSideDiffusiveFluxAverage, it will just send the flux value averaged over the entire boundary, no?\n\nno it can do layers. It s not the entire integral.\nAveraging k grad_T seems dangerous to me.\nI would do (to work on sending 3D data to the 1D data if you cannot just evaluate the shape function)\n\ncreate a 1D mesh in the 3D domain that is NOT used by the solver\nuse the save_in feature on that 1D mesh to keep it in memory\ncreate a new object: 1DMeshCylindricalEnvellopeDivision that follows the 1D mesh everywhere and forms regularly divided cylindrical regions around the 1D elements (so if the 1D mesh turns, so does the division)\neither use the VPP i mentioned to do the averages / integrals / other reductions in the 3D domain based on the division\nOR create a new VPP that does the surface integration instead, but cutting regions based on the division (I think this is more what you want)\nuse the UO transfer",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8633214",
+                          "updatedAt": "2024-02-29T17:27:50Z",
+                          "publishedAt": "2024-02-29T16:25:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "Thanks @GiudGiud. Quick question, do you think this would work for 1D meshes that have several branches like bifurcations, trifurcations, etc?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8633489",
+                          "updatedAt": "2024-02-29T16:49:16Z",
+                          "publishedAt": "2024-02-29T16:49:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "To further muddy the waters, I was looking into the code for HeatTransferFromHeatStructure3D1Phase and it looks like it also has the requirement that all the channels run in the same direction, have the same number of elements, and have the same length - that would definitely not the case here. Does that fall into what you said before, just for the ease of the initial implementation?",
+                  "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7738943",
+                  "updatedAt": "2023-12-02T16:45:22Z",
+                  "publishedAt": "2023-12-02T16:45:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Also, the 3D side must have its divisions match up 1-to-1 with the channel divisions.\nThe implementation is restrictive because it covers the most common setups, and a more general implementation was not worth the development time, given other priorities. If you have a good idea of how the most general case could work in terms of formulation, then it should be doable. Considerations we want to make are things like ensuring that energy is conserved across the transfer and avoiding spurious discretization artifacts.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-7739024",
+                          "updatedAt": "2023-12-02T17:08:59Z",
+                          "publishedAt": "2023-12-02T17:08:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jvwilliams23"
+                  },
+                  "bodyText": "@makeclean @joshuahansel I have been thinking of a way to do this for a little bit. Maybe this is a useful jumping off point:\nThe tricky part of this seems to be mapping the heat flux to THM. If we find something like the maximal inscribed sphere at each node (or element centroid) on the THM, we have a way to find the faces that will contribute heat flux to each THM element (we dilate the sphere a bit to ensure the relevant boundary nodes are contained within the sphere). We then find the weighted mean flux and assign this to the THM element (in a similar way that HeatTransferFromHeatFlux will assign a uniform heat flux to the flow channel).\nThis is related to finding the centerline/medial axis of a complex geometry (see VMTK documentation).\nDoes it sound like it would work?",
+                  "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8119389",
+                  "updatedAt": "2024-01-13T17:44:34Z",
+                  "publishedAt": "2024-01-13T17:41:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "I don't quite understand, but it sounds like maybe you're suggesting some kind of nearest-x approach, where x is a node/elem/face, which I think is necessary for the generalization. I think each face on the 3D side would pair with an element on the 1D side by finding the nearest 1D element centroid from the face centroid. Maybe that's the only missing piece, and then everything else would work the same.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8134132",
+                          "updatedAt": "2024-01-15T15:04:47Z",
+                          "publishedAt": "2024-01-15T15:04:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "It is more an N-nearest-x approach (we average over N-nearest nodes/elems/ etc). I tried to implement a modification of MultiAppNearestNodeTransfer which stores the distance to the nearest node. Then in the next step of the code it would find the distance-weighted average over all nodes within this e.g 2*min_distance. But had issues with running in parallel.\nAs an alternative, I made a minor modification to MultiAppGeneralFieldNearestLocationTransfer which replaces the val_sum with a distance-weighted average. This already has support for n-nearest points, so I just set this to a moderate value (e.g. 10-20, depending on mesh density) to find the average of all nearby nodes in the 3D domain. It seems to produce reasonable results. And because the average is distance-weighted, far away nodes should not really have much influence.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593101",
+                          "updatedAt": "2024-02-26T14:10:58Z",
+                          "publishedAt": "2024-02-26T14:10:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'm glad MultiAppGeneralFieldNearestLocationTransfer works for you. It's one of the cannon field transfers now, and we are deprecation MultiAppNearestNodeTransfer.\n(If the transfer source is parallel)\nIt is written in the documentation, but using **n-**nearest points will not give the same results in parallel as in serial near process domain boundaries, because the 'mixes' of n points are done locally not globally.\nI would recommend you look at the partitioning using Debug/output_process_domains to make sure the 3D process domain boundaries arent too close to the 1D channels if you want consistency.\nYou could also not care.\nThe nearest-node approach is already a first order (spatial) approximation. Getting different groups of many nearest-node values is going to be 1st order too, whether it's the serial group or whichever group the parallel version ends up using.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593455",
+                          "updatedAt": "2024-02-26T14:38:56Z",
+                          "publishedAt": "2024-02-26T14:37:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "As an alternative, I made a minor modification to MultiAppGeneralFieldNearestLocationTransfer which replaces the val_sum with a distance-weighted average.\n\nThis seems like a good solution to me - I think a new parameter use_distance_weighted_average would be good for that class. If I were using that class, that's probably what I would use. Thoughts @GiudGiud ?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593456",
+                          "updatedAt": "2024-02-26T14:37:20Z",
+                          "publishedAt": "2024-02-26T14:37:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Whoops, nevermind @GiudGiud beat me.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593462",
+                          "updatedAt": "2024-02-26T14:37:39Z",
+                          "publishedAt": "2024-02-26T14:37:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Not a bad idea, but I dont want more people using n-nearest-node with the issue I mentioned so I m not that keen on improving it.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593470",
+                          "updatedAt": "2024-02-26T14:38:14Z",
+                          "publishedAt": "2024-02-26T14:38:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "What do you think people should be using in this situation?",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593490",
+                          "updatedAt": "2024-02-26T14:41:11Z",
+                          "publishedAt": "2024-02-26T14:41:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "[t_wall_to_child]\nis the 3D domain overlapping the 1D domain? If so, shape evaluation.\nIf not, layered average UO but with a custom spatial averaging that follows the pipe. Has not been done but it would be doable with a custom MeshDivision and this VPP\nhttps://mooseframework.inl.gov/source/vectorpostprocessors/MeshDivisionFunctorReductionVectorPostprocessor.html\n[t_to_parent]\nhow big does the target domain have to be? just the cells overlapping? Or should it extrapolate",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-8593618",
+                          "updatedAt": "2024-02-26T14:51:59Z",
+                          "publishedAt": "2024-02-26T14:51:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Just curious if you ended up looking at using a mesh division to do that mapping @jvwilliams23",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-9238655",
+                          "updatedAt": "2024-04-26T15:15:49Z",
+                          "publishedAt": "2024-04-26T15:15:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jvwilliams23"
+                          },
+                          "bodyText": "Not yet. We stuck with the distance-weighted N nearest-neighbors for now.",
+                          "url": "https://github.com/idaholab/moose/discussions/26189#discussioncomment-9259038",
+                          "updatedAt": "2024-04-29T08:01:20Z",
+                          "publishedAt": "2024-04-29T08:01:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Subject: Inquiry Regarding Error in Profiling Analysis",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Dear MOOSE Forum Members,\nI hope this email finds you well. I am writing to seek assistance regarding an error I encountered while conducting a profiling analysis using MOOSE.\nI utilized the command MOOSE_PROFILE_BASE=run1_ mpiexec -np 35 /home/pw-moose/projects/moose/modules/phase_field/phase_field-oprof -i grain_growth_2D_graintracker.i to run my simulation, which resulted in the generation of a series of run1_*.prof files. However, when attempting to analyze one of these files using the pprof run1.prof command, I encountered the following error:\nUsing remote profile at run1.prof.\nUse of uninitialized value $line in substitution (s///) at /home/pw-moose/miniforge/envs/moose/bin/pprof line 3326.\nhttp://run1.prof/pprof/symbol doesn't exist\n\nI have referred to the instructions provided on the MOOSE website, particularly the section on profiling (https://mooseframework.inl.gov/application_development/profiling.html), for guidance on conducting the profiling analysis.\nCould you please advise on the possible reasons for this error and how I can resolve it? Any insights or suggestions would be greatly appreciated.\nThank you very much for your assistance.\nBest regards,\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/27418",
+          "updatedAt": "2024-04-29T03:09:54Z",
+          "publishedAt": "2024-04-19T14:22:45Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt seems this error is returned when the profile does not exist as I read here\ngperftools/gperftools#417\nthis is consistent with this log Using remote profile at run1.prof. which indicates it did not find it locally\nso can you please paste:\n\nthe content of the folder where you use this pprof command\nthe exact command you ran\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9169187",
+                  "updatedAt": "2024-04-19T17:16:57Z",
+                  "publishedAt": "2024-04-19T17:16:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "OK,\nFirst, my test directory is ~/projects/moose/modules/phase_field/examples/grain_growth,\nAfter that, I ran the command MOOSE_PROFILE_BASE=run1_ mpiexec -np 35 /home/pw-moose/projects/moose/modules/phase_field/phase_field-oprof -i grain_growth_2D_graintracker.i. After the simulation is completed, the specific files in this path are as shown below Shown below,\n\nAfter that, I executed the command pprof run1.prof or pprof run1_1.prof, and the result showed the following error,\n\nwei",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9172026",
+                          "updatedAt": "2024-04-20T02:06:50Z",
+                          "publishedAt": "2024-04-20T02:06:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Meanwhile, gperftools/gperftools#1506 says that we need to specify program before we can specify the profile file. Currently, I don\u2019t know how to set this program in moose.",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9172047",
+                          "updatedAt": "2024-04-20T02:17:28Z",
+                          "publishedAt": "2024-04-20T02:17:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the command is wrong I think\npprof run1.prof does not work, run1.prof does not exist\npprof run1_1.prof is also not liking your input. I think it wants all the files to be specified? Or another 'profile file' that it is complaining about you not specifying it",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9176256",
+                          "updatedAt": "2024-04-20T20:54:35Z",
+                          "publishedAt": "2024-04-20T20:54:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nThank you for your suggestions. I found them very useful. Indeed, by reviewing the pprof --help output, I confirmed the correct command usage as follows:\npprof -top ~/projocts/panda/panda-oprof run3_1.prof\nThis approach resolved the issue with the command execution. However, I've noticed that running pprof -top on the specified profiling data takes a long time, and I'm seeking ways to optimize or understand the underlying cause of this delay.\nI have created a new issue #27467 on the forum to address this specific challenge. I would greatly appreciate any insights or suggestions you might have on how to reduce the execution time or any related experiences you could share.\nThank you in advance for your time and help.\nBest regards,\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9223395",
+                          "updatedAt": "2024-04-25T10:05:00Z",
+                          "publishedAt": "2024-04-25T10:04:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I just followed the pprof installation instructions from the moose website and it seems to work fine.\nwhich simulation did you profile? can you do this one?\ncd moose/modules/phase_field/examples/grain_growth\nMOOSE_PROFILE_BASE=run1_ mpiexec -n 2 ../../phase_field-oprof -i grain_growth_2D_graintracker.i Executioner/num_steps=2\n~/gperftools/pprof-symbolize ../../phase_field-oprof run1_0.prof run1_1.prof",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9241988",
+                          "updatedAt": "2024-04-26T22:52:29Z",
+                          "publishedAt": "2024-04-26T22:52:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Yes, the command you provided works normally, it just takes a long time. The results are as follows:\n(moose) pw-moose@pwmoose-PowerEdge-T640:~/projocts/moose/modules/phase_field/examples/grain_growth$ ~/gperftools/pprof-symbolize ../../phase_field-oprof run1_0.prof run1_1.prof \nUsing local file ../../phase_field-oprof.\nUsing local file run1_1.prof.\nUsing local file run1_0.prof.\nFetching 2 profiles, Be patient...\nUsing local file run1_1.prof.\nUsing local file run1_0.prof.\nWelcome to pprof!  For help, type 'help'.\n(pprof) top 12\nTotal: 27466 samples\n    1302   4.7%   4.7%     1567   5.7% libMesh::DofMap::build_constraint_matrix [clone .localalias]\n     844   3.1%   7.8%     2026   7.4% MooseVariableData::computeValues\n     554   2.0%   9.8%     1034   3.8% MooseMesh::minPeriodicVector\n     412   1.5%  11.3%      412   1.5% 0x000072db5b58946c\n     319   1.2%  12.5%      646   2.4% std::_Rb_tree::_M_lower_bound (inline)\n     311   1.1%  13.6%      311   1.1% hypre_BoomerAMGRelaxHybridGaussSeidel_core\n     298   1.1%  14.7%      298   1.1% libMesh::TypeVector::operator* (inline)\n     298   1.1%  15.8%      298   1.1% std::vector::size (inline)\n     294   1.1%  16.9%      294   1.1% std::_Rb_tree::_S_right (inline)\n     235   0.9%  17.7%      235   0.9% MooseArray::operator[] (inline)\n(pprof)",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9249417",
+                          "updatedAt": "2024-04-28T03:38:29Z",
+                          "publishedAt": "2024-04-28T03:38:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so you dont see your material taking most of the compute time? How many time steps did you run?",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9251923",
+                          "updatedAt": "2024-04-28T12:28:54Z",
+                          "publishedAt": "2024-04-28T12:28:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "I feel that these should be the problems in #27307. In fact, this email is mainly about a technical problem encountered in the process of seeking the cause of #27307. I used the input file to run the calculation example that comes with moose, for the purpose of testing correct use of pprof.",
+                          "url": "https://github.com/idaholab/moose/discussions/27418#discussioncomment-9257281",
+                          "updatedAt": "2024-04-29T03:09:55Z",
+                          "publishedAt": "2024-04-29T03:09:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error (crash) from plasticity // how to relax/bypass this error",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi all, I tried to run a mining simulation with high initial stresses and rapid softening\nbut I often get this error message during the excavation step (reducing E and stress of a particular block)\n\n++++++++++++++++++++++++\nChecking the derivatives\n++++++++++++++++++++++++\nDebug Parameters are as follows\nstress =\n*** ERROR ***\nThe debug parameters have the wrong size\n\nI tried to run it with the dynamic model/kernel with a lot of damping, it still crashes when I mine a large block within the geometry.\nIs there any way that I can relax my simulation or bypass this error? (like relaxing the smoother/tolerance parameters)\n[UserObjects]\n  # [./mc_coh]\n  #   type = TensorMechanicsHardeningConstant\n  #   value = 5e6\n  # [../]\n  [./mc_coh]\n    type = TensorMechanicsHardeningCubic\n    value_0 = 5e6 \n    value_residual = 5e5 \n    internal_limit = 0.01 #reach at 1%\n  [../]\n  [./mc_phi]\n    type = TensorMechanicsHardeningConstant\n    value = 0.610865 #35deg\n  [../]\n  [./mc_psi]\n    type = TensorMechanicsHardeningConstant\n    value = 25\n    convert_to_radians = true\n  [../]\n ####### Mohr Coulomb\n [./mc]\n   type = TensorMechanicsPlasticMohrCoulomb\n   cohesion = mc_coh\n   friction_angle = mc_phi\n   dilation_angle = mc_psi\n   yield_function_tolerance = 100\n   internal_constraint_tolerance = 100\n   mc_tip_smoother = 0.5e5\n   mc_edge_smoother = 25\n [../]\n[]\n\nThank you guys!",
+          "url": "https://github.com/idaholab/moose/discussions/17743",
+          "updatedAt": "2024-04-28T08:25:07Z",
+          "publishedAt": "2021-05-04T04:50:42Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "I also don't understand what does this error message mean? if I know it could probs work around it. Please help, thank you guys :)",
+                  "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-692792",
+                  "updatedAt": "2022-07-07T12:59:28Z",
+                  "publishedAt": "2021-05-04T11:12:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "We need to know exactly when this occurs.  I think there are two possibilities:\n\n\nDuring simulation.  You'll know this is the case if you also get the error After reducing the stepsize to XXXX with original strain increment with L2norm YYYY  the returnMap algorithm failed (where XXXX and YYYY depend on your problem).  The problem is that MOOSE cannot figure out the solution to the return-map process, which almost always means: (a) there is no solution because your plastic parameters, such as softening/hardening parameters, are not chosen wisely; or (b) your stresses are so extreme that you're getting precision loss, which can happen during the Newton procedure, and you might be able to choose different timestep sizes or damping parameters to avoid this; or (c) the stresses are in a configuration that i haven't coded for, which is my mistake.\n\n\nDuring initialization.  You'll know this is the case when you don't get the aforementioned After reducing... error.  Choose debug_fspb = none to remove this error.\n\n\nBy the way, this error, particularly in case 2, could mean your initial stresses are inadmissible, which is potentially very bad, as some of the plasticity algorithms assume they are admissible, but your model might still produce reasonable results if you're lucky - you'll have to assess that for yourself.\nProbably unrelated to this thread, but i wanted to mention it while i remember: I'm pretty sure you're changing the Young's modulus to simulate tunnel excavation.  Make sure you have one initial timestep with it set to its unmodified value, otherwise you'll be getting the wrong answer.  I can explain why in another discussion thread, but, if your elasticity_tensor_prefactor = if(t>0,1E-3,1) just make sure you have start_time=-1 dt=1 or something like that.",
+                  "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696224",
+                  "updatedAt": "2022-07-07T12:59:28Z",
+                  "publishedAt": "2021-05-04T22:40:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @WilkAndy it crashes in the middle of simulation, sometimes the excavation of the 2nd block, or 3rd stope, etc depending on the plasticity criteria I have.\n\nYou have given out quite a lot of information here, I will try to work on them and report to you back soon.\nnote: on the last point, I always let the system stabilise for 1 sec before start excavation, that shouldn't be a problem.",
+                          "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696384",
+                          "updatedAt": "2022-07-07T12:59:45Z",
+                          "publishedAt": "2021-05-05T00:29:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @WilkAndy, one thing I observed, the simulation crashes when the plastic strain (mc_int/plastic_internal_parameter) is getting closer to the softening residual strain, in this case 1%.\n[./mc_coh]\ntype = TensorMechanicsHardeningCubic\nvalue_0 = 5e6\nvalue_residual = 5e5\ninternal_limit = 0.01 #reach at 1%\n[../]\nI tried to turn off the initial stress, so the simulation run perfectly fine, however at the last time step I see the max (mc_int/plastic_internal_parameter) is 0.02% which is far away from 1%.",
+                          "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696615",
+                          "updatedAt": "2022-07-07T13:00:13Z",
+                          "publishedAt": "2021-05-05T03:14:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "I also see in mohr_coulomb/small_deform_hard_cubic.i under [Materials/ComputeMultiPlasticityStress] it contains quite a number of debug parameters, will these be helpful for my simulation?\n  [./mc]\n    type = ComputeMultiPlasticityStress\n    block = 0\n    ep_plastic_tolerance = 1E-9\n    plastic_models = mc\n    debug_fspb = crash\n    debug_jac_at_stress = '10 1 2 1 10 3 2 3 10'\n    debug_jac_at_pm = 1\n    debug_jac_at_intnl = 1E-4\n    debug_stress_change = 1E-5\n    debug_pm_change = 1E-6\n    debug_intnl_change = 1E-8\n  [../]",
+                          "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696930",
+                          "updatedAt": "2022-07-07T13:01:25Z",
+                          "publishedAt": "2021-05-05T06:22:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "I think these won't be helpful for you.  They're more for developers to check that derivatives and so on are actually correct.",
+                          "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696959",
+                          "updatedAt": "2022-07-07T13:03:38Z",
+                          "publishedAt": "2021-05-05T06:30:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Thanks @WilkAndy! I really have no idea what's going on here, I probs need to work on a much simpler geometry to find out what's the actual problem.",
+                          "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696966",
+                          "updatedAt": "2022-07-07T13:03:38Z",
+                          "publishedAt": "2021-05-05T06:34:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Three other things you're probably going to experiment with:\n\nTry setting the dilation angle equal to the friction angle.  Eventually you'll want to set them different, but for your debugging dil=fric is a much easier problem to solve for MOOSE.\nChoose different yield_function_tolerance, internal_constraint_tolerance and ep_plastic_tolerance.  yield_function_tolerance should usually be set lower than any meaningful stresses.  Eg, if your stresses are measured in Pascals, then yield_function_tolerance = 1E-7 is fine, since it means \"1E-7 Pascals is a small number\".  Do not set it too low, because MOOSE may run out of precision, but do not set it too high (like your value of 100) because it allows MOOSE to be too lazy and your stresses will end up being crazy at some stage.  I usually start at 1E-14 * youngs_modulus, and then move downwards to see if MOOSE can still solve the problem.  ep_plastic_tolerance should be set at around yield_function_tolerance divided by youngs_modulus, but no lower than 1E-12, otherwise you'll loose precision.  internal_constraint_tolerance is usually less important, but should certainly be set less than your current value of 100.  Currently you're saying \"measure plastic strain with an accuracy of 100\", which is obviously not optimal, since your hardening occurs over the region to 0.01.  So use something like 1E-12 for this parameter (but don't panic - this parameter doesn't usually make much difference to the final results).\nTry using DruckerPrager plasticity.  It's numerically easier than MC.",
+                  "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-696258",
+                  "updatedAt": "2022-07-07T13:04:14Z",
+                  "publishedAt": "2021-05-04T23:01:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "PEI0214"
+                  },
+                  "bodyText": "Hello, I also met a similar situation, how did you solve it?",
+                  "url": "https://github.com/idaholab/moose/discussions/17743#discussioncomment-9250950",
+                  "updatedAt": "2024-04-28T08:25:08Z",
+                  "publishedAt": "2024-04-28T08:25:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Help Needed] Strategies to Speed Up `pprof -top` Execution for MOOSE Profiling Data",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Hello MOOSE Community,\nI am using the MOOSE simulation framework for my computational research projects and have encountered an issue with performance analysis. Specifically, I've generated profiling data using the command:\nMOOSE_PROFILE_BASE=run3_ mpiexec -n 32 ~/projocts/panda/panda-oprof -i s2_bicrystal_cp_elastic3.i > 01.log\nThis command successfully created 32 profiling files named run3_[0-31].prof. My challenge arises when trying to analyze these files with pprof. I use the following command to generate a performance report from one of the profiling files:\npprof -top ~/projocts/panda/panda-oprof run3_1.prof\nHowever, the command execution is considerably slow and has not produced results even after running for more than 60 minutes.\nI am looking for advice on how to efficiently analyze these profiling files. Are there any recommended practices within the MOOSE community for handling large profiling datasets or specific parameters that might accelerate the pprof tool's performance?\nThank you for your support and I look forward to any suggestions you might have.\nBest regards,\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/27467",
+          "updatedAt": "2024-04-28T06:31:48Z",
+          "publishedAt": "2024-04-25T10:04:32Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@lindsayad you had encountered massive slowdowns with pprof\nI think the fix was\n\nunlinking libunwind and passing --enable-frame-pointers. I could have sworn that I had tried that before and gotten slow profiling\n\nhow involved is that?\nShould we advocate using another profiler at this point?",
+                  "url": "https://github.com/idaholab/moose/discussions/27467#discussioncomment-9238971",
+                  "updatedAt": "2024-04-26T15:41:03Z",
+                  "publishedAt": "2024-04-26T15:41:02Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "What is your operating system and what is your binutils version? You can check this with ld --version. Did you read the note on the profiling page about issues with binutils version 2.37? You can read google/pprof#680 and https://sourceware.org/pipermail/binutils/2022-February/119701.html. However, I will note that binutils version 2.40 no longer seems to have problems, so something must have been fixed between 2.37 and 2.40",
+                          "url": "https://github.com/idaholab/moose/discussions/27467#discussioncomment-9239544",
+                          "updatedAt": "2024-04-26T16:36:12Z",
+                          "publishedAt": "2024-04-26T16:36:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "So in summary, depending on your binutils version, downgrading or upgrading may fix your issue",
+                          "url": "https://github.com/idaholab/moose/discussions/27467#discussioncomment-9239555",
+                          "updatedAt": "2024-04-26T16:37:13Z",
+                          "publishedAt": "2024-04-26T16:37:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Yes, your answer is correct.\nI solved this problem using GNU ld (GNU Binutils) 2.29.1. The version that needs a long time to wait is 2.38.\nThank you very much for your answer.",
+                          "url": "https://github.com/idaholab/moose/discussions/27467#discussioncomment-9250456",
+                          "updatedAt": "2024-04-28T06:31:42Z",
+                          "publishedAt": "2024-04-28T06:31:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to print out the time taken for each linear iteration",
+          "author": {
+            "login": "hityyds"
+          },
+          "bodyText": "I need MOOSE to print out the time taken for each linear iteration, but I found that MOOSE by default only prints out the time when the calculation takes a long time. How can I set this up please?",
+          "url": "https://github.com/idaholab/moose/discussions/27496",
+          "updatedAt": "2024-04-28T00:23:12Z",
+          "publishedAt": "2024-04-27T16:30:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can reduce the delay to printing the time cost by setting perf graph parameters in the Outputs block",
+                  "url": "https://github.com/idaholab/moose/discussions/27496#discussioncomment-9246849",
+                  "updatedAt": "2024-04-27T17:35:25Z",
+                  "publishedAt": "2024-04-27T17:35:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hityyds"
+                  },
+                  "bodyText": "There are just too many parameters to set there. I would quite appreciate it if you can give me more specific advice.",
+                  "url": "https://github.com/idaholab/moose/discussions/27496#discussioncomment-9247217",
+                  "updatedAt": "2024-04-27T18:36:21Z",
+                  "publishedAt": "2024-04-27T18:36:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "in the outputs block, this parameter perf_graph_live_time_limit could be set to 1 to get every section to print after 1s\ndo you need the output live? on the log? (parameters here: https://mooseframework.inl.gov/source/actions/CommonOutputAction.html)\nor in the table at the end? You can customize this here\nhttps://mooseframework.inl.gov/source/outputs/PerfGraphOutput.html",
+                          "url": "https://github.com/idaholab/moose/discussions/27496#discussioncomment-9248667",
+                          "updatedAt": "2024-04-28T00:23:12Z",
+                          "publishedAt": "2024-04-28T00:23:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Calculation of material property (permeability) as function of variable (temperature)",
+          "author": {
+            "login": "RotmanC"
+          },
+          "bodyText": "Hello,\nI'm working on the evolution of supercritical conditions by a magmatic intrusion at depth (7km), so the permeability (k) changes with the evolution of this high temperature body (825K).\nI implement an equation to calculate k as function of temperature following the equation of Hayba & Ingebritsen (1997). I include it using the permeability as PorousFlowPermeabilityTensorFromVar that call an AuxKernel and its AuxVariable.\nThe problem is that it doesn't converge. May be because  the permeability has a big change (k = [1e-22, 1e-14]), which is at the middle bottom of the mesh in a very short volume, that is, around the intrusion of magma (825K, k = 1e-22). So the Jacobian has a wide range of values to deal.\nI tried:\n\nRefine the mesh\nSmooth the BC of the intrusion of 825K\nSmooth the equation that computes the permeability\nModify the Executer, Preconditions and time steps\nInclude controls to start the BC of the intrusion late, after some timesteps\nInclude Controls to start the calculation of k after some timesteps after the starting of the intrusion\nInclude and Adaptivity, but I cannot use k as variable (and spend a lot of time running)\n\nMay be I can calculate k as a MultiApp, or can I calculate outside and call the results later (but I don't know how to do it and I didn't found anything in the discussions).\nAnother question that I have is why the size of the initial execution of this simulation is more than 2Gb (2368 MB) if only runs 3570 elements in 2D.\nHere is the project  with the mesh and the script with no Controls and Adaptivity\nAny support and comment to improve it are more than welcome",
+          "url": "https://github.com/idaholab/moose/discussions/27488",
+          "updatedAt": "2024-04-27T15:48:09Z",
+          "publishedAt": "2024-04-26T18:20:47Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "RotmanC"
+                  },
+                  "bodyText": "Actually I tried to use execute_on = CUSTOM too, but I don't understand how to include the list of times to compute k (to avoid to create a custom execute flag). Is it posible?",
+                  "url": "https://github.com/idaholab/moose/discussions/27488#discussioncomment-9240822",
+                  "updatedAt": "2024-04-26T19:09:59Z",
+                  "publishedAt": "2024-04-26T19:09:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDoes it converge if you set k to be a constant?\nTo troubleshoot convergence issues there are a list of techniques here:\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27488#discussioncomment-9241509",
+                  "updatedAt": "2024-04-26T20:59:45Z",
+                  "publishedAt": "2024-04-26T20:59:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RotmanC"
+                          },
+                          "bodyText": "Many thanks! Now it works :)\nAlso was helpful to check:\n\nthe Jacobian using FiniteDifferencePreconditioner\nthe convergence criteria\nthe numerical stabilization\n\nAlso, I have some questions left about the use of execute_on = CUSTOM. Isn't it possible to include a list of time steps or include a range of time steps to avoid using to calculate a variable (for example, calculate it every 10 time steps) without creating a flag?\nMany thanks for your help",
+                          "url": "https://github.com/idaholab/moose/discussions/27488#discussioncomment-9245783",
+                          "updatedAt": "2024-04-27T14:37:26Z",
+                          "publishedAt": "2024-04-27T14:35:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nExecute_on = custom is not for selecting a list of time steps currently.\nWhat you can use for that is the Controls system\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27488#discussioncomment-9246218",
+                          "updatedAt": "2024-04-27T15:48:09Z",
+                          "publishedAt": "2024-04-27T15:48:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "MOOSE THM Brayton Cycle example: missing `thm_utilities` Python module",
+          "author": {
+            "login": "oleachri"
+          },
+          "bodyText": "I've been investigating the MOOSE THM Brayton Cycle examples.  I can get these to run fine, but I noticed the distribution includes a Python script, plot.py i.e.:\nmodules/thermal_hydraulics/test/tests/problems/brayton_cycle/plot.py\n... which has a line from thm_utilities import readCSVFile.  However, my MOOSE install doesn't have the Python module thm_utilities.  Any tips on how I can obtain and install it?",
+          "url": "https://github.com/idaholab/moose/discussions/27473",
+          "updatedAt": "2024-04-27T08:49:53Z",
+          "publishedAt": "2024-04-25T20:33:00Z",
+          "category": {
+            "name": "Q&A Modules: Thermal Hydraulics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThat script is found in moose//modules/thermal_hydraulics/python/\nYou can use \"find\" on linux to find a missing file in a repo\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27473#discussioncomment-9230700",
+                  "updatedAt": "2024-04-25T23:43:00Z",
+                  "publishedAt": "2024-04-25T23:42:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "oleachri"
+                          },
+                          "bodyText": "Thanks for the quick reply Guillaume.  I should probably have stated that I'm using the pre-built MOOSE binaries, snapshot-20-10-27-34878-gf2bb1b9505, and thm_utilities doesn't appear to ship with it (I have checked using find).  I have obtained the file manually from the location you mention, in the online repo.\nThis seems to work, though it falls over at a later stage with a LaTeX error that's probably due to our system config.:\nraise RuntimeError(\nRuntimeError: latex was not able to process the following string:\nb'lp'\n\nHere is the full report generated by latex:\nThis is pdfTeX, Version 3.1415926-2.5-1.40.14 (TeX Live 2013/TeX Live for SUSE Linux)\n restricted \\write18 enabled.\nentering extended mode\n(~/.cache/matplotlib/tex.cache/1acea6f6c115d0ec7a634ed0529287b9.tex\nLaTeX2e <2011/06/27>\nBabel <3.9f> and hyphenation patterns for 78 languages loaded.\n(/usr/share/texmf/tex/latex/base/article.cls\nDocument Class: article 2007/10/19 v1.4h Standard LaTeX document class\n(/usr/share/texmf/tex/latex/base/size10.clo))\n\n! LaTeX Error: File `type1cm.sty' not found.\n\nType X to quit or <RETURN> to proceed,\nor enter new name. (Default extension: sty)\n\nEnter file name: \n! Emergency stop.\n<read *> \n         \nl.5 \\usepackage\n               {type1ec}^^M\nNo pages of output.\nTranscript written on 1acea6f6c115d0ec7a634ed0529287b9.log.",
+                          "url": "https://github.com/idaholab/moose/discussions/27473#discussioncomment-9234494",
+                          "updatedAt": "2024-04-26T09:06:12Z",
+                          "publishedAt": "2024-04-26T09:06:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nthis does look like a latex error, a missing template file maybe\nit seems you just need to install dvipng\nhttps://stackoverflow.com/questions/11354149/python-unable-to-render-tex-in-matplotlib",
+                          "url": "https://github.com/idaholab/moose/discussions/27473#discussioncomment-9238551",
+                          "updatedAt": "2024-04-26T15:09:05Z",
+                          "publishedAt": "2024-04-26T15:09:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "oleachri"
+                          },
+                          "bodyText": "Great - thanks for your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/27473#discussioncomment-9244095",
+                          "updatedAt": "2024-04-27T08:49:54Z",
+                          "publishedAt": "2024-04-27T08:49:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using Vcxrsv installer to download MOOSE application on Windows 11 machine",
+          "author": {
+            "login": "ColinMG2"
+          },
+          "bodyText": "I am having trouble correctly installing the framework required to use MOOSE on a Windows 11 laptop. I downloaded the Vxcrsv installer and followed the steps on the MOOSE framework website but I did not understand that when I was setting up my UNIX username and password that you cannot see the password being typed. Therefore, I thought my computer was broken and closed the command prompt and now I am not able to access the UNIX username or password on my command prompt. How do I uninstall the application and try again. This is what my command prompt says currently:\nMicrosoft Windows [Version 10.0.22631.3447]\n(c) Microsoft Corporation. All rights reserved.\n\nC:\\Users\\Colin Gerlach>wsl --install\nUbuntu is already installed.\nLaunching Ubuntu...\nWelcome to Ubuntu 22.04.4 LTS (GNU/Linux 5.15.146.1-microsoft-standard-WSL2 x86_64)\n\n * Documentation:  https://help.ubuntu.com\n * Management:     https://landscape.canonical.com\n * Support:        https://ubuntu.com/pro\n\n * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s\n   just raised the bar for easy, resilient and secure K8s cluster deployment.\n\n   https://ubuntu.com/engage/secure-kubernetes-at-the-edge\n\nThis message is shown once a day. To disable it please create the\n/root/.hushlogin file.\nroot@COLIN-DESKTOP:~#",
+          "url": "https://github.com/idaholab/moose/discussions/27388",
+          "updatedAt": "2024-04-26T19:14:09Z",
+          "publishedAt": "2024-04-16T18:27:54Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "Thank you for your submission. Because this is an issue with the WSL installation procedure and not a bug with MOOSE directly, I am moving this to our Discussions forum (https://github.com/idaholab/moose/discussions) for further review by the community and the development team.",
+                  "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9135248",
+                  "updatedAt": "2024-04-16T21:11:51Z",
+                  "publishedAt": "2024-04-16T21:11:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "Tagging @milljm",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9135255",
+                          "updatedAt": "2024-04-16T21:12:48Z",
+                          "publishedAt": "2024-04-16T21:12:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "I do not have a WSL instance available to test on, so please take this advice with a grain of salt. I am generally following resources provided by Microsoft, and you can find what I am following here.\nI would start by removing the distribution you have installed. First, list the distributions you have available (you likely only have one) by running the command wsl -l -v in your Command Prompt. You should see distribution names. Pick the one you want to remove (in this case your Ubuntu install) and run wsl --unregister <DistributionName>, replacing <DistributionName> with the name for the Ubuntu installation on your machine.\nAt this point, I think you can try wsl --install to get a new default distribution or installing distributions from the Microsoft Store. Once you have a properly set up WSL instance, you should proceed with the rest of the MOOSE WSL instructions to make sure everything is properly updated and ready to install MOOSE packages.",
+                  "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9135325",
+                  "updatedAt": "2024-04-16T21:23:13Z",
+                  "publishedAt": "2024-04-16T21:23:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I like to post the following link, as I have detailed my experience getting Peacock to work in the following thread: #22718 (reply in thread).\nAs noted, on Windows 11, there is no need to use VcxSrv. Windows 11 natively supports X forwarding. Perhaps there is more information among that thread which may be beneficial.",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9142478",
+                          "updatedAt": "2024-04-17T12:32:50Z",
+                          "publishedAt": "2024-04-17T12:32:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I will adjust our aging instructions (#27393) about no longer needing VcxSrv when operating on Windows 11. This necessary change must have fallen through the cracks unfortunately. I apologize for the confusion you are going through due to our instructions!\nAs Casey mentioned no one on our development team has access to a Windows workstation beyond our personal machines at home. Making it fairly difficult at the best of times.",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9142553",
+                          "updatedAt": "2024-04-17T12:43:35Z",
+                          "publishedAt": "2024-04-17T12:39:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ColinMG2"
+                          },
+                          "bodyText": "Okay so I tried to do the command you suggested but for some reason my syntax is wrong when running the \"unregister\" command. Here is what my command prompt says:",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147237",
+                          "updatedAt": "2024-04-17T19:54:29Z",
+                          "publishedAt": "2024-04-17T19:54:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Drop the carrots... Casey was emphasizing the naming descriptor.\nAlso, is it possible to post text instead of images of text in Windows (as you did in the OP)?",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147279",
+                          "updatedAt": "2024-04-17T19:59:57Z",
+                          "publishedAt": "2024-04-17T19:59:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ColinMG2"
+                          },
+                          "bodyText": "I see that seemed to work. Sorry about that I will just paste the code below. Are there any other steps that I need to follow now?\nC:\\Users\\Colin Gerlach>wsl --unregister Ubuntu\nUnregistering.\nThe operation completed successfully.\n\nC:\\Users\\Colin Gerlach>wsl --install\nUbuntu is already installed.\nLaunching Ubuntu...\nInstalling, this may take a few minutes...\nPlease create a default UNIX user account. The username does not need to match your Windows username.\nFor more information visit: https://aka.ms/wslusers\nEnter new UNIX username: cmg88\nNew password:\nRetype new password:\npasswd: password updated successfully\nThe operation completed successfully.\nInstallation successful!\nTo run a command as administrator (user \"root\"), use \"sudo <command>\".\nSee \"man sudo_root\" for details.\n\nWelcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.146.1-microsoft-standard-WSL2 x86_64)\n\n * Documentation:  https://help.ubuntu.com\n * Management:     https://landscape.canonical.com\n * Support:        https://ubuntu.com/advantage\n\n\nThis message is shown once a day. To disable it please create the\n/home/cmg88/.hushlogin file.\ncmg88@COLIN-DESKTOP:~$",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147336",
+                          "updatedAt": "2024-04-17T22:07:08Z",
+                          "publishedAt": "2024-04-17T20:05:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The next thing you want to do, is uninstall VcXsrv... as it is not necessary on Windows 11 (might even hamper things? Not sure). Next, be sure to have your native graphics card drivers installed/updated.\nFollowing that, installing the necessary packages in your WSL environment, and the commands needed to allow a connection to/from your host OS (Windows) with the guest OS (WSL Ubuntu). Ref: https://mooseframework.inl.gov/getting_started/installation/windows.html (skip down to Setup Linux and Enable GUI Dependencies).",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147408",
+                          "updatedAt": "2024-04-17T20:15:30Z",
+                          "publishedAt": "2024-04-17T20:15:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Also, reading through those instructions, DO do the step (Configure WSL to use VcXsrv) even though it says 'VcXsrv' in the title. This step is still necessary to connect to your native Windows GUI.\nin fact, it may be easier to follow the instructions I am updating right now instead: https://mooseframework.inl.gov/docs/PRs/27396/site/getting_started/installation/windows.html\nAny errors encountered will help me improve these new instructions anyway!",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147440",
+                          "updatedAt": "2024-04-17T20:19:20Z",
+                          "publishedAt": "2024-04-17T20:19:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Please feel free to nit-pick those latest instructions (https://mooseframework.inl.gov/docs/PRs/27396/site/getting_started/installation/windows.html). These are active changes not yet made public, that you and I can modify to make more sense, etc!",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147485",
+                          "updatedAt": "2024-04-17T20:25:04Z",
+                          "publishedAt": "2024-04-17T20:25:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ColinMG2"
+                          },
+                          "bodyText": "How do I uninstall Ubuntu? I tried to look in my control panel and I don't see it. Also, how do I check that my native graphics card drivers are installed/updated?",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147594",
+                          "updatedAt": "2024-04-17T20:44:11Z",
+                          "publishedAt": "2024-04-17T20:44:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "You're good with Ubuntu. What you need to uninstall (if you installed it), is VcXsrv.",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9147628",
+                          "updatedAt": "2024-04-17T20:48:48Z",
+                          "publishedAt": "2024-04-17T20:48:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "JaronMo"
+                  },
+                  "bodyText": "Hi. I have a similar issue, I followed the steps however whenever I open a new terminal anconda is not recognized. I edited the bash file using the vi editor and inputted the code below before \"conda active moose\".\n# >>> conda initialize >>>\n# !! Contents within this block are managed by 'conda init' !!\n__conda_setup=\"$('/home/cmg88/miniforge/bin/conda' 'shell.bash' 'hook' 2> /dev/null)\"\nif [ $? -eq 0 ]; then\n    eval \"$__conda_setup\"\nelse\n    if [ -f \"/home/cmg88/miniforge/etc/profile.d/conda.sh\" ]; then\n        . \"/home/cmg88/miniforge/etc/profile.d/conda.sh\"\n    else\n        export PATH=\"/home/cmg88/miniforge/bin:$PATH\"\n    fi\nfi\nunset __conda_setup\n# <<< conda initialize <<<\n\nCan you help me figure this, thank you.",
+                  "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9240828",
+                  "updatedAt": "2024-04-26T20:56:21Z",
+                  "publishedAt": "2024-04-26T19:11:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "You basically copied and pasted someone else's home directory path. That person is going to have a different username than you. So you can't do that.\nYou need to use your own path to your home directory.",
+                          "url": "https://github.com/idaholab/moose/discussions/27388#discussioncomment-9240851",
+                          "updatedAt": "2024-04-26T19:14:10Z",
+                          "publishedAt": "2024-04-26T19:14:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Order parameter value more than 1",
+          "author": {
+            "login": "ashishdhole"
+          },
+          "bodyText": "Hello,\nI am facing a strange issue in my grain growth simulation with particle pinning, where, the order parameter goes more than 1. Is there a way to make then lie in the range of 0-1 (but retain the overall effect i.e. gradient at the interface). or a line of code that I need to add in my kernel that assures the value of my order parameters are between 0 and 1?\n\nThank you",
+          "url": "https://github.com/idaholab/moose/discussions/27478",
+          "updatedAt": "2024-04-26T18:39:03Z",
+          "publishedAt": "2024-04-25T23:35:49Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere are number of ways to impose constraints on a variable. The most straight forward for this case will be to use the Bounds system\nhttps://mooseframework.inl.gov/syntax/Bounds/index.html\nPlease refer to the examples in the ConstantBoundsAux for the set up / solver parameters\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9230709",
+                  "updatedAt": "2024-04-25T23:44:47Z",
+                  "publishedAt": "2024-04-25T23:44:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I tried this Aux, But this needs variable to be defined in the block. I am using PolycrystalVariables to define my order parameters so I am not sure how do we define the variable here. Also the PETSC solver that we need to use with this Aux terminates my simulation.\nTime Step 1, time = 1, dt = 1\n 0 Nonlinear |R| = 3.588723e+00\n[0]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[0]PETSC ERROR: No support for this operation for this object type\n[0]PETSC ERROR: Matrix type mffd does not have a multiply transpose defined or is symmetric and does not have a multiply defined\n[0]PETSC ERROR: WARNING! There are unused option(s) set! Could be the program crashed before usage or a spelling mistake, etc!\n[0]PETSC ERROR:   Option left: name:-i value: fpt.i source: command line\n[0]PETSC ERROR:   Option left: name:-ksp_converged_reason value: ::failed source: code\n[0]PETSC ERROR:   Option left: name:-options_left value: 0 source: code\n[0]PETSC ERROR:   Option left: name:-snes_converged_reason value: ::failed source: code\n[0]PETSC ERROR: See https://petsc.org/release/faq/ for trouble shooting.\n[0]PETSC ERROR: Petsc Release Version 3.20.3, unknown \n[0]PETSC ERROR: pfubc-opt on a  named ashish-Inspiron-14-5430 by ashish Thu Apr 25 15:33:09 2024\n[0]PETSC ERROR: Configure options --with-64-bit-indices --with-cxx-dialect=C++17 --with-debugging=no --with-fortran-bindings=0 --with-mpi=1 --with-openmp=1 --with-shared-libraries=1 --with-sowing=0 --download-fblaslapack=1 --download-hypre=1 --download-metis=1 --download-mumps=1 --download-ptscotch=1 --download-parmetis=1 --download-scalapack=1 --download-slepc=1 --download-strumpack=1 --download-superlu_dist=1 --with-hdf5-dir=${PREFIX} --with-make-np=16 --COPTFLAGS=-O3 --CXXOPTFLAGS=-O3 --FOPTFLAGS=-O3 --with-x=0 --with-ssl=0 --with-mpi-dir=/home/ashish/miniforge/envs/moose AR=${PREFIX}/bin/x86_64-conda-linux-gnu-ar RANLIB=${PREFIX}/bin/x86_64-conda-linux-gnu-ranlib CFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -march=nocona -mtune=haswell\" CXXFLAGS=\"-fvisibility-inlines-hidden -fmessage-length=0 -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem ${PREFIX}/include  -march=nocona -mtune=haswell\" CPPFLAGS=\"-DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/ashish/miniforge/envs/moose/include -DNDEBUG -D_FORTIFY_SOURCE=2 -O2 -isystem /home/ashish/miniforge/envs/moose/include\" FFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -I/home/ashish/miniforge/envs/moose/include\" FCFLAGS=\"-march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -march=nocona -mtune=haswell -ftree-vectorize -fPIC -fstack-protector-strong -fno-plt -O2 -ffunction-sections -pipe -isystem /home/ashish/miniforge/envs/moose/include   -I/home/ashish/miniforge/envs/moose/include\" LDFLAGS=\"-Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/ashish/miniforge/envs/moose/lib -Wl,-rpath-link,/home/ashish/miniforge/envs/moose/lib -L/home/ashish/miniforge/envs/moose/lib -Wl,-O2 -Wl,--sort-common -Wl,--as-needed -Wl,-z,relro -Wl,-z,now -Wl,--disable-new-dtags -Wl,--gc-sections -Wl,--allow-shlib-undefined -Wl,-rpath,/home/ashish/miniforge/envs/moose/lib -Wl,-rpath-link,/home/ashish/miniforge/envs/moose/lib -L/home/ashish/miniforge/envs/moose/lib\" --prefix=/home/ashish/miniforge/envs/moose\n[0]PETSC ERROR: #1 MatMultTranspose() at /data/civet0/build/conda/conda-bld/moose-petsc_1706652072497/work/src/mat/interface/matrix.c:2649\n[0]PETSC ERROR: #2 SNESVIComputeMeritFunctionGradient() at /data/civet0/build/conda/conda-bld/moose-petsc_1706652072497/work/src/snes/impls/vi/ss/viss.c:191\n[0]PETSC ERROR: #3 SNESSolve_VINEWTONSSLS() at /data/civet0/build/conda/conda-bld/moose-petsc_1706652072497/work/src/snes/impls/vi/ss/viss.c:271\n[0]PETSC ERROR: #4 SNESSolve() at /data/civet0/build/conda/conda-bld/moose-petsc_1706652072497/work/src/snes/interface/snes.c:4659\nlibMesh terminatinglibMesh terminatinglibMesh terminatinglibMesh terminating:\nMatrix type mffd does not have a multiply transpose defined or is symmetric and does not have a multiply defined\n:\nMatrix type mffd does not have a multiply transpose defined or is symmetric and does not have a multiply defined\n:\nMatrix type mffd does not have a multiply transpose defined or is symmetric and does not have a multiply defined\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 1\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 2\n:\nMatrix type mffd does not have a multiply transpose defined or is symmetric and does not have a multiply defined\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 3\n\nIs there any other way I can do this?\nThank you",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9230811",
+                          "updatedAt": "2024-04-26T15:14:39Z",
+                          "publishedAt": "2024-04-26T00:06:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This can be used if an action is in use as well.\nYou just need to find the names of the names of the variables (created by the Action instead of the Variables block). They are listed in the header of the simulation (which you can get by running without the bounds)",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9230930",
+                          "updatedAt": "2024-04-26T00:42:39Z",
+                          "publishedAt": "2024-04-26T00:40:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I am using\n'''[GlobalParams]\nop_num = 25\nvar_name_base = gr\nlength_scale = 1e-6\ntime_scale = 1\n[]\n'''\nSo I assume gr0, gr1, gr2, ..., gr24 are my variables. I have tried adding all the variables in one block and separate block for each variable, but hte simulation terminates. Is there any similar example i can look into which uses, PolycrystalVariable Action and any other similar block where variables needs to be defined. I am confused about the syntax in this case.\nThank you",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9230962",
+                          "updatedAt": "2024-04-26T00:46:37Z",
+                          "publishedAt": "2024-04-26T00:46:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "How does your bounds block currently look like?\nWhat does the header say the variables names are?\nYou can search the phase field module for use of bounds with the \"grep\" Linux command",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9230981",
+                          "updatedAt": "2024-04-26T00:50:10Z",
+                          "publishedAt": "2024-04-26T00:50:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "\"Variables:               { \"gr0\" \"gr1\" \"gr2\" \"gr3\" \"gr4\" ... \"gr20\" \"gr21\" \"gr22\" \"gr23\" \"gr24\" }\"\nI tried it in two ways\n1st\n[Bounds]\n[gr0]\ntype = ConstantBounds\nvariable = bounds_dummy\nbounded_variable = gr0\nbound_type = upper\nbound_value = 1\n[]\n.\n.\n.\n[gr24]\ntype = ConstantBounds\nvariable = bounds_dummy\nbounded_variable = gr24\nbound_type = upper\nbound_value = 1\n[]\n[]\nand 2nd\n[Bounds]\n[var_bound]\ntype = ConstantBounds\nvariable = bounds_dummy\nbounded_variable = 'gr0 gr1 gr2 gr3 gr4 gr5 gr6 gr7 gr8 gr9 gr10 gr11 gr12 gr13 gr14 gr15 gr16 gr17 gr18 gr19 gr20 gr21 gr22 gr23 gr24'\nbound_type = upper\nbound_value = 1\n[]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231137",
+                          "updatedAt": "2024-04-26T01:22:35Z",
+                          "publishedAt": "2024-04-26T01:22:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "bounds_dummy is an auxvariable",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231146",
+                          "updatedAt": "2024-04-26T01:23:35Z",
+                          "publishedAt": "2024-04-26T01:23:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think you need to create a bounds_dummy for every single variable you are trying to bound maybe?\nI ll check the code tomorrow",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231325",
+                          "updatedAt": "2024-04-26T01:55:34Z",
+                          "publishedAt": "2024-04-26T01:55:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Sure I will try that. looking forward to your reply. Thank you",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231340",
+                          "updatedAt": "2024-04-26T01:56:35Z",
+                          "publishedAt": "2024-04-26T01:56:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What does your executioner block look like?\nYou have to use a special solver to use Bounds",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231450",
+                          "updatedAt": "2024-04-26T02:14:01Z",
+                          "publishedAt": "2024-04-26T02:14:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I have used the option stated on the website.\n[Preconditioning]\nactive = ''\n[SMP]\ntype = SMP\nfull = true\n[]\n[]\n[Executioner]\ntype = Transient\nscheme = 'bdf2'\nsolve_type = 'PJFNK'\npetsc_options_iname = '-snes_type' #'-pc_type -pc_hypre_type -ksp_gmres_restart'\npetsc_options_value = 'vinewtonrsls' #'hypre boomeramg 31'\nl_tol = 1.0e-3\nl_max_its = 5\nnl_max_its = 5\nnl_rel_tol = 1.0e-3\nstart_time = 0.0\n#num_steps = 100\nend_time = 10000\n#dt = 80.0\n#dtmax = 10\n[TimeStepper]\ntype = IterationAdaptiveDT\ncutback_factor = 0.9\ndt = 1\ngrowth_factor = 1.3\n[]\n[Adaptivity]\ninitial_adaptivity = 2\nrefine_fraction = 0.9\ncoarsen_fraction = 0.1\nmax_h_level = 0\ncycles_per_step = 2\n[]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9231471",
+                          "updatedAt": "2024-04-26T02:16:30Z",
+                          "publishedAt": "2024-04-26T02:16:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Seems to me that this is a model issue. There should be a driving force derived from the free energy of the system. Adding a constraint here would lead to an unphysical system evolution.",
+                  "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9239518",
+                  "updatedAt": "2024-04-26T16:32:49Z",
+                  "publishedAt": "2024-04-26T16:32:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Hello,\nI am working on friction pressure model (http://dx.doi.org/10.1088/0965-0393/20/6/065008).\nThe evolution PDE is given as\n\n\n\n\nBased on this work, I tried to create a kernel that takes care of the friction pressure term.\nswitch (type)\n  {\n\n    case Residual:\n    {\n      return _mu[_qp] *\n             ((op * op * op - op + 2.0 * _gamma[_qp] * op * SumOPj) - (3 * op * SumOPGj));\n    }\n\n    case Jacobian:\n    {\n      return _mu[_qp] * _phi[_j][_qp] *\n             ((3.0 * op * op - 1.0 + 2.0 * _gamma[_qp] * SumOPj) - (3 * SumOPGj));\n    }\n\n    default:\n      mooseError(\"Invalid type passed in\");\n  }\n\nBut I don't understand where I am going wrong. I have tried different double well functions as well, but cannot replicate the work done in this paper. How can I add pinning pressure without resolving particles?",
+                          "url": "https://github.com/idaholab/moose/discussions/27478#discussioncomment-9240577",
+                          "updatedAt": "2024-04-26T20:57:45Z",
+                          "publishedAt": "2024-04-26T18:39:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error while building moose",
+          "author": {
+            "login": "Ogugua99"
+          },
+          "bodyText": "I am trying to build moose on my Linux machine but i got the following error towards the end\n{standard input}: Assembler messages:\n{standard input}:425422: Warning: end of file not at end of a line; newline inserted\n{standard input}:426148: Error: expecting operand after ','; got nothing\n{standard input}: Error: open CFI at the end of file; missing .cfi_endproc directive\nx86_64-conda-linux-gnu-c++: fatal error: Killed signal terminated program cc1plus\ncompilation terminated.\nmake: *** [/home/unokiwep/projects/moose/framework/build.mk:150: /home/unokiwep/projects/moose/test/build/unity_src/materials_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....\n(moose) unokiwep@Patrick:~/projects/moose/test$",
+          "url": "https://github.com/idaholab/moose/discussions/26266",
+          "updatedAt": "2024-04-26T16:46:16Z",
+          "publishedAt": "2023-12-06T09:57:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis looks like an OOM error with extra messages.\nCan you please try make -j1 ? This will use less memory\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26266#discussioncomment-7775699",
+                  "updatedAt": "2023-12-06T12:23:10Z",
+                  "publishedAt": "2023-12-06T12:23:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "I just had the same error message as @Ogugua99. I can confirm, that lowing the number of jobs (i.e. the number after the parameter -j) solved this problem as suggested by you @GiudGiud. For me \"-j10\" was fine.",
+                          "url": "https://github.com/idaholab/moose/discussions/26266#discussioncomment-9239608",
+                          "updatedAt": "2024-04-26T16:46:17Z",
+                          "publishedAt": "2024-04-26T16:46:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

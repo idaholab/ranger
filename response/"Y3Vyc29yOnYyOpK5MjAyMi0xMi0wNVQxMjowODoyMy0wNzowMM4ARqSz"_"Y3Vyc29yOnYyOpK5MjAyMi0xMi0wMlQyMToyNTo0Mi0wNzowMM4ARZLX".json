@@ -1,0 +1,1023 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0xMi0wMlQyMToyNTo0Mi0wNzowMM4ARZLX"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Why a segmentation fault could pop up only above a number of requested MPI processes?",
+          "author": {
+            "login": "garciapintado"
+          },
+          "bodyText": "Hi,\nI have an error showing up only when I use over a number of processes. So that in my machine, for \u201cmpiexec -np 15 \u2026\u201d it works while for higher number of mpi processes (>= 16) an error shows up:\n\u2014\n\u2026\nTime Step 1, time = 1000, dt = 1000\n\n===================================================================================\n=   BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES\n=   PID 1357638 RUNNING AT clg1\n=   EXIT CODE: 9\n=   CLEANING UP REMAINING PROCESSES\n=   YOU CAN IGNORE THE BELOW CLEANUP MESSAGES\n===================================================================================\nYOUR APPLICATION TERMINATED WITH THE EXIT STRING: Segmentation fault (signal 11)\nThis typically refers to a problem with your application.\nPlease see the FAQ page for debugging suggestions\n\u2014-\n\nI haven\u2019t used a parallel debugger before, so before trying I am wondering if you have a suggestion about why this could be. I do not use any other object that is not in the default MOOSE distribution [snapshot-20-10-27-26481-g16505c700e], and these are objects within the Porous Flow and Heat Conduction modules.\nAlso the error is specific to my input files [an imported 3D mesh, which is also used to initiate the nonlinear variables]. It does not reproduce for very similar problems [even with a problem twice as big] where  the mesh and initialisation is done within MOOSE, and I can use \u2018mpi -n 24 \u2026\u2019  (the number of physical cores in my machine) without any issue.\nSo, I\u2019m puzzled about why an error could only show up when the level of parallelisation goes over a threshold, and wondering if have faced a simular situation before.\nA note is that the problem is a 3D domain, with several blocks, which result from extrusion from a 2D domain [of course I can share the Exodus inout + the .i file, if that helps]\nCheers,\nJavier",
+          "url": "https://github.com/idaholab/moose/discussions/22813",
+          "updatedAt": "2022-12-05T17:33:49Z",
+          "publishedAt": "2022-11-29T17:02:52Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "garciapintado"
+                  },
+                  "bodyText": "Argh! Just after writing, I think I\u2019ve found a reason for this segmentation error. This is a multiphysics problem in the sense that the porous flow dictator (within the module PorousFlow) only controls the upper area of an original 2D domain. Then, I do an extrusion to 3D, and the two new \u2018front\u2019 and a \u2018rear\u2019 domain sidesets are created. On these sides I am using boundary conditions controlled by Porous Flow (PorousFlowOutflowBC), while actually a part of them (towards their bottom) is not a porous media. I am still puzzled about how possibly the extruded 3D model works with <=15 MPI processes, but effectively by removing these BCs the problem disappears.\nI am leaving this still open in case this is an unexpected generic MOOSE behaviour that you might be useful to consider (and out of curiosity in case you have an explanation for this behaviour), but from my practical side now I believe this can be considered solved.\nCheers,\nJavier",
+                  "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4267034",
+                  "updatedAt": "2022-11-29T18:34:42Z",
+                  "publishedAt": "2022-11-29T18:34:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "@garciapintado , i also do not understand how this worked for <=15 procs, but failed with >16 procs.  I think we need to understand this.\nIs this correct: you had a PorousFlow BCs object active on a 2D boundary, but the 3D elements that \"owned\" this boundary had no PorousFlow Variables active on them?",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4268018",
+                          "updatedAt": "2022-11-29T20:57:31Z",
+                          "publishedAt": "2022-11-29T20:57:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Correct! These were PorousFlowOutflowBC (for pressure and temperature) on the 2D newly created sides during the 2D to 3D extrusion. The bottom part of the original 2D domain was a block with non porous flow variables [only temperature with a diffusion solver from the thermal conduction module] and so is the bottom block of the 3D domain. Initially, I make the mistake of using the complete new \"rear\" and \"front\" for these PorousFlowOutflowBC, and had not realised the issue that part of these were boundary on a block not controlled by PorousFlow. Surprisingly to me now, it has been working well (in two different computers and with various number of MPI processes).\nOnly when I've moved it to a computer with more processors and I've tried with more MPI processes the model has crashed.\nI can't be sure, but it seems to me that with higher number of partitions of the domain among the processes, the chances that  one MPI process has it assigned subdomain with no PorousFlow variable in it may be the reason for the segmentation error to appear now. While if all the MPI processes have at least one area of their 2D boundaries touching a part of the 3D PorousFlow domain, the problem does not show up.",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4268805",
+                          "updatedAt": "2022-11-29T23:05:35Z",
+                          "publishedAt": "2022-11-29T23:05:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "My uneducated guess would be that when you moved to more processes you started having a domain with ONLY problematic sides for that BC and still some volumetric dofs for the porous flow variable.\nBut it s just a guess. You may use Debug/output_process_domains=true to check",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4269074",
+                          "updatedAt": "2022-11-29T23:56:18Z",
+                          "publishedAt": "2022-11-29T23:56:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "If what you write is true, @garciapintado and @GiudGiud , i think this will not just happen with PorousFlow, but with other parts of MOOSE.   Do you agree?",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4269669",
+                          "updatedAt": "2022-11-30T01:55:56Z",
+                          "publishedAt": "2022-11-30T01:55:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "I can't be sure, @WilkAndy. I will try to reproduce the effect tomorrow with a simpler test.",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4270348",
+                          "updatedAt": "2022-11-30T04:41:47Z",
+                          "publishedAt": "2022-11-30T04:41:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "garciapintado"
+                  },
+                  "bodyText": "After the debug advice by @GiudGiud, I am pasting a plot which seems to support the idea that when the subdomain pertaining to one MPI process does not overlap a part of the 3D domain with any Kernel controlled by PorousFlow the segmentation fault appears.\nShown in the plots are the \"front\" faces of a 3D domain.  To the right-top, the subdomain partition for 24 processes. Right-bottom the domain blocks, where the big bottom red block is  not controlled by Porous Flow [still a \"temperature\" variable exists in this block as well as in the upper blocks]. This is the result of an extrusion toward this front; such that these blocks project as they are seen toward the rear of the domain. Right-top is the partition for 15 processes. In the 15-proc partition no block is only facing the non-porous-flow domain, which this happens for the 24-proc partition [the lower biggest subdomains to the bottom sides]. For the 15-proc partition, the model runs with these PorousFlowOutflowBC, and the resulting [only one timestep] mass and heat fluxes are shown. It actually can make sense. Mas flux is exactly 0 for the \"front\" areas facing the non-porous-flow domain, and non 0 in the other top blocks. Heat flux (temperature exists everywhere); assuming it is working fine, should be only picking up the diffusive part of the heat flow. The pattern is weird , but maybe because this is only after 1 tiimestep [the bottom of the domain is hotter].\n\n@WilkAndy, now I share the feeling that this [the issue of a boundary term trying to access a variable ---porepressure in this case--- only defined in part of its corresponding higher-dimension domain may not not crash and take the 0 value for this non-defined domain; and then crashing if not defined at all] may be a generic MOOSE thing rather than specific to this specific BC.\nIf so, I would not know what you (MOOSE developers) would prefer as default behaviour {Either leaving it as is; and leave to the user take care of there BCs; or expand the possibility of the BC not crashing and just resulting in 0 for boundaries of domains without the corresponding variable; or just make every stop from the start for mixed situations like this}.\nI still am going to try a simpler test to be sure that there is not another thing in my files I am missing...",
+                  "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4273543",
+                  "updatedAt": "2022-11-30T13:07:24Z",
+                  "publishedAt": "2022-11-30T13:07:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Buf! For a synthetic test [two blocks in a quadrangular prism with the lower block not controlled by PorousFlow], trying to reproduce the error, actually MOOSE raises an error about the situation:\n*** ERROR ***\n'front_water' of type 'PorousFlowOutflowBC' depends on variable(s) 'porepressure'. However, that variable does not appear to be defined on (all of) boundary 'front'.\nand a 2D test also raises this error [for the MOOSE version I updated this morning; it does not show for a some-months older version in my iMAC, which just leads to a segmentation error]. But still no error like this is raised for my example above. In both I define porepressure as rectricted to the upper porous blocks. The only difference I can figure out that could make a difference result is that in my real-case scenario, porepressure is initialized from an Exodus file, where the variable is defined everywhere:\n# Real case - related to the images in the previous post\n[Variables]\n  [porepressure]\n    block = ${porous_blocks}\n    family = LAGRANGE\n    order = FIRST\n    initial_from_file_var = P # in the input Exodus file this is defined everywhere\n    initial_from_file_timestep = LATEST\n  []\n ...\n[]\n\nwhile in the simpler test I've prepared now, it is initialised with a FunctionIC object from MOOSE\n# simpler 2 block case, which effectively MOOSE raises the abovementioned ***ERROR***\n[Variables]\n  [porepressure]\n    block = ${porous_blocks}\n    family = LAGRANGE\n    order = FIRST\n  []\n...\n[]\n\n[ICs]                                          \n  [porepressure_IC]\n    block = ${porous_blocks}\n    type = FunctionIC\n    variable = porepressure\n    function = porepressure00    \n  []\n...\n[]\n\nAl PorousFlow Kernels are identical in both cases and identically contained to their  corresponding ${porous_blocks}\nSo, good to know that MOOSE raises this error in the synthetic case, although I continue to be puzzled about my \"realistic\" case...",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4276600",
+                          "updatedAt": "2022-12-01T01:47:46Z",
+                          "publishedAt": "2022-11-30T18:59:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Do you think, @WilkAndy and @GiudGiud that this different initialization of the variable could be the reason for an error of this type:\n*** ERROR ***\n'front_water' of type 'PorousFlowOutflowBC' depends on variable(s) 'porepressure'. However, that variable does not appear to be defined on (all of) boundary 'front'.\n\nnot being raised by MOOSE when the initialization is from the Exodus file [who has it defined everywhere], despite the use of the variable by is constrained to some part of in indicated boundary within MOOSE?",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4276693",
+                          "updatedAt": "2022-12-01T01:58:18Z",
+                          "publishedAt": "2022-11-30T19:14:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "@GiudGiud - can you comment on this, please?  It seems that when initialising from the exodus file, MOOSE somehow assigns porepressure everywhere (i wonder does it also calculate material properties everywhere?)",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4278408",
+                          "updatedAt": "2022-11-30T22:51:01Z",
+                          "publishedAt": "2022-11-30T22:51:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "why is the Exodus assigned everywhere?\nInside the file you should have a (partial) near the name of the variable.\nThen when you restart it, which method are you using?\nIn a regular exodus restart you can still have the block restriction\nfor example\n[Variables]\n  [pore_pressure]\n    family = LAGRANGE\n    order = first\n    initial_from_file_var = pore_pressure\n    block = ${some blocks}\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4279408",
+                          "updatedAt": "2022-12-01T02:00:06Z",
+                          "publishedAt": "2022-12-01T02:00:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nIn the input Exodus, the variable is defined everywhere for an entangled reason that probably is not relevant here [related to remeshing and dynamic assignation of the \"porous\" subdomain in the upper part of the complete domain]. So it is not (partial).\nBut I do have the block restriction. Please see my pasted block above for the variable declaration in the \"real case\". Is it possible that the CopyNodalVarsAction for the Exodus-file-based  initialization has something to do with this?\nFrom my user's side, now I can live with this. I should be able define new sidesets contrained to the \"porous\" areas in the input files and hopefully the problem would be solved for my case. So, I guess the discussion to these different behaviours [apparently depending on initialization ways] is relevant if you consider it so [and I am happy to do some other test if helpful].",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4280282",
+                          "updatedAt": "2022-12-01T05:49:47Z",
+                          "publishedAt": "2022-12-01T05:49:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Yea, i agree with the strategy in your last paragraph, @garciapintado .   When using any PorousFlow BC, most particularly  PorousFlowOutflow, the boundaries should be associated with elements that have porous-flow in them.  Would you like to add a note to this effect in the documentation?",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4280562",
+                          "updatedAt": "2022-12-01T06:46:26Z",
+                          "publishedAt": "2022-12-01T06:46:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Hi @WilkAndy, yes a note in the documentation would be nice. If you mean that I personally add the note I don't know how to do it. Should not I be a MOOSE contributor?\nAs  as side note, in the output from the two abovementioned models, in Paraview I only see (partial) for elemental variables. In none of these two input [filed-based,  on within MOOSE initialization] no nodal variable shows as partial. Porepressure just shows as 0 for the corresponding 'non-porous' lower block in both domains:",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4280695",
+                          "updatedAt": "2022-12-01T07:06:03Z",
+                          "publishedAt": "2022-12-01T07:06:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYou do not need to be a MOOSE contributor to make a pull request.\nTHere's some guidelines here https://mooseframework.inl.gov/framework/contributing.html but overall\n\nfork the repository\npull it to your local machine, either through cloning or by adding a new remote (git remote add <your fork address>)\ncreate a new branch from origin/devel. Call it my branch (git checkout -b my_branch)\nmake your change\ngit add the changed files\ngit commit \"my changes, refs <an issue number corresponding to the changes, you may need to create it or you may use an existing porous flow one, as appropriate>\"\npush it online to your fork : git push origin --set-upstream my_branch\ngo in the PR tab of the main moose repo, and click make a PR\n\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4285212",
+                          "updatedAt": "2022-12-01T16:52:37Z",
+                          "publishedAt": "2022-12-01T16:51:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "garciapintado"
+                          },
+                          "bodyText": "Ah! OK! Many thanks, @GiudGiud.\nBTW, I can now confirm that my original problem is solved by applying the BCs  PorousFlowOutflowBC to only \"porous\" subdomain boundaries. Now I can use as many processes as physical cores (up to 24 in my machine) without the segmentation fault.\nThere is still the unsolved curiosity about why the  mentioned error type as:\n*** ERROR ***\n'front_water' of type 'PorousFlowOutflowBC' depends on variable(s) 'porepressure'. However, that variable does not appear to be defined on (all of) boundary 'front'.\nis not being raised by MOOSE when the initialization of the nodal field 'porepressure' is from the Edoxus input file. But this a very low priority, I guess...\nJavier",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4285345",
+                          "updatedAt": "2022-12-01T17:07:39Z",
+                          "publishedAt": "2022-12-01T17:07:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Maybe not a \"very low priority\", but \"somewhat low priority\".   i don't have the time to look into this, unfortunately.",
+                          "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4287102",
+                          "updatedAt": "2022-12-01T21:29:51Z",
+                          "publishedAt": "2022-12-01T21:29:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "garciapintado"
+                  },
+                  "bodyText": "OK, I've opened an issue (#22877) to add a note to the documentation, and am marking this as answered",
+                  "url": "https://github.com/idaholab/moose/discussions/22813#discussioncomment-4315576",
+                  "updatedAt": "2022-12-05T17:33:42Z",
+                  "publishedAt": "2022-12-05T17:33:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "CondaHTTPError: HTTP 000 CONNECTION FAILED",
+          "author": {
+            "login": "psaitas"
+          },
+          "bodyText": "Hello guys I am trying to install moose and i reached the point where is recommended is deactivate and activate again and I obtain the following:\nCollecting package metadata (current_repodata.json): failed\nCondaHTTPError: HTTP 000 CONNECTION FAILED for url https://conda.software.inl.gov/public/linux-64/current_repodata.json\nElapsed: -\nAn HTTP error occurred when trying to retrieve this URL.\nHTTP errors are often intermittent, and a simple retry will get you on your way.\n'https//conda.software.inl.gov/public/linux-64'",
+          "url": "https://github.com/idaholab/moose/discussions/22872",
+          "updatedAt": "2023-01-03T23:22:50Z",
+          "publishedAt": "2022-12-05T13:58:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "The connection is up and functioning as far as I can tell. Are you able to brows to that link using your web browser?\nhttps://conda.software.inl.gov/public/linux-64/current_repodata.json\nIf that works, can you try using curl on the command line? Please copy and paste the results if you can't. The verbose argument might shed some additional light on the issue.\ncurl -v https://conda.software.inl.gov/public/linux-64/current_repodata.json",
+                  "url": "https://github.com/idaholab/moose/discussions/22872#discussioncomment-4313518",
+                  "updatedAt": "2022-12-05T14:02:03Z",
+                  "publishedAt": "2022-12-05T14:02:02Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "psaitas"
+                  },
+                  "bodyText": "I ran it ang i got the following:\n\n* Connection #0 to host conda.software.inl.gov left intact\n\u2026\nOn Mon, Dec 5, 2022 at 3:02 PM Jason Miller ***@***.***> wrote:\n The connection is up and functioning as far as I can tell. Are you able to\n brows to that link using your web browser?\n\n https://conda.software.inl.gov/public/linux-64/current_repodata.json\n\n If that works, can you try using curl on the command line? Please copy and\n paste the results if you can't. The verbose argument might shed some\n additional light on the issue.\n\n curl -v https://conda.software.inl.gov/public/linux-64/current_repodata.json\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22872 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AYSZOIOCUWMCLJWNQF3MND3WLXYWLANCNFSM6AAAAAASUJZNY4>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>\n\n\n-- \n\n\u039c\u03b5 \u03b5\u03ba\u03c4\u03af\u03bc\u03b7\u03c3\u03b7,\n\n\n\n*\u0397\u03bb\u03af\u03b1\u03c2 \u03a8\u03b9\u03bb\u03ac\u03ba\u03b7\u03c2*\n\n*\u0394\u03b9\u03c0\u03bb. \u039c\u03b7\u03c7\u03b1\u03bd\u03bf\u03bb\u03cc\u03b3\u03bf\u03c2 & \u0391\u03b5\u03c1\u03bf\u03bd\u03b1\u03c5\u03c0\u03b7\u03b3\u03cc\u03c2 \u039c\u03b7\u03c7\u03b1\u03bd\u03b9\u03ba\u03cc\u03c2*\n\n\n\n\u03a4: +30 69 843 90 843\n\nE: ***@***.***\n\n\n\n\u00fc Please consider the environment before printing this e-mail.",
+                  "url": "https://github.com/idaholab/moose/discussions/22872#discussioncomment-4313984",
+                  "updatedAt": "2022-12-05T14:48:13Z",
+                  "publishedAt": "2022-12-05T14:48:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Your organization might be blocking access to this server. I'm afraid there is nothing we can do to in this case.",
+                          "url": "https://github.com/idaholab/moose/discussions/22872#discussioncomment-4315042",
+                          "updatedAt": "2022-12-05T16:34:17Z",
+                          "publishedAt": "2022-12-05T16:34:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You ll need to contact your network or cluster administrator",
+                          "url": "https://github.com/idaholab/moose/discussions/22872#discussioncomment-4315241",
+                          "updatedAt": "2022-12-05T16:56:05Z",
+                          "publishedAt": "2022-12-05T16:56:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "coupled simulation for CFD and XFEM",
+          "author": {
+            "login": "waynezw0618"
+          },
+          "bodyText": "Hi everyone\nI am new to MOOSE. I used to things like OpenFOAM to CFD and FEniCS et al for FEM. So that FSI problems can be coupled with the two.  and I am wondering whether I can use MOOSE to perform simulation of crack of a floating body with squeezing and crash\nBest",
+          "url": "https://github.com/idaholab/moose/discussions/22874",
+          "updatedAt": "2023-01-03T23:23:00Z",
+          "publishedAt": "2022-12-05T15:19:53Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat do you mean by squeezing? and crash?\nYou can likely code something in MOOSE, but there is no existing models for floating bodies for example\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22874#discussioncomment-4314418",
+                  "updatedAt": "2022-12-05T15:28:08Z",
+                  "publishedAt": "2022-12-05T15:28:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "NOTICE: OpenSSL 3 error with MOOSE conda channel server",
+          "author": {
+            "login": "cticenhour"
+          },
+          "bodyText": "EDIT: This issue seems to have been fixed. As usual - if this continues to occur, please comment here or in a new discussion post.\n\nWhen following the MOOSE Getting Started Instructions for conda there have been many reports of SSL errors during the environment creation step. Those encountering the error may see something like the following:\nRuntimeError: Download error (35) SSL connect error [https://conda.software.inl.gov/public/noarch/repodata.json]\n    error:0A000152:SSL routines::unsafe legacy renegotiation disabled\n\nThis error is due to a setting on the INL network. The core issue is being worked on internally, but in the meantime, a downgrade to OpenSSL version 1 can serve as a workaround. Perform the following in your conda installation:\nconda activate base\nconda config --remove channels https://conda.software.inl.gov/public\nconda install openssl=1 \nconda config --add channels https://conda.software.inl.gov/public\n\nThen, the MOOSE environment can be created as normal:\nconda create -n moose moose-libmesh moose-tools\nconda activate moose\n\nPlease create a new discussions post if issues are still experienced after performing these steps. Thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/22826",
+          "updatedAt": "2022-12-05T15:15:15Z",
+          "publishedAt": "2022-11-30T15:35:39Z",
+          "category": {
+            "name": "News"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "This looks to have been fixed on the INL servers.",
+                  "url": "https://github.com/idaholab/moose/discussions/22826#discussioncomment-4313837",
+                  "updatedAt": "2022-12-05T14:37:20Z",
+                  "publishedAt": "2022-12-05T14:37:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "I'm also not seeing this on the outside if openSSL is restored to version 3. Will update this post - thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/22826#discussioncomment-4314274",
+                          "updatedAt": "2022-12-05T15:13:26Z",
+                          "publishedAt": "2022-12-05T15:13:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Will the number of axial nodes influence the convergence?",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "When I set about 10 nodes in a 1D line , the case can converge, but when I add the nodes to 20 or more, the case can't converge. In my understanding, if there's no mistake in the equations, the convergence should be better with the increase of the nodes. So does this prove that there stiil exists some mistakes in my equations?\nHere is the fourth equation's method:\nI use the CoupledVariableValueMaterial to stores values of a variable into material properties and use Sampler1DReal to export the vector which contains the value at every qppoint of the variables. And I write a userobject to output the variable value based on the coordinate of the qppoint. At last I used the userobjectInterface to couple the userobject and the kernel to express the variable value of other block in the current block. By the way, the \"execute on\" in vectorpostprocessors is \"INITIAL LINEAR NONLINEAR\". I'm not sure if this method is correct mathematically.\nI'd like you to discuss it with me. Thank you.\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/22615",
+          "updatedAt": "2023-02-04T07:20:15Z",
+          "publishedAt": "2022-11-08T03:51:13Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhen you plot the variable you manually transfered to the other block, does it look right?\nIs there two-way coupling between these two blocks? Should you add contributions to the Jacobian from this coupling?\nThis is our current page for debugging these issues\nhttps://mooseframework.inl.gov/application_usage/failed_solves.html\nI ll add that you can try using svd to examine the condition number\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4087071",
+                  "updatedAt": "2022-11-08T14:03:06Z",
+                  "publishedAt": "2022-11-08T14:03:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Yes, two-way coupling. I used the method I mentioned to solve the equation which contain other block's variable value (like we've discussed before:#22425 (reply in thread) ). And I used AD in all kernels. So I don't think I need to do anything to the Jacobian.\nAs for the condition number, the situation is like:\nSVD: condition number 5.589344305504e+11, 0 of 148 singular values are (nearly) zero\n      SVD: smallest singular values: 9.035132051683e-06 1.777040744215e-05 2.356642901462e-05 3.278996559336e-05 3.849557833974e-05\n      SVD: largest singular values : 4.648359214010e+06 4.850303332068e+06 4.911589108063e+06 5.043440409533e+06 5.050046388255e+06\n\nIt's large but can converge.\nI have browsed the page you sent before. And just now I noticed that when I add the number of axial nodes, the residual acts like linear did not converge. Maybe I should see the Scaling and seek inspiration. By the way, do you think the approach I used is correct mathematically?",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4087399",
+                          "updatedAt": "2022-11-08T14:37:10Z",
+                          "publishedAt": "2022-11-08T14:37:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You used AD but the transfer scheme you used did not preserve the derivatives\nFirst you need to use the ADCoupledValueFunctionMaterial not the CoupledValueFunctionMaterial\nbut then there is not version of the Sampler that exports derivatives.\nYou ll have to fill the Jacobian manually.\nYou can look at the quality of your current Jacobian with this page\nhttps://mooseframework.inl.gov/help/development/analyze_jacobian.html",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4087458",
+                          "updatedAt": "2022-11-08T14:43:42Z",
+                          "publishedAt": "2022-11-08T14:43:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "So that's it. Thank you! I will check my Jacobian first.",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4092264",
+                          "updatedAt": "2022-11-09T01:33:56Z",
+                          "publishedAt": "2022-11-09T01:33:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "btw if your Jacobian isnt very good, then we recommend using PJFNK over Newton for the solver method.\nThat could be an alternative",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4099818",
+                          "updatedAt": "2022-11-09T18:06:10Z",
+                          "publishedAt": "2022-11-09T18:06:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Kernel for variable 'p':\n  (0,1) Off-diagonal Jacobian for variable 'u' is slightly off (by 0.022705 %)\n\nKernel for variable 'T':\n  (2,2) On-diagonal Jacobian is slightly off (by 0.421074 %)\n\nKernel for variable 'w':\n  (3,0) Off-diagonal Jacobian for variable 'p' is wrong (off by 29.3 %)\n  (3,2) Off-diagonal Jacobian for variable 'T' is wrong (off by 29.3 %)\n\nThe Jacobian has problem indeed. So the Jacobian Debugger won't tell me how to modify? I need to fix it by myself, right?",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4104746",
+                          "updatedAt": "2022-11-10T07:20:08Z",
+                          "publishedAt": "2022-11-10T07:20:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "And how should I fix the Jacobian when I use AD?",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4104803",
+                          "updatedAt": "2022-11-10T07:28:37Z",
+                          "publishedAt": "2022-11-10T07:28:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We should take a step back and consider what are the options here.\nAre you 100% sure you want to do Newton here?\nA fixed point (or quasi-Newton, available as well) scheme with multiapps or PJFNK with your current setup could be good enough?\nIf you want to do Newton, there will only be two options:\n\nYou can modify derivatives of AD numbers manually when computing the residual.\nYou write a user object that performs the transfer, including the derivatives, and either makes it directly available in the kernel or is used by a material property (auxiliary variables dont support AD)",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4107413",
+                          "updatedAt": "2022-11-10T13:17:29Z",
+                          "publishedAt": "2022-11-10T13:17:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Wait I think I might have some misunderstanding about the numerical algorithm in MOOSE(as far as I know, Newton and PJFNK). I always use the PJFNK in my input file and I discuss the Jacobian with you is because I always think that PJFNK need the Jacobian. So if I use AD in kernel and PJFNK in excutioner at the same time, how does MOOSE calculate?\nThe Jacobian debugger can only verify the correctness of the Newton?\nAnd as far as I have already found the mistake in my Jacobian, if I use PJFNK, can I avoid this mistake? Or I still need to do something to fix the mistake? Maybe I should not use AD and write the Jacobian all by myself.",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4108434",
+                          "updatedAt": "2022-11-10T15:05:30Z",
+                          "publishedAt": "2022-11-10T15:05:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "With AD and PJFNK, AD is only used to help with building the preconditioner, which sometimes involves building the Jacobian\nAD is mostly helpful for Newton's method for building good Jacobians at every step.",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4109251",
+                          "updatedAt": "2022-11-10T16:26:08Z",
+                          "publishedAt": "2022-11-10T16:26:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "OK I got it. I've read the Preconditioning page again and I don't understand the relationship between (RT)T and (k(s,T)\u25bd\u03d5j,\u25bd\u03c8j). The preconditioning matrix is built by MOOSE and I can't make sure that the preconditioning matrix is correct. So if I use Newton, I need to modify the Jacobian manually. If I use PJFNK, I still need to know whether the preconditioning matrix is correct or not. And if the matrix is not correct, how can I modify the preconditioning matrix?",
+                          "url": "https://github.com/idaholab/moose/discussions/22615#discussioncomment-4113573",
+                          "updatedAt": "2022-11-11T03:41:32Z",
+                          "publishedAt": "2022-11-11T03:41:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Nearest boundary node from every other node in a mesh",
+          "author": {
+            "login": "Eilloo"
+          },
+          "bodyText": "Hello all,\nI've been trying to make use of the 'NearestNodeDistanceAux' and 'NearestNodeValuesAux' auxkernels, but have only managed to find the nearest nodes on one boundary from another.\nAs the question title suggests, I'd like to extract information about the nearest node on a certain boundary to every node in the mesh, not just those which are on another specific boundary.\nI believe the documentation suggests this is possible; however, if I only specify the 'paired boundary' (required parameter), but do not specify any 'boundary' parameter (optional parameters), the error reads:\n'\"Please use getBoundaryIDs() when passing \"ANY_BOUNDARY_ID\"'\nI thought that specifying the 'block_id' instead of a boundary might be the intended usage, but this also yields the error above.\nDoes anyone have experience with this auxkernel who can advise how to use it to get the nearest boundary node from every point, or if this can be achieved at all?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/22855",
+          "updatedAt": "2022-12-05T09:13:45Z",
+          "publishedAt": "2022-12-02T16:39:41Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "maxnezdyur"
+                  },
+                  "bodyText": "I have no experience with the auxkernel, so there may be a better MOOSE way to get the functionality you want. If your geometry is simple, you may be able to use BoundingBoxNodeSetGenerator in the mesh block to create a boundary that holds all the nodes that you care about within it and supply that as the boundary parameter.",
+                  "url": "https://github.com/idaholab/moose/discussions/22855#discussioncomment-4294560",
+                  "updatedAt": "2022-12-02T17:30:04Z",
+                  "publishedAt": "2022-12-02T17:30:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "This object was developed to look at contact between blocks. And logically, the nearest node to a boundary on a part of the mesh is on the boundary of that other part of the mesh, it cannot be inside the volume.\nCan you create a boundary around the domain you are trying to find the nearest node from? Logically you only really need to look at points on a boundary.\nIf not, would you consider uploading a sketch or a figure of the domains you are trying to search for the nearest node?",
+                  "url": "https://github.com/idaholab/moose/discussions/22855#discussioncomment-4296281",
+                  "updatedAt": "2022-12-02T22:50:14Z",
+                  "publishedAt": "2022-12-02T22:50:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Eilloo"
+                  },
+                  "bodyText": "Thanks for the suggestions and insight - @maxnezdyur, this worked a treat.\n@GiudGiud, that makes sense why the object operates the way it does. In my case, the ability to easily get the distance from any node to a wall boundary is useful for looking at y plus and wall functions (related to my question on the Smagorinsky kernel which you helped answer a couple of weeks ago!).\nI should think that even for complex geometry, using BoundingBoxNodeSetGenerator around the whole domain should enable me to use the 'NearestNode' auxkernels in the way I was hoping.\nThanks again!",
+                  "url": "https://github.com/idaholab/moose/discussions/22855#discussioncomment-4311288",
+                  "updatedAt": "2022-12-05T09:13:40Z",
+                  "publishedAt": "2022-12-05T09:13:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using VectorPostprocessor values as boundary conditions",
+          "author": {
+            "login": "salaudeen-ya"
+          },
+          "bodyText": "Hello,\nI want to use the values on a boundary on one 2D subdomain as the boundary condition of another 2D subdomain.\nI am trying to use the values from a vector postprocessor (SideValueSampler) as the boundary condition for the other domain.\nMy field variable is not a vector.\nHow do I go about this?\nThank you.",
+          "url": "https://github.com/idaholab/moose/discussions/22845",
+          "updatedAt": "2022-12-06T15:31:24Z",
+          "publishedAt": "2022-12-01T15:48:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre the 2D subdomain physically connected in the mesh?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22845#discussioncomment-4285121",
+                  "updatedAt": "2022-12-01T16:38:54Z",
+                  "publishedAt": "2022-12-01T16:38:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "salaudeen-ya"
+                  },
+                  "bodyText": "I am assuming they are not physically connected but they have the same mesh\nsizes and dimension.\n\nMy main aim is to decompose a 2D domain into subdomains and still obtain\nthe same result as if they are a single domain.\n\u2026\nOn Thu, Dec 1, 2022, 11:39 AM Guillaume Giudicelli ***@***.***> wrote:\n Hello\n\n Are the 2D subdomain physically connected in the mesh?\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22845 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AJCC7Q6ISRWGSQMG43B3LRTWLDICTANCNFSM6AAAAAASQ545LY>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22845#discussioncomment-4285475",
+                  "updatedAt": "2022-12-01T17:24:30Z",
+                  "publishedAt": "2022-12-01T17:24:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so we do not have a VPPDirichletBC you could use.\nAnd if you went through CSV output you would necessarily lag a bit. The minimum lag would be 1 linear iteration, if you run the CSV output on linear (expensive to write all the time). It's doable though if you want to try:\n\noutput using a SideValueSampler\nread using a PropertyReadFile\nsample using a PiecewiseConstantFromCSV on a nearest-node basis OR if the ids match nice on a per-element basis\nuse a function dirichlet BC\n\nWhat I would advocate instead is a multiapp approach. Then you can use a nearest node transfer to match two boundaries that are close but disjoint. This will let you synchornize those values every time step using fixed point iterations.",
+                          "url": "https://github.com/idaholab/moose/discussions/22845#discussioncomment-4287810",
+                          "updatedAt": "2022-12-01T23:29:22Z",
+                          "publishedAt": "2022-12-01T23:29:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "salaudeen-ya"
+                  },
+                  "bodyText": "Awesome. Thanks for the tip!\n\nSo, I was actually using Multi-App. Currently I need to use the values\ntransferred using nearest node from the other subdomain as the BC for the\nsecond domain.\n\nI can see the transfer. But since the values from the nearest node is saved\nin an aux variable, it's proving difficult to use this aux value as BC. Any\nidea on how to do that?\n\nThanks.\n\u2026\nOn Thu, Dec 1, 2022, 6:29 PM Guillaume Giudicelli ***@***.***> wrote:\n so we do not have a VPPDirichletBC you could use.\n And if you went through CSV output you would necessarily lag a bit. The\n minimum lag would be 1 linear iteration, if you run the CSV output on\n linear (expensive to write all the time). It's doable though if you want to\n try:\n\n    - output using a SideValueSampler\n    - read using a PropertyReadFile\n    - sample using a PiecewiseConstantFromCSV on a nearest-node basis OR\n    if the ids match nice on a per-element basis\n    - use a function dirichlet BC\n\n What I would advocate instead is a multiapp approach. Then you can use a\n nearest node transfer to match two boundaries that are close but disjoint.\n This will let you synchornize those values every time step using fixed\n point iterations.\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#22845 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AJCC7QYOOW2QQFTSMFYXKL3WLEYFZANCNFSM6AAAAAASQ545LY>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/22845#discussioncomment-4306432",
+                  "updatedAt": "2022-12-04T15:35:00Z",
+                  "publishedAt": "2022-12-04T15:34:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "To use the dirichlet BC from a variable I think you want to look at the matchedValueBC\n\u2026\n Le 4 d\u00e9c. 2022 \u00e0 10:35, Yusuf A. Salaudeen ***@***.***> a \u00e9crit :\n\n \ufeff\n Awesome. Thanks for the tip!\n\n So, I was actually using Multi-App. Currently I need to use the values\n transferred using nearest node from the other subdomain as the BC for the\n second domain.\n\n I can see the transfer. But since the values from the nearest node is saved\n in an aux variable, it's proving difficult to use this aux value as BC. Any\n idea on how to do that?\n\n Thanks.\n\n On Thu, Dec 1, 2022, 6:29 PM Guillaume Giudicelli ***@***.***>\n wrote:\n\n > so we do not have a VPPDirichletBC you could use.\n > And if you went through CSV output you would necessarily lag a bit. The\n > minimum lag would be 1 linear iteration, if you run the CSV output on\n > linear (expensive to write all the time). It's doable though if you want to\n > try:\n >\n > - output using a SideValueSampler\n > - read using a PropertyReadFile\n > - sample using a PiecewiseConstantFromCSV on a nearest-node basis OR\n > if the ids match nice on a per-element basis\n > - use a function dirichlet BC\n >\n > What I would advocate instead is a multiapp approach. Then you can use a\n > nearest node transfer to match two boundaries that are close but disjoint.\n > This will let you synchornize those values every time step using fixed\n > point iterations.\n >\n > \u2014\n > Reply to this email directly, view it on GitHub\n > <#22845 (reply in thread)>,\n > or unsubscribe\n > <https://github.com/notifications/unsubscribe-auth/AJCC7QYOOW2QQFTSMFYXKL3WLEYFZANCNFSM6AAAAAASQ545LY>\n > .\n > You are receiving this because you authored the thread.Message ID:\n > ***@***.***>\n >\n \u2014\n Reply to this email directly, view it on GitHub, or unsubscribe.\n You are receiving this because you commented.",
+                  "url": "https://github.com/idaholab/moose/discussions/22845#discussioncomment-4306845",
+                  "updatedAt": "2022-12-04T17:12:36Z",
+                  "publishedAt": "2022-12-04T17:12:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about a syntax in THM",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "I'm learning the HeatTransferFromHeatStructure1Phase.C and there's a syntax I don't know the meaning:\nparams.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\nWhy there is a {}?\nThere are some codes like:\nparams.set<std::vector<BoundaryName>>(\"boundary\") = {getSlaveSideName()};\nparams.set<std::vector<BoundaryName>>(\"boundary\") = {getMasterSideName()};\nCan anybody tell me the effect of the {}?",
+          "url": "https://github.com/idaholab/moose/discussions/22865",
+          "updatedAt": "2022-12-04T14:58:15Z",
+          "publishedAt": "2022-12-04T09:36:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n{} creates a C++ standard vector with the items inside the bracket contained in the vector. The parameter has not been added as a single instance, it needs to be a vector\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22865#discussioncomment-4303353",
+                  "updatedAt": "2022-12-04T13:47:02Z",
+                  "publishedAt": "2022-12-04T13:47:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Oh I got it. Thanks.\nI actually noticed that the parameter type before every {xxx} is vector. And there is another point that confused me:\nWhat is the type BoundaryName? Can a vector be BoundaryName?\nThe 185 line shows:\nparams.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};",
+                          "url": "https://github.com/idaholab/moose/discussions/22865#discussioncomment-4303555",
+                          "updatedAt": "2022-12-04T14:20:01Z",
+                          "publishedAt": "2022-12-04T14:20:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "BoundaryName is an alias for a string\nYou can have a vector of boundary names\n{\"boundary_1\", \"boundary_2\"} for example",
+                          "url": "https://github.com/idaholab/moose/discussions/22865#discussioncomment-4303564",
+                          "updatedAt": "2022-12-04T14:22:28Z",
+                          "publishedAt": "2022-12-04T14:22:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "I understand. Thank you :D",
+                          "url": "https://github.com/idaholab/moose/discussions/22865#discussioncomment-4303786",
+                          "updatedAt": "2022-12-04T14:58:15Z",
+                          "publishedAt": "2022-12-04T14:58:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "why is my derived/child material class requesting parameters from the parent class?",
+          "author": {
+            "login": "batodon"
+          },
+          "bodyText": "Hello,\nI made two material classes; one is derived from the other (base class). I override the methods from the base class and I used different parameters in the derived class. However, when I ran an input file using the derived material class as an object in the input file, I received an error asking me to set a parameter from the parent class. The error is shown below. Could you help, pls? Thanks.\n*** ERROR ***\nThe parameter \"a\" is being retrieved before being set.",
+          "url": "https://github.com/idaholab/moose/discussions/22864",
+          "updatedAt": "2022-12-04T02:13:39Z",
+          "publishedAt": "2022-12-04T00:42:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Your derived class must call the constructor of the parent class, which will likely access parent class input parameters. Look again at the example we have for derived classes (pretty much all of the classes in framework and modules), and not how the validParams of the parent class are always added to the validParams of the child class.",
+                  "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301583",
+                  "updatedAt": "2022-12-04T00:48:38Z",
+                  "publishedAt": "2022-12-04T00:48:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Hello @dschwen ,\nI looked through some examples of the derived classes, and I believe my derived class calls the parent constructor. I\u2019m still getting that error. Here is a snippet example of my derived class. PEMF is the derived, and EMFBase is the base. Thanks.\nInputParameters\nPEMF::validParams()\n{\n  InputParameters params = EMFBase::validParams();\n  params.addClassDescription(\n    \" This is the derived class \");    \n    params.addRequiredParam<std::vector<double>>(\"alpha\", \"distance value in all 3 directions\");\n    params.addRequiredParam<std::vector<double>>(\"eps0\", \"threshold values\");\n  return params;\n}\n\nPEMF::PEMF(\n    const InputParameters & parameters)\n  : EMFBase(parameters),\n    _alpha(getParam<std::vector<double>>(\"alpha\")),\n    _eps(getParam<std::vector<double>>(\"eps0\"))\n{}",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301657",
+                          "updatedAt": "2022-12-04T01:39:47Z",
+                          "publishedAt": "2022-12-04T01:14:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what does EMFBase look like?\nthis looks fine so far",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301680",
+                          "updatedAt": "2022-12-04T01:26:48Z",
+                          "publishedAt": "2022-12-04T01:26:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nHere is EMFBase:\nInputParameters\nEMFBase::validParams()\n{\n  InputParameters params = PermBase::validParams();\n  params.addClassDescription(\n    \" This is the base\");\n    params.addRangeCheckedParam<Real>(\"a\",\n                                      \"a > 0\",\n                                      \" distance value\");\n    params.addParam<Real>(\"e0\", \"threshold value\");\n  return params;\n}\n\nEMFBase::EMFBase(\n    const InputParameters & parameters)\n  : PermBase(parameters),\n    _a(getParam<Real>(\"a\")),\n    _e0(getParam<Real>(\"e0\"))\n{}",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301704",
+                          "updatedAt": "2022-12-04T01:39:54Z",
+                          "publishedAt": "2022-12-04T01:34:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "and did you pass a in the input file?\na does not have a default here",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301719",
+                          "updatedAt": "2022-12-04T01:40:48Z",
+                          "publishedAt": "2022-12-04T01:40:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Nope, I did not pass a in the input file because I\u2019m using new parameters and methods attributed to the derived class (PEMF). I\u2019m not sure if I have to. Do i?",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301727",
+                          "updatedAt": "2022-12-04T01:43:44Z",
+                          "publishedAt": "2022-12-04T01:43:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes you have to.\nThe a parameter is being retrieved in the constructor for the EMFBase. The constructor for the EMFBase is called by the constructor for the derived class. The EMFBase is not written the way we intended, with this getParam that is unavoidable, the a parameter should have been required. Same for e0",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301746",
+                          "updatedAt": "2022-12-04T01:53:49Z",
+                          "publishedAt": "2022-12-04T01:50:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Great! it worked after setting a default for a and e0. Thanks @GiudGiud @dschwen",
+                          "url": "https://github.com/idaholab/moose/discussions/22864#discussioncomment-4301755",
+                          "updatedAt": "2022-12-04T01:54:34Z",
+                          "publishedAt": "2022-12-04T01:54:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Serial run working but mpirun not working",
+          "author": {
+            "login": "MusannaGalib"
+          },
+          "bodyText": "Hello,\nI submitted the same job as mpirun (which is working fine in serial) but aborting due to a convergence issue.  I attached the log files here.\nlog_parallel_run.txt\nlog_serial_run.txt\nThe preconditioning and executioner block for the run is as below-\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n      petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      121                  preonly       lu           4'\n  [../]\n[]\n\n\n\n[Executioner]\n  type = Transient\n  scheme = bdf2\n  verbose = True\n  solve_type ='Newton'\n  l_max_its = 50\n  l_tol = 1e-5\n  nl_max_its = 50\n  nl_rel_tol = 1e-6\n  nl_abs_tol = 1e-10\n    petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n  dt=0.04\n  end_time = 800\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  execute_on = 'TIMESTEP_END'\n  [./other]        # creates input_other.e\n     type = Exodus\n     interval = 60\n  [../]\n  [./checkpt]\n  type = Checkpoint\n  num_files = 2\n  interval = 500\n  [../]\n[]\n\n\n[Debug]\n  show_var_residual_norms = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/22669",
+          "updatedAt": "2022-12-13T00:13:51Z",
+          "publishedAt": "2022-11-11T17:02:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nyou typically will want to work on the preconditioning on this kind of discrepancy between serial and parallel.\nCan you please try to increase the asm overlap?\ni think the problem is likely the convergence criteria. I would add automatic_scaling = true  and tighten linear and non linear convergence criteria\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4150120",
+                  "updatedAt": "2022-11-15T19:57:18Z",
+                  "publishedAt": "2022-11-15T19:57:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Hello Guillaume,\nThanks for your reply. parallel runs are working after adding  line_search = 'none' and adding scaling to variables. However, parallel runs with 4 processors are shower than serial runs with 1 processor in my case! I added automatic_scaling = true in a new run but it seems like it is also slower than the serial one! Can you please guide me in this case? @GiudGiud\nI am adding the log files here-\nlog_parallel.txt\nlog_serial.txt\nThe preconditioning and executioner block for the run is as below-\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n      petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      121                  preonly       lu           4'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  scheme = bdf2\n  verbose = True\n  solve_type ='Newton'\n  l_max_its = 50\n  l_tol = 1e-5\n  nl_max_its = 50\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-6\n    petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n  dt=0.02\n  end_time = 400\n  line_search = 'none'\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  execute_on = 'TIMESTEP_END'\n  [./other]        # creates input_other.e\n     type = Exodus\n     interval = 60\n  [../]\n  [./checkpt]\n  type = Checkpoint\n  num_files = 2\n  interval = 100\n  [../]\n[]\n\n\n[Debug]\n  show_var_residual_norms = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4180272",
+                          "updatedAt": "2022-11-19T19:42:15Z",
+                          "publishedAt": "2022-11-18T20:04:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nCan you keep track of the number of linear iterations in the serial and parallel cases? with this postprocessor\nhttps://mooseframework.inl.gov/moose/source/postprocessors/NumLinearIterations.html\nI'm thinking the preconditioning is still the issue here.\nGiven that you have 5 variables, you could set up a field split preconditioner\nhttps://mooseframework.inl.gov/source/preconditioners/FieldSplitPreconditioner.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4191895",
+                          "updatedAt": "2022-11-21T04:20:13Z",
+                          "publishedAt": "2022-11-21T04:20:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "MusannaGalib"
+                  },
+                  "bodyText": "Hello,\nI added FSP but facing the following error at time step 2 -\nlog.txt\n[se007:128455] 3 more processes have sent help message help-mpi-common-cuda.txt / dlopen failed\n[se007:128455] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\n[0]PETSC ERROR: --------------------- Error Message --------------------------------------------------------------\n[0]PETSC ERROR: Petsc has generated inconsistent data\n[0]PETSC ERROR: Unhandled case, must have at least two fields, not 0\n[0]PETSC ERROR: See https://www.mcs.anl.gov/petsc/documentation/faq.html for trouble shooting.\n[0]PETSC ERROR: Petsc Release Version 3.12.1, unknown \n[0]PETSC ERROR: /home/galibubc/scratch/musanna/MOOSE/project/dendrite__zn/dendrite__zn-opt on a arch-moose named se007 by galibubc Wed Nov 23 23:19:53 2022\n[0]PETSC ERROR: Configure options --download-hypre=1 --with-debugging=no --with-shared-libraries=1 --download-fblaslapack=1 --download-metis=1 --download-ptscotch=1 --download-parmetis=1 --download-superlu_dist=1 --download-mumps=1 --download-scalapack=1 --download-slepc=git://https://gitlab.com/slepc/slepc.git --download-slepc-commit= 59ff81b --with-mpi=1 --with-cxx-dialect=C++11 --with-fortran-bindings=0 --with-sowing=0\n[0]PETSC ERROR: #1 PCFieldSplitSetDefaults() line 564 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/ksp/pc/impls/fieldsplit/fieldsplit.c\n[0]PETSC ERROR: #2 PCSetUp_FieldSplit() line 607 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/ksp/pc/impls/fieldsplit/fieldsplit.c\n[0]PETSC ERROR: #3 PCSetUp() line 894 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/ksp/pc/interface/precon.c\n[0]PETSC ERROR: #4 KSPSetUp() line 377 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/ksp/ksp/interface/itfunc.c\n[0]PETSC ERROR: #5 KSPSolve() line 707 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/ksp/ksp/interface/itfunc.c\n[0]PETSC ERROR: #6 SNESSolve_NEWTONLS() line 225 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/snes/impls/ls/ls.c\n[0]PETSC ERROR: #7 SNESSolve() line 4461 in /scratch/st-mponga1-1/musanna/MOOSE/project/moose/petsc/src/snes/interface/snes.c\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\n\n\nInput file -\n[GlobalParams]\n  enable_jit = false           # We are having some trouble with JIT, just forget about it\n  displacements = 'disp_x disp_y'\n[]\n[Postprocessors]\n  [./ETA]\n    type = ElementIntegralMaterialProperty\n   mat_prop = etao\n    execute_on = 'initial timestep_end'\n  [../]\n  [./num_lin_it]\n    type = NumLinearIterations\n  [../]\n  [./num_nonlin_it]\n    type = NumNonlinearIterations\n  [../]\n[]\n\n\n[Preconditioning]\n  active = 'FSP'\n\n  [./FSP]\n    type = FSP\n    topsplit = 'wetapotdisp_xdispy' # 'uv' should match the following block name\n    [./wetapotdisp_xdispy]\n      splitting = 'w eta pot disp_x disp_y'\n      splitting_type  = additive\n    [../]\n    [./w]\n      vars = 'w'\n          petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n\n    [../]\n    [./eta]\n      vars = 'eta'\n          petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n\n    [../]\n    [./pot]\n      vars = 'pot'\n          petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n\n    [../]\n    [./disp_x]\n      vars = 'disp_x'\n          petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n\n    [../]\n    [./disp_y]\n      vars = 'disp_y'\n         petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n\n    [../]\n  [../]\n\n\n  [./SMP]\n    type = SMP\n    full = true\n      petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      121                  preonly       lu           4'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  scheme = bdf2\n  verbose = True\n  solve_type ='Newton'\n  l_max_its = 50\n  l_tol = 1e-5\n  nl_max_its = 50\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-6\n    petsc_options_iname = '-pc_type -ksp_gmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly      lu          4'\n  dt=0.02\n  end_time = 400\n  line_search = 'none'\n  automatic_scaling = true\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  execute_on = 'TIMESTEP_END'\n  [./other]        # creates input_other.e\n     type = Exodus\n     interval = 60\n  [../]\n  [./checkpt]\n  type = Checkpoint\n  num_files = 2\n  interval = 100\n  [../]\n[]\n\n\n[Debug]\n  show_var_residual_norms = true\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4234890",
+                  "updatedAt": "2022-11-25T07:40:06Z",
+                  "publishedAt": "2022-11-25T07:40:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It's odd that it only happens on time step 2.\nThis looks like a bug. We'll need to have the full input file to re-create this.\nOne thing that worries me is that you are using PETSc 3.12 and we are using 3.16.\nA few things you can try:\n\nupdate petsc\nuse different types of field splits (multiplicative, or make 2 groups of variables and use schur)\ngroup variables differently (2 groups is most common)",
+                          "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4240316",
+                          "updatedAt": "2022-11-25T23:19:18Z",
+                          "publishedAt": "2022-11-25T23:19:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Hello,\nI am adding the input file here. However, I used this moose version - git checkout remotes/origin/2020-01-24-release to build the app (https://github.com/BattModels/zn_hybrid_electrolyte). Can you please try to rerun it if possible?\nI know I have to update the validparams in .C and .h files to update the app (https://mooseframework.inl.gov/newsletter/2020_04.html#). But couldn't figure out which files the author modified. There are hundreds of files so I couldn't update it and hence used the 2020-01-24 version of moose.\ninput.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4240993",
+                          "updatedAt": "2022-11-26T03:20:17Z",
+                          "publishedAt": "2022-11-26T03:20:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MusannaGalib"
+                          },
+                          "bodyText": "Hello,\nThe problem is solved. It was related to the number of processors. Though I was asking for 4 processors it was working on one! That's why petsc was showing inconsistent results.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/22669#discussioncomment-4297393",
+                          "updatedAt": "2022-12-03T04:25:43Z",
+                          "publishedAt": "2022-12-03T04:25:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

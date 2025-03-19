@@ -1,0 +1,566 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0wOS0xN1QxMzo0Nzo1My0wNjowMM4ANlFX"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "the material property import from .CSV file is not match [.C file problem]",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi all,\nI want to introduce a new material property (Damage) base on the element ID\nI use ElementPropertyReadFile to read data from csv file,\n  [./damage_read]\n    type = ElementPropertyReadFile\n    prop_file_name = 'damage.csv'\n    nprop = 1\n    read_type = element\n  [../]\n\nbut they don't match, I'm pretty sure my .C file isn't correct. could you please help me check what did I do wrong?\nThis is my .C file, I didn't know where to start, so I modified GenericConstantArray.C\nInputParameters\nGenericConstantArrayTC::validParams()\n{\n\n  InputParameters params = Material::validParams();\n  params.addRequiredParam<std::string>(\"prop_name\",\n                                       \"The name of the property this material will have\");\n  // params.addParam<RealEigenVector>(\"prop_value\",\n  //                                          \"The values associated with the named property\");\n  // params.declareControllable(\"prop_value\");\n  params.addClassDescription(\n      \"A material evaluating one material property in type of RealEigenVector\");\n  params.set<MooseEnum>(\"constant_on\") = \"SUBDOMAIN\";\n  params.addParam<UserObjectName>(\"read_prop_user_object\",\n                                      \"The ElementReadPropertyFile \"\n                                      \"GeneralUserObject to read element \"\n                                      \"specific property values from file\");\n  return params;\n}\nGenericConstantArrayTC::GenericConstantArrayTC(const InputParameters & parameters)\n  : Material(parameters),\n    _prop_name(getParam<std::string>(\"prop_name\")),\n    // _prop_value(getParam<RealEigenVector>(\"prop_value\")),\n    _property(declareProperty<Real>(_prop_name)),\n    _mat_prop(declareProperty<Real>(\"prop_value\")),\n    _read_prop_user_object(isParamValid(\"read_prop_user_object\")\n                               ? &getUserObject<ElementPropertyReadFile>(\"read_prop_user_object\")\n                               : nullptr)\n{\n}\n\nvoid\nGenericConstantArrayTC::initQpStatefulProperties()\n{\n  computeQpProperties();\n}\n\nvoid\nGenericConstantArrayTC::computeQpProperties()\n{\n   _mat_prop[_qp] = _read_prop_user_object->getData(_current_elem, 0);\n  _property[_qp] = _mat_prop[_qp];\n}\n\n** I think the problem is from the last 2 line **\nBasically the data read from csv file is store at _read_prop_user_object then > _mat_prop then > property\nValidation: I tested by let damage = elementID\n\nHowever, the result isn't that I wanted, the elementID should be equal to the damage\n\nThank you very much!\nKind regards,\nTrai",
+          "url": "https://github.com/idaholab/moose/discussions/18880",
+          "updatedAt": "2022-06-15T03:01:57Z",
+          "publishedAt": "2021-09-21T10:35:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere's a few issues with that code.\n-If you forget the read_user_object parameter, then you ll be trying to access a nullptr and that will segfault.\n-Why do you have both mat_prop and property ? You only need one.\n\nparams.set(\"constant_on\") = \"SUBDOMAIN\";\nThis is going to mess with the evaluation, as it ll tell the code to evaluate it once per subdomain and not once per element / quadrature point.\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18880#discussioncomment-1364328",
+                  "updatedAt": "2022-06-15T03:01:59Z",
+                  "publishedAt": "2021-09-21T20:53:46Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nAs you know my C++ isnt good, so i only follow the example and put things together.\n\n-If you forget the read_user_object parameter, then you ll be trying to access a nullptr and that will segfault.\n\nshould I just remove ': nullptr' from\n _read_prop_user_object(isParamValid(\"read_prop_user_object\")\n                               ? &getUserObject<ElementPropertyReadFile>(\"read_prop_user_object\")\n                               : nullptr)\n\n\n\n-Why do you have both mat_prop and property\n\nso at the last section, should I just remove this line  _property[_qp] = _mat_prop[_qp]; ?\n\nparams.set(\"constant_on\") = \"SUBDOMAIN\";\n\nnot sure what to do with this, do I just change subdomain to element?\nThank you for helping me again @GiudGiud :)\nKind regards,\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/18880#discussioncomment-1364850",
+                          "updatedAt": "2022-06-15T03:01:59Z",
+                          "publishedAt": "2021-09-21T23:48:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "that works\nRemove _property and the declareProperty and remove it from the header\njust delete that line params.set(\"constant_on\") = \"SUBDOMAIN\";",
+                          "url": "https://github.com/idaholab/moose/discussions/18880#discussioncomment-1364857",
+                          "updatedAt": "2022-06-15T03:01:59Z",
+                          "publishedAt": "2021-09-21T23:50:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "all good now, thanks @GiudGiud !",
+                  "url": "https://github.com/idaholab/moose/discussions/18880#discussioncomment-1364952",
+                  "updatedAt": "2022-06-15T03:02:00Z",
+                  "publishedAt": "2021-09-22T00:26:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Installation error on Expanse cluster at SDSC",
+          "author": {
+            "login": "tengzhang48"
+          },
+          "bodyText": "Hello,\nI followed the online instruction to install Moose on Expanse cluster at SDSC. When compiling libmesh, I got the following error\n\"  CXX      apps/version.o\nCXX      utilities/src/metaphysicl_version.lo\nCXXLD    libmetaphysicl.la\n/usr/bin/ld: cannot find -lnuma\ncollect2: error: ld returned 1 exit status\nmake[4]: *** [Makefile:710: libmetaphysicl.la] Error \"\nThis is related to the function of \"metaphysical\", which is very interesting to me.\nDid I miss some modules to load on the cluster? So far, I have just followed the online instruction. I would like to hear suggestions from the Moose community and then ask for more specific help from the Expanse support if needed.\nThanks.\nBest,\nTeng",
+          "url": "https://github.com/idaholab/moose/discussions/18864",
+          "updatedAt": "2023-04-10T13:56:53Z",
+          "publishedAt": "2021-09-20T03:39:24Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "roystgnr"
+                  },
+                  "bodyText": "libMesh and MetaPhysicL have nothing directly to do with libnuma, and to the best of my knowledge neither does Moose ... but we do see these sorts of errors all the time, when an MPI or a PETSc installation is for some reason tied to libraries that don't exist, then the MPI compiler wrapper tries to link them (or we parse PETSc configure output and find linker arguments that try to link them) and the link command fails.\nWe usually see those errors at configure time, though, either the first time the configure script tries to build an executable with mpicxx or the first time it tries to build a PETSc-linked test executable.  I'm not sure how you could have made it through both libMesh and MetaPhysicL configure scripts without failure only to see a failure here.  You might need to post your config logs before we can say what's going on.",
+                  "url": "https://github.com/idaholab/moose/discussions/18864#discussioncomment-1359099",
+                  "updatedAt": "2023-04-10T13:56:59Z",
+                  "publishedAt": "2021-09-20T19:29:32Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tengzhang48"
+                          },
+                          "bodyText": "Thanks for your information. The Expanse support team helped me figure the problem. After explicitly exporting the path of \"numactl\", I can compile the software.\nBest,\nTeng",
+                          "url": "https://github.com/idaholab/moose/discussions/18864#discussioncomment-1363754",
+                          "updatedAt": "2023-04-10T13:56:59Z",
+                          "publishedAt": "2021-09-21T18:22:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "20k Local DOFs - does this include Auxiliary system?",
+          "author": {
+            "login": "ln53"
+          },
+          "bodyText": "Hi,\nIn the documentation here, the recommended target for DOFs-per-process is 20,000. Is this for just the Nonlinear System or should this include the Auxiliary System DOFs as well?\nThanks",
+          "url": "https://github.com/idaholab/moose/discussions/18879",
+          "updatedAt": "2023-03-27T07:54:15Z",
+          "publishedAt": "2021-09-21T09:35:57Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "roystgnr"
+                  },
+                  "bodyText": "Just for the nonlinear system.\nIt's also a \"loose enough\" number that I wouldn't worry about missing it by a factor of 2 (as you would if you included the auxiliary system in an average problem).  It's just a rule of thumb, and one that varies from system to system (relatively faster interconnects mean you can scale better to higher processor counts with fewer DoFs-per-process; relatively faster CPU cores mean you want to give each more work rather than having it wait on network latency).  Nothing's likely to break if you use too many or too few DoFs per core, you just might be missing out on or being inefficient with parallel speedup, respectively.",
+                  "url": "https://github.com/idaholab/moose/discussions/18879#discussioncomment-1362144",
+                  "updatedAt": "2023-03-27T07:54:15Z",
+                  "publishedAt": "2021-09-21T12:47:08Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ln53"
+                          },
+                          "bodyText": "Thanks for the answer and additional insight!",
+                          "url": "https://github.com/idaholab/moose/discussions/18879#discussioncomment-1362152",
+                          "updatedAt": "2023-03-27T07:54:27Z",
+                          "publishedAt": "2021-09-21T12:49:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A 'ReporterPointSource' is not a registered object",
+          "author": {
+            "login": "aaelmeli"
+          },
+          "bodyText": "Hi, I am trying to apply point source by using Dirac kernel that read the point sources from csv file. I am using the ReporterPointSource object to do that but I am getting an error. This error is as follows:\n\n*** ERROR ***\nA 'ReporterPointSource' is not a registered object.\n\n\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\n\n\nStack frames: 21\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits, std::allocator >, std::__cxx11::basic_string<char, std::char_traits, std::allocator >)\n2: void mooseError<std::__cxx11::basic_string<char, std::char_traits, std::allocator > >(std::__cxx11::basic_string<char, std::char_traits, std::allocator >&&)\n3: Factory::reportUnregisteredError(std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&) const\n4: Factory::getValidParams(std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&)\n5: MooseObjectAction::MooseObjectAction(InputParameters)\n6: AddDiracKernelAction::AddDiracKernelAction(InputParameters)\n7: /home/aaelmeli/projects/moose/framework/libmoose-opt.so.0(+0x7c9b98) [0x7fa6369f9b98]\n8: std::shared_ptr moose::internal::buildAct(InputParameters const&)\n9: ActionFactory::create(std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&, std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&, InputParameters&)\n10: Parser::walkRaw(std::__cxx11::basic_string<char, std::char_traits, std::allocator >, std::__cxx11::basic_string<char, std::char_traits, std::allocator >, hit::Node*)\n11: Parser::walk(std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&, std::__cxx11::basic_string<char, std::char_traits, std::allocator > const&, hit::Node*)\n12: hit::Node::walk(hit::Walker*, hit::NodeType)\n13: hit::Node::walk(hit::Walker*, hit::NodeType)\n14: hit::Node::walk(hit::Walker*, hit::NodeType)\n15: Parser::parse(std::vector<std::__cxx11::basic_string<char, std::char_traits, std::allocator >, std::allocator<std::__cxx11::basic_string<char, std::char_traits, std::allocator > > > const&)\n16: MooseApp::setupOptions()\n17: MooseApp::run()\n18: ./first_test-opt(+0x5263) [0x7fa63800d263]\n19: __libc_start_main\n20: ./first_test-opt(+0x54ed) [0x7fa63800d4ed]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\nMy minimal input file reproduce this error is as follows:\n[Mesh]\n  type = GeneratedMesh\n   dim = 2\n    xmin=0\n   xmax=1\n   ymin=0\n   ymax=1.0\n   nx = 10\n   ny=10\n[]\n\n[Variables]\n [u]\n   order = FIRST\n   family = LAGRANGE\n []\n[]\n\n\n[Kernels]\n [diff]\n   type = MatDiffusion\n   variable = u\n   diffusivity = _diff2_\n []\n[]\n\n[DiracKernels]\n\n [./diracforce]\n type = ReporterPointSource\n  variable = u\n  value_name = 'csv_reader/u'\n  x_coord_name = csv_reader/x\n  y_coord_name = csv_reader/y\n   z_coord_name = csv_reader/z\n []\n[]\n\n\n[Functions]\n   [./func]\n   type = ParsedFunction\n   value=10\n   [../]\n[]\n[Materials]\n  [./mat_parsed]\n  type = GenericFunctionMaterial\n  prop_names  = '_diff2_'\n  prop_values = 'func'\n  [../]\n[]\n\n[BCs]\n [./BC_left]\n   type = DirichletBC\n   variable = u\n   boundary = 3\n   value= 0\n []\n [./BC_right]\n   type = NeumannBC\n   variable = u\n   boundary = 1\n   value= 1000\n []\n[]\n\n[VectorPostprocessors]\n   [csv_reader]\n   type = CSVReader\n   csv_file = 'zForwardOutput/all_u_0002.csv'\n []\n[]\n[Executioner]\nexecute_on = 'initial timestep_end'\n type = Steady\n solve_type = 'LINEAR'\n[]\n\n\n[Outputs]\n [exodus]\n   file_base = 'ForwardOutput/out_'\n   type = Exodus\n   execute_on = final\n []\n [all_response]\n   file_base = 'ForwardOutput/all_'\n   type = CSV\n   execute_vector_postprocessors_on = initial\n []\n[]\n\n\n\nAny idea on how to fix this?",
+          "url": "https://github.com/idaholab/moose/discussions/18845",
+          "updatedAt": "2022-07-20T20:01:44Z",
+          "publishedAt": "2021-09-17T20:39:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI cant see what's wrong. This is a moose object so it should be always included.\nAre you using a really old version of MOOSE?\nCan you try moving this DiracKernel to another input and see if it works there? Just in case there's something going on with the formatting.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18845#discussioncomment-1358242",
+                  "updatedAt": "2022-08-16T10:28:37Z",
+                  "publishedAt": "2021-09-20T16:24:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "That object was added about a month ago. Can you make sure your MOOSE is up to date?",
+                  "url": "https://github.com/idaholab/moose/discussions/18845#discussioncomment-1358358",
+                  "updatedAt": "2022-08-16T10:28:37Z",
+                  "publishedAt": "2021-09-20T16:45:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaelmeli"
+                          },
+                          "bodyText": "It seems not up-to-date, yes. However, when I updated it to the latest version. I could not build it. I am getting the compiler errors below (in bold).\n\nUsing HIT from /home/aaelmeli/projects/moose/framework/contrib/hit\nCompiling C++ (in opt mode) /home/aaelmeli/projects/moose/framework/build/unity_src/auxkernels_Unity.C...\nCompiling C++ (in opt mode) /home/aaelmeli/projects/moose/framework/build/unity_src/controls_Unity.C...\nCompiling C++ (in opt mode) /home/aaelmeli/projects/moose/framework/build/unity_src/dampers_Unity.C...\nCompiling C++ (in opt mode) /home/aaelmeli/projects/moose/framework/build/unity_src/dgkernels_Unity.C...\nIn file included from /home/aaelmeli/projects/moose/framework/build/unity_src/auxkernels_Unity.C:50:\n/home/aaelmeli/projects/moose/framework/src/auxkernels/SolutionAux.C: In member function 'virtual libMesh::Real SolutionAux::computeValue()':\n/home/aaelmeli/projects/moose/framework/src/auxkernels/SolutionAux.C:97:63: error: 'const class libMesh::Elem' has no member named 'vertex_average'\n97 |       output = _solution_object.pointValue(_t, _current_elem->vertex_average(), _var_name);\n|                                                               ^~~~~~~~~~~~~~\nIn file included from /home/aaelmeli/projects/moose/framework/build/unity_src/auxkernels_Unity.C:52:\n/home/aaelmeli/projects/moose/framework/src/auxkernels/SpatialUserObjectAux.C: In member function 'virtual libMesh::Real SpatialUserObjectAux::computeValue()':\n/home/aaelmeli/projects/moose/framework/src/auxkernels/SpatialUserObjectAux.C:41:53: error: 'const class libMesh::Elem' has no member named 'vertex_average'\n41 |     return _user_object.spatialValue(_current_elem->vertex_average());\n|                                                     ^~~~~~~~~~~~~~\nCompiling C++ (in opt mode) /home/aaelmeli/projects/moose/framework/build/unity_src/dirackernels_Unity.C...\nmake: *** [/home/aaelmeli/projects/moose/framework/build.mk:139: /home/aaelmeli/projects/moose/framework/build/unity_src/auxkernels_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....",
+                          "url": "https://github.com/idaholab/moose/discussions/18845#discussioncomment-1359173",
+                          "updatedAt": "2022-08-16T10:28:37Z",
+                          "publishedAt": "2021-09-20T19:52:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "You now need to update your libmesh.\nIf you're using conda:\nconda update --all",
+                          "url": "https://github.com/idaholab/moose/discussions/18845#discussioncomment-1359178",
+                          "updatedAt": "2022-08-16T10:28:37Z",
+                          "publishedAt": "2021-09-20T19:53:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "New user of phase field : How to model multiple grains ?",
+          "author": {
+            "login": "AlexSacMorane"
+          },
+          "bodyText": "Dear all,\nI am a totally new user of MOOSE and with my supervisors we would like to use this software for our research. The main goal is to simulate a grains sample which is sheared (2D will be ok for a first step). We are interested in the phase field model implanted in Moose and we are trying to link it with a discrete element modelisation. I have a bit looked into test and example files from Moose but I have some questions :\n\nAs our goal is to have one unconserved variable c by grain, is it possible to automate the input file ? I mean to not write 500 [./c] [../] sections in the Variables part for example if we have 500 grains.\nIs it possible to detect contacts between grains and avoid an overlap between them?\nHow can we apply contact law between grains ? I have seen the function ComputeExternalGrainForceAndTorque but as it is undocumented I do not understand well how it is working\nI have tried to play with the function MultiGrainRigidBodyMotion (modules/phase_field/examples/rigidbodymotion/grain_motion_GT.i) but particles seem to disappear. As it is also undocumented I do not inderstand well how it is working\n\nIf you have some example files concerning those subjects, I will enjoy to read them.\nRegards\nAlexandre Sac--Morane",
+          "url": "https://github.com/idaholab/moose/discussions/18838",
+          "updatedAt": "2022-06-17T08:07:43Z",
+          "publishedAt": "2021-09-16T16:07:03Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi Alexandre- welcome to the MOOSE framework!\nMOOSE has a system called Actions which can be used to automate adding other objects to input files. There are multiple actions that have been created to help with grain growth problems. Probably the best thing to do is to look at some example files where they are used. There are several in the directory moose/modules/phase_field/examples/grain_growth/. grain_growth_2D_graintracker.i would be a good one to start with. In this example 100 grains are added but the Action syntax allows for a compact input file.\nWe have a system for representing multiple grains with a reduced number of order parameter called GrainTracker. That system makes sure that grains represented by the same order parameter do not come into contact with each other, and remaps grains to different OP's to prevent that from happening. It's used in the previous example I listed. You can also read documentation here:\nhttps://mooseframework.inl.gov/moose/source/postprocessors/GrainTracker.html\nI'll see if I can ask others to help on the other 2 questions, as I'm not as familiar with the other objects you mentioned offhand...",
+                  "url": "https://github.com/idaholab/moose/discussions/18838#discussioncomment-1348279",
+                  "updatedAt": "2022-06-17T08:07:44Z",
+                  "publishedAt": "2021-09-17T15:59:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AlexSacMorane"
+                          },
+                          "bodyText": "Hi,\nthanks for your answer. I am checking what you told me and I will let you know if I have other questions about it.",
+                          "url": "https://github.com/idaholab/moose/discussions/18838#discussioncomment-1357096",
+                          "updatedAt": "2022-06-17T08:07:45Z",
+                          "publishedAt": "2021-09-20T13:00:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "SudiptaBiswas"
+                  },
+                  "bodyText": "Hi Alex,\nThe rigid body motion system allows you to apply forces and torques on particles for a given forces density at the interface. We don't have a direct way to account for contact forces on particles in phase field. You can find details about the rigid-body motion system here, https://link.springer.com/article/10.1007/s10853-017-1846-3",
+                  "url": "https://github.com/idaholab/moose/discussions/18838#discussioncomment-1348870",
+                  "updatedAt": "2022-06-17T08:08:03Z",
+                  "publishedAt": "2021-09-17T18:27:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AlexSacMorane"
+                          },
+                          "bodyText": "Thanks for your answer. I will read this link.",
+                          "url": "https://github.com/idaholab/moose/discussions/18838#discussioncomment-1357107",
+                          "updatedAt": "2022-06-17T08:08:03Z",
+                          "publishedAt": "2021-09-20T13:02:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Assign properties to refined mesh elements",
+          "author": {
+            "login": "ritamcj"
+          },
+          "bodyText": "Hi everyone,\nI am attempting to model nucleation in a multiphase system through a crystal plasticity-phase field model. I looked at refine.txt in which nucleation triggers concentration changes based on the concentration gradient at the element interfaces (GradientJumpIndicator) and also, mesh refinement based on ValueThresholdMarker. For my CP based model, I am inputting Euler angles based on Element ID through ElementPropertyReadFile. Initially, I have 4 elements with unique orientations. With mesh refinement, I need to assign random orientations for the new elements. I kept extra orientations (~5000) in my orientation input file for the same. However, I see the attached error as soon as the mesh is refined due to nucleation. I printed the element ID 'jelem' and it goes to values as high as 160. I think the no. of elements \"nelem\" needs to be updated. Kindly suggest strategies to tackle this problem. I found this discussion somewhat relevant #3080.\nWarm regards,\nRitam",
+          "url": "https://github.com/idaholab/moose/discussions/18837",
+          "updatedAt": "2022-09-01T10:47:54Z",
+          "publishedAt": "2021-09-16T08:32:24Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @ritamcj\nYes, you are right the line:\n_nelem = _mesh.nElem();\nis fixing the number of elements in the constructor of ElementPropertyReadFile, therefore you get the error in:\nElementPropertyReadFile::getElementData\nJust an idea but not sure if that would work,\nwhat happens if you update the number of elements inside ElementPropertyReadFile::getElementData\nMeaning you define another class and you add the line\n_nelem = _mesh.nElem();\nat the beginning of getElementData\nIn that case the number of elements may be updated correctly, but I am not sure, just try.\nI think the problem is that in the constructor the number of elements is assigned only once in the simulation.\nNicol\u00f2",
+                  "url": "https://github.com/idaholab/moose/discussions/18837#discussioncomment-1354691",
+                  "updatedAt": "2022-09-01T10:47:59Z",
+                  "publishedAt": "2021-09-19T21:59:51Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Hi Nicolo,\nThank you very much for your detailed response. It did work :) I used a dummy variable to read the updated mesh elements as:\nReal\nElementPropertyReadFile::getElementData(const Elem * elem, unsigned int prop_num) const\n{\n  unsigned int num_elem = _mesh.nElem();   \n  \n  unsigned int jelem = elem->id();\n\n  if (jelem >= num_elem)\n    mooseError(\"Element ID\", jelem, \" greater than than total number of element in mesh \", num_elem);\n  return _reader.getData(jelem)[prop_num];\n}\n\nWarm regards,\nRitam",
+                          "url": "https://github.com/idaholab/moose/discussions/18837#discussioncomment-1355494",
+                          "updatedAt": "2022-09-01T10:48:00Z",
+                          "publishedAt": "2021-09-20T06:03:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about computeStressDerivative",
+          "author": {
+            "login": "cooperliu101"
+          },
+          "bodyText": "Hello everyone,\n\n  \n    \n      moose/modules/tensor_mechanics/src/materials/RadialReturnCreepStressUpdateBase.C\n    \n    \n         Line 63\n      in\n      26948e0\n    \n  \n  \n    \n\n        \n          \n           return -(computeDerivative(effective_trial_stress, scalar) + 1.0) / this->_three_shear_modulus; \n        \n    \n  \n\n\nThe comments said that the method returns the derivative of the creep strain with respect to the von mises stress.\nThe following is the background formula:\n1:  sigma_e_tr=sigma_e+3G*dc\n2:  dc=(sigma_e_tr-sigma_e)/(3G)\n3:  ddc_dsigma_e=-1/(3G)\n4:  R=creep(sigma_e)-dc\n5:  dcreep(sigma_e)_dsigma_e=-(dR_ddc+1)/(3G)\nsigma_e_tr: effective trial stress\nsigma_e: effective stress\nG: shear modulus\ndc: effective creep strain\nR: residual\ncreep(sigma_e): effective creep strain function of sigma_e\ndy_dx: the derivative of y with respect to x\nHere is question:\nThe code in RadialReturnCreepStressUpdateBase.C#L63 is formula 5, why not use formula 3?",
+          "url": "https://github.com/idaholab/moose/discussions/18851",
+          "updatedAt": "2022-07-07T12:08:56Z",
+          "publishedAt": "2021-09-18T05:58:46Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "The method computeStressDerivative is used to compute the consistent tangent operator. See \n  \n    \n      moose/modules/tensor_mechanics/src/materials/RadialReturnStressUpdate.C\n    \n    \n        Lines 112 to 151\n      in\n      26948e0\n    \n  \n  \n    \n\n        \n          \n           template <> \n        \n\n        \n          \n           void \n        \n\n        \n          \n           RadialReturnStressUpdateTempl<false>::computeTangentOperator(Real effective_trial_stress, \n        \n\n        \n          \n                                                                        RankTwoTensor & stress_new, \n        \n\n        \n          \n                                                                        bool compute_full_tangent_operator, \n        \n\n        \n          \n                                                                        RankFourTensor & tangent_operator) \n        \n\n        \n          \n           { \n        \n\n        \n          \n             if (compute_full_tangent_operator && \n        \n\n        \n          \n                 getTangentCalculationMethod() == TangentCalculationMethod::PARTIAL) \n        \n\n        \n          \n             { \n        \n\n        \n          \n               if (MooseUtils::absoluteFuzzyEqual(_scalar_effective_inelastic_strain, 0.0)) \n        \n\n        \n          \n                 tangent_operator.zero(); \n        \n\n        \n          \n               else \n        \n\n        \n          \n               { \n        \n\n        \n          \n                 // mu = _three_shear_modulus / 3.0; \n        \n\n        \n          \n                 // norm_dev_stress = ||s_n+1|| \n        \n\n        \n          \n                 // effective_trial_stress = von mises trial stress = std::sqrt(3.0 / 2.0) * ||s_n+1^trial|| \n        \n\n        \n          \n                 // scalar_effective_inelastic_strain = Delta epsilon^cr_n+1 \n        \n\n        \n          \n                 // deriv = derivative of scalar_effective_inelastic_strain w.r.t. von mises stress \n        \n\n        \n          \n                 // deriv = std::sqrt(3.0 / 2.0) partial Delta epsilon^cr_n+1n over partial ||s_n+1^trial|| \n        \n\n        \n          \n            \n        \n\n        \n          \n                 mooseAssert(_three_shear_modulus != 0.0, \"Shear modulus is zero\"); \n        \n\n        \n          \n            \n        \n\n        \n          \n                 const RankTwoTensor deviatoric_stress = stress_new.deviatoric(); \n        \n\n        \n          \n                 const Real norm_dev_stress = \n        \n\n        \n          \n                     std::sqrt(deviatoric_stress.doubleContraction(deviatoric_stress)); \n        \n\n        \n          \n                 mooseAssert(norm_dev_stress != 0.0, \"Norm of the deviatoric is zero\"); \n        \n\n        \n          \n            \n        \n\n        \n          \n                 const RankTwoTensor flow_direction = deviatoric_stress / norm_dev_stress; \n        \n\n        \n          \n                 const RankFourTensor flow_direction_dyad = flow_direction.outerProduct(flow_direction); \n        \n\n        \n          \n                 const Real deriv = \n        \n\n        \n          \n                     computeStressDerivative(effective_trial_stress, _scalar_effective_inelastic_strain); \n        \n\n        \n          \n                 const Real scalar_one = _three_shear_modulus * _scalar_effective_inelastic_strain / \n        \n\n        \n          \n                                         std::sqrt(1.5) / norm_dev_stress; \n        \n\n        \n          \n            \n        \n\n        \n          \n                 tangent_operator = scalar_one * _deviatoric_projection_four + \n        \n\n        \n          \n                                    (_three_shear_modulus * deriv - scalar_one) * flow_direction_dyad; \n        \n\n        \n          \n               } \n        \n\n        \n          \n             } \n        \n\n        \n          \n           }",
+                  "url": "https://github.com/idaholab/moose/discussions/18851#discussioncomment-1352439",
+                  "updatedAt": "2022-07-07T12:09:58Z",
+                  "publishedAt": "2021-09-19T01:58:27Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cooperliu101"
+                          },
+                          "bodyText": "thanks for your reply\uff01\nthe comment says that\n// deriv = derivative of scalar_effective_inelastic_strain w.r.t. von mises stress\nsince the following equation is alway met during the iteration\neffective_trial_stress=effective_stress+3G* scalar_effective_inelastic_strain\uff0cscalar_effective_inelastic_strain w.r.t. von mises stress is -1/3G \uff1f",
+                          "url": "https://github.com/idaholab/moose/discussions/18851#discussioncomment-1353336",
+                          "updatedAt": "2022-07-07T12:10:18Z",
+                          "publishedAt": "2021-09-19T10:36:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Barrier function material in DerivativeMultiPhaseMaterial",
+          "author": {
+            "login": "LiWen-HUST"
+          },
+          "bodyText": "Hello all,\nI want to use more than one barrier function material in my PhaseField model. Like in the paper \"Formation path of \u03b4 hydrides in zirconium by multiphase field modeling\" the authors used three different barrier function materials, \"MultiBarrierFunctionMaterial\", \"AsymmetricCrossTermBarrierFunctionMaterial\" and \"ThirdPhaseSuppressionMaterial\". However in the \"DerivativeMultiPhaseMaterial\" material, only one barrier function \"g\" and one prefactor \"W\" can be used. How can I use more than one barrier function in PhaseField module?\nBEST\nLi",
+          "url": "https://github.com/idaholab/moose/discussions/16193",
+          "updatedAt": "2022-10-03T10:59:47Z",
+          "publishedAt": "2020-11-15T05:19:29Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "souravmat-git"
+                  },
+                  "bodyText": "Hello,\nCheck the following materials to create the barrier function used in the paper mentioned by you.\nmoose/modules/phase_field/src/materials/AsymmetricCrossTermBarrierFunctionMaterial.C\nmoose/modules/phase_field/src/materials/ThirdPhaseSuppressionMaterial.C\nAlso check the following input file:\nmoose/modules/phase_field/test/tests/MultiPhase/asymmetriccrosstermbarrierfunction.i",
+                  "url": "https://github.com/idaholab/moose/discussions/16193#discussioncomment-1352573",
+                  "updatedAt": "2022-10-03T10:59:56Z",
+                  "publishedAt": "2021-09-19T04:26:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "KKS multi phases",
+          "author": {
+            "login": "LiuPengPeter"
+          },
+          "bodyText": "Hello everyone,\nI have some questions about the kernel of multi phase. Could anyone help?\n\n\nFor KKS module multi phases model, there is the constraint for order parameters. eta1+eta2+eta3_eta4=1. So n-1 AC equations are needed. WHile, for WBM, every order parameter needs a AC equation.\n\n\nFor  both KKS and WBM multi phases model, the constraint h1+h2+h3+h4=1 must be added by lagrange multiplier technique or free energy penalty term.  If I use the KKS model\uff0c which method is better? SwitchingFunctionPenalty (energy penalty term) seems easier.\n\n\nCould the split form of CH be used in KKS multi phase?\n\n\nThanks.",
+          "url": "https://github.com/idaholab/moose/discussions/16495",
+          "updatedAt": "2022-06-14T11:50:03Z",
+          "publishedAt": "2020-12-15T13:11:08Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "souravmat-git"
+                  },
+                  "bodyText": "Hello,\nThere are two kinds of \"KKS type\" multi-phase-field model\u2014the first is a model by Eiken et al. (see Ref. https://journals.aps.org/pre/abstract/10.1103/PhysRevE.73.066122) and the other is a model by Moelans (see Ref. https://www.sciencedirect.com/science/article/pii/S1359645410007019).\nAnswer to your second question:\nEiken's model will require the constraint on interpolation functions h1+h2+h3+h4=1. However, Moelan's model does not need any such constraint due to the definition of interpolation function. This interpolation function is available in moose (check the material moose/modules/phase_field/src/materials/SwitchingFunctionMultiPhaseMaterial.C)\nYou can also use this function for multi-phase-field \"WBM type\" model.\nAnswer to your first question:\nContrary to Eiken's model, the constraint on eta is not needed in Moelan's model. In Eiken's model this constraint is due to the fact that the interpolation function is equal to the phase-field variable, i.e., h1 = eta1.\nAnswer to your last question:\nTo my understanding, in KKS we simply solve for Fick's diffusion equation (see the Refs.), and therefore the split form is not needed.\nMoreover, this equation is already implemented as a moose kernel (check moose/framework/src/kernels/MatDiffusion.C).\nAlso, check the example input file moose/modules/phase_field/test/tests/KKS_system/kks_multiphase.i\nHope it helps.\nSourav",
+                  "url": "https://github.com/idaholab/moose/discussions/16495#discussioncomment-1350118",
+                  "updatedAt": "2022-06-14T11:54:46Z",
+                  "publishedAt": "2021-09-18T04:41:32Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Grain boundary projection tensors",
+          "author": {
+            "login": "wenpeng231024"
+          },
+          "bodyText": "Dear MOOSE group,\nI try to build the diffusivity of bulk, surface, and grain boundary following the Eqs. (12)-(18) in the paper Modelling Simul. Mater. Sci. Eng. 23 (2015) 045009.\nhttps://iopscience.iop.org/article/10.1088/0965-0393/23/4/045009/meta\nIn MOOSE, how to calculate the GB projection tensors as following? Or is there a related example?\n\n\nThanks.\nPeng",
+          "url": "https://github.com/idaholab/moose/discussions/18782",
+          "updatedAt": "2023-12-03T06:54:59Z",
+          "publishedAt": "2021-09-07T15:59:12Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@hugary1995 @dschwen",
+                  "url": "https://github.com/idaholab/moose/discussions/18782#discussioncomment-1321670",
+                  "updatedAt": "2023-12-03T06:55:05Z",
+                  "publishedAt": "2021-09-14T04:01:35Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "The doxygen documentation is very useful in this case. https://mooseframework.inl.gov/docs/doxygen/moose/classRankTwoTensorTempl.html\nFor example, you may use the vectorOuterProduct method to compute Ts. You can construct a second order identity tensor using\nRankTwoTensor I(RankTwoTensor::initIdentity)",
+                  "url": "https://github.com/idaholab/moose/discussions/18782#discussioncomment-1323017",
+                  "updatedAt": "2023-12-03T06:55:07Z",
+                  "publishedAt": "2021-09-14T10:22:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wenpeng231024"
+                          },
+                          "bodyText": "Many thanks! I will try this.",
+                          "url": "https://github.com/idaholab/moose/discussions/18782#discussioncomment-1323774",
+                          "updatedAt": "2023-12-03T06:55:08Z",
+                          "publishedAt": "2021-09-14T13:13:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "You should be able to use the material PolycrystalDiffusivityTensorBase in the phase-field module:\nmoose/modules/phase_field/src/materials/PolycrystalDiffusivityTensorBase.C",
+                  "url": "https://github.com/idaholab/moose/discussions/18782#discussioncomment-1349084",
+                  "updatedAt": "2023-12-03T06:55:08Z",
+                  "publishedAt": "2021-09-17T19:47:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

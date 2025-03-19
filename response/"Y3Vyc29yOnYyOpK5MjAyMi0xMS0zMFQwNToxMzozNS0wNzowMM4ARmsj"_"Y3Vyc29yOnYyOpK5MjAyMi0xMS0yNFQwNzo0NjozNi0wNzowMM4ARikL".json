@@ -1,0 +1,1013 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0xMS0yNFQwNzo0NjozNi0wNzowMM4ARikL"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Use of Finite Strain with Tensor Mechanics New System",
+          "author": {
+            "login": "Edward-Eth"
+          },
+          "bodyText": "I've been attempting to use the Tensor Mechanics New System, as some brief investigation suggested to me that it provided better convergence for finite strain than the old system, but I'm now uncertain that my implementation was correct. Previously I was using this as my input:\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    new_system = true\n    incremental = true\n    add_variables = true\n    generate_output = 'l2norm_strain'\n  []\n[]\n\n[Materials]\n  [Elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 110000\n    shear_modulus = 42000\n    use_displaced_mesh = true\n  []\n  [Stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n[]\n\nWhich was offering far superior convergence to the same options on the old system (with ComputeLagrangianLinearElasticStress replaced with ComputeLinearElasticStress). However I have since done more digging and discovered the \"large_kinematics\" flag. Is this the \"true\" toggle for FINITE strain in the new system or am I misunderstanding it? When I add large_kinematics = True to the stress material with the new system I invariably get non-convergence and negative Jacobians for a simple tip displaced (dirichlet) beam problem.",
+          "url": "https://github.com/idaholab/moose/discussions/22784",
+          "updatedAt": "2022-11-30T09:18:39Z",
+          "publishedAt": "2022-11-23T15:00:46Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Yes, to turn on large deformation in the new system you need to do the following\n\nSet large_kinematics = true in the [GlobalParams]\nSet new_system = true and strain = FINITE in the TM action.\n\nThe incremental parameter in the TM action is ignored if new_system = true.\nIf you want to use total Lagrangian just set formulation = TOTAL.\nIf you want to use updated Lagrangian set formulation = UPDATED.\nWe spent a significant amount of effort to get the Jacobian of the new system exact. So if you encounter convergence issues with the new system, feel free to send us the minimal reproducing example.",
+                  "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4217675",
+                  "updatedAt": "2022-11-23T15:32:51Z",
+                  "publishedAt": "2022-11-23T15:32:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "When I use those parameters, with the following input:\n[Mesh]\n  [Generated]\n    type = GeneratedMeshGenerator\n    dim = 3\n    elem_type = HEX8\n    xmax = 500\n    ymax = 25\n    zmax = 25\n    nx = 100\n    ny = 5\n    nz = 5\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    new_system = true\n    add_variables = true\n  []\n[]\n\n[Materials]\n  [Elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 110000\n    shear_modulus = 42000\n    use_displaced_mesh = true\n  []\n  [Stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_x\n    use_displaced_mesh = true\n  []\n  [Fixed_Y]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_y\n    use_displaced_mesh = true\n  []\n  [Fixed_Z]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_z\n    use_displaced_mesh = true\n  []\n  [Tip_Displacement]\n    type = DirichletBC\n    boundary = 'right'\n    variable = disp_z\n    value = 50\n    use_displaced_mesh = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n\n  automatic_scaling = true\n  solve_type = 'NEWTON'\n\n  petsc_options_iname = '-pc_type  -pc_hypre_type'\n  petsc_options_value = 'hypre     boomeramg'\n[]\n\n[Outputs]\n  [Performance]\n    type = PerfGraphOutput\n  []\n[]\n\nI get:\nERROR: negative Jacobian -0.589091 at point (x,y,z)=( 490.063,  9.73302,   56.166) in element 1197\n[6] ../src/fe/fe_map.C, line 1178, compiled Oct  5 2022 at 23:16:04\nWe caught a libMesh error in ThreadedElementLoopBase\n  Elem Information\n   id()=2096, unique_id()=5732, processor_id()=6\n   type()=HEX8\n   dim()=3\n   n_nodes()=8\n   mapping=LAGRANGE_MAP\n    0  Node id()=2616, processor_id()=6, Point=(x,y,z)=( 480.766,  0.48683,   57.037)\n    DoFs=(0/0/9228) (0/1/9229) (0/2/9230) \n    1  Node id()=2618, processor_id()=6, Point=(x,y,z)=( 485.842,  1.21273,  59.5806)\n    DoFs=(0/0/9234) (0/1/9235) (0/2/9236) \n    2  Node id()=2619, processor_id()=6, Point=(x,y,z)=( 485.823,  5.45591,  62.0315)\n    DoFs=(0/0/9237) (0/1/9238) (0/2/9239) \n    3  Node id()=2617, processor_id()=6, Point=(x,y,z)=( 480.649,  5.25947,  57.9656)\n    DoFs=(0/0/9231) (0/1/9232) (0/2/9233) \n    4  Node id()=3222, processor_id()=6, Point=(x,y,z)=( 480.847, -1.39579,  62.2696)\n    DoFs=(0/0/9480) (0/1/9481) (0/2/9482) \n    5  Node id()=3224, processor_id()=6, Point=(x,y,z)=( 485.933,  4.97892,  61.1484)\n    DoFs=(0/0/9486) (0/1/9487) (0/2/9488) \n    6  Node id()=3225, processor_id()=6, Point=(x,y,z)=( 485.423,  3.60393,  63.1854)\n    DoFs=(0/0/9489) (0/1/9490) (0/2/9491) \n    7  Node id()=3223, processor_id()=6, Point=(x,y,z)=(  480.42,  4.60968,  63.2469)\n    DoFs=(0/0/9483) (0/1/9484) (0/2/9485) \n   n_sides()=6\n    neighbor(0)=1596\n    neighbor(1)=nullptr\n    neighbor(2)=2097\n    neighbor(3)=2196\n    neighbor(4)=2095\n    neighbor(5)=nullptr\n   hmin()=1.00977, hmax()=8.67242\n   volume()=66.4199\n   active()=1, ancestor()=0, subactive()=0, has_children()=0\n   parent()=nullptr\n   level()=0, p_level()=0\n   refinement_flag()=DO_NOTHING\n   p_refinement_flag()=DO_NOTHING\n   DoFs=\n\nETC",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4217704",
+                          "updatedAt": "2022-11-23T15:34:46Z",
+                          "publishedAt": "2022-11-23T15:34:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Whereas the same file runs fine without large kinematics and with strain = SMALL",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4217707",
+                          "updatedAt": "2022-11-23T15:35:16Z",
+                          "publishedAt": "2022-11-23T15:35:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "If I split the issue down into at least 4 steps it can solve, but still requires a large number of iterations. Is this an unavoidable issue with the finite strain implementation?\nEDIT:\nIt was working on 4 steps:\n[Mesh]\n  [Generated]\n    type = GeneratedMeshGenerator\n    dim = 3\n    elem_type = HEX8\n    xmax = 500\n    ymax = 25\n    zmax = 25\n    nx = 100\n    ny = 5\n    nz = 5\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    new_system = true\n    add_variables = true\n  []\n[]\n\n[Materials]\n  [Elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 110000\n    shear_modulus = 42000\n    use_displaced_mesh = true\n  []\n  [Stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_x\n    use_displaced_mesh = true\n  []\n  [Fixed_Y]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_y\n    use_displaced_mesh = true\n  []\n  [Fixed_Z]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_z\n    use_displaced_mesh = true\n  []\n  [Tip_Displacement]\n    type = FunctionDirichletBC\n    boundary = 'right'\n    variable = disp_z\n    function = 50*t\n    use_displaced_mesh = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  dt = 0.25\n\n  end_time = 1.0\n\n  automatic_scaling = true\n  solve_type = 'NEWTON'\n\n  petsc_options_iname = '-pc_type  -pc_hypre_type'\n  petsc_options_value = 'hypre     boomeramg'\n[]\n\n[Outputs]\n  [Performance]\n    type = PerfGraphOutput\n  []\n[]\n\nHowever if I refine the mesh to 200 x 10 x 10 it once again suffers negative jacobians.",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4217730",
+                          "updatedAt": "2022-11-23T15:39:58Z",
+                          "publishedAt": "2022-11-23T15:37:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I just ran your input on my laptop. The behavior makes sense to me. A few considerations:\n\nApplying 10% strain in one step is not going to work with any geometrically nonlinear implementation, so you definitely need to split it into many steps. In fact, splitting into 4 steps with each step incrementing 2.5% strain still sounds a lot. Typically, you don't want to increase the strain more than 1% per step.\nIt's not using \"a lot of iterations\" as I see it. It uses at most 7 nonlinear iterations. Again, this is because you are posing a large strain increment per step.\nHypre/boomeramg is a algebraic multigrid solver. It's iterative in nature, so you will see many linear iterations. It also has a ton of parameters to tune, and I am sure the model can converge much better if you spend some time tuning the solver parameters. As always, if you use a direct solver, it will converge in 1 linear iteration, but the scaling efficiency won't be as good.\nI made some modifications to your input file. Namely increasing the number of steps to 10 and adding a simple predictor. The model takes 7 nl itrs to solve in the first step, and 3 nl itrs in the subsequent steps. Note that this is still with the default settings of hypre/boomeramg.\n\n[Mesh]\n  [Generated]\n    type = GeneratedMeshGenerator\n    dim = 3\n    elem_type = HEX8\n    xmax = 500\n    ymax = 25\n    zmax = 25\n    nx = 100\n    ny = 5\n    nz = 5\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = FINITE\n    new_system = true\n    add_variables = true\n  []\n[]\n\n[Materials]\n  [Elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 110000\n    shear_modulus = 42000\n    use_displaced_mesh = true\n  []\n  [Stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n[]\n\n[BCs]\n  [Fixed_X]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_x\n    use_displaced_mesh = true\n  []\n  [Fixed_Y]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_y\n    use_displaced_mesh = true\n  []\n  [Fixed_Z]\n    type = DirichletBC\n    boundary = 'left'\n    value = 0\n    variable = disp_z\n    use_displaced_mesh = true\n  []\n  [Tip_Displacement]\n    type = FunctionDirichletBC\n    boundary = 'right'\n    variable = disp_z\n    function = 50*t\n    use_displaced_mesh = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  dt = 0.1\n\n  end_time = 1.0\n\n  automatic_scaling = true\n  solve_type = 'NEWTON'\n\n  petsc_options_iname = '-pc_type  -pc_hypre_type'\n  petsc_options_value = 'hypre     boomeramg'\n\n  [Predictor]\n    type = SimplePredictor\n    scale = 1\n  []\n[]\n\n[Outputs]\n  [Performance]\n    type = PerfGraphOutput\n  []\n  print_linear_residuals = false\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4218509",
+                          "updatedAt": "2022-11-23T17:02:21Z",
+                          "publishedAt": "2022-11-23T17:02:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Another important consideration: the hypoelasticity solution (what you are using here) only converges to the ground-truth analytical solution as dt -> 0. So if you use a large time step, not only it will suffer from numerical convergence issues in newton-raphson iterations, but also you are sacrificing the accuracy of the solution.\nAs an alternative, we also provide some predefined hyperelasticity models, e.g. St. Venant Kirchhoff, Neo-Hookean, etc., which don't have time integration errors. You can also implement your own favorite hyperelastic material.",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4218576",
+                          "updatedAt": "2022-11-23T17:16:03Z",
+                          "publishedAt": "2022-11-23T17:11:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "With the changes you have provided the model does work better. You imply that the issue is to do with Newton solving, do you think PJFNK might offer better stability in this regard? The simulations I intend to perform have long time scales so being limited to ensure less than 1% strain occurs per step would lead to very large step counts, and would be hard to enforce/predict correctly.\nI am aware of the benefits of the direct solver (lu) but with the size of the models I wish to run it's not a viable option due to memory limits.\nI am also unsure of my implementation of use_displaced_mesh in this problem case, as I have seen some MOOSE discussion posts suggesting it is best included and others suggesting it is best omitted. It's not clear to me the physical meaning of applying a use_displaced_mesh = true to a fixed dirichlet condition for example.\nOn the topic of hyperelastic models, I am not clear on how these can be applied to metals with typically linear elastic behaviour up to plastic deformation (which is something I have yet to get figured out in MOOSE but a separate topic)",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4218685",
+                          "updatedAt": "2022-11-23T17:38:46Z",
+                          "publishedAt": "2022-11-23T17:23:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "With the changes you have provided the model does work better. You imply that the issue is to do with Newton solving, do you think PJFNK might offer better stability in this regard?\n\nIf the Jacobian is exact, I recommend Newton over PJFNK.\n\nThe simulations I intend to perform have long time scales so being limited to ensure less than 1% strain occurs per step would lead to very large step counts, and would be hard to enforce/predict correctly.\n\n\"long time scale\" would imply that the time step size you might want to use is large. However, \"large time step size\" does not necessarily correspond to \"large strain increment\". Does that make sense? For example, you may need 1e6 time steps with each step of size 1000 seconds, but the strain increment may still be small. In other words, a problem with a \"long time scale\" isn't well-posed if say you need 1e6 time steps, and each step you need to increase strain by 5% -- the body would explode.\n\nI am aware of the benefits of the direct solver (lu) but with the size of the models I wish to run it's not a viable option due to memory limits.\n\nUnderstood.\n\nI am also unsure of my implementation of use_displaced_mesh in this problem case, as I have seen some MOOSE discussion posts suggesting it is best included and others suggesting it is best omitted. It's not clear to me the physical meaning of applying a use_displaced_mesh = true to a fixed dirichlet condition for example.\n\nYeah, this is probably the single-most confusing concept for new users. I feel like we should have a specific page dedicated to explaining this...\nAnyways, a displaced mesh is mapped from the initial mesh by applying the displacements. If no displacements is applied to the mesh, then the displaced mesh will fall back to the initial mesh.\nWhen use_displaced_mesh = false, everything this object evaluates are computed on the initial mesh. Otherwise if use_displaced_mesh = true, everything is evaluated on the displaced mesh. TL;DR\nSo obviously use_displaced_mesh only has an effect if the quantities evaluate to different values on the displaced mesh and the initial mesh. For example,\n\nQuadrature points in the parametric coordinates remain the same;\nPhysical coordinates of quadrature points and nodes are different on displaced/initial mesh;\nDue to 1, test and shape functions evaluate to the same value regardless of displaced/initial mesh at quadrature points and nodes, as they are defined in terms of the parametric coordinates;\nDue to 2, gradients of test and shape functions are different on displaced/initial mesh, since the isoparametric mapping depends on the physical coordinates of the nodes;\nDue to 3, variable values at quadrature points and nodes remain unchanged on displaced/initial mesh, for instance the displacements, temperature, etc.;\nDue to 4, variable gradients at quadrature points are different on displaced/initial mesh, for instance the strain, stress, etc., (hence why we always insist on strain calculators run on the initial undisplaced mesh);\nConstant material properties are not affected by the mesh, for instance your ComputeIsotropicElasticityTensor;\nIn contrast to 7, if the material property depends on the spatial coordinates, its value will be different on displaced/initial mesh;\nThe same node in the displaced/initial mesh will correspond to the same degree of freedom in the system. A Dirichlet (nodal) BC is not affected by use_displaced_mesh if and only if the value you are setting does not depend on the mesh configuration. For instance, the constant DirichletBC in your input file does not care about use_displaced_mesh.\n\n\nOn the topic of hyperelastic models, I am not clear on how these can be applied to metals with typically linear elastic behaviour up to plastic deformation (which is something I have yet to get figured out in MOOSE but a separate topic)\n\nWe also have a predefined Simo-Hughes style hyperelastic-plastic constitutive model in the module.",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4219120",
+                          "updatedAt": "2022-11-23T18:18:20Z",
+                          "publishedAt": "2022-11-23T18:15:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "This is all extremely helpful, thank you.\nI will look at the Simo-Hughes model, it seems like it might be what I need to use (although I'm not 100% clear on how I'd implement temperature dependant yield with it but again, an issue for a different day).\nContinuing on the topic of displaced mesh, I have a few more questions:\n\nIn the case where I have a temperature dependent elasticity tensor, but temperature is defined at nodes not spatially, I assume this means that use_displaced_mesh will/should have no effect and therefore should be false\nIn cases such as a radiative boundary condition, use_displaced_mesh should be true if I expect the boundary to change shape/size during the simulation\nIn heat conduction, use_displaced_mesh will obviously change the thermal behaviour if displacement is occurring, as lengths between nodes are changing for example, however I have a question:\n\nWith a ConstantGenericMaterial defining my density, it is a spatially and thermally invariant value.\nI then use this property in a model which undergoes significant deformation (say stretches to 2x its initial length)\nIf my poisson's ratio is not 0.5 (ie not incompressible) there will be some change in the volume of my model\nI will want to use_displaced_mesh in HeatConduction and TimeDerivative in this case, as the lengths and areas will have changed significantly, altering the conductive behaviour\nIf I use_displaced_mesh in HeatConduction and HeatConductionTimeDerivative, will my effective mass be changed, due to an increased volume but unchanged density?\nIf so, are there any fixes for this?",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4224081",
+                          "updatedAt": "2022-11-24T09:49:51Z",
+                          "publishedAt": "2022-11-24T09:49:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Sorry, really picking your brains here now. I've just discovered that changing preset to false in my tip displacement boundary condition makes a huge difference to convergence. I think I understand this but wanted to run my hypothesis by someone who actually knows what they're doing before running with it \ud83d\ude06\nMy understanding of preset/not preset BCs is that when preset, they will be used in forming the first nonlinear iteration, Pre-conditioner and Jacobian. When not preset they are omitted. My hypothesis of why not presetting the displacement improves my simulation is that it eliminates the initial high skew applied to the tip elements when making the Pre-conditioners etc, giving a better initial solve condition than is produced with the inclusion of the skew. Does this hypothesis make any sense to you?\nI got the idea to set preset to false from the example input file on the Simo-Hughes J2 plasticity material you suggested I look at.",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4225183",
+                          "updatedAt": "2022-11-24T12:19:00Z",
+                          "publishedAt": "2022-11-24T12:18:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Sorry for the late response -- coming back from the holiday.\n\nThis is all extremely helpful, thank you.\nI will look at the Simo-Hughes model, it seems like it might be what I need to use (although I'm not 100% clear on how I'd implement temperature dependant yield with it but again, an issue for a different day).\nContinuing on the topic of displaced mesh, I have a few more questions:\n\nIn the case where I have a temperature dependent elasticity tensor, but temperature is defined at nodes not spatially, I assume this means that use_displaced_mesh will/should have no effect and therefore should be false\n\n\nCorrect. Either true or false.\n\n\nIn cases such as a radiative boundary condition, use_displaced_mesh should be true if I expect the boundary to change shape/size during the simulation\n\n\nCorrect. Especially if you are computing the view factors.\n\n\n\nIn heat conduction, use_displaced_mesh will obviously change the thermal behaviour if displacement is occurring, as lengths between nodes are changing for example, however I have a question:\n\nWith a ConstantGenericMaterial defining my density, it is a spatially and thermally invariant value.\nI then use this property in a model which undergoes significant deformation (say stretches to 2x its initial length)\nIf my poisson's ratio is not 0.5 (ie not incompressible) there will be some change in the volume of my model\nI will want to use_displaced_mesh in HeatConduction and TimeDerivative in this case, as the lengths and areas will have changed significantly, altering the conductive behaviour\nIf I use_displaced_mesh in HeatConduction and HeatConductionTimeDerivative, will my effective mass be changed, due to an increased volume but unchanged density?\n\n\n\n\nThis thread may be helpful: #22467 (comment)\nTake a look and let me know which case of 1~3 you were referring to, and we can continue our discussion here.\n\n\nIf so, are there any fixes for this?",
+                          "url": "https://github.com/idaholab/moose/discussions/22784#discussioncomment-4258764",
+                          "updatedAt": "2022-11-29T01:23:14Z",
+                          "publishedAt": "2022-11-29T01:23:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error in 'RenameBoundaryGenerator' when the 'new_boundary_id' is large",
+          "author": {
+            "login": "echo1115"
+          },
+          "bodyText": "Hi all,\nWhen using mesh-only  to run the case of moose/test/tests/meshgenerators/rename_boundary_generator/name_and_id.i  , I changed the old_boundary and new_boundary to old_boundary_id and new_boundary_id in the object [rename_both_id_and_name] :\n  [rename_both_id_and_name]\n    type = RenameBoundaryGenerator\n    input = ed0\n    old_boundary_id = '100' \n    new_boundary_id = '40000' #'20000' #'101'\n  []\n\nwhen the new_boundary_id  is 101 or 20000, the mesh was created successfully,\nbut when setting it to 40000, it failed with the message:\nError writing sidesets\n[0] ../src/mesh/exodusII_io_helper.C, line 2697, compiled Apr 13 2022 at 21:08:08\n\n*** ERROR ***\nError writing sidesets\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n\n\nin the https://github.com/libMesh/libmesh/blob/devel/src/mesh/exodusII_io_helper.C, I find the error message but I don't understand\uff1a\n      ex_err = exII::ex_put_sets(ex_id, side_boundary_ids.size(), sets.data());\n      EX_CHECK_ERR(ex_err, \"Error writing sidesets\");\n\nI hope your help, thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/22793",
+          "updatedAt": "2022-11-30T02:36:14Z",
+          "publishedAt": "2022-11-25T09:48:05Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIn libmesh you may find the integer type for boundary ids\n50 #if LIBMESH_BOUNDARY_ID_BYTES == 1\n  [ 51](https://libmesh.github.io/doxygen/namespacelibMesh.html#a3f4d8a52b5ef6ff6156ca209e12b5564) typedef int8_t [boundary_id_type](https://libmesh.github.io/doxygen/namespacelibMesh.html#a3f4d8a52b5ef6ff6156ca209e12b5564);\n   52 #elif LIBMESH_BOUNDARY_ID_BYTES == 4\n   53 typedef int32_t [boundary_id_type](https://libmesh.github.io/doxygen/namespacelibMesh.html#a3f4d8a52b5ef6ff6156ca209e12b5564);\n   54 #elif LIBMESH_BOUNDARY_ID_BYTES == 8\n   55 typedef int64_t [boundary_id_type](https://libmesh.github.io/doxygen/namespacelibMesh.html#a3f4d8a52b5ef6ff6156ca209e12b5564);\n   56 #else // LIBMESH_BOUNDARY_ID_BYTES = 2 (default)\n   57 typedef int16_t [boundary_id_type](https://libmesh.github.io/doxygen/namespacelibMesh.html#a3f4d8a52b5ef6ff6156ca209e12b5564);\n   58 #endif\n\nyou can see that the defaut is an int16. The biggest int16 is 32767 so that's your problem.\nWe should probably catch this in MOOSE before trying to write a file though\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4240332",
+                  "updatedAt": "2022-11-25T23:25:41Z",
+                  "publishedAt": "2022-11-25T23:25:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I ll raise an issue about this once I've narrowed it down to where it's failing.\nThank you for reporting this",
+                          "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4240359",
+                          "updatedAt": "2022-11-25T23:38:50Z",
+                          "publishedAt": "2022-11-25T23:38:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "btw new_boundary_id is deprecated. Please avoid using that. new_boundary will set the id and the name when using a number",
+                          "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4240382",
+                          "updatedAt": "2022-11-25T23:58:36Z",
+                          "publishedAt": "2022-11-25T23:58:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "echo1115"
+                          },
+                          "bodyText": "Thanks for your reply! @GiudGiud . If I want to use an int32 or bigger one, how should I set in MOOSE?",
+                          "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4254122",
+                          "updatedAt": "2022-11-28T14:38:45Z",
+                          "publishedAt": "2022-11-28T14:38:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You would need to build libmesh from source to do that, and modify it in libmesh.",
+                          "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4254363",
+                          "updatedAt": "2022-11-28T15:04:03Z",
+                          "publishedAt": "2022-11-28T15:04:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "echo1115"
+                          },
+                          "bodyText": "thanks for your suggestion. @GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/22793#discussioncomment-4269868",
+                          "updatedAt": "2022-11-30T02:36:10Z",
+                          "publishedAt": "2022-11-30T02:36:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Why interface conditions degrade convergence by an order?",
+          "author": {
+            "login": "lindsayad"
+          },
+          "bodyText": "When working on #22130 I am presented with a classic conundrum. How to enforce the Bernoulli condition at a porosity discontinuity (interface)? There are a few ways:\n\nLagrange multiplier\npenalty\n\"Matched\" value (where the value is computed from Bernoulli's equation) and matched flux condition\n\nThe third option is very nice in that it doesn't introduce additional degrees of freedom and degrees of freedom which may not have diagonals (the LM approach) nor does it introduce ill-conditioning through a penalty term. However, in a thread from four years ago @YaqiWang helped me discover that the third option introduces an order reduction in the convergence rate. My question is do we know a fundamental reason why this reduction occurs? Is it the asymmetry of the approach? Looking for help from mathy people. Maybe @roystgnr @hugary1995 @oanaoana ?",
+          "url": "https://github.com/idaholab/moose/discussions/22808",
+          "updatedAt": "2023-01-03T23:17:43Z",
+          "publishedAt": "2022-11-28T22:38:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "oanaoana"
+                  },
+                  "bodyText": "Do you have a proper description of the problem. Which equation is solved and how? Or what code exactly implements this? to track it down that way. Looking through your links to understand it better.",
+                  "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4257952",
+                  "updatedAt": "2022-11-28T22:45:34Z",
+                  "publishedAt": "2022-11-28T22:45:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "roystgnr"
+                  },
+                  "bodyText": "Completely wild guess: could you effectively be getting rid of some degrees of freedom by trying to match both values and fluxes too strongly?  I'm not a FVM guy at all, but at first glance this idea vaguely reminds me of the typical intro-FEM mistake, where you pin down a Neumann BC exactly instead of imposing it weakly and then it turns out that the price for getting the flux exactly right on that boundary is getting an inferior solution over the whole domain.\nOr I could be completely off-base.  In the strong-Neumann-FEM setting it's easy to see that the error comes from thinking of the approximate flux as being equally correct everywhere (or at least on the element boundary), instead of only being trustworthy at superconvergent points or after some kind of recovery procedure is used.  When I think about it that way I don't see how you could be making the analogous mistake here.  I'll second Oana's request.",
+                  "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4257995",
+                  "updatedAt": "2022-11-28T22:52:30Z",
+                  "publishedAt": "2022-11-28T22:52:29Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "In the four year old thread, the problem is a finite element problem. The finite element problem was this essentially: solve diffusion (Laplacian) on left and right domains for variables u and v. At a conforming interface in the middle, u and v should be equal and the diffusive fluxes should be equal. At the left boundary u is 1; at the right boundary v is 0.",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258050",
+                          "updatedAt": "2022-11-28T23:03:51Z",
+                          "publishedAt": "2022-11-28T23:03:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "In the implementation that showed the order reduction in convergence, v was strongly set to u at the interface. The diffusive flux of u was weakly set to the diffusive flux of v at the interface.",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258055",
+                          "updatedAt": "2022-11-28T23:05:55Z",
+                          "publishedAt": "2022-11-28T23:04:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Those plots don't look like harmonic functions.  Is this Poisson, or transient Laplacian?\nHow are you setting the diffusive flux?  Evaluating k\u2207v on one side and using it as a weak Neumann condition for u, while also using the value of u on the other side as a strong Dirichlet condition for v?",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258127",
+                          "updatedAt": "2022-11-28T23:20:38Z",
+                          "publishedAt": "2022-11-28T23:20:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Those plots don't look like harmonic functions. Is this Poisson, or transient Laplacian?\n\nOops yea since I was solving an MMS problem, it's Poisson.\n\nHow are you setting the diffusive flux? Evaluating k\u2207v on one side and using it as a weak Neumann condition for u, while also using the value of u on the other side as a strong Dirichlet condition for v?\n\nThat's exactly correct. How did you do that nabla symbol BTW?",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258172",
+                          "updatedAt": "2022-11-28T23:26:53Z",
+                          "publishedAt": "2022-11-28T23:26:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "That's exactly correct.\n\nThat would be enough to kill your order, I think.  Imagine solving \u0394u=f, \u0394v=f that way, on a line segment split half-and-half, with constant f.  I'd have to work it out to say exactly how it would shake out, but at the interface if \u2207v=0 then you're not at the optimal solution for v (which should have a slight gradient on the interface element because it's the post-processed flux at the vertex that should be 0, not the one-sided flux from either element) and if \u2207v\u22600 then you're not at the optimal solution for u (because you would get that by imposing 0 flux weakly).\n\nHow did you do that nabla symbol BTW?\n\nWindows key, m, D.  (\"math, Delta\" mnemonic; Win,g,D would have given \u0394 for \"greek, Delta\").  I tricked out my .XCompose file a while back.  I never managed to get good at taking notes with LaTeX notation, but unicode math notation is pretty sweet 95% of the time.  I even went back through old notes in vim, to search and replace stuff like R^n \u2192 \u211d\u207f.  This seems to be a little hit or miss on web fonts, though.  I dunno about your browser but my copy of Chrome is not rendering https://www.compart.com/en/unicode/U+2260 right in either the Write or Preview window...",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258245",
+                          "updatedAt": "2022-11-28T23:44:23Z",
+                          "publishedAt": "2022-11-28T23:44:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the computation of flux/current usually involves the boundary value, so imposing one may impose the other to a certain order. I dont think that is a general rule, it's true of some discretization schemes.\nFor example for a basic 1D finite difference diffusion, the strong continuity of current will give you:\n(E F C for elem1 centroid, face, elem2 centroid, a is the variable, the current is the 1st order one sided da/dx times a diffusion coefficient.)\nD1 (af - ae) / dx = D2 (ac - af) / dx\nor af = (ae D1 + ac D2) / (D1 + D2)\nso that imposed the face value.\nBut this doesnt really prove my point even if we expand the continuity of value equation because the scheme seems 1st order to start with. I seem to get a different imposed face value from the continuity of value equation, with a first order error, so far\nFor finite volume, if this is coming up, we definitely want to prioritize continuity of current/flux over continuity of the values. We care more about preserving the balance of the actual physical quantity than its values at any location imo.\nNow one thing that could be tricky would be: if we have to choose between conserving fluxes of mass, momentum and/or advected quantities at an interface. I m speculating at this point",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258497",
+                          "updatedAt": "2022-11-29T01:04:33Z",
+                          "publishedAt": "2022-11-29T00:29:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "For enforcing general nonlinear jump condition across an interface, I prefer Nitsche > penalty ~= LM. You are apparently aware of the drawbacks of each approach. The matched-value approach (mixed Dirichlet and Neumann across the interface) will indeed give you a suboptimal order of convergence.",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258703",
+                          "updatedAt": "2022-11-29T01:10:47Z",
+                          "publishedAt": "2022-11-29T01:10:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "I think the key to get the optimal rate of convergence is the approach needs to be variational consistent.  For the matched value approach,  the Dirichlet part does not seem to be variational consistent.  For that perspective,  I agree with Gary that Nitshce is most preferred.",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4258836",
+                          "updatedAt": "2022-11-29T01:40:19Z",
+                          "publishedAt": "2022-11-29T01:40:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Thanks to all of you for your weigh-in. Weak enforcement definitely seems like the way to go! Luckily for me, the current PR that is motivating me is with finite volume in which we always impose Dirichlet conditions weakly. Per my most recent commit 9b51609 I'm able to maintain the optimal second order convergence rate using a \"naive\" matching value/matching flux approach.",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4260271",
+                          "updatedAt": "2022-11-29T06:21:58Z",
+                          "publishedAt": "2022-11-29T06:21:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "For finite volume, if this is coming up, we definitely want to prioritize continuity of current/flux over continuity of the values\n\nIn this discussion I regard enforcing continuity as a conceptual surrogate for what I will want to do in #22130 which is enforcing Bernoulli, so matching values with an offset",
+                          "url": "https://github.com/idaholab/moose/discussions/22808#discussioncomment-4260298",
+                          "updatedAt": "2022-11-29T06:24:22Z",
+                          "publishedAt": "2022-11-29T06:23:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Memory consumption increasing every timestep",
+          "author": {
+            "login": "janzenchoi"
+          },
+          "bodyText": "Hello,\nI am currently running a DEER simulation on a hex mesh of around 300k elements. I am running the simulation using mpirun, with 128 cores, and without hyperthreading. The machine I am using has 250GB of memory.\n\nAt the 1st timestep, the simulation consumes around 110GB of memory.\nAt the 2nd timestep, the simulation consumes around 200GB of memory.\nAt the 10th timestep, the simulation consumes 250GB of memory, and the simulation fails. Specifically, mpi kills it with SIGNAL-9, as shown in the attached image below.\n\n\nDoes anyone know why this might be the case?\nThe input file is as folows.\n# ==================================================\n# Define global parameters\n# ==================================================\n\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n[]\n\n# ==================================================\n# Define Mesh\n# ==================================================\n\n[Mesh]\n  [./msh]\n    type = FileMeshGenerator\n    file = \"sculpt.e\"\n  [../]\n  [./breakmesh]\n    input = msh\n    type = BreakMeshByBlockGenerator\n  [../]\n  [./add_side_sets]\n    input = breakmesh\n    type = SideSetsFromNormalsGenerator\n    normals = '0 -1  0 \n               0  1  0\n               -1 0  0\n               1  0  0\n               0  0 -1\n               0  0  1'\n    fixed_normal = true\n    new_boundary = 'y0 y1 x0 x1 z0 z1'\n  [../]\n[]\n\n# ==================================================\n# Define Initial Orientations\n# ==================================================\n\n[UserObjects]\n  [./euler_angle_file]\n    type = ElementPropertyReadFile\n    nprop = 3\n    prop_file_name = \"stats.csv\"\n    read_type = block\n    nblock = 308\n    use_zero_based_block_indexing = false\n  [../]\n[]\n\n# ==================================================\n# Define Modules\n# ==================================================\n\n[Modules]\n  [./TensorMechanics]\n    [./Master]\n      [./all]\n        strain = FINITE\n        new_system = true\n        add_variables = true\n        formulation = TOTAL\n        volumetric_locking_correction = false\n        generate_output = 'elastic_strain_xx elastic_strain_yy elastic_strain_zz\n                           strain_xx strain_yy strain_zz\n                           cauchy_stress_xx cauchy_stress_yy cauchy_stress_zz'\n      [../]\n    [../]\n    [./CohesiveZoneMaster]\n      [./czm_ik]\n        boundary = 'interface'\n        strain = FINITE\n        generate_output = 'traction_x traction_y traction_z\n                           jump_x jump_y jump_z normal_traction\n                           tangent_traction normal_jump tangent_jump'\n      [../]\n    [../]\n  [../]\n[]\n\n# ==================================================\n# Define Variables\n# ==================================================\n\n[AuxVariables]\n\n  # Material\n  [./a]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./b]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n  [./D]\n    family = MONOMIAL\n    order = CONSTANT\n  [../]\n\n  # For crystal orientations (quaternion)\n  [./orientation_q1]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./orientation_q2]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./orientation_q3]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./orientation_q4]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n\n# ==================================================\n# Define Kernels\n# ==================================================\n\n[AuxKernels]\n\n  # Material\n  [./a]\n    type = MaterialRealAux\n    boundary = 'interface'\n    property = a\n    execute_on = 'TIMESTEP_END'\n    variable = a\n    check_boundary_restricted = false\n  [../]\n  [./b]\n    type = MaterialRealAux\n    boundary = 'interface'\n    property = b\n    execute_on = 'TIMESTEP_END'\n    variable = b\n    check_boundary_restricted = false\n  [../]\n  [./D]\n    type = MaterialRealAux\n    boundary = 'interface'\n    property = interface_damage\n    execute_on = 'TIMESTEP_END'\n    variable = D\n    check_boundary_restricted = false\n  [../]\n\n  # For crystal orientations (quaternion)\n  [q1]\n    type = MaterialStdVectorAux\n    property = orientation\n    index = 0\n    variable = orientation_q1\n  [../]\n  [q2]\n    type = MaterialStdVectorAux\n    property = orientation\n    index = 1\n    variable = orientation_q2\n  [../]\n  [q3]\n    type = MaterialStdVectorAux\n    property = orientation\n    index = 2\n    variable = orientation_q3\n  [../]\n  [q4]\n    type = MaterialStdVectorAux\n    property = orientation\n    index = 3\n    variable = orientation_q4\n  [../]\n[]\n\n# ==================================================\n# Apply stress\n# ==================================================\n\n[Functions]\n  [./applied_load_x]\n    type = PiecewiseLinear\n    x = '0 0.1 36000000.0'\n    y = '0 80 80'\n  [../]\n  [./applied_load_y]\n    type = PiecewiseLinear\n    x = '0 0.1 36000000.0'\n    y = '0 0 0'\n  [../]\n  [./applied_load_z]\n    type = PiecewiseLinear\n    x = '0 0.1 36000000.0'\n    y = '0 0 0'\n  [../]\n[]\n\n# ==================================================\n# Constraints\n# ==================================================\n\n[Constraints]\n  [./x1]\n    type = EqualValueBoundaryConstraint\n    variable = disp_x\n    secondary = 'x1'\n    penalty = 1e6\n  [../]\n  [./y1]\n    type = EqualValueBoundaryConstraint\n    variable = disp_y\n    secondary = 'y1'\n    penalty = 1e6\n  [../]\n  [./z1]\n    type = EqualValueBoundaryConstraint\n    variable = disp_z\n    secondary = 'z1'\n    penalty = 1e6\n  [../]\n[]\n\n# ==================================================\n# Boundary Conditions\n# ==================================================\n\n[BCs]\n  [./x0]\n    type = DirichletBC\n    variable = disp_x\n    boundary = x0\n    value = 0.0\n  [../]\n  [./y0]\n    type = DirichletBC\n    variable = disp_y\n    boundary = y0\n    value = 0.0\n  [../]\n  [./z0]\n    type = DirichletBC\n    variable = disp_z\n    boundary = z0\n    value = 0.0\n  [../]\n  [./x1]\n    type = FunctionNeumannBC\n    boundary = x1\n    function = applied_load_x\n    variable = disp_x\n  [../]\n  [./y1]\n    type = FunctionNeumannBC\n    boundary = y1\n    function = applied_load_y\n    variable = disp_y\n  [../]\n  [./z1]\n    type = FunctionNeumannBC\n    boundary = z1\n    function = applied_load_z\n    variable = disp_z\n  [../]\n[]\n\n# ==================================================\n# Define Material\n# ==================================================\n\n[Materials]\n  [./stress]\n    type = NEMLCrystalPlasticity\n    database = \"material.xml\"\n    model = \"material\"\n    large_kinematics = true\n    euler_angle_reader = euler_angle_file\n  [../]\n  [./ShamNeedleman]\n    type = GBCavitation\n    boundary = 'interface'\n    a0 = 4e-05\n    b0 = 0.059\n    D_failure = 0.9\n  [../]\n[]\n\n# ==================================================\n# Define Preconditioning\n# ==================================================\n\n[Preconditioning]\n  [./SMP]\n    type = SMP\n    full = true\n  [../]\n[]\n\n# ==================================================\n# Define Postprocessing (History)\n# ==================================================\n\n[VectorPostprocessors]\n  [./ELMTS]\n    type = ElementValueSampler\n    variable = 'orientation_q1 orientation_q2 orientation_q3 orientation_q4\n                cauchy_stress_xx cauchy_stress_yy cauchy_stress_zz\n                strain_xx strain_yy strain_zz\n                elastic_strain_xx elastic_strain_yy elastic_strain_zz'\n    contains_complete_history = false\n    sort_by = id\n  [../]\n[]\n\n# ==================================================\n# Define Postprocessing (Model Average)\n# ==================================================\n\n[Postprocessors]\n\n  # Number of elements\n  [./nelem]\n    type = NumElems\n  [../]\n\n  # Number of degrees of freedom\n  [./ndof]\n    type = NumDOFs\n  [../]\n\n  # Size of Timestep\n  [./dt]\n    type = TimestepSize\n  [../]\n\n  # Number of linear iterations\n  [./num_lin_it]\n    type = NumLinearIterations\n  [../]\n\n  # Number of non-linear iterations\n  [./num_nonlin_it]\n    type = NumNonlinearIterations\n  [../]\n\n  # Mean Stress\n  [./mCS_xx]\n    type = ElementAverageValue\n    variable = cauchy_stress_xx\n  [../]\n  [./mCS_yy]\n    type = ElementAverageValue\n    variable = cauchy_stress_yy\n  [../]\n  [./mCS_zz]\n    type = ElementAverageValue\n    variable = cauchy_stress_zz\n  [../]\n\n  # Mean Total Strain\n  [./mTE_xx]\n    type = ElementAverageValue\n    variable = strain_xx\n  [../]\n  [./mTE_yy]\n    type = ElementAverageValue\n    variable = strain_yy\n  [../]\n  [./mTE_zz]\n    type = ElementAverageValue\n    variable = strain_zz\n  [../]\n\n  # Mean Elastic Strain\n  [./mEE_xx]\n    type = ElementAverageValue\n    variable = elastic_strain_xx\n  [../]\n  [./mEE_yy]\n    type = ElementAverageValue\n    variable = elastic_strain_yy\n  [../]\n  [./mEE_zz]\n    type = ElementAverageValue\n    variable = elastic_strain_zz\n  [../]\n\n  # Mean Cavitation Model Variables\n  [./ma]\n    type = ElementAverageValue\n    variable = a\n  [../]\n  [./mb]\n    type = ElementAverageValue\n    variable = b\n  [../]\n  [./mD]\n    type = ElementAverageValue\n    variable = D\n  [../]\n[]\n\n# ==================================================\n# Define Simulation\n# ==================================================\n\n[Executioner]\n\n  # Multi-physics and time-dependent (transient) problem\n  automatic_scaling = true\n  type = Transient\n\n  # Options for PETSc (solving linear equations)\n  petsc_options = '-snes_converged_reason -ksp_converged_reason'\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package -ksp_gmres_restart -pc_hypre_boomeramg_strong_threshold -pc_hypre_boomeramg_interp_type -pc_hypre_boomeramg_coarsen_type -pc_hypre_boomeramg_agg_nl -pc_hypre_boomeramg_agg_num_paths -pc_hypre_boomeramg_truncfactor'\n  petsc_options_value = 'hypre boomeramg 200 0.7 ext+i PMIS 4 2 0.4'\n  line_search = 'none'\n\n  # Newton-Raphson solver\n  solve_type = NEWTON\n\n  # Tolerances on non-linear solve\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-5\n  nl_max_its = 16\n  nl_forced_its = 2\n  n_max_nonlinear_pingpong = 1\n\n  # Tolerances on linear solve\n  l_tol = 1e-15\n  l_max_its = 128\n\n  # Time variables\n  start_time = 0\n  end_time = 36000000.0\n  dtmin = 0.0001\n  dtmax = 1000000.0\n\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    growth_factor = 2\n    cutback_factor = 0.5\n    linear_iteration_ratio = 1000\n    optimal_iterations = 12\n    iteration_window = 2\n    dt = 0.0001\n  [../]\n[]\n\n# ==================================================\n# Define Simulation Output\n# ==================================================\n\n[Outputs]\n  print_linear_residuals = false\n  perf_graph = true\n\n  # Exodus Output\n  [./exodus]\n    type = Exodus\n    # elemental_as_nodal = true\n    interval = 2\n  [../]\n\n  # Console Output\n  [./console]\n    type = Console\n    show = 'dt mCS_xx mTE_xx mTE_yy mTE_zz ma mb mD'\n    output_linear = false\n    print_mesh_changed_info = true\n    max_rows = 5\n  [../]\n\n  # CSV Output\n  [./outfile]\n    type = CSV\n    file_base = 'results'\n    delimiter = ','\n    time_data = true\n    execute_vector_postprocessors_on = timestep_end\n  [../]\n[]\n\nAll the files I have used can also be downloaded from https://github.com/janzenchoi/temp.",
+          "url": "https://github.com/idaholab/moose/discussions/22731",
+          "updatedAt": "2022-12-10T07:15:19Z",
+          "publishedAt": "2022-11-17T10:46:04Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "@reverendbedford\nThis deer model is a little complicated as it has several components: tensor mechanics, czm, and neml.\nI'd like to isolate each of them one by one. Perhaps you could try replacing the neml stress with a moose-native stress, and see if memory is still increasing.",
+                  "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4166352",
+                  "updatedAt": "2022-11-17T11:07:05Z",
+                  "publishedAt": "2022-11-17T11:07:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "reverendbedford"
+                  },
+                  "bodyText": "So for the record this problem doesn't seem to leak on an ANL machine :)\n@janzenchoi\n\nGary's suggestion is good, you can try replacing the NEML model with some native MOOSE material (could just be linear elasticity) and see if the leak continues.\nGary also suggests trying PJFNK instead of Newton and only using the diagonal Jacobian entries just to see if this is a \"real\" increase in memory use by the preconditioner.\nSimilarly, you can try replacing the very complicated deer interface-cohesive model with one of the simple ones in MOOSE proper -- there is a linear elastic option.\nThe problem with all of this is that both NEML and MOOSE get valgrind tested frequently.  This means the leak, if it exists, is likely either in the very specific NEML model you're using if it's not covered by our tests or in the cohesive model (which is part of deer and not regularly memory checked).",
+                  "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4167753",
+                  "updatedAt": "2022-11-17T14:07:04Z",
+                  "publishedAt": "2022-11-17T14:07:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "reverendbedford"
+                          },
+                          "bodyText": "Uhh, what BLAS/LAPACK are you using?",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4167906",
+                          "updatedAt": "2022-11-17T14:21:20Z",
+                          "publishedAt": "2022-11-17T14:21:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "reverendbedford"
+                          },
+                          "bodyText": "Well the NEML model is not leaking, at least not on older version of MKL and/or other BLAS/LAPACK libraries.  There does seem to be a leak in newer versions of MKL, but I don't think that's the problem here.",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4168475",
+                          "updatedAt": "2022-11-17T15:23:32Z",
+                          "publishedAt": "2022-11-17T15:23:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "janzenchoi"
+                          },
+                          "bodyText": "Hello, @reverendbedford and @hugary1995.\nThank you for the responses.\nJust to clarify the current issue, I ran the simulation with 10 cores on three different machines, and they all consumed memory at a similarly increasing rate. I attached a graph below of the simulation's memory consumption after 10 timesteps. If you look closely, you can see that the memory increases in a staircase fashion.\n\n  \n\nI have also attempted to implement the provided suggestions, and these are the following results.\n\nI replaced the NEML and interface-cohesive models with a temperature dependent hardening model. Specifically, I used the input file from one of the tests on the GitHub, and replaced the mesh with my microstructure mesh. In doing this, the memory did not increase. I have attached a graph below, which shows the memory consumption of the simulation after 12 timesteps.\n\n\n  \n\n\nWhen changing to the PJFNK solver, the simulation kept failing during the first timestep.\nI have not tried replacing the interface-cohesive model. Interestingly though, when I removed it (leaving only the NEML CP model), the simulation kept failing during the first timestep.\n\nIt seems like the memory increase is indeed caused by the chosen models. Though, I am having some trouble finding good replacements for the NEML / DEER models.",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4241213",
+                          "updatedAt": "2022-11-26T05:41:32Z",
+                          "publishedAt": "2022-11-26T05:32:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "reverendbedford"
+                          },
+                          "bodyText": "Couple of things:\nThis does look like a memory leak.  The problem is we valgrind this model (without the CZM) in blackbear and it does not leak...\nSo:\n\nCan you provide a small model that reproduces this behavior?  It has to run in less than a minute on a single MPI rank and produce the \"increasing memory\" issue you show in the first plot.  If you can get an example like this we can try to valgrind it over here and if that doesn't work we can walk you through valgrinding it on your machine.\nWhat happens if you replace the NEML crystal plasticity model with some simple NEML macroscale plasticity model?",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4254249",
+                          "updatedAt": "2022-11-28T14:53:51Z",
+                          "publishedAt": "2022-11-28T14:53:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "janzenchoi"
+                          },
+                          "bodyText": "Hello Mark,\nI have created a 2 grain model that runs 3 timesteps for 45 seconds on my machine, to demonstrate the increasing memory.\nI have pushed all the necessary files to a repository, https://github.com/janzenchoi/temp_moose.\nInside, I have also included the script I wrote to check the memory consumption. The script simply queries the 'free' command every 2 seconds, and continually updates the plot for 50 seconds.\nI am running the script via the following command:\npython3 monitor.py & mpiexec -np 1 <path_to_deer_opt> -i simulation.i\nThis is the memory consumption graph I get from running the simulation.\n\n  \n\nIs there a place where I can see all the NEML models? I can't seem to find them in the MOOSE documentation.",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4260844",
+                          "updatedAt": "2022-11-29T07:17:52Z",
+                          "publishedAt": "2022-11-29T07:16:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "In addition to what @reverendbedford suggested, could you try running the memory check script in NEML with your configuration (MPI, OMP, etc.) and then paste the output of that script here? Something like\ncd neml/profiling\n./check_memory.sh",
+                  "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4258908",
+                  "updatedAt": "2022-11-29T01:54:59Z",
+                  "publishedAt": "2022-11-29T01:54:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "janzenchoi"
+                          },
+                          "bodyText": "Hello Gary,\nI could not get the script to run. I get the following message.\nvalgrind: ../util/cxx_interface/cxxsimple: No such file or directory\nAfter I added a .h on line 14, the script runs, but I get the following.\n================================================================================\n\nBeginning test: complexcreepdamage\n\n\n==19464== Memcheck, a memory error detector\n==19464== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19464== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19464== Command: ../util/cxx_interface/cxxsimple.h reference.xml complexcreepdamage 0.02 100.0 20 300\n==19464==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19464==\n==19464== HEAP SUMMARY:\n==19464==     in use at exit: 968 bytes in 30 blocks\n==19464==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19464==\n==19464== LEAK SUMMARY:\n==19464==    definitely lost: 0 bytes in 0 blocks\n==19464==    indirectly lost: 0 bytes in 0 blocks\n==19464==      possibly lost: 0 bytes in 0 blocks\n==19464==    still reachable: 968 bytes in 30 blocks\n==19464==         suppressed: 0 bytes in 0 blocks\n==19464== Reachable blocks (those to which a pointer was found) are not shown.\n==19464== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19464==\n==19464== For lists of detected and suppressed errors, rerun with: -s\n==19464== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: powerdamage\n\n\n==19465== Memcheck, a memory error detector\n==19465== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19465== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19465== Command: ../util/cxx_interface/cxxsimple.h reference.xml powerdamage 0.02 100.0 20 300\n==19465==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19465==\n==19465== HEAP SUMMARY:\n==19465==     in use at exit: 968 bytes in 30 blocks\n==19465==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19465==\n==19465== LEAK SUMMARY:\n==19465==    definitely lost: 0 bytes in 0 blocks\n==19465==    indirectly lost: 0 bytes in 0 blocks\n==19465==      possibly lost: 0 bytes in 0 blocks\n==19465==    still reachable: 968 bytes in 30 blocks\n==19465==         suppressed: 0 bytes in 0 blocks\n==19465== Reachable blocks (those to which a pointer was found) are not shown.\n==19465== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19465==\n==19465== For lists of detected and suppressed errors, rerun with: -s\n==19465== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: substep\n\n\n==19466== Memcheck, a memory error detector\n==19466== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19466== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19466== Command: ../util/cxx_interface/cxxsimple.h reference.xml substep 0.02 100.0 20 300\n==19466==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19466==\n==19466== HEAP SUMMARY:\n==19466==     in use at exit: 968 bytes in 30 blocks\n==19466==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19466==\n==19466== LEAK SUMMARY:\n==19466==    definitely lost: 0 bytes in 0 blocks\n==19466==    indirectly lost: 0 bytes in 0 blocks\n==19466==      possibly lost: 0 bytes in 0 blocks\n==19466==    still reachable: 968 bytes in 30 blocks\n==19466==         suppressed: 0 bytes in 0 blocks\n==19466== Reachable blocks (those to which a pointer was found) are not shown.\n==19466== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19466==\n==19466== For lists of detected and suppressed errors, rerun with: -s\n==19466== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: lanl_ti\n\n\n==19467== Memcheck, a memory error detector\n==19467== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19467== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19467== Command: ../util/cxx_interface/cxxsimple.h reference.xml lanl_ti 0.02 100.0 20 300\n==19467==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19467==\n==19467== HEAP SUMMARY:\n==19467==     in use at exit: 968 bytes in 30 blocks\n==19467==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19467==\n==19467== LEAK SUMMARY:\n==19467==    definitely lost: 0 bytes in 0 blocks\n==19467==    indirectly lost: 0 bytes in 0 blocks\n==19467==      possibly lost: 0 bytes in 0 blocks\n==19467==    still reachable: 968 bytes in 30 blocks\n==19467==         suppressed: 0 bytes in 0 blocks\n==19467== Reachable blocks (those to which a pointer was found) are not shown.\n==19467== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19467==\n==19467== For lists of detected and suppressed errors, rerun with: -s\n==19467== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: cpdmg\n\n\n==19468== Memcheck, a memory error detector\n==19468== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19468== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19468== Command: ../util/cxx_interface/cxxsimple.h reference.xml cpdmg 0.02 100.0 20 300\n==19468==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19468==\n==19468== HEAP SUMMARY:\n==19468==     in use at exit: 968 bytes in 30 blocks\n==19468==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19468==\n==19468== LEAK SUMMARY:\n==19468==    definitely lost: 0 bytes in 0 blocks\n==19468==    indirectly lost: 0 bytes in 0 blocks\n==19468==      possibly lost: 0 bytes in 0 blocks\n==19468==    still reachable: 968 bytes in 30 blocks\n==19468==         suppressed: 0 bytes in 0 blocks\n==19468== Reachable blocks (those to which a pointer was found) are not shown.\n==19468== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19468==\n==19468== For lists of detected and suppressed errors, rerun with: -s\n==19468== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: walker\n\n\n==19469== Memcheck, a memory error detector\n==19469== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19469== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19469== Command: ../util/cxx_interface/cxxsimple.h reference.xml walker 0.02 100.0 20 300\n==19469==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19469==\n==19469== HEAP SUMMARY:\n==19469==     in use at exit: 968 bytes in 30 blocks\n==19469==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19469==\n==19469== LEAK SUMMARY:\n==19469==    definitely lost: 0 bytes in 0 blocks\n==19469==    indirectly lost: 0 bytes in 0 blocks\n==19469==      possibly lost: 0 bytes in 0 blocks\n==19469==    still reachable: 968 bytes in 30 blocks\n==19469==         suppressed: 0 bytes in 0 blocks\n==19469== Reachable blocks (those to which a pointer was found) are not shown.\n==19469== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19469==\n==19469== For lists of detected and suppressed errors, rerun with: -s\n==19469== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: walker_switch\n\n\n==19470== Memcheck, a memory error detector\n==19470== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19470== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19470== Command: ../util/cxx_interface/cxxsimple.h reference.xml walker_switch 0.02 100.0 20 300\n==19470==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19470==\n==19470== HEAP SUMMARY:\n==19470==     in use at exit: 968 bytes in 30 blocks\n==19470==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19470==\n==19470== LEAK SUMMARY:\n==19470==    definitely lost: 0 bytes in 0 blocks\n==19470==    indirectly lost: 0 bytes in 0 blocks\n==19470==      possibly lost: 0 bytes in 0 blocks\n==19470==    still reachable: 968 bytes in 30 blocks\n==19470==         suppressed: 0 bytes in 0 blocks\n==19470== Reachable blocks (those to which a pointer was found) are not shown.\n==19470== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19470==\n==19470== For lists of detected and suppressed errors, rerun with: -s\n==19470== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: perfectplasticity\n\n\n==19471== Memcheck, a memory error detector\n==19471== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19471== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19471== Command: ../util/cxx_interface/cxxsimple.h reference.xml perfectplasticity 0.02 100.0 20 300\n==19471==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19471==\n==19471== HEAP SUMMARY:\n==19471==     in use at exit: 968 bytes in 30 blocks\n==19471==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19471==\n==19471== LEAK SUMMARY:\n==19471==    definitely lost: 0 bytes in 0 blocks\n==19471==    indirectly lost: 0 bytes in 0 blocks\n==19471==      possibly lost: 0 bytes in 0 blocks\n==19471==    still reachable: 968 bytes in 30 blocks\n==19471==         suppressed: 0 bytes in 0 blocks\n==19471== Reachable blocks (those to which a pointer was found) are not shown.\n==19471== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19471==\n==19471== For lists of detected and suppressed errors, rerun with: -s\n==19471== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: j2\n\n\n==19472== Memcheck, a memory error detector\n==19472== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19472== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19472== Command: ../util/cxx_interface/cxxsimple.h reference.xml j2 0.02 100.0 20 300\n==19472==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19472==\n==19472== HEAP SUMMARY:\n==19472==     in use at exit: 968 bytes in 30 blocks\n==19472==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19472==\n==19472== LEAK SUMMARY:\n==19472==    definitely lost: 0 bytes in 0 blocks\n==19472==    indirectly lost: 0 bytes in 0 blocks\n==19472==      possibly lost: 0 bytes in 0 blocks\n==19472==    still reachable: 968 bytes in 30 blocks\n==19472==         suppressed: 0 bytes in 0 blocks\n==19472== Reachable blocks (those to which a pointer was found) are not shown.\n==19472== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19472==\n==19472== For lists of detected and suppressed errors, rerun with: -s\n==19472== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: nonassociative\n\n\n==19473== Memcheck, a memory error detector\n==19473== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19473== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19473== Command: ../util/cxx_interface/cxxsimple.h reference.xml nonassociative 0.02 100.0 20 300\n==19473==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19473==\n==19473== HEAP SUMMARY:\n==19473==     in use at exit: 968 bytes in 30 blocks\n==19473==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19473==\n==19473== LEAK SUMMARY:\n==19473==    definitely lost: 0 bytes in 0 blocks\n==19473==    indirectly lost: 0 bytes in 0 blocks\n==19473==      possibly lost: 0 bytes in 0 blocks\n==19473==    still reachable: 968 bytes in 30 blocks\n==19473==         suppressed: 0 bytes in 0 blocks\n==19473== Reachable blocks (those to which a pointer was found) are not shown.\n==19473== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19473==\n==19473== For lists of detected and suppressed errors, rerun with: -s\n==19473== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: creep_plasticity\n\n\n==19474== Memcheck, a memory error detector\n==19474== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19474== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19474== Command: ../util/cxx_interface/cxxsimple.h reference.xml creep_plasticity 0.02 100.0 20 300\n==19474==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19474==\n==19474== HEAP SUMMARY:\n==19474==     in use at exit: 968 bytes in 30 blocks\n==19474==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19474==\n==19474== LEAK SUMMARY:\n==19474==    definitely lost: 0 bytes in 0 blocks\n==19474==    indirectly lost: 0 bytes in 0 blocks\n==19474==      possibly lost: 0 bytes in 0 blocks\n==19474==    still reachable: 968 bytes in 30 blocks\n==19474==         suppressed: 0 bytes in 0 blocks\n==19474== Reachable blocks (those to which a pointer was found) are not shown.\n==19474== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19474==\n==19474== For lists of detected and suppressed errors, rerun with: -s\n==19474== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: chaboche\n\n\n==19475== Memcheck, a memory error detector\n==19475== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19475== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19475== Command: ../util/cxx_interface/cxxsimple.h reference.xml chaboche 0.02 100.0 20 300\n==19475==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19475==\n==19475== HEAP SUMMARY:\n==19475==     in use at exit: 968 bytes in 30 blocks\n==19475==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19475==\n==19475== LEAK SUMMARY:\n==19475==    definitely lost: 0 bytes in 0 blocks\n==19475==    indirectly lost: 0 bytes in 0 blocks\n==19475==      possibly lost: 0 bytes in 0 blocks\n==19475==    still reachable: 968 bytes in 30 blocks\n==19475==         suppressed: 0 bytes in 0 blocks\n==19475== Reachable blocks (those to which a pointer was found) are not shown.\n==19475== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19475==\n==19475== For lists of detected and suppressed errors, rerun with: -s\n==19475== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: chaboche_substep\n\n\n==19476== Memcheck, a memory error detector\n==19476== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19476== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19476== Command: ../util/cxx_interface/cxxsimple.h reference.xml chaboche_substep 0.02 100.0 20 300\n==19476==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19476==\n==19476== HEAP SUMMARY:\n==19476==     in use at exit: 968 bytes in 30 blocks\n==19476==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19476==\n==19476== LEAK SUMMARY:\n==19476==    definitely lost: 0 bytes in 0 blocks\n==19476==    indirectly lost: 0 bytes in 0 blocks\n==19476==      possibly lost: 0 bytes in 0 blocks\n==19476==    still reachable: 968 bytes in 30 blocks\n==19476==         suppressed: 0 bytes in 0 blocks\n==19476== Reachable blocks (those to which a pointer was found) are not shown.\n==19476== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19476==\n==19476== For lists of detected and suppressed errors, rerun with: -s\n==19476== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: cp\n\n\n==19477== Memcheck, a memory error detector\n==19477== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19477== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19477== Command: ../util/cxx_interface/cxxsimple.h reference.xml cp 0.02 100.0 20 300\n==19477==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19477==\n==19477== HEAP SUMMARY:\n==19477==     in use at exit: 968 bytes in 30 blocks\n==19477==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19477==\n==19477== LEAK SUMMARY:\n==19477==    definitely lost: 0 bytes in 0 blocks\n==19477==    indirectly lost: 0 bytes in 0 blocks\n==19477==      possibly lost: 0 bytes in 0 blocks\n==19477==    still reachable: 968 bytes in 30 blocks\n==19477==         suppressed: 0 bytes in 0 blocks\n==19477== Reachable blocks (those to which a pointer was found) are not shown.\n==19477== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19477==\n==19477== For lists of detected and suppressed errors, rerun with: -s\n==19477== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n\n================================================================================\n\n\n================================================================================\n\nBeginning test: linearcp\n\n\n==19478== Memcheck, a memory error detector\n==19478== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.\n==19478== Using Valgrind-3.15.0 and LibVEX; rerun with -h for copyright info\n==19478== Command: ../util/cxx_interface/cxxsimple.h reference.xml linearcp 0.02 100.0 20 300\n==19478==\n../util/cxx_interface/cxxsimple.h: 8: using: not found\n../util/cxx_interface/cxxsimple.h: 10: Syntax error: \"(\" unexpected\n==19478==\n==19478== HEAP SUMMARY:\n==19478==     in use at exit: 968 bytes in 30 blocks\n==19478==   total heap usage: 35 allocs, 5 frees, 3,032 bytes allocated\n==19478==\n==19478== LEAK SUMMARY:\n==19478==    definitely lost: 0 bytes in 0 blocks\n==19478==    indirectly lost: 0 bytes in 0 blocks\n==19478==      possibly lost: 0 bytes in 0 blocks\n==19478==    still reachable: 968 bytes in 30 blocks\n==19478==         suppressed: 0 bytes in 0 blocks\n==19478== Reachable blocks (those to which a pointer was found) are not shown.\n==19478== To see them, rerun with: --leak-check=full --show-leak-kinds=all\n==19478==\n==19478== For lists of detected and suppressed errors, rerun with: -s\n==19478== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)\n\n================================================================================",
+                          "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4259835",
+                          "updatedAt": "2022-11-29T05:47:17Z",
+                          "publishedAt": "2022-11-29T05:43:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "reverendbedford"
+                  },
+                  "bodyText": "We were able to reproduce the issue, and it seems to be in a specific CZM model in deer, not in MOOSE or NEML.  I've sent @janzenchoi some info by email and we'll see if the fix over in deer fixes his issue.",
+                  "url": "https://github.com/idaholab/moose/discussions/22731#discussioncomment-4266151",
+                  "updatedAt": "2022-11-29T16:49:49Z",
+                  "publishedAt": "2022-11-29T16:49:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Can i manually limit the value of a variable to a specific range?",
+          "author": {
+            "login": "leezw37"
+          },
+          "bodyText": "Hi guys, I'm trying to create my own application for two-phase flow problems based on MOOSE. And I need to limit the value of a solution variable to a specific range. (volume fraction of vapor is between 0 and 1) But i don't know how.\nCan anybody help me? Thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/22792",
+          "updatedAt": "2022-11-29T09:18:40Z",
+          "publishedAt": "2022-11-25T08:43:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "Not to answer your question, but i'm just curious why the PorousFlow module of MOOSE, which has multi-phase flow (eg gas + water): https://mooseframework.inl.gov/modules/porous_flow/index.html , doesn't suit you.  I like to try to keep in touch with what people need.",
+                  "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4235730",
+                  "updatedAt": "2022-11-25T09:21:27Z",
+                  "publishedAt": "2022-11-25T09:21:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "leezw37"
+                          },
+                          "bodyText": "Thanks for your reply. I'm not familiar with PorousFlow module, and i'll have a look.\nI want to build a simplified application of RELAP-7: https://moose.inl.gov/relap7/SitePages/Home.aspx.\nAnd thermal_hydraulics module is similar to the single phase part of RELAP-7: https://mooseframework.inl.gov/modules/thermal_hydraulics/index.html",
+                          "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4236585",
+                          "updatedAt": "2022-11-25T11:23:02Z",
+                          "publishedAt": "2022-11-25T11:23:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor limiting variable values, you may use the Bounds system\nhttps://mooseframework.inl.gov/source/auxkernels/ConstantBoundsAux.html\nGood luck with this effort!\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4240708",
+                  "updatedAt": "2022-11-26T00:57:48Z",
+                  "publishedAt": "2022-11-26T00:57:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "leezw37"
+                          },
+                          "bodyText": "Oh man, you're amazing! It works fine according to my test!\n(btw, i misunderstood the meaning of HeatConductionMaterial.C:computeProperties(). The temp limit is just for calculating other material properties, so i edit the question to make my question clear. )\nThank you so much!",
+                          "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4240832",
+                          "updatedAt": "2022-11-26T01:50:02Z",
+                          "publishedAt": "2022-11-26T01:50:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "I'm so pleased it works for you, @leezw37 .   Bounds are quite difficult in practice.",
+                          "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4257734",
+                          "updatedAt": "2022-11-28T22:04:46Z",
+                          "publishedAt": "2022-11-28T22:04:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "While this may work for you, below are several things to consider before you use it in production (also to remind future readers of this thread).\nThe most typical use of the bound system is probably phase field problems, where the order parameter/phase/volume fraction is bounded. These systems are solving for necessary conditions of a minimization problem in nature, so if you find yourself needing to set bound on the primary variable, you are likely facing one of the following issues:\n\nThe objective function (energy) is concave in the primary variable.\nThe objective function is globally convex and has a unique minimum close to the bound.\nThe objective function is non-convex, but it is locally convex in the neighborhood of the solution.\nThe objective function has several local minima, and by applying the bound, nonphysical minima are ruled out.\n\nYou really need to think about which case your problem falls into, as bounding the variable isn't the solution to all.\n\nYou can see if it is case 1 by looking at the singular values, If indeed it is, then there is no point in enforcing any bounds.\nThis is a perfectly valid case for the use of bounds, as numerically (e.g. in Newton-Raphson iterations) the solution may go outside the physical bounds, and some of your constitutive definition may become invalid.\nEnforcing a bound may help, but you are also at the risk of finding the wrong solution. For a transient problem, you can often get around this by cutting the time step, assuming that the solution from the previous step is correct.\nThis is also a valid use case for bounds, but the rate of convergence may be compromised.",
+                          "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4258863",
+                          "updatedAt": "2022-11-29T01:44:42Z",
+                          "publishedAt": "2022-11-29T01:44:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "leezw37"
+                          },
+                          "bodyText": "Thank you, Hu.  Your reply is much more detailed, and very helpful to me!\nAs what you said, I actually don't need bounds to my simulation temporarily. And sometimes the bounds make the solution difficult to solve.\nFor the trouble with my application, the solution is to make some reasonable changes to the closure relations and they work well without additional bounds now. But i may use it when i need it.\nAnyway, thank you very much. You are impressive. Have a nice day!",
+                          "url": "https://github.com/idaholab/moose/discussions/22792#discussioncomment-4261887",
+                          "updatedAt": "2022-11-29T09:18:40Z",
+                          "publishedAt": "2022-11-29T09:18:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Updated Moose Compilation Warnings",
+          "author": {
+            "login": "maxnezdyur"
+          },
+          "bodyText": "I recently updated moose and mamba. Now when I am compiling I am getting the warnings below. I made sure to use make clobberall. I am running on a M1. Everything is working the same, but not sure why I keep getting this error.\nLinking Library /Users/maxnezdyur/projects/moose/modules/rdg/lib/librdg-opt.la...\nld: warning: direct access in function 'RayTracingStudy::initialSetup()' from file '/Users/maxnezdyur/projects/moose/modules/ray_tracing/build/unity_src/.libs/userobjects_Unity.arm64-apple-darwin20.0.0.opt.o' to global weak symbol 'typeinfo for RayKernelTempl<double>' from file '/Users/maxnezdyur/projects/moose/modules/ray_tracing/build/unity_src/.libs/raykernels_Unity.arm64-apple-darwin20.0.0.opt.o' means the weak symbol cannot be overridden at runtime. This was likely caused by different translation units being compiled with different visibility settings.\nld: warning: direct access in function 'RayTracingStudy::initialSetup()' from file '/Users/maxnezdyur/projects/moose/modules/ray_tracing/build/unity_src/.libs/userobjects_Unity.arm64-apple-darwin20.0.0.opt.o' to global weak symbol 'typeinfo for RayKernelTempl<double>' from file '/Users/maxnezdyur/projects/moose/modules/ray_tracing/build/unity_src/.libs/raykernels_Unity.arm64-apple-darwin20.0.0.opt.o' means the weak symbol cannot be overridden at runtime. This was likely caused by different translation units being compiled with different visibility settings.",
+          "url": "https://github.com/idaholab/moose/discussions/22804",
+          "updatedAt": "2022-11-28T20:21:06Z",
+          "publishedAt": "2022-11-28T16:37:38Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThese warnings have appeared in our transition to M1, it's in our current tasks to fix them.\nWe ll keep you posted.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22804#discussioncomment-4256062",
+                  "updatedAt": "2022-11-28T18:13:05Z",
+                  "publishedAt": "2022-11-28T18:13:04Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Coupling phase field to mechanics",
+          "author": {
+            "login": "sslim8537"
+          },
+          "bodyText": "Dear all,\nI am new to Moose and just starting with the basic examples in the tutorials. After learning the basics, I will try to solve my problem, which is to simulate a multiphase field evolution coupled to the mechanics. From what I have read in the documentation, I think that the Moose framework is exactly what I need. However, before I invest a lot of time, I want to double check whether Moose is suitable for this task or not. I am wondering if Moose will allow for calculations:\n- on the three dimensional spherical domain,\n- of multiple-phase fields,\n- of coupled diffusion and phase boundary movement in the multi-phase field,\n- of coupling between phase field and mechanics (phase-field and stress field),\n- of concentration dependent diffusion coefficients\nThank you very much for your kind replies.",
+          "url": "https://github.com/idaholab/moose/discussions/22791",
+          "updatedAt": "2022-11-28T14:23:53Z",
+          "publishedAt": "2022-11-25T07:40:26Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nMOOSE can do 1D, 2D, 3D XYZ, 2D RZ and 1D spherical. So a 3D spherical domain would work as long as it s represented in XYZ\nMultiple phases is supported\nPhase boundaries can move\nCoupling between phase field and mechanics has been done. I believe you will find examples in MOOSE of this\nDiffusion coefficients depending on concentration/local variables is fully supported\nThe phase field docs are here btw\nhttps://mooseframework.inl.gov/modules/phase_field/index.html\n@laagesen for checking what I say\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22791#discussioncomment-4240323",
+                  "updatedAt": "2022-11-25T23:23:04Z",
+                  "publishedAt": "2022-11-25T23:23:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Yes agreed on all of this! The only thing I would add is that there are several models for multiple order parameters or multiple phase fields in the literature. We have the most support for the model described in\nhttps://journals.aps.org/pre/abstract/10.1103/PhysRevE.98.023309\nAnd are currently revising documentation to give a more thorough description of how what's in the input files relates to the paper. This is a multi-order parameter model. There are other models that are generally referred to as multi-phase field models, the distinction being that those models enforce that the sum of all the phase-fields must equal 1 everywhere. There are pros and cons to the different approaches, which is a bit beyond the scope here, but the multi-phase model can also be implemented in MOOSE, we just don't have input files with examples in the repository.",
+                          "url": "https://github.com/idaholab/moose/discussions/22791#discussioncomment-4253959",
+                          "updatedAt": "2022-11-28T14:23:53Z",
+                          "publishedAt": "2022-11-28T14:23:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Convergence issue in phase-field (KKS model)",
+          "author": {
+            "login": "GuoChi-Li"
+          },
+          "bodyText": "Hello MOOSE developers,\nI want to simulate a KKS solidification model in MOOSE using the phase-field model, so I find a paper for this purpose. The paper's title is 'Phase-field simulation of structure evolution at high growth velocities during directional solidification of Ti55Al45 alloys', and the DOI is https://doi.org/10.1016/j.intermet.2004.07.018. I think it is an excellent paper to start because it combines the CALPHAD (CALculation of PHAse Diagrams) data into a phase field method. However, I have encountered a convergence issue. The output message was 'Nonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 0.' I am not sure why this happened.\nThese are my input file and output file.\nkks_model_setup_Ti_Al.log\noutput_LU.log\nI also try different solver conditions, such as LU, BoomerAMG, and ASM with the PETSc conditions in the input file.\nAnd the second question is that the paper implements $[(1-c)W_A+cW_B ]*g(\\phi)$ as shown in the first term in equation 4. I think the different W is not supported in moose. Correct me if I am wrong. Is there any chance I can implement this? Thank you for your time.\nSincerely,\nGuo-Chi",
+          "url": "https://github.com/idaholab/moose/discussions/22386",
+          "updatedAt": "2023-01-03T23:52:10Z",
+          "publishedAt": "2022-10-13T08:42:00Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe solver does not solve any time step, it sees a NaN and cant proceed.\nThe culprit is likely one of these parsed expressions:\n      function = '(c*GAl_L+(1-c)*GTi_L+R*T*(c*log(c)+(1-c)*log(1-c))+c*(1-c)*(G0_L+G1_L*(1-2*c)))/Vm'\n\nif c becomes negative or null or above 1, this will generate a NaN. I would recommend either:\n\nadding bounds in the function to avoid nans at all times (max(0, min(c, 1)) for example\nusing the bounds system on c\nhttps://mooseframework.inl.gov/source/auxkernels/ConstantBoundsAux.html\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3933555",
+                  "updatedAt": "2022-10-21T13:04:13Z",
+                  "publishedAt": "2022-10-21T13:04:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Update on this:\nI've tried --trap-fpe and running in Debug mode but I cant get the solver to catch what is causing the NaN.",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3934569",
+                          "updatedAt": "2022-10-21T14:57:41Z",
+                          "publishedAt": "2022-10-21T14:57:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Hi GiudGiud,\nThank for your time and your explanation. I am not sure how to add bounds in the function, but I have tried using the \u2018bounds system\u2019 on c. However, it still gets NaN. I also tried adding the bounds system on c, cl, cs, but this didn\u2019t work.\nI have two questions for the bounds system. (1)What is the function of the \u2018 bounds_dummy\u2019? Is this just a AuxVariables for the bounds systems or it has other physical meaning? (2) After I added the bounds system, MOOSE told me I should use \u2018a variational inequalities solver.\u2019 Does the \u2018LU\u2019 or the other solver (such as BoomerAMG or ASM ) support this type of problem?\nSincerely,\nGuo-Chi",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3934832",
+                          "updatedAt": "2022-10-21T15:27:07Z",
+                          "publishedAt": "2022-10-21T15:27:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "bounds_dummy, as its name suggests, is a dummy variable helping the system figure out which dofs the constraint applies to.\nPopular petsc VI solvers are VNEWTONRSLS and VINEWTONSSLS. If you don't use a VI snes solver, then the bounds will be ignored. AFAIK, all linear preconditioners, e.g. lu, asm, amg, are compatible with snes VI solvers.",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3936697",
+                          "updatedAt": "2022-10-21T19:32:41Z",
+                          "publishedAt": "2022-10-21T19:32:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Hi hugary1995,\nThank you for your explanations. I have added\n[Bounds]\n  [./c_upper_bound]\n    type = ConstantBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = upper\n    bound_value = 1\n  [../]\n\n  [./c_lower_bound]\n    type = ConstantBoundsAux\n    variable = bounds_dummy\n    bounded_variable = c\n    bound_type = lower\n    bound_value = 0\n  [../]\n[]\n\nand I have also tried LU with vinewtonssls, LU with vinewtonrsls in my code. The codes are shown as below.\n# LU with vinewtonssls\n  petsc_options_iname = '-pc_type -snes_type    -snes_vi_monitor'\n  petsc_options_value = 'lu       vinewtonssls  true'\n\n# LU with vinewtonrsls\n  petsc_options_iname = '-pc_type -snes_type    -snes_vi_monitor'\n  petsc_options_value = 'lu       vinewtonrsls  true'\n\nHowever, I still got NaN in MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3942236",
+                          "updatedAt": "2022-10-23T03:18:50Z",
+                          "publishedAt": "2022-10-23T03:18:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThe NaNs must be coming from somewhere else then.\nWith LU that can happen with 0s on the diagonals.\nCan you use a pc_factor_shift of NONZERO in your preconditioner? (goes in the petsc options)\nAnother thing would be to drastically reduce the system size to a few elements and print the matrix to check it with ksp_view_mat\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3944469",
+                          "updatedAt": "2022-10-23T15:59:40Z",
+                          "publishedAt": "2022-10-23T15:57:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Hello GiudGiud,\nBased on your advice, I have tried these two changes.\n(1) I have removed the petsc_options_iname, petsc_options_value in the Executioner section, and changed the Preconditioning section as follows\n[Preconditioning]\n  [./full]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -snes_type    -snes_vi_monitor  -pc_factor_shift_type'\n    petsc_options_value = 'lu       vinewtonssls  true              NONZERO'\n  [../]\n[]\n\nI still got NaNs.\nI also added -pc_factor_shift_amount 1e-9 in the petsc options, but this does not help.\n(2) I have reduced the mesh from 900 * 1000 to 10*10 (also modified the initial condition slightly) and changed the Preconditioning by adding the -ksp_view_mat binary as the petsc document mentioned. (https://petsc.org/release/docs/manualpages/KSP/KSPSolve/)\n[Preconditioning]\n  [./full]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -snes_type    -snes_vi_monitor  -pc_factor_shift_type -pc_factor_shift_amount -ksp_view_mat'\n    petsc_options_value = 'lu       vinewtonssls  true              NONZERO               1e-9                    binary'\n  [../]\n[]\n\nI got two files named binaryoutput and binaryoutput.info. But there is nothing in these files. Not sure if I am doing this correctly or not. I have also added -ksp_view_mat binary in the original input file (900 * 1000 mesh), but I still got the empty binaryoutput and binaryoutput.info.\nGuo-Chi",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3947459",
+                          "updatedAt": "2022-10-24T05:46:56Z",
+                          "publishedAt": "2022-10-24T05:43:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you export it in binary you ll need to find a reader to look at the matrix. I think matlab can do it",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3951877",
+                          "updatedAt": "2022-10-24T14:44:22Z",
+                          "publishedAt": "2022-10-24T14:44:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Can I export the file into other formats? (I only see binary on the website.) The file size is 0 bytes, so I don't think I did it correctly. Here are the two files. I have added .txt in the file end to make files acceptable by GitHub.\nbinaryoutput.info.txt\nbinaryoutput.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3952032",
+                          "updatedAt": "2022-10-24T14:59:23Z",
+                          "publishedAt": "2022-10-24T14:59:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think if you pass it in petsc_options directly you get text",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3952074",
+                          "updatedAt": "2022-10-24T15:02:20Z",
+                          "publishedAt": "2022-10-24T15:02:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "I used Matlab to open the file with fread or fopen, but it is empty. I am unsure what you mean by 'pass it in petsc_options directly.' If I don't provide the same length of arguments in both petsc_options_iname and petsc_options_value, moose will get an error. Also, I have tried -ksp_view_mat text, but it is not supported in petsc.",
+                          "url": "https://github.com/idaholab/moose/discussions/22386#discussioncomment-3955952",
+                          "updatedAt": "2022-10-25T01:18:02Z",
+                          "publishedAt": "2022-10-25T01:18:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How do I know which units to change",
+          "author": {
+            "login": "fervaldies"
+          },
+          "bodyText": "I am currently working in MOOSE and I am trying to run a model that is in millimiters. The model in the exo file is 200x100x16mm and I would like to know which parameters I have to change to mm as well and which ones not. The parameters that I have are heat transfer coeff,  and emissivity function. The most confusing one is the emissivity function, where I do not know if I should change the units of the htc only or also the boltzmann variable. And also, is the heat transfer coefficient the same in the ADConvectiveHeatFluxBC and ADFunctionRadiativeBC? Could I use both at the same time in the same surface? Thank you in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/22786",
+          "updatedAt": "2023-01-03T23:07:27Z",
+          "publishedAt": "2022-11-24T03:34:43Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nheat transfer coef is W/m2 right? If so then it needs to be in W/mm2\nemissivity is usually unitless so you would not have to change that one. But if it involves the htc then it's likely you ll need to change it.\nMy advice would be to transform your mesh to be in meters, then you can use the SI unit everywhere.\nThis is very easy using the TransformGenerator, with a scaling transformation\nhttps://mooseframework.inl.gov/source/meshgenerators/TransformGenerator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22786#discussioncomment-4228963",
+                  "updatedAt": "2022-11-24T16:50:15Z",
+                  "publishedAt": "2022-11-24T16:50:14Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "cannot pull docker container sha256 error on f1f00ef4e9ed layer",
+          "author": {
+            "login": "TeaCult"
+          },
+          "bodyText": "Bug Description\nI cannot run or pull container strage error occurs :\ndocker run -ti idaholab/moose:latest /bin/bash -c 'cd test; ./run_tests'\nUnable to find image 'idaholab/moose:latest' locally\nlatest: Pulling from idaholab/moose\neaead16dc43b: Pull complete\n4f4fb700ef54: Pull complete\n4a19a462196d: Pull complete\n68809389b6a7: Pull complete\n9bcd8b69b17e: Pull complete\nf29b50332647: Pull complete\nb67fa59dd2d9: Pull complete\n3bf93d7f56e4: Pull complete\nf1f00ef4e9ed: Extracting [==================================================>]  1.588kB/1.588kB\n783d9607c2be: Download complete\n30af6333143c: Download complete\nc7d674dc8468: Download complete\n22494a5ceeed: Download complete\na9e2d0f1c181: Download complete\n7a1756df8f03: Download complete\n072d860238cd: Download complete\n19290591cfbb: Download complete\n4c2d687235a3: Download complete\ndocker: failed to register layer: rename /var/lib/docker/image/btrfs/layerdb/tmp/write-set-2670145948 /var/lib/docker/image/btrfs/layerdb/sha256/3cbfecd5b748c8e7a47ca492d03f26007fe50dc5a5cec360928685d6d074c8b7: file exists.\nSee 'docker run --help'.\nSteps to Reproduce\ndocker run -ti idaholab/moose:latest /bin/bash -c 'cd test; ./run_tests'\nImpact\ncannot use moose in docker container\nMy configuration:\nI am on a rtx 3060 passed through vm which has lxd containers. In one of lxd image called fem I have docker containers:\nREPOSITORY             TAG       IMAGE ID       CREATED         SIZE\ndolfinx/lab            stable    bab989bbd385   2 months ago    3.92GB\ndealii/dealii          latest    3921e1752cbb   4 months ago    6.28GB\nuwsbel/projectchrono   latest    38eb2b51feee   10 months ago   7.98GB\nand petsce precice calculix and elmerfem built from sources. Everything works except moose because I cant pull it.\nAll my base system VM and lxd containers have kernel 6.0.7-arch1\nBase OS [vfio-kvm [ lxc [ docker [ !mose_image] ] ] ]",
+          "url": "https://github.com/idaholab/moose/discussions/22788",
+          "updatedAt": "2023-01-03T23:09:26Z",
+          "publishedAt": "2022-11-18T09:32:20Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "TeaCult"
+                  },
+                  "bodyText": "rebooted 3 time and now all works. I really have no idea whats happening , lots of free disk space , storage pool space ram and cpu resources are available. Check sha256 :\nls /var/lib/docker/image/btrfs/layerdb/sha256/3cbfecd5b748c8e7a47ca492d03f26007fe50dc5a5cec360928685d6d074c8b7\ncache-id  diff\tparent\tsize  tar-split.json.gz\n\nCleaning cache also didnt work.\nStrangely after 3 reboots , everything is normal:\ndocker pull idaholab/moose:latest \nlatest: Pulling from idaholab/moose\neaead16dc43b: Pull complete \n4f4fb700ef54: Pull complete \n8198d4bd982d: Pull complete \n27f4ad5165da: Pull complete \nfbd732637927: Pull complete \n75844ee65ec2: Pull complete \nc6e9c5625073: Pull complete \n9724f9c73dd7: Pull complete \nea7ed87a478a: Pull complete \n1bb1f22ca993: Pull complete \n1ca59dfea254: Pull complete \n858a9e363486: Pull complete \n5f9aedc8ada4: Pull complete \n51fb2c57dcdc: Pull complete \n247f4d4cc6bb: Pull complete \n662520e63b9e: Pull complete \ndc359c013330: Pull complete \n48b4b0faf25c: Pull complete \nDigest: sha256:65b83ed0e07c1f5de2be415b03eb25d887514261a30865a64e281534389e4a3c\nStatus: Downloaded newer image for idaholab/moose:latest\ndocker.io/idaholab/moose:latest",
+                  "url": "https://github.com/idaholab/moose/discussions/22788#discussioncomment-4227172",
+                  "updatedAt": "2022-11-24T14:44:13Z",
+                  "publishedAt": "2022-11-18T13:51:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "I've actually had this issue before - luckily it's all on docker and not on us :-)\nIf you search for that error string, you can see lots of complaints about docker cache getting screwed up in time. I usually get away with doing a prune and then removing the offending cache file, but it seems like you've got it working for now.",
+                  "url": "https://github.com/idaholab/moose/discussions/22788#discussioncomment-4227194",
+                  "updatedAt": "2022-11-24T14:46:36Z",
+                  "publishedAt": "2022-11-24T14:46:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

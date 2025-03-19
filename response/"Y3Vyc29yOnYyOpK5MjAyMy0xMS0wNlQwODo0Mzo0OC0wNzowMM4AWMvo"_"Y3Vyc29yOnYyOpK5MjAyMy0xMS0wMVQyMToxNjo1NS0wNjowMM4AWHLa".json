@@ -1,0 +1,1108 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMS0wMVQyMToxNjo1NS0wNjowMM4AWHLa"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Correct usage of constrained homogenization in a multiscale set-up",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Dear Moose user group,\nI am actively considering the constrained homogenization approach in moose to better understand the response of the micro-structure at a scale relevant to crystal plasticity. I have been able to run some simulations by constraining the model in the xx direction and i am happy with the kind of results obtained so far. However i get convergence issues for certain combination of constraints, particularly for those appear in the off-diagonal terms.\nThis works OK:\nconstraint_types = 'strain stress stress strain strain strain strain strain strain'\ntargets = 'strain11 zero zero zero zero zero zero zero zero'\nConvergence issues observed for this set of constraints:\nconstraint_types = 'strain stress stress stress stress stress stress stress stress'\ntargets = 'strain11 zero zero zero zero zero zero zero zero'\nTime Step 1, time = 0.2, dt = 0.2\n 0 Nonlinear |R| = 5.000000e+00\n      0 Linear |R| = 5.000000e+00\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to FACTOR_NUMERIC_ZEROPIVOT\nIn computing the eigenvalues and eigenvectors of a symmetric rank-2 tensor, the PETSC LAPACK syev routine returned error code            2\n\nA MooseException was raised during Auxiliary variable computation.\nThe next solve will fail, the timestep will be reduced, and we will try again.\n\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\n\n*** ERROR ***\nThe following error occurred in the object \"ConstantDT\", of type \"ConstantDT\".\n\nSolve failed and timestep already at or below dtmin, cannot continue!\n\nStack frames: 13\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx1           1::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: callMooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, MooseApp*)\n3: void MooseObject::mooseError<char const (&) [70]>(char const (&) [70]) const\n4: /moose/moose/framework/libmoose-opt.so.0(+0xdd670b) [0x2abb8c23070b]\n5: TimeStepper::computeStep()\n6: Transient::execute()\n7: MooseApp::executeExecutioner()\n8: MooseApp::run()\n9: main\n10: /lib64/libc.so.6(+0x27510) [0x2abb9b06d510]\n11: __libc_start_main\n12: /moose/moose/modules/combined/combined-opt() [0x4034f5]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\n\nThe first case might still show up some stresses in the shear directions as the strains are restricted, while in the second case we nullify all of those stresses and this is my most preferred way of working. The constrained values seems reasonable and does not affect the state of convergence. Not sure if i am doing something wrong in the second case that seriously disturbs the mechanical equilibrium of the model.\nWhat follows here is a detailed look of the input file i am using for the problematic case.\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n  macro_gradient = hvar\n  homogenization_constraint = homogenization\n[]\n\n[Mesh]\n  [base]\n    type = FileMeshGenerator\n    file = 'pcrystal_standard.msh'\n  []\n  [./fix_all]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_all'\n    coord = '6.666666666667 6.666666666667 6.666666666667'\n    input = base\n  [../]\n  [./fix_xy]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_xy'\n    coord = '6.666666666667 6.666666666667 3.333333333333'\n    input = fix_all\n  [../]\n  [./fix_z]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_z'\n    coord = '6.666666666667 3.333333333333 6.666666666667'\n    input = fix_xy\n  [../]\n  [sidesets]\n    type = SideSetsFromNormalsGenerator\n    input = fix_z\n    normals = '\n                -1 0 0\n                1 0 0\n                0 -1 0\n                0 1 0\n                0 0 -1\n                0 0 1\n              '\n    fixed_normal = true\n    new_boundary = 'left right bottom top back front'\n  []\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n  [disp_z]\n  []\n  [hvar]\n    family = SCALAR\n    order = NINTH\n  []\n[]\n\n[UserObjects]\n  [./prop_read]\n    type = PropertyReadFile\n    prop_file_name = 'pcrystal_standard_set1.csv'\n    # Enter file data as prop#1, prop#2, .., prop#nprop\n    nprop = 3\n    read_type = element\n  [../]\n[]\n\n[AuxVariables]\n  [s11]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s21]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s31]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s12]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s22]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s32]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s13]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s23]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s33]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [fp_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [F11]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F21]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F31]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F12]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F22]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F32]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F13]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F23]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F33]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [./gss]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./slin]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n\n[AuxKernels]\n  [s11]\n    type = RankTwoAux\n    variable = s11\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 0\n  []\n  [s21]\n    type = RankTwoAux\n    variable = s21\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 0\n  []\n  [s31]\n    type = RankTwoAux\n    variable = s31\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 0\n  []\n  [s12]\n    type = RankTwoAux\n    variable = s12\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 1\n  []\n  [s22]\n    type = RankTwoAux\n    variable = s22\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 1\n  []\n  [s32]\n    type = RankTwoAux\n    variable = s32\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 1\n  []\n  [s13]\n    type = RankTwoAux\n    variable = s13\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 2\n  []\n  [s23]\n    type = RankTwoAux\n    variable = s23\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 2\n  []\n  [s33]\n    type = RankTwoAux\n    variable = s33\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 2\n  []\n  [fp_xx]\n    type = RankTwoAux\n    variable = fp_xx\n    rank_two_tensor = plastic_deformation_gradient\n    index_j = 0\n    index_i = 0\n    execute_on = timestep_end\n  [../]\n  [F11]\n    type = RankTwoAux\n    variable = F11\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 0\n  []\n  [F21]\n    type = RankTwoAux\n    variable = F21\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 0\n  []\n  [F31]\n    type = RankTwoAux\n    variable = F31\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 0\n  []\n  [F12]\n    type = RankTwoAux\n    variable = F12\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 1\n  []\n  [F22]\n    type = RankTwoAux\n    variable = F22\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 1\n  []\n  [F32]\n    type = RankTwoAux\n    variable = F32\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 1\n  []\n  [F13]\n    type = RankTwoAux\n    variable = F13\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 2\n  []\n  [F23]\n    type = RankTwoAux\n    variable = F23\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 2\n  []\n  [F33]\n    type = RankTwoAux\n    variable = F33\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 2\n  []\n  [gss]\n    type = MaterialStdVectorAux\n    variable = gss\n    property = slip_resistance\n    index = 0\n    execute_on = timestep_end\n  [../]\n  [./sincr]\n    type = MaterialStdVectorAux\n    variable = slin\n    property = slip_increment\n    index = 0\n    execute_on = timestep_end\n  [../]\n[]\n\n[UserObjects]\n  [homogenization]\n    type = HomogenizationConstraint\n    constraint_types = 'strain stress stress stress strain strain strain strain strain'\n    targets = 'strain11 zero zero zero zero zero zero zero zero'\n    execute_on = 'INITIAL LINEAR NONLINEAR'\n  []\n[]\n\n[Kernels]\n  [sdx]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_x\n    component = 0\n  []\n  [sdy]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_y\n    component = 1\n  []\n  [sdz]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_z\n    component = 2\n  []\n[]\n\n[ScalarKernels]\n  [enforce]\n    type = HomogenizationConstraintScalarKernel\n    variable = hvar\n  []\n[]\n\n[Functions]\n  [strain11]\n    type = ParsedFunction\n    expression = '2.5e-2*t'\n  []\n  [strain22]\n    type = ParsedFunction\n    expression = '4.0e-2*t'\n  []\n  [strain33]\n    type = ParsedFunction\n    expression = '8.0e-2*t'\n  []\n  [strain23]\n    type = ParsedFunction\n    expression = '2.0e-2*t'\n  []\n  [strain13]\n    type = ParsedFunction\n    expression = '7.0e-2*t'\n  []\n  [strain12]\n    type = ParsedFunction\n    expression = '1.0e-2*t'\n  []\n  [strain32]\n    type = ParsedFunction\n    expression = '1.0e-2*t'\n  []\n  [strain31]\n    type = ParsedFunction\n    expression = '2.0e-2*t'\n  []\n  [strain21]\n    type = ParsedFunction\n    expression = '-1.5e-2*t'\n  []\n  [stress11]\n    type = ParsedFunction\n    expression = '5.0e2*t'\n  []\n  [stress22]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress33]\n    type = ParsedFunction\n    expression = '8.0e2*t'\n  []\n  [stress23]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress13]\n    type = ParsedFunction\n    expression = '7.0e2*t'\n  []\n  [stress12]\n    type = ParsedFunction\n    expression = '1.0e2*t'\n  []\n  [stress32]\n    type = ParsedFunction\n    expression = '1.0e2*t'\n  []\n  [stress31]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress21]\n    type = ParsedFunction\n    expression = '1.5e2*t'\n  []\n  [zero]\n    type = ConstantFunction\n    value = 0\n  []\n[]\n\n[BCs]\n  [Periodic]\n    [x]\n      variable = disp_x\n      auto_direction = 'x y z'\n    []\n    [y]\n      variable = disp_y\n      auto_direction = 'x y z'\n    []\n    [z]\n      variable = disp_z\n      auto_direction = 'x y z'\n    []\n  []\n  [fix1_x]\n    type = DirichletBC\n    boundary = \"fix_all\"\n    variable = disp_x\n   value = 0\n  []\n  [fix1_y]\n    type = DirichletBC\n    boundary = \"fix_all\"\n    variable = disp_y\n    value = 0\n  []\n  [fix1_z]\n    type = DirichletBC\n    boundary = \"fix_all\"\n   variable = disp_z\n   value = 0\n []\n  [fix2_x]\n    type = DirichletBC\n    boundary = \"fix_xy\"\n    variable = disp_x\n    value = 0\n  []\n  [fix2_y]\n    type = DirichletBC\n    boundary = \"fix_xy\"\n    variable = disp_y\n    value = 0\n  []\n  [fix3_z]\n    type = DirichletBC\n    boundary = \"fix_z\"\n    variable = disp_z\n    value = 0\n []\n[]\n\n[Materials]\n  [./elasticity_tensor]\n    type = ComputeElasticityTensorCP\n    C_ijkl = '1.684e5 1.214e5 1.214e5 1.684e5 1.214e5 1.684e5 0.754e5 0.754e5 0.754e5'\n    fill_method = symmetric9\n    read_prop_user_object = prop_read   \n  [../]\n  [./stress]\n    type = ComputeMultipleCrystalPlasticityStress\n    crystal_plasticity_models = 'trial_xtalpl'\n    tan_mod_type = exact\n    maximum_substep_iteration = 10\n  [../]\n  [./trial_xtalpl]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 12\n    slip_sys_file_name = input_slip_sys.txt\n    resistance_tol = 1.0e-2\n    gss_initial = 60.8\n  [../]  \n  [compute_stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n  [compute_strain]\n    type = ComputeLagrangianStrain\n    homogenization_gradient_names = 'homogenization_gradient'\n  []\n  [compute_homogenization_gradient]\n    type = ComputeHomogenizedLagrangianStrain\n  []\n[]\n\n[Postprocessors]\n  [d11]\n    type = AverageNodalVariableValue\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [d22]\n    type = AverageNodalVariableValue\n    variable = disp_y\n    execute_on = 'initial timestep_end'\n  []\n  [d33]\n    type = AverageNodalVariableValue\n    variable = disp_z\n    execute_on = 'initial timestep_end'\n  []\n  [s11]\n    type = ElementAverageValue\n    variable = s11\n    execute_on = 'initial timestep_end'\n  []\n  [s21]\n    type = ElementAverageValue\n    variable = s21\n    execute_on = 'initial timestep_end'\n  []\n  [s31]\n    type = ElementAverageValue\n    variable = s31\n    execute_on = 'initial timestep_end'\n  []\n  [s12]\n    type = ElementAverageValue\n    variable = s12\n    execute_on = 'initial timestep_end'\n  []\n  [s22]\n    type = ElementAverageValue\n    variable = s22\n    execute_on = 'initial timestep_end'\n  []\n  [s32]\n    type = ElementAverageValue\n    variable = s32\n    execute_on = 'initial timestep_end'\n  []\n  [s13]\n    type = ElementAverageValue\n    variable = s13\n    execute_on = 'initial timestep_end'\n  []\n  [s23]\n    type = ElementAverageValue\n    variable = s23\n    execute_on = 'initial timestep_end'\n  []\n  [s33]\n    type = ElementAverageValue\n    variable = s33\n    execute_on = 'initial timestep_end'\n  []  \n  [fp_xx]\n    type = ElementAverageValue\n    variable = fp_xx\n  [../]\n  [F11]\n    type = ElementAverageValue\n    variable = F11\n    execute_on = 'initial timestep_end'\n  []\n  [F21]\n    type = ElementAverageValue\n    variable = F21\n    execute_on = 'initial timestep_end'\n  []\n  [F31]\n    type = ElementAverageValue\n    variable = F31\n    execute_on = 'initial timestep_end'\n  []\n  [F12]\n    type = ElementAverageValue\n    variable = F12\n    execute_on = 'initial timestep_end'\n  []\n  [F22]\n    type = ElementAverageValue\n    variable = F22\n    execute_on = 'initial timestep_end'\n  []\n  [F32]\n    type = ElementAverageValue\n    variable = F32\n    execute_on = 'initial timestep_end'\n  []\n  [F13]\n    type = ElementAverageValue\n    variable = F13\n    execute_on = 'initial timestep_end'\n  []\n  [F23]\n    type = ElementAverageValue\n    variable = F23\n    execute_on = 'initial timestep_end'\n  []\n  [F33]\n    type = ElementAverageValue\n    variable = F33\n    execute_on = 'initial timestep_end'\n  []\n  [./gss]\n    type = ElementAverageValue\n    variable = gss\n  [../]\n  [./slin]\n    type = ElementAverageValue\n    variable = slin\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = 'newton'\n  line_search = none\n\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n\n  l_max_its = 2\n  l_tol = 1e-14\n  nl_max_its = 10\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n\n  start_time = 0.0\n  dt = 0.2\n  dtmin = 0.2\n  end_time = 1.0\n[]\n\n[Outputs]\n  csv = true\n  exodus = true\n[]\n\nI am quiet keen that this modelling approach if found reliable, can chosen to be used in conjunction with a component model to evaluate the engineering response, as this might help us study the neutron induced damage problems at the finer scale more accurately. The one aspect i am concerned was about setting the targets for the model - this should be known from the macro-response and i am wondering what these are, how can they be interpreted in this extended set-up. A strain controlled problem would he more effective here, and i presume that these target constraints are simply the average response of the deformation gradient of the macro-behaviour. One thing that i am not very clear is on the very fundamental assumption of the constrained homogenization as this may have the tendency to produce stresses very similar to the stress state induced in the model prior to homogenization. It would be helpful if some one can give a clarification on the correct usage of the model and how it brings a difference to the overall constitutive behaviour of the component.\nKind regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/25700",
+          "updatedAt": "2023-11-05T09:39:26Z",
+          "publishedAt": "2023-10-10T10:20:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nTo get around LU failing with a zero pivot you need to use a diagonal shift\n-pc_factor_shift\nNONZERO\nIn your petsc options\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25700#discussioncomment-7240765",
+                  "updatedAt": "2023-10-10T12:49:37Z",
+                  "publishedAt": "2023-10-10T12:49:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "Got better with setting -pc_factor_shift_type to NONZERO.\nThis block works now\n[UserObjects]\n  [homogenization]\n    type = HomogenizationConstraint\n    constraint_types = 'strain stress stress stress stress stress stress stress strain'\n    targets = 'strain11 zero zero zero zero zero zero zero zero'\n    execute_on = 'INITIAL LINEAR NONLINEAR'\n  []\n[]\n\nWhereas this still has same convergence failure\n[UserObjects]\n  [homogenization]\n    type = HomogenizationConstraint\n    constraint_types = 'strain stress stress stress stress stress stress stress stress'\n    targets = 'strain11 zero zero zero zero zero zero zero zero'\n    execute_on = 'INITIAL LINEAR NONLINEAR'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/25700#discussioncomment-7262772",
+                          "updatedAt": "2023-10-12T12:03:32Z",
+                          "publishedAt": "2023-10-12T12:03:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Ttw0626"
+                  },
+                  "bodyText": "if I am not misunderstanding,\nalthough I encountered another converged problem of rve-analysis under periodic condition using crystal plasticity model-based on new tensor-mechanics system, you cannot use the build-in cp model in new system without/with wrapped stress from my view.\nregards,\ntianwen",
+                  "url": "https://github.com/idaholab/moose/discussions/25700#discussioncomment-7478124",
+                  "updatedAt": "2023-11-05T09:39:26Z",
+                  "publishedAt": "2023-11-05T09:39:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "The program could not be converged based on KKS Model",
+          "author": {
+            "login": "znanshan"
+          },
+          "bodyText": "Hi, I am simulating the austenite-to-ferrite phase transformation using the phase field module in MOOSE. I referred to the content in \"moose/modules/phase_field/test/tests/KKS_system/nonlinear.i.\"\nHowever, it is not converging, and below are the results:\nTime Step 1, time = 0.1, dt = 0.1\n\nPerforming automatic scaling calculation\n\n    |residual|_2 of individual variables:\n                 eta_alpha1: 7.30312\n                 eta_gamma1: 6.70316\n                 c:          0\n                 c_gamma:    0.140903\n                 c_alpha:    0\n 0 Nonlinear |R| = 9.914022e+00\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to SUBPC_ERROR \nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\n...........\n\nTime Step 1, time = 1e-12, dt = 1e-12\n    |residual|_2 of individual variables:\n                 eta_alpha1: 7.30312\n                 eta_gamma1: 6.70316\n                 c:          0\n                 c_gamma:    0.140903\n                 c_alpha:    0\n 0 Nonlinear |R| = 9.914022e+00\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to SUBPC_ERROR \nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 0\n Solve Did NOT Converge!\nAborting as solve did not converge\n\n\n*** ERROR ***\nThe following error occurred in the object \"ConstantDT\", of type \"ConstantDT\".\n\nSolve failed and timestep already at or below dtmin, cannot continue!\n\n\n\n*** ERROR ***\nThe following error occurred in the object \"ConstantDT\", of type \"ConstantDT\".\n\nSolve failed and timestep already at or below dtmin, cannot continue!\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 6\n\nHere is my input file:\n[Mesh]\n  type = GeneratedMesh #\n  dim = 2\n  elem_type = QUAD4\n\n  nx = 100\n  ny = 100\n  nz = 0\n  xmax = 30\n  xmin = 0\n  ymax = 30\n  ymin = 0\n[]\n\n[Variables]\n  [eta_alpha1]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [eta_gamma1]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 0.0\n  []\n  [c]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [c_gamma]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 0.01\n  []\n  [c_alpha]\n    order = FIRST\n    family = LAGRANGE\n    initial_condition = 0.001\n  []\n[]\n\n[BCs]\n  [Periodic]\n    [all]\n      auto_direction = 'x y'\n    []\n  []\n[]\n\n[ICs]\n  [CarbonCircICs]\n    type = SmoothCircleIC\n    x1 = 15\n    y1 = 15\n    radius = 6\n    variable = c\n    invalue = 0.001\n    outvalue = 0.01\n    profile = TANH\n    int_width = 2.4\n  []\n  [etaalpha1CircICs]\n    type = SmoothCircleIC\n    x1 = 15\n    y1 = 15\n    radius = 6\n    variable = eta_alpha1\n    invalue = 1\n    outvalue = 0\n    profile = TANH\n    int_width = 2.4\n  []\n[]\n\n[Materials]\n  [constants]\n    type = GenericConstantMaterial\n    prop_names = '  T     Tc      R                 Vm   Vm1      pi              sigma delta   kappa     m         epsilon'\n    prop_values = ' 1000  1100    8.31446261815324  1    7e-6     3.14159265359   0.5   2.4e-6  9e-7      1.25e6    1.5'\n  []\n\n  # switchfunction\n  [w_eta_alpha]\n    type = SwitchingFunctionMultiPhaseMaterial\n    all_etas = 'eta_alpha1 eta_gamma1'\n    h_name = w_eta_alpha\n    phase_etas = 'eta_alpha1'\n  []\n  [w_eta_gamma]\n    type = SwitchingFunctionMultiPhaseMaterial\n    all_etas = 'eta_alpha1 eta_gamma1'\n    h_name = w_eta_gamma\n    phase_etas = 'eta_gamma1'\n  []\n\n  #\n  # Thermodynamics\n  #\n\n  ## Gamma\n\n  ### Lattice occupancy\n\n  [lattice_occupancy_of_carbon_atoms_gamma]\n    type = DerivativeParsedMaterial\n    property_name = Y_C_gamma\n    coupled_variables = c\n    expression = '(1.0) * (c / (1.0 - c))'\n  []\n  [lattice_occupancy_of_vacancy_gamma]\n    type = DerivativeParsedMaterial\n    property_name = Y_va_gamma\n    # coupled_variables = c\n    expression = '1 - Y_C_gamma'\n    material_property_names = 'Y_C_gamma'\n  []\n\n  ### Standard Gibbs free energy\n\n  [standard_gibbs_free_energy_of_austenite]\n    type = DerivativeParsedMaterial\n    property_name = G_Fe_gamma\n    expression = '-237.57 + 132.416 * T - 24.6643 * T * log(T) - 0.00375752 * pow(T,2) - 5.89269 * pow(10, -8) * pow(T, 3) + 77358.5 / T'\n    material_property_names = 'T'\n  []\n  [standard_gibbs_free_energy_of_ironcarbon_alloy_austenite]\n    type = DerivativeParsedMaterial\n    property_name = G_FeC_gamma\n    expression = '77207 - 15.877 * T + G_Fe_gamma'\n    material_property_names = 'T G_Fe_gamma'\n  []\n\n  ### Atomic interaction coefficient\n\n  [atomic_interaction_coefficient_gamma]\n    type = DerivativeParsedMaterial\n    property_name = L_Fevac_gamma\n    expression = '-34671'\n  []\n\n  ### Molar magnetization energy\n\n  [detla_G_mol_gamma]\n    type = DerivativeParsedMaterial\n    property_name = delta_G_mol_gamma\n    expression = '0'\n  []\n\n  ### Free energy density\n\n  [free_energy_gamma_mol]\n    type = DerivativeParsedMaterial\n    property_name = f_gamma_mol\n    coupled_variables = 'c'\n    expression = 'Y_va:=Y_va_gamma; G_Fe:=G_Fe_gamma; Y_C:=Y_C_gamma; G_FeC:=G_FeC_gamma; L_FevaC:=L_Fevac_gamma; Delta_G_mol:=delta_G_mol_gamma; Y_va * G_Fe + Y_C * G_FeC + 1 * R * T * (Y_va * log(Y_va) + Y_C * log(Y_C)) + Y_va * Y_C * L_FevaC + Delta_G_mol'\n    material_property_names = 'Y_va_gamma G_Fe_gamma Y_C_gamma R T L_Fevac_gamma delta_G_mol_gamma G_FeC_gamma'\n  []\n\n  [f_gamma_V]\n    type = DerivativeParsedMaterial\n    property_name = f_gamma\n    expression = 'f_gamma_mol / Vm'\n    material_property_names = 'f_gamma_mol Vm'\n  []\n\n  ## Alpha\n\n  ### Lattice occupancy\n\n  [lattice_occupancy_of_carbon_atoms_alpha]\n    type = DerivativeParsedMaterial\n    property_name = Y_C_alpha\n    coupled_variables = c\n    expression = '(1.0/3) * (c / (1.0 - c))'\n  []\n  [lattice_occupancy_of_vacancy_alpha]\n    type = DerivativeParsedMaterial\n    property_name = Y_va_alpha\n    # coupled_variables = c\n    expression = '1 - Y_C_alpha'\n    material_property_names = 'Y_C_alpha'\n  []\n\n  ### Standard Gibbs free energy\n\n  [standard_gibbs_free_energy_of_ferrite]\n    type = DerivativeParsedMaterial\n    property_name = G_Fe_alpha\n    # coupled_variables = c\n    expression = '1224.83 + 124.134 * T - 23.5143 * T * log(T) - 0.00439752 * pow(T, 2) - 5.89269* pow(10,-8) * pow(T, 3) + 77358.5 / T'\n    material_property_names = 'T'\n  []\n  [standard_gibbs_free_energy_of_ironcarbon_alloy_ferrite]\n    type = DerivativeParsedMaterial\n    property_name = G_FeC_alpha\n    expression = '322050 + 75.667 * T + G_Fe_alpha'\n    material_property_names = 'T G_Fe_alpha'\n  []\n\n  ### Atomic interaction coefficient\n\n  [atomic_interaction_coefficient_alpha]\n    type = DerivativeParsedMaterial\n    property_name = L_Fevac_alpha\n    expression = '-190 * T'\n    material_property_names = 'T'\n  []\n\n  ### Molar magnetization energy\n\n  [detla_G_mol_alpha]\n    type = DerivativeParsedMaterial\n    property_name = delta_G_mol_alpha\n    expression = 'tau:=T/Tc; if(tau>=1,-6507.5 * ((1.0 / 10.0) * pow(tau, -4) + (1.0 / 315.0) * pow(tau, -14) + (1.0 / 1500.0) * pow(tau, -24)), -9180.5 + 9.723 * T - 9309.8 * ((1.0 / 6.0) * pow(tau, 4) + (1.0 / 135.0) * pow(tau, 10) + (1.0 / 600.0) * pow(tau, 16)))'\n    material_property_names = 'T Tc'\n  []\n\n  ### Free energy density\n\n  [free_energy_alpha]\n    type = DerivativeParsedMaterial\n    property_name = f_alpha_mol\n    coupled_variables = 'c'\n    expression = 'Y_va:=Y_va_alpha; G_Fe:=G_Fe_alpha; Y_C:=Y_C_alpha; L_FevaC:=L_Fevac_alpha; Delta_G_mol:=delta_G_mol_alpha; G_FeC:=G_FeC_alpha; Y_va * G_Fe + Y_C* G_FeC + 3 * R * T * (Y_va * log(Y_va) + Y_C * log(Y_C)) + Y_va*Y_C*L_FevaC + Delta_G_mol'\n    material_property_names = 'Y_va_alpha G_Fe_alpha Y_C_alpha R T L_Fevac_alpha delta_G_mol_alpha G_FeC_alpha'\n  []\n\n  [f_alpha_V]\n    type = DerivativeParsedMaterial\n    property_name = f_alpha\n    expression = 'f_alpha_mol / Vm'\n    material_property_names = 'f_alpha_mol Vm'\n  []\n\n  #\n  # Diffusion kinetic\n  #\n\n  # AC\n\n  [L]\n    type = DerivativeParsedMaterial\n    property_name = L\n    expression = '4/3 * M_p * delta'\n    material_property_names = 'M_p delta'\n  []\n  [M_p]\n    type = DerivativeParsedMaterial\n    property_name = M_p\n    expression = '0.035* exp(-17700/T)'\n    material_property_names = 'T'\n  []\n\n  # CH\n\n  # gamma\n  [Mc_gamma]\n    type = DerivativeParsedMaterial\n    property_name = Mc_gamma\n    expression = 'Y_C:=Y_C_gamma; 1/(R*T) * 4.529e-7 * exp(-(1/T - 2.221e-4)) * (17767 - 26436*Y_C)'\n    material_property_names = 'R T Y_C_gamma'\n  []\n  [M_gamma]\n    type = DerivativeParsedMaterial\n    property_name = M_gamma\n    expression = 'Y_C:=Y_C_gamma; 1 * Y_C * pow((1 - Y_C),2) * Mc_gamma'\n    material_property_names = 'Y_C_gamma Mc_gamma'\n  []\n  [D_gamma]\n    type = DerivativeParsedMaterial\n    property_name = D_gamma\n    expression = 'w_eta_gamma*M_gamma'\n    material_property_names = 'w_eta_gamma(eta_gamma1) M_gamma'\n  []\n\n  # alpha\n\n  [Mc_alpha]\n    type = DerivativeParsedMaterial\n    property_name = Mc_alpha\n    expression = '1/(R*T) * 2e-6 * exp(-10115/T) * exp(0.5895 * (1 + 2/pi * atan(14.985 - 15309/T)))'\n    material_property_names = 'R T pi'\n  []\n  [M_alpha]\n    type = DerivativeParsedMaterial\n    property_name = M_alpha\n    expression = 'Y_C:=Y_C_alpha; 3 * Y_C * pow((1 - Y_C),2) * Mc_alpha'\n    material_property_names = 'Y_C_alpha Mc_alpha'\n  []\n  [D_alpha]\n    type = DerivativeParsedMaterial\n    property_name = D_alpha\n    expression = 'w_eta_alpha*M_alpha'\n    material_property_names = 'w_eta_alpha(eta_alpha1) M_alpha'\n  []\n\n  # f*w\n  [fw_alpha]\n    type = DerivativeParsedMaterial\n    expression = 'f_alpha*w_eta_alpha'\n    material_property_names = 'f_alpha  w_eta_alpha'\n    property_name = fw_alpha\n  []\n  [fw_gamma]\n    type = DerivativeParsedMaterial\n    expression = 'f_gamma*w_eta_gamma'\n    material_property_names = 'f_gamma  w_eta_gamma'\n    property_name = fw_gamma\n  []\n\n  # feta\n  [f_etas]\n    type = DerivativeParsedMaterial\n    property_name = f_etas\n    expression = '((eta_alpha1^4/4 - eta_alpha1^2/2)+(eta_gamma1^4/4 - eta_gamma1^2/2)) + epsilon * (eta_alpha1^2*eta_gamma1^2)+1/4'\n    coupled_variables = 'eta_alpha1 eta_gamma1'\n    material_property_names = 'epsilon'\n  []\n[]\n\n[Kernels]\n  #Kernels for diffusion equation\n  [dcdt]\n    type = TimeDerivative\n    variable = c\n  []\n  [diff_c1]\n    type = MatDiffusion\n    variable = c\n    diffusivity = D_alpha\n    v = c_alpha\n    args = 'eta_alpha1'\n  []\n  [diff_c2]\n    type = MatDiffusion\n    variable = c\n    diffusivity = D_gamma\n    v = c_gamma\n    args = 'eta_gamma1'\n  []\n\n  # Kernels for Allen-Cahn equation for eta_alpha1\n  [deta1dt]\n    type = TimeDerivative\n    variable = eta_alpha1\n  []\n  [ACBulkF1]\n    type = KKSMultiACBulkF\n    variable = eta_alpha1\n    Fj_names = 'f_alpha f_gamma'\n    hj_names = 'w_eta_alpha w_eta_gamma '\n    gi_name = f_etas\n    eta_i = eta_alpha1\n    wi = 1.25e6\n    coupled_variables = 'c_alpha c_gamma eta_gamma1'\n  []\n  [ACBulkC1]\n    type = KKSMultiACBulkC\n    variable = eta_alpha1\n    Fj_names = 'f_alpha f_gamma'\n    hj_names = 'w_eta_alpha w_eta_gamma'\n    cj_names = 'c_alpha c_gamma'\n    eta_i = eta_alpha1\n    coupled_variables = 'eta_gamma1'\n  []\n  [ACInterface1]\n    type = ACInterface\n    variable = eta_alpha1\n    kappa_name = kappa\n  []\n\n  # Phase concentration constraints\n  [chempot12]\n    type = KKSPhaseChemicalPotential\n    variable = c_alpha\n    cb = c_gamma\n    fa_name = f_alpha\n    fb_name = f_gamma\n  []\n  [phaseconcentration]\n    type = KKSMultiPhaseConcentration\n    variable = c_gamma\n    cj = 'c_alpha c_gamma'\n    hj_names = 'w_eta_alpha w_eta_gamma'\n    etas = 'eta_alpha1 eta_gamma1'\n    c = c\n  []\n\n  # equation for eta_gamma1 = 1 - eta_alpha1\n  # 0 = eta_gamma1 + eta_alpha1 -1\n  [constraint_eta1] #   eta_gamma1\n    type = Reaction\n    variable = eta_gamma1\n  []\n  [constraint_eta2] # + eta_alpha1\n    type = CoupledForce\n    variable = eta_gamma1\n    coef = -1\n    v = eta_alpha1\n  []\n  [constraint_one] # - 1\n    type = BodyForce\n    variable = eta_gamma1\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type -sub_pc_factor_shift_type'\n  petsc_options_value = 'lu       nonzero'\n\n  dt = 10\n  num_steps = 20\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  print_linear_residuals = true\n  [pg]\n    type = PerfGraphOutput\n    execute_on = 'INITIAL FINAL'\n    level = 2\n  []\n  # checkpoint = true\n[]\n\nI am confused by this, and I hope to receive some guidance. Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/25968",
+          "updatedAt": "2023-11-09T03:01:07Z",
+          "publishedAt": "2023-11-05T02:39:17Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "recover simultations with adaptive mesh on HPC",
+          "author": {
+            "login": "lyyc199586"
+          },
+          "bodyText": "Hi all,\nI am trying to recover a simulation on HPC with adaptive mesh, I enabled checkpoint and trying to use --recover, but I get an error said\n*** ERROR ***\nRestartableEquationSystems::load(): Previously stored elements/nodes do not match the current element/nodes",
+          "url": "https://github.com/idaholab/moose/discussions/25967",
+          "updatedAt": "2023-11-05T02:12:08Z",
+          "publishedAt": "2023-11-05T02:12:07Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Nodal variables do not have gradients at nodes",
+          "author": {
+            "login": "jin0123456"
+          },
+          "bodyText": "I made a custom auxiliary variable and used MatchedValueBC to give the boundary conditions of a variable. The error is 'Nodal variables do not have gradients at nodes' which I suppose happened in the auxkernel.\nHere is .C of the auxkernel,\n#include \"CladOutsideTemp.h\"\n\nregisterMooseObject(\"WorkerApp\", CladOutsideTemp);\n\nInputParameters\nCladOutsideTemp::validParams()\n{\n  InputParameters params = AuxKernel::validParams();\n\n  params.addCoupledVar(\"temperature\", \"Coupled temperature\");\n  params.addParam<PostprocessorName>(\"P\", \"Internal pressure\");\n\tparams.addClassDescription(\"Compute clad outer temperature\");\n\n  return params;\n}\n\nCladOutsideTemp::CladOutsideTemp(const InputParameters & parameters)\n  : AuxKernel(parameters),\n  _temperature(coupledValue(\"temperature\")),\n  _grad_t(coupledGradient(\"temperature\")),\n  _T_sat(getMaterialProperty<Real>(\"T_sat\")),\n  _internal_pressure(getPostprocessorValue(\"P\"))\n{\n}\n\nReal\nCladOutsideTemp::computeValue()\n{\n\treturn _T_sat[_qp] + 7.91 * std::exp(-_internal_pressure/1e5/62.) * std::pow((-(6.308 + 2.716e-2 * _temperature[_qp] - 7.301e-6 * std::pow(_temperature[_qp], 2)) * _grad_t[_qp](0)/1000000.), 0.25);\n}\n\nThe input,\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 10\n  ny = 10\n  coord_type = RZ\n[]\n\n[Problem]\n  solve = true\n[]\n[Variables]\n  [convected]\n    order = FIRST\n    family = MONOMIAL\n  []\n[]\n[AuxVariables]\n  [integral_value]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [h_rise]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [h]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [temp]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [outer_temp]\n    order = FIRST\n    family = LAGRANGE\n  []\n  [T]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [p]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[AuxKernels]\n  [integral]\n    type = CoolantPerAux\n    temp = temp\n    variable = integral_value\n  []\n  [h_rise]\n    type = SpatialUserObjectAux\n    variable = h_rise\n    execute_on = 'initial linear'\n    user_object = layered_integral\n  []\n  [h]\n    type = ParsedAux\n    variable = h\n    #coupled_variables = 'h_rise'\n    expression = '1297.86e3 + 4000 * y'\n    use_xyzt = true\n  []\n  [temperature]\n    type = ParsedAux\n    variable = temp\n    expression = '600. - 200. * x'\n    use_xyzt = true\n  []\n  [T]\n    type = MaterialRealAux\n    property = T\n    variable = T\n    boundary = right\n  []\n  [pressure]\n    type = ParsedAux\n    variable = p\n    expression = '15.5e6'\n  []\n  [outer_temp]\n    type = CladOutsideTemp\n    temperature = temp\n    P = internal_pressure\n    variable = outer_temp\n  []\n[]\n[Kernels]\n  [diff]\n    type = Diffusion\n    variable = convected\n  []\n[]\n\n[FluidProperties]\n  [water]\n    type = Water97FluidProperties\n  []\n[]\n\n[Materials]\n  [fp_mat]\n    type = FluidPropertiesMaterialPHNEW\n    pressure = p\n    h = h\n    fp = water\n  []\n[]\n\n[UserObjects]\n  [layered_integral]\n    type = LayeredSideIntegral\n    direction = y\n    num_layers = 50\n    variable = integral_value\n    execute_on = 'initial linear'\n    cumulative = true\n    boundary = right\n  []\n[]\n\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = convected\n    boundary = left\n    value = 0\n  []\n  [right]\n    type = MatchedValueBC\n    variable = convected\n    boundary = right\n    v = outer_temp\n  []\n[]\n\n[Postprocessors]\n  [T_sat]\n    type = ElementAverageMaterialProperty\n    mat_prop = T_sat\n  []\n  [internal_pressure]\n    type = ConstantPostprocessor\n    value = 1e6\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = 'PJFNK'\n\n[]\n\n[Outputs]\n  exodus = true\n  checkpoint = true\n[]\n\nSo which step leads to the error?",
+          "url": "https://github.com/idaholab/moose/discussions/25894",
+          "updatedAt": "2023-11-04T05:51:01Z",
+          "publishedAt": "2023-10-30T13:04:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis\n  _grad_t(coupledGradient(\"temperature\")),\n\ncant be done like this if temperature is a nodal variable.\nsince this is an auxkernel, are you using this for output?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7423964",
+                  "updatedAt": "2023-10-30T13:18:47Z",
+                  "publishedAt": "2023-10-30T13:18:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jin0123456"
+                          },
+                          "bodyText": "i create this aux to give boundary of another variable like the input file. And I want to call\nthe gradient of temperature in x direction, how to achieve this in auxkernel?",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7424182",
+                          "updatedAt": "2023-10-30T13:39:51Z",
+                          "publishedAt": "2023-10-30T13:39:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You could project to an elemental variable. (use an element variable for the auxiliary variable being written)\nthere will be a projection error but it wont be as bad as figuring out which value to use for discontinuous derivatives?",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7424450",
+                          "updatedAt": "2023-10-30T13:57:11Z",
+                          "publishedAt": "2023-10-30T13:57:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jin0123456"
+                          },
+                          "bodyText": "If just for output, it's ok for elemental variable. But MatchedValueBC needs a nodal variable to supply, there is another error if i make it a elemental variable.",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7424710",
+                          "updatedAt": "2023-10-30T14:18:59Z",
+                          "publishedAt": "2023-10-30T14:18:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You could project the elemental variable, which represents the gradient projection, onto a nodal variable and then use that in the MatchedValueBC, so two projections",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7427110",
+                          "updatedAt": "2023-10-30T18:00:53Z",
+                          "publishedAt": "2023-10-30T18:00:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Two projections can work\n@hugary1995 is there some nodal patch equivalent code to choose a derivative for the node? Or to average the derivatives. i know it might not be a great idea",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7427699",
+                          "updatedAt": "2023-10-30T19:23:43Z",
+                          "publishedAt": "2023-10-30T19:23:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jin0123456"
+                          },
+                          "bodyText": "So is the gradient supposed to be an elemental variable no matter what order is the temperature? And I wonder how to project the elemental variable onto a nodal variable?\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7434346",
+                          "updatedAt": "2023-10-31T11:43:26Z",
+                          "publishedAt": "2023-10-31T11:43:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "@GiudGiud, this is not a bad idea at all. @hugary1995 implemented a nodal patch recovery object. I'm currently working on a proof of concept to use this code to perform nodal projection of stateful material properties. This will allow is to interpolate stateful properties at qudrature point locations that change between timestep (as is required in mortar for example).",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7437153",
+                          "updatedAt": "2023-10-31T16:10:30Z",
+                          "publishedAt": "2023-10-31T16:10:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Just piggybacking on this as I have the same issue. I don't know if it is worth creating a new thread for.\nJust like OP, I initially used MatchedValueBC. Since my BC depends on nodal variables and their gradients, I decided to first calculate the complicated expression within a custom Material file and output it as a Material, which is by nature, defined on the quadrature points i.e is elemental. Then I used the Nodal Patch Recovery to extrapolate to the nodes. A double projection basically, as suggested earlier by @lindsayad (if I understood correctly). The simulation ran, but did not converge.\nI then tried something else- created a custom Dirichlet BC (https://mooseframework.inl.gov/getting_started/examples_and_tutorials/examples/ex04_bcs.html) where I would evaluate the complicated expression, which seemed to make more sense to do. But then, I could not couple the needed gradients- I got the same error as the title of this thread. I tried calculating the gradients with a Material file, and declaring them as MaterialProperties, but the NodalBC object could not consume them. And so I projected them with Patch Recovery as nodal aux variables and then coupled them to the BC. Again, the simulation ran, but did not converge.\nThe errors of both attempts were on the same order, I don't know if that means anything. I will still have to properly go through the rest of the code to check for implementation errors, but I wanted to share in case you had any thoughts.\nAlso, in this scenario, would you set execute_on to TIMESTEP_END, TIMESTEP_BEGIN, or NONLINEAR? I thought it would be NONLINEAR so that it would solve concurrently with the system of equations. But using NONLINEAR made the simulation abort almost instantly, compared to with TIMESTEP_END, where it still attempted to solve.",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7465098",
+                          "updatedAt": "2023-11-03T09:38:35Z",
+                          "publishedAt": "2023-11-03T09:38:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Couple of options here:\n\nAt each node, grab all the neighboring nodes and estimate the gradient.\nAt each node, grab all the neighboring quadrature points and estimate the gradient. This is the nodal patch recovery technique.\nInstead of MatchedValueBC, use an integrated BC. An integrated BC operates on quadrature points, and so will have access to both gradients and (interpolated) nodal values.\n\nMy suggestion for your particular use case is 3.\nNote 3 will give you approximation error as is usual with Galerkin. The error diminishes upon mesh refinement.",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7465213",
+                          "updatedAt": "2023-11-03T09:50:43Z",
+                          "publishedAt": "2023-11-03T09:50:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "I was considering using an IntegratedBC but wasn't quite clear on the documentation https://mooseframework.inl.gov/getting_started/examples_and_tutorials/examples/ex04_bcs.html\nFor the NodalBC, within computeQpResidual() the residual is literally u - whatever_u_equals.\nAs for the IntegratedBC, it works a bit differently doesn't it? The residual is working with the gradient of u, and not u. Right? Or how would I go about implement u=expression with it? In my system I am not dealing with the fluxes.\nAlso, how would you grab the neighboring nodes in each direction if I wanted to try option 1? What is the syntax for that?",
+                          "url": "https://github.com/idaholab/moose/discussions/25894#discussioncomment-7465325",
+                          "updatedAt": "2023-11-03T10:01:17Z",
+                          "publishedAt": "2023-11-03T10:01:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Metaphysicl problem?",
+          "author": {
+            "login": "makeclean"
+          },
+          "bodyText": "Hi MOOSEers\nI've got a problem which I'm running it started out as an IGA based problem, and now I've migrated to regular elements to debug whats going on to no avail. My problem is a fully non-linear thermo-mechanical problem, when I remove the mechanical aspects of the problem and make it fully thermal it runs & converges fine. However, when i run the coupled thermal-mechanical problem I get the following error\n+----------------+---------------------+\n| time           | average_temperature |\n+----------------+---------------------+\n|   0.000000e+00 |        0.000000e+00 |\n+----------------+---------------------+\n\n\n    Computing Initial Residual\n      Computing Residual..                                                               [ 18.15 s] [  -48 MB]\n    Finished Computing Initial Residual                                                  [ 18.15 s] [  -48 MB]\n\nPerforming automatic scaling calculation\n\n/home/dc-davi4/rds/rds-ukaea-ap001/moose_dev/moose/scripts/../libmesh/installed/include/metaphysicl/dynamic_std_array_wrapper.h, line 125, compiled Sep 22 2022 at 23:53:34\n\nThe particular funciton is\n  void resize(size_type new_size)\n  {\n    if (new_size > N)\n      metaphysicl_error();\n    _dynamic_n = new_size;\n  }\n\nand N is static const std::size_t N = NType::size so I understand why. What sets N, is this related to the derivative size, do I need to recompile and make the it size bigger? I'm already configuring with ./configure --with-derivative-size=200 --with-ad-indexing-type=global which has dealt with all of my problems so far.\nThanks\nmakeclean",
+          "url": "https://github.com/idaholab/moose/discussions/22191",
+          "updatedAt": "2023-11-03T16:53:58Z",
+          "publishedAt": "2022-09-25T08:25:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero @dschwen  if you could help on this please.\nThermo-mechanical seems to require very very large derivative sizes.",
+                  "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3728266",
+                  "updatedAt": "2022-09-25T16:39:54Z",
+                  "publishedAt": "2022-09-25T16:39:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "Coupling more variables will necessarily increase the required AD containers size. My suggestions would be to further increase the containers size you configure MOOSE with. If doing interface problems, do not make the primary surface mesh size finer.\nI've had to go beyond 200 for 3D thermomechanical interface problems.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3728320",
+                          "updatedAt": "2022-09-25T16:50:41Z",
+                          "publishedAt": "2022-09-25T16:50:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Has someone run the number on why so many derivative dependences? Do every qp variable value end up relying on all the qps nearby for displacement for example?",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3729018",
+                          "updatedAt": "2022-09-25T20:03:02Z",
+                          "publishedAt": "2022-09-25T20:03:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "I have run the number for a few of these problems and you can come up with a value of 300 or more depending on your problem dimensionality, number of coupled of variables, refinement of interface surfaces. Every qp will depend on all the element variables and then all the element variables involved in interface projections. MetaPhysicL was providing the right dependencies as far as I could tell.\nWe have some simple code in the heat conduction and contact modules that remove interior node derivatives when Lagrange elements are used (since interior nodes do not affect the interface problem in that case).",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3734189",
+                          "updatedAt": "2022-09-26T13:39:10Z",
+                          "publishedAt": "2022-09-26T13:39:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "Ok, recompiled with --with-derivative-size=300 and my problem is now running. Do you think it would be helpful to print an error message that maybe even states you should recompile with a larger derivative size, given we know the size of new_size one could even prompt the user what that size should be?",
+                  "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3732254",
+                  "updatedAt": "2022-09-26T09:24:37Z",
+                  "publishedAt": "2022-09-26T09:24:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Actually, need more than 300! I ran the wrong problem, i'll report back when I find a value which works.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3732369",
+                          "updatedAt": "2022-09-26T09:34:56Z",
+                          "publishedAt": "2022-09-26T09:34:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Upto 600 now....",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3734548",
+                          "updatedAt": "2022-09-26T14:11:42Z",
+                          "publishedAt": "2022-09-26T14:11:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "You will eventually run into stack memory limitations: Is the problem you are running now IGA? If so, it would make sense you get additional derivative entries due to a larger number of element variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3734782",
+                          "updatedAt": "2022-09-26T14:36:33Z",
+                          "publishedAt": "2022-09-26T14:36:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "It happens irrespective as to whether or not it is IGA actually, its consistent between hex & IGA, at least for derivative-size 200, I didn't test it for 3 or 400",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3734839",
+                          "updatedAt": "2022-09-26T14:42:47Z",
+                          "publishedAt": "2022-09-26T14:42:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "For 3D, and hexes and normal meshes, 400 typically suffices. 200 may be too restrictive for many thermomechanical interface 3D problems. You could try to estimate the number of dependencies.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3734907",
+                          "updatedAt": "2022-09-26T14:48:42Z",
+                          "publishedAt": "2022-09-26T14:48:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We have some code that is supposed to catch this error and output a message asking you to recompile with a larger AD size.\nWould you mind pasting the backtrace? So we see how this code is being missed",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3736207",
+                          "updatedAt": "2022-09-26T17:16:42Z",
+                          "publishedAt": "2022-09-26T17:16:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Ok, 600 isn't working either, could it not be related to the derivative size?",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3736971",
+                          "updatedAt": "2022-09-26T19:06:44Z",
+                          "publishedAt": "2022-09-26T19:06:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Recompiling with METHOD=dbg....",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3736973",
+                          "updatedAt": "2022-09-26T19:07:22Z",
+                          "publishedAt": "2022-09-26T19:07:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "Can you attach an image of your problem?",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3737053",
+                          "updatedAt": "2022-09-26T19:19:12Z",
+                          "publishedAt": "2022-09-26T19:19:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Here's a cartoon\n\nAll my parameters, thermal conductivity, cte, density, specific heat etc are all functions of temperature",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3737131",
+                          "updatedAt": "2022-09-26T19:32:35Z",
+                          "publishedAt": "2022-09-26T19:32:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "Sorry, took a while to get here, but here is the GDB outtput,\n122       void resize(size_type new_size)\n123       {\n124         if (new_size > N)\n125           metaphysicl_error();\n126         _dynamic_n = new_size;\n127       }\n\nnew_size is 54 and N is 53, I get the same error from 2nd order Hex problem & lagrange and IGA with 2nd order bernstein. So I'm starting to think its something else. Here is my smallest mesh & input that causes the problem, I haven't started backing off the physics yet.\nhex-metaphysicl.tar.gz",
+                  "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3742684",
+                  "updatedAt": "2022-09-27T11:40:28Z",
+                  "publishedAt": "2022-09-27T11:40:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Your reconfiguring and recompiling is not working. 53 is the moose default",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3743555",
+                          "updatedAt": "2022-09-27T13:38:45Z",
+                          "publishedAt": "2022-09-27T13:38:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "The issue appears to be that the size isn't indeed increased. Can you try again and look for that number in config.log? You could make clobberall, configure with increased size, and check the configuration log file.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3743559",
+                          "updatedAt": "2022-09-27T13:39:09Z",
+                          "publishedAt": "2022-09-27T13:39:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Oh, in that case I'm being quite dim, I was using --with-derivative-size=200, I'm an imbecile you're quite right, my build script was doing configure in the wrong directory, but moose built anyway since there is makefile in the framework directory whether you configure or not \ud83e\udd26",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3743990",
+                          "updatedAt": "2022-09-27T14:25:22Z",
+                          "publishedAt": "2022-09-27T14:25:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Can confirm, doing it right is the best way, and work fine with a derivative size of 200.",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3750151",
+                          "updatedAt": "2022-09-28T08:20:42Z",
+                          "publishedAt": "2022-09-28T08:20:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "recuero"
+                          },
+                          "bodyText": "Great!",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-3753628",
+                          "updatedAt": "2022-09-28T14:38:10Z",
+                          "publishedAt": "2022-09-28T14:38:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "@GiudGiud @recuero @makeclean\nCould you please explain how you did this? I don't quite understand. In my \"moose\" directory, I have a file titled \"configure\", and can find this line\n  --with-derivative-size=<n>\nDo I replace that with\n  --with-derivative-size=200 ?\nAfter doing so, what/where do I recompile?",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-7451483",
+                          "updatedAt": "2023-11-02T01:43:41Z",
+                          "publishedAt": "2023-11-02T01:43:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You go to the module or the app you are using and type make there\n(After having reconfigured. If successful you will see a full recompile of both moose and the app)",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-7451898",
+                          "updatedAt": "2023-11-02T02:53:43Z",
+                          "publishedAt": "2023-11-02T02:53:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "All I get is Checking if header needs updating: <my_dir>/projects/moose/framework/include/base/MooseRevision.h... when I recompile within my app folder. This is all I changed/where I changed it:",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-7451915",
+                          "updatedAt": "2023-11-02T02:59:46Z",
+                          "publishedAt": "2023-11-02T02:57:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "is there 2 moose folders by any chance?\nwhich one is your app folder and which one is your moose folder?\nif you type ldd <app_executable> what do you get?",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-7451959",
+                          "updatedAt": "2023-11-02T03:04:52Z",
+                          "publishedAt": "2023-11-02T03:04:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Nope, only one moose folder. I typed that and got:\n$ ldd purple-opt\n        linux-vdso.so.1 (0x00007ffc327cc000)\n        libpurple_test-opt.so.0 => /home/richmond98/projects/purple/test/lib/libpurple_test-opt.so.0 (0x00007f55bc6b9000)\n        libpurple-opt.so.0 => /home/richmond98/projects/purple/lib/libpurple-opt.so.0 (0x00007f55bc641000)\n        libmodule_loader_with_ray_hc_tm-opt.so.0 => /home/richmond98/projects/moose/modules/module_loader/lib/libmodule_loader_with_ray_hc_tm-opt.so.0 (0x00007f55bc630000)\n        libtensor_mechanics-opt.so.0 => /home/richmond98/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so.0 (0x00007f55bb8d5000)\n        libheat_conduction-opt.so.0 => /home/richmond98/projects/moose/modules/heat_conduction/lib/libheat_conduction-opt.so.0 (0x00007f55bb54d000)\n        libray_tracing-opt.so.0 => /home/richmond98/projects/moose/modules/ray_tracing/lib/libray_tracing-opt.so.0 (0x00007f55bb355000)\n        libmoose-opt.so.0 => /home/richmond98/projects/moose/framework/libmoose-opt.so.0 (0x00007f55b8ce4000)\n        libpcre-opt.so.0 => /home/richmond98/projects/moose/framework/contrib/pcre/libpcre-opt.so.0 (0x00007f55b8cb5000)        libhit-opt.so.0 => /home/richmond98/projects/moose/framework/contrib/hit/libhit-opt.so.0 (0x00007f55b8c49000)\n        libwaspcore.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspcore.so.03 (0x00007f55b8c28000)\n        libwaspddi.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspddi.so.03 (0x00007f55b8c09000)\n        libwaspexpr.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspexpr.so.03 (0x00007f55b8bd5000)\n        libwasphalite.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwasphalite.so.03 (0x00007f55b8b80000)        libwasphit.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwasphit.so.03 (0x00007f55b8b34000)\n        libwasphive.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwasphive.so.03 (0x00007f55b8b2a000)\n        libwaspjson.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspjson.so.03 (0x00007f55b8ae6000)\n        libwasplsp.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwasplsp.so.03 (0x00007f55b8aa9000)\n        libwaspsiren.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspsiren.so.03 (0x00007f55b8a8d000)\n        libwaspson.so.03 => /home/richmond98/mambaforge3/envs/moose/wasp/lib/libwaspson.so.03 (0x00007f55b8a3d000)\n        libmesh_opt.so.0 => /home/richmond98/mambaforge3/envs/moose/libmesh/lib/libmesh_opt.so.0 (0x00007f55b7435000)\n        libtimpi_opt.so.11 => /home/richmond98/mambaforge3/envs/moose/libmesh/lib/libtimpi_opt.so.11 (0x00007f55b7426000)\n        libhdf5_cpp.so.200 => /home/richmond98/mambaforge3/envs/moose/lib/libhdf5_cpp.so.200 (0x00007f55b73ae000)\n        libvtkIOCore-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOCore-9.2.so.1 (0x00007f55b7340000)\n        libvtkCommonCore-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonCore-9.2.so.1 (0x00007f55b6ad9000)\n        libvtkCommonDataModel-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonDataModel-9.2.so.1 (0x00007f55b65a5000)\n        libvtkFiltersCore-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkFiltersCore-9.2.so.1 (0x00007f55b5d49000)\n        libvtkIOXML-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOXML-9.2.so.1 (0x00007f55b5c2f000)\n        libvtkImagingCore-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkImagingCore-9.2.so.1 (0x00007f55b599b000)\n        libvtkIOImage-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOImage-9.2.so.1 (0x00007f55b57bd000)\n        libvtkImagingMath-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkImagingMath-9.2.so.1 (0x00007f55b5772000)\n        libvtkIOParallelXML-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkIOParallelXML-9.2.so.1 (0x00007f55b5729000)\n        libvtkParallelMPI-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkParallelMPI-9.2.so.1 (0x00007f55b570d000)\n        libvtkParallelCore-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkParallelCore-9.2.so.1 (0x00007f55b56ac000)\n        libvtkCommonExecutionModel-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtkCommonExecutionModel-9.2.so.1 (0x00007f55b55ae000)\n        libvtksys-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/libvtksys-9.2.so.1 (0x00007f55b555b000)\n        libz.so.1 => /home/richmond98/mambaforge3/envs/moose/lib/libz.so.1 (0x00007f55b5540000)\n        libslepc.so.3.16 => /home/richmond98/mambaforge3/envs/moose/lib/libslepc.so.3.16 (0x00007f55b5161000)\n        libpetsc.so.3.16 => /home/richmond98/mambaforge3/envs/moose/lib/libpetsc.so.3.16 (0x00007f55b3997000)\n        libHYPRE-2.23.0.so => /home/richmond98/mambaforge3/envs/moose/lib/libHYPRE-2.23.0.so (0x00007f55b353c000)\n        libstrumpack.so => /home/richmond98/mambaforge3/envs/moose/lib/libstrumpack.so (0x00007f55b2b8c000)\n        libsuperlu_dist.so.7 => /home/richmond98/mambaforge3/envs/moose/lib/libsuperlu_dist.so.7 (0x00007f55b2a6b000)\n        libpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f55b2a5f000)\n        libhdf5_hl.so.200 => /home/richmond98/mambaforge3/envs/moose/lib/libhdf5_hl.so.200 (0x00007f55b2a3b000)\n        libhdf5.so.200 => /home/richmond98/mambaforge3/envs/moose/lib/libhdf5.so.200 (0x00007f55b2609000)\n        libparmetis.so => /home/richmond98/mambaforge3/envs/moose/lib/libparmetis.so (0x00007f55b25cb000)\n        libmetis.so => /home/richmond98/mambaforge3/envs/moose/lib/libmetis.so (0x00007f55b2560000)\n        libmpifort.so.12 => /home/richmond98/mambaforge3/envs/moose/lib/libmpifort.so.12 (0x00007f55b250d000)\n        libgfortran.so.5 => /home/richmond98/mambaforge3/envs/moose/lib/libgfortran.so.5 (0x00007f55b2362000)\n        libgcc_s.so.1 => /home/richmond98/mambaforge3/envs/moose/lib/libgcc_s.so.1 (0x00007f55b2347000)\n        librt.so.1 => /lib/x86_64-linux-gnu/librt.so.1 (0x00007f55b2342000)\n        libquadmath.so.0 => /home/richmond98/mambaforge3/envs/moose/lib/libquadmath.so.0 (0x00007f55b2309000)\n        libstdc++.so.6 => /home/richmond98/mambaforge3/envs/moose/lib/libstdc++.so.6 (0x00007f55b2126000)\n        libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f55b211f000)\n        libmpi.so.12 => /home/richmond98/mambaforge3/envs/moose/lib/libmpi.so.12 (0x00007f55b1d05000)\n        libmpicxx.so.12 => /home/richmond98/mambaforge3/envs/moose/lib/libmpicxx.so.12 (0x00007f55b1ce6000)\n        libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f55b1bff000)\n        libgomp.so.1 => /home/richmond98/mambaforge3/envs/moose/lib/libgomp.so.1 (0x00007f55b1bc3000)\n        libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f55b199b000)\n        libnetcdf.so.13 => /home/richmond98/mambaforge3/envs/moose/libmesh/lib/./libnetcdf.so.13 (0x00007f55b1887000)\n        libcrypto.so.1.1 => /home/richmond98/mambaforge3/envs/moose/lib/./libcrypto.so.1.1 (0x00007f55b15b5000)\n        libcurl.so.4 => /home/richmond98/mambaforge3/envs/moose/lib/./libcurl.so.4 (0x00007f55b1512000)\n        libvtkdoubleconversion-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkdoubleconversion-9.2.so.1 (0x00007f55b1501000)\n        libvtklz4-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtklz4-9.2.so.1 (0x00007f55b14cb000)\n        libvtklzma-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtklzma-9.2.so.1 (0x00007f55b149e000)\n        libvtkzlib-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkzlib-9.2.so.1 (0x00007f55b1480000)\n        libvtkloguru-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkloguru-9.2.so.1 (0x00007f55b1448000)\n        /lib64/ld-linux-x86-64.so.2 (0x00007f55bc6d4000)\n        libvtkCommonTransforms-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonTransforms-9.2.so.1 (0x00007f55b1405000)\n        libvtkCommonMisc-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonMisc-9.2.so.1 (0x00007f55b0fd4000)\n        libvtkCommonSystem-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonSystem-9.2.so.1 (0x00007f55b0f94000)\n        libvtkpugixml-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkpugixml-9.2.so.1 (0x00007f55b0f57000)\n        libvtkCommonMath-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkCommonMath-9.2.so.1 (0x00007f55b0f30000)\n        libvtkIOXMLParser-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkIOXMLParser-9.2.so.1 (0x00007f55b0f16000)\n        libvtkDICOMParser-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkDICOMParser-9.2.so.1 (0x00007f55b0ef7000)\n        libvtkmetaio-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkmetaio-9.2.so.1 (0x00007f55b0e59000)\n        libvtkpng-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkpng-9.2.so.1 (0x00007f55b0e12000)\n        libvtktiff-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtktiff-9.2.so.1 (0x00007f55b0d90000)\n        libvtkjpeg-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkjpeg-9.2.so.1 (0x00007f55b0d13000)\n        libvtkIOLegacy-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/./libvtkIOLegacy-9.2.so.1 (0x00007f55b0c52000)\n        libnghttp2.so.14 => /home/richmond98/mambaforge3/envs/moose/lib/././libnghttp2.so.14 (0x00007f55b0c26000)\n        libssh2.so.1 => /home/richmond98/mambaforge3/envs/moose/lib/././libssh2.so.1 (0x00007f55b0be2000)\n        libssl.so.1.1 => /home/richmond98/mambaforge3/envs/moose/lib/././libssl.so.1.1 (0x00007f55b0b50000)\n        libgssapi_krb5.so.2 => /home/richmond98/mambaforge3/envs/moose/lib/././libgssapi_krb5.so.2 (0x00007f55b0afd000)\n        libvtkkissfft-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/././libvtkkissfft-9.2.so.1 (0x00007f55b0af5000)\n        libvtkexpat-9.2.so.1 => /home/richmond98/mambaforge3/envs/moose/libmesh-vtk/lib/././libvtkexpat-9.2.so.1 (0x00007f55b0ac2000)\n        libkrb5.so.3 => /home/richmond98/mambaforge3/envs/moose/lib/./././libkrb5.so.3 (0x00007f55b09e9000)\n        libk5crypto.so.3 => /home/richmond98/mambaforge3/envs/moose/lib/./././libk5crypto.so.3 (0x00007f55b09cf000)\n        libcom_err.so.3 => /home/richmond98/mambaforge3/envs/moose/lib/./././libcom_err.so.3 (0x00007f55b09c9000)\n        libkrb5support.so.0 => /home/richmond98/mambaforge3/envs/moose/lib/./././libkrb5support.so.0 (0x00007f55b09ba000)\n        libkeyutils.so.1 => /home/richmond98/mambaforge3/envs/moose/lib/./././libkeyutils.so.1 (0x00007f55b09b3000)\n        libresolv.so.2 => /lib/x86_64-linux-gnu/libresolv.so.2 (0x00007f55b099d000)",
+                          "url": "https://github.com/idaholab/moose/discussions/22191#discussioncomment-7451976",
+                          "updatedAt": "2023-11-02T03:07:22Z",
+                          "publishedAt": "2023-11-02T03:07:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Block names",
+          "author": {
+            "login": "styyokuda"
+          },
+          "bodyText": "All,\nI am using \"CartesianMeshGenerator\" to generate blocks and mesh.\n\"CartesianMeshGenerator\" seems to provide only block numbers.\nIs there any way to put names on generated blocks.\nPlease let me know.\nS. Thomas",
+          "url": "https://github.com/idaholab/moose/discussions/25952",
+          "updatedAt": "2023-11-02T21:54:24Z",
+          "publishedAt": "2023-11-02T19:19:56Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use the RenameBlockGenerator to do that\nhttps://mooseframework.inl.gov/source/meshgenerators/RenameBlockGenerator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25952#discussioncomment-7460395",
+                  "updatedAt": "2023-11-02T19:21:15Z",
+                  "publishedAt": "2023-11-02T19:21:15Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Thank you, Guillaume.\nI thought that \"RenameBlockGenerator\" changes the block numbers to block names.\nI have tried it and got some strange things. Probably, I did something wrong.\nDoes \"RenameBlockGenerator\" keep both the block numbers and the block names?\nPlease help.\nS. Thomas",
+                          "url": "https://github.com/idaholab/moose/discussions/25952#discussioncomment-7461504",
+                          "updatedAt": "2023-11-02T21:51:30Z",
+                          "publishedAt": "2023-11-02T21:51:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It can change the number too\nYou should use names uniformly across the input though, it s the recommended moose way.",
+                          "url": "https://github.com/idaholab/moose/discussions/25952#discussioncomment-7461522",
+                          "updatedAt": "2023-11-02T21:54:24Z",
+                          "publishedAt": "2023-11-02T21:54:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PETSc Updated to 3.20.0",
+          "author": {
+            "login": "cticenhour"
+          },
+          "bodyText": "The moose-petsc package has been updated alongside the repository submodule to version 3.20.0 in #25784.\nSubsequently, several conda packages have been incremented and should be updated. To update your MOOSE\npackages, please activate your MOOSE conda environment and perform the command:\nmamba update --all\n\nIf this command does not succeed in updating the MOOSE packages, this is generally due to a conda\ndependency resolution issue, or a pinned package (usually Python). In this case, it is recommended to update\na specific package rather than using the --all option. Thus, one can also attempt the command:\nmamba update moose-dev\n\nor replace moose-dev with the highest-level MOOSE package installed if performing manual dependency builds\n(e.g., moose-libmesh, moose-petsc, etc. plus moose-tools). The following MOOSE package versions and\nbuilds outlined in the update prompt should be at least the following:\nPackage                  Version           Build\n===================================================\nmoose-dev                2023.10.23        build_0\nmoose-libmesh            2023.09.06        build_4\nmoose-libmesh-vtk        9.2.6             build_5\nmoose-petsc              3.20.0            build_0\nmoose-mpich              4.0.2             build_12\nmoose-wasp               2023.10.06        build_0\nmoose-peacock            2023.10.23        build_0\nmoose-tools              2023.08.31        build_0",
+          "url": "https://github.com/idaholab/moose/discussions/25891",
+          "updatedAt": "2023-11-02T20:25:58Z",
+          "publishedAt": "2023-10-30T03:47:35Z",
+          "category": {
+            "name": "News"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Any notable improvements over previous version?",
+                  "url": "https://github.com/idaholab/moose/discussions/25891#discussioncomment-7459748",
+                  "updatedAt": "2023-11-02T17:57:29Z",
+                  "publishedAt": "2023-11-02T17:57:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "A summary of changes can be found at https://petsc.org/release/changes/320/. A couple of additions relevant to MOOSE are:\n\nfixes to the Least Squares Commutator preconditioner which allows for scalable preconditioning of the incompressible navier-stokes equations\nability to specify custom norm computations for SLEPc-base eigenvalue calculations",
+                          "url": "https://github.com/idaholab/moose/discussions/25891#discussioncomment-7459824",
+                          "updatedAt": "2023-11-02T18:04:55Z",
+                          "publishedAt": "2023-11-02T18:04:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "fixes to the Least Squares Commutator preconditioner which allows for scalable preconditioning of the incompressible navier-stokes equations\n\n\nIs there a link to this?",
+                          "url": "https://github.com/idaholab/moose/discussions/25891#discussioncomment-7460570",
+                          "updatedAt": "2023-11-02T19:43:52Z",
+                          "publishedAt": "2023-11-02T19:43:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You can see a fair amount of discussion on the merge request at https://gitlab.com/petsc/petsc/-/merge_requests/6642",
+                          "url": "https://github.com/idaholab/moose/discussions/25891#discussioncomment-7460851",
+                          "updatedAt": "2023-11-02T20:25:58Z",
+                          "publishedAt": "2023-11-02T20:25:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "offline petsc build fails with ptscotch",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "I'm using the offline build instructions on an offline HPC cluster. I'm getting an error when it's setting up ptscotch (undefined references to something with ptscotch in the name) during the petsc build when I use newer compiler/mpi/etc but it works fine with older tools. I know that's not a lot to go on, but since the cluster is air-gapped, the software is upgraded in waves. I can start digging if someone can suggest where to start.",
+          "url": "https://github.com/idaholab/moose/discussions/24917",
+          "updatedAt": "2023-11-02T17:59:58Z",
+          "publishedAt": "2023-07-06T21:14:08Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@milljm have you run into this?",
+                  "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6378479",
+                  "updatedAt": "2023-07-06T21:45:13Z",
+                  "publishedAt": "2023-07-06T21:45:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Just got back from a trip and wanted to follow up. Looking closer at the error messages, looks like compiling ptscotch goes ok, but fails when linking. There are a bunch of undefined references to stuff with \"scotch\" in the name",
+                          "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6479351",
+                          "updatedAt": "2023-07-18T14:49:13Z",
+                          "publishedAt": "2023-07-18T14:49:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "do you use ptscotch?\nI think this may be one we can skip by modifying the script to  --download-ptscotch=0",
+                          "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6479506",
+                          "updatedAt": "2023-07-18T15:01:11Z",
+                          "publishedAt": "2023-07-18T15:01:10Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "FWIW, I can build PETSc fine when I don't include ptscotch (set --download-ptscotch=0 in scripts/configure_petsc.sh). I'm not even sure what this package does so not sure if I can get away with this in the long run.",
+                          "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6479549",
+                          "updatedAt": "2023-07-18T15:05:28Z",
+                          "publishedAt": "2023-07-18T15:05:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We can use ptscotch for partitioning. But it s not the default. I dont use it\nLong run you certainly can live without it",
+                          "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6479573",
+                          "updatedAt": "2023-07-18T15:07:22Z",
+                          "publishedAt": "2023-07-18T15:07:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "gotcha. Odd that is works with the remaining PETSc components",
+                          "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-6479960",
+                          "updatedAt": "2023-07-18T15:44:59Z",
+                          "publishedAt": "2023-07-18T15:44:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "@GiudGiud this is no longer an issue with latest petsc",
+                  "url": "https://github.com/idaholab/moose/discussions/24917#discussioncomment-7459779",
+                  "updatedAt": "2023-11-02T17:59:58Z",
+                  "publishedAt": "2023-11-02T17:59:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Inquiry Regarding Accessing VectorPostprocessor Object in a Material Object",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Dear MOOSE Community,\nI hope this message finds you well. I am currently working on a project that involves the use of MOOSE for material modeling, and I am facing a particular challenge in accessing VectorPostprocessor Object within a material object.\nMy specific issue is related to the use of a VectorPostprocessor to store data in the form of std::vector<std::vector<Real>> _need_data. Since _need_data  is not of type VectorPostprocessorValue , I am unable to use the getVectorPostprocessorValue function to directly initialize the data in Material Object. However, when I attempted to use the getVectorPostprocessorObjectByName function, I encountered a compilation error.\nHere is the error message I received:\n/home/pw-moose/projects/qinglong/src/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdateCopy.C: In constructor 'CrystalPlasticityKalidindiUpdateCopy::CrystalPlasticityKalidindiUpdateCopy(const InputParameters&)':\n/home/pw-moose/projects/qinglong/src/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdateCopy.C:68:10: error: 'getVectorPostprocessorObjectByName' was not declared in this scope; did you mean 'getVectorPostprocessorValueByName'?\n   68 |     _vpp(getVectorPostprocessorObjectByName(\"vectorpostprocessor\")),\n      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n      |          getVectorPostprocessorValueByName\nmake: *** [/home/pw-moose/projects/moose/framework/build.mk:151: /home/pw-moose/projects/qinglong/build/unity_src/materials_crystal_plasticity_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\nIf you require any additional information or code snippets to better understand the issue, please do not hesitate to ask. Your assistance in resolving this matter will be immensely valuable.\nThank you in advance for your time and support. I look forward to your response and guidance.\nBest regards,\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/25906",
+          "updatedAt": "2023-11-02T11:43:56Z",
+          "publishedAt": "2023-10-31T04:49:24Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont think getVectorPostprocessorObjectByName exists on its own.\nIt s a routine of the Problem so you need to do something like:\n_fe_problem->getVectorPostprocessorObjectByName..\n\nalternatively use getUserObject then dynamic cast it\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7434422",
+                  "updatedAt": "2023-10-31T11:52:17Z",
+                  "publishedAt": "2023-10-31T11:52:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Yes, I followed your suggestion and used getVectorPostprocessorObjectByName, but the following error is still displayed,\nasticity_Unity.C:5:\n/home/pw-moose/projects/qinglong/src/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdateCopy.C: In member function 'virtual void CrystalPlasticityKalidindiUpdateCopy::initQpStatefulProperties()':\n/home/pw-moose/projects/qinglong/src/materials/crystal_plasticity/CrystalPlasticityKalidindiUpdateCopy.C:106:28: error: 'const class VectorPostprocessor' has no member named 'getSlipResistance'\n  106 |   auto obtain_value = _vpp.getSlipResistance(0);\n      |                            ^~~~~~~~~~~~~~~~~\nmake: *** [/home/pw-moose/projects/moose/framework/build.mk:151: /home/pw-moose/projects/qinglong/build/unity_src/materials_crystal_plasticity_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\nThe error shows that it seems that the base class VectorPostprocessor can only be called through getVectorPostprocessorObjectByName, and the derived class FeatureVolumeVectorPostprocessor of VectorPostprocessor cannot be called.\nAmong them, I added the following code to the material class CrystalPlasticityKalidindiUpdate, where getSlipResistance(0) is a public function in the VectorPostprocessor derived class.\n  const VectorPostprocessor & vpp_object = _fe_problem.getVectorPostprocessorObjectByName(\"vvp_name\");\n  auto obtain_value = vpp_object.getSlipResistance(0);\nwei",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7437351",
+                          "updatedAt": "2023-10-31T16:34:40Z",
+                          "publishedAt": "2023-10-31T16:30:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you need to cast to get it to be the right class.\ndynamic_cast it then check that the cast succeeded and that the pointer is non-null\nuo_ptr = dynamic_cast<FeatureVolumeVectorPostprocessor *>(&_fe_problem.getVectorPostprocessorObjectByName(\"vvp_name\"));\nif (!uo_ptr)\n  mooseError(\"Pointer cast failed! Object is not of expected type\");\n\nthen once you hold a pointer to a UO with the pointer type \"FeatureVolumeVectorPostprocessor *\" you can use it to make calls",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7438096",
+                          "updatedAt": "2023-10-31T17:58:06Z",
+                          "publishedAt": "2023-10-31T17:44:12Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Thank you very much for your crucial guidance, I have solved this problem, and through the following code:\nauto _vpp_object_ptr = dynamic_cast<FeatureVolumeVectorPostprocessor *>(const_cast<VectorPostprocessor *>(&_fe_problem.getVectorPostprocessorObjectByName(\"vvp_name\")));",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7441309",
+                          "updatedAt": "2023-11-01T02:15:52Z",
+                          "publishedAt": "2023-11-01T02:15:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi @GiudGiud, it's a pity that I didn't complete the last operation I wanted, even if the compilation passed. Specifically, I need to call the public member function in FeatureVolumeVectorPostprocessor::getFeatureVolume. The following is the code I added in CrystalPlasticityKalidindiUpdate::initQpStatefulProperties(), an excerpt of the input file and the error displayed when doing the dbg calculation,\nCrystalPlasticityKalidindiUpdate.C\nvoid\nCrystalPlasticityKalidindiUpdateCopy::initQpStatefulProperties()\n{\n...\n  auto _fe_problem = *parameters.get<FEProblem *>(\"_fe_problem\");\n  auto _vpp_object_ptr = dynamic_cast<FeatureVolumeVectorPostprocessor *>(const_cast<VectorPostprocessor *>(&_fe_problem.getVectorPostprocessorObjectByName(\"grain_volumes\")));\n\n  if (!_vpp_object_ptr)\n    mooseError(\"Pointer cast failed! Object is not of expected type\");\n\n  std::cout << \"~~~~~~~~~~~~~\" << std::endl;\n  unsigned int grain_id = 1;\n  auto obtain_value = _vpp_object_ptr->getFeatureVolume(grain_id);  // where the error occurred\n}\ninput.i\n[VectorPostprocessors]\n  [./grain_volumes]\n    type = FeatureVolumeVectorPostprocessor\n    flood_counter = grain_tracker\n    execute_on = 'INITIAL TIMESTEP_BEGIN' \n  [../]\n[]\nerror.log in dbg\nFinished inside of GrainTracker\n\n~~~~~~\n\nThread 1 \"qinglong-opt\" received signal SIGSEGV, Segmentation fault.\n0x00007ffff7efb0dc in FeatureVolumeVectorPostprocessorCopy::getFeatureVolume(unsigned int) const () from /home/pw-moose/projects/qinglong/lib/libqinglong-opt.so.0\n(gdb) \nIt seems that the program is trying to access memory that is not allocated to it or access an illegal memory location, causing the operating system to terminate the execution of the program.\nIn general, my purpose is whether I can call the public member function getFeatureVolume of FeatureVolumeVectorPostprocessor grain_volumes in the material class CrystalPlasticityKalidindiUpdate.",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7443387",
+                          "updatedAt": "2023-11-01T08:34:33Z",
+                          "publishedAt": "2023-11-01T08:34:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Segfaults are not a bad error to have when you can pin point which line is the problem with a debugger\nSee this page\nhttps://mooseframework.inl.gov/application_development/debugging.html\nwe should be able to have a full backtrace if you cant get what is wrong from just the current entry in the backtrace FeatureVolumeVectorPostprocessorCopy::getFeatureVolume(unsigned int)",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7444811",
+                          "updatedAt": "2023-11-05T14:48:19Z",
+                          "publishedAt": "2023-11-01T11:40:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Great! This problem is solved, it seems to be due to the material object being created before the vectorprocessor. Finally, thank you again for your enthusiastic guidance.",
+                          "url": "https://github.com/idaholab/moose/discussions/25906#discussioncomment-7455762",
+                          "updatedAt": "2023-11-02T11:43:46Z",
+                          "publishedAt": "2023-11-02T11:43:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Coupling (gradients of) vectors of variables in MOOSE",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "The documentation (https://mooseframework.inl.gov/source/interfaces/Coupleable.html) is not fully clear on this.\nI have the following variables defined in my input file:\n[GlobalParams]\n  q_trans = 'q_trans_x q_trans_y q_trans_z' \n  order = FIRST\n  family = LAGRANGE\n[]\n\n[Variables]\n  [q_trans_x]\n  []\n  \n  [q_trans_y]\n  []\n  \n  [q_trans_z]\n  []\n[]\n\nDefined with the GlobalParams block because I intend to use that vector of variables in several locations. I also have some places where I need to use the individual components alone. The kernel has:\n  [diffuse_x_trans]\n    type = DiffusionFlux\n    variable = q_trans_x\n    component_flux = 0\n    flux_vector = q_trans\n    block = transducer_material\n  []\n\nNow for the source and header- following the syntax in the documentation, I have this declaration:\n    unsigned int _n_vars;\n    std::vector<MooseVariable *> _flux_vars;\n\nAnd this implementation:\n  params.addRequiredCoupledVar(\"flux_vector\", \"Coupled value\");\n\t// Calculates number of components in vector & adds them to C++ vector\n\t_n_vars(coupledComponents(\"flux_vector\"))\n{\n    for (unsigned int i = 0; i < _n_vars; i++)\n      _flux_vars.push_back(dynamic_cast<MooseVariable *>(getVar(\"v\", i)));\n}\n\nWhat I don't understand is this line: \"...Then, individual components can be obtained by calling coupledValue (or any other method mentioned above) passing in the variable name (as usual) and the component index...\"\nDoes the _flux_vars.push_back(dynamic_cast<MooseVariable *>(getVar(\"v\", i))); not save the value of each of the coupled variables in that vector? Where do I call coupledValue? In my case, I want their gradients- where/how do I call coupledGradients? Should I be replacing getVar with something else?\nAnd I understand that all MOOSE variables need to be accessed at the qudrature point being solved. Is the correct syntax _flux_vars[_qp](j) for j=1 to _n_vars? Again, how do I get the gradient of each variable?",
+          "url": "https://github.com/idaholab/moose/discussions/25907",
+          "updatedAt": "2023-11-02T03:16:55Z",
+          "publishedAt": "2023-10-31T06:25:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can look at CoupledForce for an example but essentially, coupledValue and getVar are completely separate APIs.\ngetVar is used to get a pointer to the variable, for various purposes but if you need the value you can use (among others) the \"functor interfaces\".\nso (*var)(ElementQpArg (see MooseFunctorArguments.h))\nEDIT: functors not available for array variables!\ncoupledValue is must simpler to use and gets you a reference to the current value of the variable on the Qps of the element. It also handles array variables if that's what you have right now with coupledArrayValue(s).\nYou use it by retrieving the reference in the constructor initializer's list. For example here for 1 component (you ll want to adapt this to retrieve all components, see Coupleable.h)\nIn header:\nconst ArrayVariableValue & var_comp_0;\nin constructor initializer list\n...,\nvar_comp_0(coupledArrayValue(\"var_name_in_parameter\", 0),\n...",
+                  "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7434500",
+                  "updatedAt": "2023-10-31T12:02:48Z",
+                  "publishedAt": "2023-10-31T12:02:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thank you, that makes sense. Is it possible to define a vector std::vector<ArrayVariableGradient> _flux_vars; so that I can use coupledComponents to find the number of components the user provides, and then do _flux_vars.push_back(coupledArrayGradient(\"var_name_in_parameter\", i);, where i ranges from 0 to the number of components within a for loop? Or do I need to do them all individually?",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7437224",
+                          "updatedAt": "2023-10-31T16:18:12Z",
+                          "publishedAt": "2023-10-31T16:17:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So the difficulty with that is that C++ does not support vectors of references (among so many other things, I m not a fan of C++ anymore). And you MUST use references otherwise the (array gradient) value does not get updated\nSo you ll need to do that individually, on a per-variable component basis.\nUnless there is a coupledArrayGradients that gets you a tensor with all the gradients. Did you check the coupleable interface?",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7437260",
+                          "updatedAt": "2023-10-31T17:15:36Z",
+                          "publishedAt": "2023-10-31T16:21:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Ah I see. Yeah I checked coupleable and it seems like working with the individual components will have to do for now. Thanks! I'll check back here if I run into issues with that.",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7437367",
+                          "updatedAt": "2023-10-31T16:32:02Z",
+                          "publishedAt": "2023-10-31T16:32:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "@GiudGiud does var_comp_0(coupledArrayValue(\"var_name_in_parameter\", 0), retrieve the 1st component in the input file, or does it retrieve the whole vector? Asking because I got an error saying var_comp_0 was a matrix i.e 'const Eigen::Matrix<double, -1, 1>' that went away after I indexed var_comp_0(i)",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7441046",
+                          "updatedAt": "2023-11-01T01:18:39Z",
+                          "publishedAt": "2023-11-01T01:18:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Seems the zero you passed is the index in the vector of array variables that you could have passed to the parameter\nSo it s the whole variable",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7445226",
+                          "updatedAt": "2023-11-01T12:28:58Z",
+                          "publishedAt": "2023-11-01T12:28:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "CoupledArrayGradient probably behaves the same way you should be able to get all the gradients at once?",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7445232",
+                          "updatedAt": "2023-11-01T12:29:50Z",
+                          "publishedAt": "2023-11-01T12:29:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "So I tried with coupledArrayGradient and it ended up giving me a 'const Eigen::Matrix<double, -1, 3>', which seemed to suggest that for the coupledArrayValue, it really is just a single value, even though its storing it in a Matrix? Or what do you think?\nThen I also ran into another problem- I took out the GlobalParameters block and instead define the vector of variables individually at each location I need them. That is, within the relevant blocks,\nv = 'q_trans_x q_trans_y q_trans_z'\nBut I'm getting the error: Variable 'sample_flux_vector' is of a different C++ type than you tried to fetch it as.\nWhen I left in the GlobalParams block, with\n[GlobalParams]\n  q_trans = 'q_trans_x q_trans_y q_trans_z' \n[]\n\nand then\nv = q_trans\nIt said Coupled variable 'q_samp' was not found\nHow am I supposed to define the vector of variables in the input file?",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7450027",
+                          "updatedAt": "2023-11-02T00:12:15Z",
+                          "publishedAt": "2023-11-01T21:22:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "I'm suspecting that it has to do with params.addRequiredCoupledVar(\"v\", \"the flux vector of the transducer\"); , but there is no params.addRequiredCoupledArray\nedit: I ended up just coupling each individual variable/gradient I need instead of trying to use an array",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7450889",
+                          "updatedAt": "2023-11-02T01:40:12Z",
+                          "publishedAt": "2023-11-01T23:58:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "addRequiredCoupledVar should work the same way for all types of variables. It s the \"get\" or coupeldXX routines that are differenct.\nCoupled variable 'q_samp' was not found is an odd message for the text you have pasted as it does not refer to q_samp anywhere?\nLook for a parameter where you passed q_samp instead of q_trans",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7451991",
+                          "updatedAt": "2023-11-02T03:10:56Z",
+                          "publishedAt": "2023-11-02T03:10:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Oh yeah I just edited the variable name to be consistent here, just forgot to edit the error lol. But in the input file I actually had both q_samp and q_trans and had passed q_samp earlier so it saw that one first. Using individual coupled variables as before worked though.",
+                          "url": "https://github.com/idaholab/moose/discussions/25907#discussioncomment-7452017",
+                          "updatedAt": "2023-11-02T03:16:56Z",
+                          "publishedAt": "2023-11-02T03:16:54Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

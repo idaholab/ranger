@@ -1,0 +1,629 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNy0xMlQwOToxMTozOC0wNjowMM4AUlIl"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "[Porous Flow] Unstructured Grid Heterogeneous Properties",
+          "author": {
+            "login": "jrpatterson79"
+          },
+          "bodyText": "Hello MOOSE friends,\nI would like to apply heterogeneous flow properties to an unstructured grid in a PorousFlow simulation. I've read through the tutorial developed by the PorousFlow collaborators and a discussion thread from a couple of years ago and my sense is that the current tools (i.e. PiecewiseMultilinear) available in MOOSE are developed for structured grids.\nMy first question is whether this is still true? Is there a Function I'm overlooking that now applies properties to unstructured grids similar to PiecewiseMultilinear and PiecewiseMultiConstant?\nA follow-up question. I have a mesh in .vtu format that contains the property of interest defined at cell centroids. If I import that mesh using FileMeshGenerator, is it possible to extract that to an auxiliary variable that I can use within my input file?\nThank y'all in advance for your thoughts",
+          "url": "https://github.com/idaholab/moose/discussions/24968",
+          "updatedAt": "2023-07-15T13:58:53Z",
+          "publishedAt": "2023-07-14T20:50:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "At least for the latter question if the mesh is the same:\nYou could save the mesh as Exodus .e with Paraview and use a SolutionUserobject to load the data and transfer it into an AuxVariable and link the AuxVariable to the Materials like Porosity or Permeability.\nWith that solution you don't need any interpolation, but the mesh should stay the same.",
+                  "url": "https://github.com/idaholab/moose/discussions/24968#discussioncomment-6453243",
+                  "updatedAt": "2023-07-14T20:57:42Z",
+                  "publishedAt": "2023-07-14T20:57:41Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Yeah, if you can turn it into an exodus file then that is probably the best thing to do. You won't even need a SolutionUserObject, you can initialise elemental AuxVariables directly from the exodus file using 'initial_from_file_var = '. The example you linked does exactly that.",
+                          "url": "https://github.com/idaholab/moose/discussions/24968#discussioncomment-6454076",
+                          "updatedAt": "2023-07-15T00:59:33Z",
+                          "publishedAt": "2023-07-15T00:59:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jrpatterson79"
+                          },
+                          "bodyText": "Thank you @1runer and @cpgr\nI see where I overlooked the 'initial_from_file_var' in the linked tutorial",
+                          "url": "https://github.com/idaholab/moose/discussions/24968#discussioncomment-6456228",
+                          "updatedAt": "2023-07-15T13:58:52Z",
+                          "publishedAt": "2023-07-15T13:58:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "No call file",
+          "author": {
+            "login": "jin0123456"
+          },
+          "bodyText": "Hello,\nHere I inherited ComputeEigenstrainBase for eigenstrain model and applied it to the input file. But I found that I did not seem to have succeeded in applying this model to my simulations. I want to know why the file I wrote is not being called.\nHere is the .h and .C,\n#pragma once\n\n#include \"ComputeEigenstrainBase.h\"\n\n#include \"RankTwoTensor.h\"\n#include \"Function.h\"\n\nclass Function;\ntemplate <bool is_ad>\nclass ComputeIrridiationTempl : public ComputeEigenstrainBaseTempl<is_ad>\n{\npublic:\n  static InputParameters validParams();\n\n  ComputeIrridiationTempl(const InputParameters & parameters);\n\nprotected:\n\n  virtual void computeQpEigenstrain() override;\n  virtual void computeQpProperties() override;\n\n  const Function & _neu;\n  const GenericMaterialProperty<Real, is_ad> & _prefactor;\n\n  GenericMaterialProperty<Real, is_ad> & _strain_glc;\n  GenericMaterialProperty<Real, is_ad> & _strain_grc;\n  GenericMaterialProperty<Real, is_ad> & _strain_cir;\n  GenericMaterialProperty<RankTwoTensor, is_ad> & _eigen_base_tensor;\n\n  using Material::_qp;\n  using Material::_t;\n  using Material::_q_point;\n  using ComputeEigenstrainBaseTempl<is_ad>::_eigenstrain;\n};\n\ntypedef ComputeIrridiationTempl<false> ComputeIrridiation;\ntypedef ComputeIrridiationTempl<true> ADComputeIrridiation;\n\n#include \"ComputeIrridiation.h\"\n\nregisterMooseObject(\"WorkerApp\", ComputeIrridiation);\nregisterMooseObject(\"WorkerApp\", ADComputeIrridiation);\n\ntemplate <bool is_ad>\nInputParameters\nComputeIrridiationTempl<is_ad>::validParams()\n{\n  InputParameters params = ComputeEigenstrainBase::validParams();\n  params.addClassDescription(\"Computes a constant Eigenstrain\");\n  params.addParam<FunctionName>(\"neu\", 0.0, \"Neutron\");\n  params.addParam<MaterialPropertyName>(\n      \"prefactor\", 1.0, \"Name of material property defining the variable dependence\");\n  return params;\n}\n\ntemplate <bool is_ad>\nComputeIrridiationTempl<is_ad>::ComputeIrridiationTempl(const InputParameters & parameters)\n  : ComputeEigenstrainBaseTempl<is_ad>(parameters),\n    _prefactor(this->template getGenericMaterialProperty<Real, is_ad>(\"prefactor\")),\n    _strain_glc(this->template declareGenericProperty<Real, is_ad>(\"strain_glc\")),\n    _strain_grc(this->template declareGenericProperty<Real, is_ad>(\"strain_grc\")),\n    _strain_cir(this->template declareGenericProperty<Real, is_ad>(\"strain_cir\")),\n    _eigen_base_tensor(this->template declareGenericProperty<RankTwoTensor, is_ad>(\"eigen_base_tensor\")),\n    _neu(this->getFunction(\"neu\"))\n{\n  \n}\n\ntemplate <bool is_ad>\nvoid\nComputeIrridiationTempl<is_ad>::computeQpProperties()\n{\n  _strain_glc[_qp] = 2.18e-21 * std::pow(_neu.value(_t, _q_point[_qp]) * _t / 10000., 0.845);\n  //_strain_glc[_qp] = 0.1;\n  _strain_grc[_qp] = std::pow((1. + _strain_glc[_qp]), -0.5) - 1;\n  _strain_cir[_qp] = 0.0;\n  _eigen_base_tensor[_qp].fillFromInputVector({_strain_grc[_qp],_strain_glc[_qp],_strain_cir[_qp]});\n}\n\n\n\ntemplate <bool is_ad>\nvoid\nComputeIrridiationTempl<is_ad>::computeQpEigenstrain()\n{\n  // Define Eigenstrain\n  _eigenstrain[_qp] = _eigen_base_tensor[_qp] * _prefactor[_qp];\n}\n\nInput file,\n[Modules/TensorMechanics/Master]\n  [fuel]\n    strain = FINITE\n    add_variables = true\n    eigenstrain_names = 'thermal_expansion_eigenstrain'\n    generate_output = ' stress_zz vonmises_stress'\n    block = 'fuel'\n  []\n  [clad]\n    strain = FINITE\n    add_variables = true\n    eigenstrain_names = 'thermal_expansion_eigenstrain irridiation_growth_eigenstrain'\n    generate_output = ' stress_zz vonmises_stress creep_strain_xx'\n    block = 'clad'\n  []\n[]\n\n  [CZ_irridiation_growth]\n    type = ComputeIrridiation\n    neu = neu_flux_fun\n    eigenstrain_name = irridiation_growth_eigenstrain\n    block = 'clad'\n  []\n\nAnyone has ideas? Thanks very much.",
+          "url": "https://github.com/idaholab/moose/discussions/24964",
+          "updatedAt": "2023-07-14T01:46:17Z",
+          "publishedAt": "2023-07-14T01:46:14Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Deprecation messages",
+          "author": {
+            "login": "styyokuda"
+          },
+          "bodyText": "All,\nI have received two messages for \"deprecation\" (please see below).  I don't understand them. Could someone provide me with examples to help me.\n(1) *** Warning, This code is deprecated and will be removed in future versions:\n\u201cregisterAll\u201d in Modules is deprecated. Please update your *App.C file to call the new templated \u201cregisterAllObjects\u201d method (e.g. ModulesApp::registerAllobject(\u2026))\n(2) For cylindrical coordinates, I use\n[./Problem]\ncoord_type = 'RZ'\n[../]\nI received the message:\nThe parameter \u2018coord_type\u2019 is deprecated. Please use \u2018Mesh/coord_type\u2019 instead.\nPlease help.\nS. Thomas",
+          "url": "https://github.com/idaholab/moose/discussions/24941",
+          "updatedAt": "2023-07-13T23:11:01Z",
+          "publishedAt": "2023-07-10T23:28:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthe messages should be saying what to do.\nthe first one is telling you to go in your src/base/\u2026.App.C and fix that one line\nthe second one is telling you to move that one line with coord_type from the problem block to the Mesh block\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24941#discussioncomment-6410275",
+                  "updatedAt": "2023-07-10T23:38:30Z",
+                  "publishedAt": "2023-07-10T23:38:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Hi Guillaume,\nAttached is the error message on changing to ModulesApp::registerAllobject(\u2026).\nPlease help.\nS. Thomas",
+                          "url": "https://github.com/idaholab/moose/discussions/24941#discussioncomment-6443780",
+                          "updatedAt": "2023-07-13T22:46:47Z",
+                          "publishedAt": "2023-07-13T22:12:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "should be registerAllObjects with an s\nshould look something like:\n  ModulesApp::registerAllObjects<ligerApp>(f, af, s);",
+                          "url": "https://github.com/idaholab/moose/discussions/24941#discussioncomment-6443922",
+                          "updatedAt": "2023-07-13T22:47:40Z",
+                          "publishedAt": "2023-07-13T22:47:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "styyokuda"
+                          },
+                          "bodyText": "Thank you for your patience with me.\nS. Thomas",
+                          "url": "https://github.com/idaholab/moose/discussions/24941#discussioncomment-6444012",
+                          "updatedAt": "2023-07-13T23:10:49Z",
+                          "publishedAt": "2023-07-13T23:10:49Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Adding perturbation to a single variable after a certain number of time steps",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Hello everyone,\nIs there any way in MOOSE to add perturbation to a variable by multiplying it to a perturbation function?\nFor example, I want to run the simulation for 100 time steps. At time step 101, I want to multiply a variable by a perturbation function and then continue the normal simulation.\nThanks,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/24963",
+          "updatedAt": "2023-07-13T22:34:56Z",
+          "publishedAt": "2023-07-13T21:00:50Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs it a nonlinear variable (one you solve for) or an auxiliary variable (one you just compute with an auxkernel)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24963#discussioncomment-6443633",
+                  "updatedAt": "2023-07-13T21:39:32Z",
+                  "publishedAt": "2023-07-13T21:39:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "It is a nonlinear variable.\nTo be more specific, I want to multiply x velocity and z velocity by the perturbation function, just in a single time step, and in the middle of simulation.\nThanks,",
+                          "url": "https://github.com/idaholab/moose/discussions/24963#discussioncomment-6443649",
+                          "updatedAt": "2023-07-13T21:42:50Z",
+                          "publishedAt": "2023-07-13T21:42:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So the cannon way to do that is unfortunately not great, you d have to make a new UO that changes the dof values. It wont be hard to write if you are keen on C++\nHowever, if you want to stay on the input file scale, use a multiapp with the same mesh. Send your variable there to an auxvariable, multiply it there using a ParsedAux, then send it back using another transfer",
+                          "url": "https://github.com/idaholab/moose/discussions/24963#discussioncomment-6443663",
+                          "updatedAt": "2023-07-13T21:46:09Z",
+                          "publishedAt": "2023-07-13T21:46:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Thank you so much.\nI also have another approach in my mind. Is it possible to run for 100 time steps and then stop the simulation, then restart the simulation from time step 101, get initial condition for variables from the previous time step, and add the perturbation function in the initial condition block?",
+                          "url": "https://github.com/idaholab/moose/discussions/24963#discussioncomment-6443861",
+                          "updatedAt": "2023-07-13T22:34:11Z",
+                          "publishedAt": "2023-07-13T22:34:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "sure. There's a SumIC I think for example",
+                          "url": "https://github.com/idaholab/moose/discussions/24963#discussioncomment-6443863",
+                          "updatedAt": "2023-07-13T22:34:56Z",
+                          "publishedAt": "2023-07-13T22:34:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "have solve",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "hello I am a new starter. today I meet a problem. i used the HeatConduction so i turn on the switch in the make .file.\nALL_MODULES                 := no\nCHEMICAL_REACTIONS          := no\nCONTACT                     := no\nEXTERNAL_PETSC_SOLVER       := no\nFLUID_PROPERTIES            := no\nFUNCTIONAL_EXPANSION_TOOLS  := no\nGEOCHEMISTRY                := no\nHEAT_CONDUCTION             := yes\nLEVEL_SET                   := no\nMISC                        := no\nNAVIER_STOKES               := no\nPHASE_FIELD                 := no\nPOROUS_FLOW                 := no\nRAY_TRACING                 := no\nRDG                         := no\nRICHARDS                    := no\nSTOCHASTIC_TOOLS            := no\nTENSOR_MECHANICS            := no\nXFEM                        := no\nand then creat a .i,\n[Mesh]\nfile = 2021329.e\n[]\n[Variables]\n[./temp]\norder=FIRST\nfamily=LAGRANGE\ninitial_condition = 500.0\n[../]\n[]\n[Kernels]\n[./temp]\ntype = HeatConduction\nvariable = temp\n[../]\n[./heat_source]\ntype = HeatSource\nvariable = temp\nblack = '3'\nscale = 5.0e8\n[../]\n[./euler]\ntype = HeatConductonTimeDerivative\nvariable = temp\n[../]\n[]\n[BCs]\n[./fuel_outside]\ntype = DirichletBC\nvariable = temp\nboundary = '2'\nvalue = 700\n[../]\n[]\n[Materials]\n[./thermal_pellet]\ntype = HeatConductionMaterial\nblock = '3'\nthermal_conductivity_temperature_function = 3.048\nspecific_heat_temperature_function = 324.087\ndensity_temperature_function = 11078.368\n[../]\n[]\n[Executioner]\ntype = Transient\nsolve_type = 'PJFNK'\n[]\n[Outputs]\nexecute_on = 'timestep_end'\nexodus = true\n[]\nthen make -j8, and peacock ,but turn wrong\nA 'HeatConduction' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.",
+          "url": "https://github.com/idaholab/moose/discussions/17460",
+          "updatedAt": "2023-07-13T15:17:45Z",
+          "publishedAt": "2021-03-30T14:22:28Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "I would try a clean of the application libraries in order to verify that it's not an old library lingering around causing a registration issue. In your main application directory, run:\nmake clobberall\nmake -j8\nThen try running your input file again.",
+                  "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-553301",
+                  "updatedAt": "2022-09-21T06:07:08Z",
+                  "publishedAt": "2021-03-31T15:34:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "I do \u2018make clobberall\u2019\nbut computer die",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6339908",
+                          "updatedAt": "2023-07-03T03:17:52Z",
+                          "publishedAt": "2023-07-03T03:17:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aaaaaaqing"
+                          },
+                          "bodyText": "when do \u2018make -j8' and computer die",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6339912",
+                          "updatedAt": "2023-07-03T03:18:39Z",
+                          "publishedAt": "2023-07-03T03:18:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "try just \u201cmake\u201d then\nif the computer is dying it s probably running out of memory",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6339934",
+                          "updatedAt": "2023-07-03T03:23:46Z",
+                          "publishedAt": "2023-07-03T03:23:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aaaaaaqing"
+                  },
+                  "bodyText": "Thank u for your help\nI have a question. Currently, I would like to import data in CSV format that includes doping values at each grid point. Does MOOSE support this functionality? Additionally, I would appreciate your assistance in determining if it is possible to perform calculations between the imported doping values and test functions or solution values at specific points. Your help would be greatly appreciated\n\u2026\n------------------&nbsp;\u539f\u59cb\u90ae\u4ef6&nbsp;------------------\n\u53d1\u4ef6\u4eba: \"Guillaume ***@***.***&gt;;\n\u53d1\u9001\u65f6\u95f4: 2023\u5e747\u67083\u65e5(\u661f\u671f\u4e00) \u4e2d\u534811:23\n\u6536\u4ef6\u4eba: ***@***.***&gt;;\n\u6284\u9001: ***@***.***&gt;; ***@***.***&gt;;\n\u4e3b\u9898: Re: [idaholab/moose] have solve (Discussion #17460)\n\n\n\n\n\n\ntry just \u201cmake\u201d then\n\nif the computer is dying it s probably running out of memory\n\n\u2014\nReply to this email directly, view it on GitHub, or unsubscribe.\nYou are receiving this because you commented.Message ID: ***@***.***&gt;",
+                  "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6396049",
+                  "updatedAt": "2023-07-09T12:36:59Z",
+                  "publishedAt": "2023-07-09T12:36:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nIf your grid is regular, you can use this function\nhttps://mooseframework.inl.gov/source/functions/PiecewiseMultilinear.html\nIf your grid is not regular, use this user object with read_mode = voronois\nhttps://mooseframework.inl.gov/source/userobjects/PropertyReadFile.html\nand this function\nhttps://mooseframework.inl.gov/source/functions/PiecewiseConstantFromCSV.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6398062",
+                          "updatedAt": "2023-07-09T20:01:42Z",
+                          "publishedAt": "2023-07-09T20:01:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aaaaaaqing"
+                  },
+                  "bodyText": "I tried many ways to solve this problem, but I failed. How should this problem be solved\n\u2026\n------------------&nbsp;\u539f\u59cb\u90ae\u4ef6&nbsp;------------------\n\u53d1\u4ef6\u4eba:                                                                                                                        \"idaholab/moose\"                                                                                    ***@***.***&gt;;\n\u53d1\u9001\u65f6\u95f4:&nbsp;2023\u5e747\u670810\u65e5(\u661f\u671f\u4e00) \u51cc\u66684:01\n***@***.***&gt;;\n***@***.******@***.***&gt;;\n\u4e3b\u9898:&nbsp;Re: [idaholab/moose] have solve (Discussion #17460)\n\n\n\n\n\n\nHello\n\nIf your grid is regular, you can use this function\n https://mooseframework.inl.gov/source/functions/PiecewiseMultilinear.html\n If your grid is not regular, use this user object with read_mode = voronois\n https://mooseframework.inl.gov/source/userobjects/PropertyReadFile.html\n and this function\n https://mooseframework.inl.gov/source/functions/PiecewiseConstantFromCSV.html\n\nGuillaume\n\n\u2014\nReply to this email directly, view it on GitHub, or unsubscribe.\nYou are receiving this because you commented.Message ID: ***@***.***&gt;",
+                  "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6435026",
+                  "updatedAt": "2023-07-13T07:24:23Z",
+                  "publishedAt": "2023-07-13T07:24:22Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "which problem\uff1f",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6436108",
+                          "updatedAt": "2023-07-13T09:05:39Z",
+                          "publishedAt": "2023-07-13T09:05:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aaaaaaqing"
+                  },
+                  "bodyText": "problem in the Word\n\u2026\n------------------&nbsp;\u539f\u59cb\u90ae\u4ef6&nbsp;------------------\n\u53d1\u4ef6\u4eba:                                                                                                                        \"idaholab/moose\"                                                                                    ***@***.***&gt;;\n\u53d1\u9001\u65f6\u95f4:&nbsp;2023\u5e747\u670813\u65e5(\u661f\u671f\u56db) \u4e0b\u53485:05\n***@***.***&gt;;\n***@***.******@***.***&gt;;\n\u4e3b\u9898:&nbsp;Re: [idaholab/moose] have solve (Discussion #17460)\n\n\n\n\n\n\nwhich problem\uff1f\n\n\u2014\nReply to this email directly, view it on GitHub, or unsubscribe.\nYou are receiving this because you commented.Message ID: ***@***.***&gt;",
+                  "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6436196",
+                  "updatedAt": "2023-07-13T09:13:44Z",
+                  "publishedAt": "2023-07-13T09:13:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "open your own post please",
+                          "url": "https://github.com/idaholab/moose/discussions/17460#discussioncomment-6440560",
+                          "updatedAt": "2023-07-13T15:17:46Z",
+                          "publishedAt": "2023-07-13T15:17:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mesh refinement based on a material property",
+          "author": {
+            "login": "rayaprolu143"
+          },
+          "bodyText": "Hi,\nWe defined a material property for the stored energy, which is non-zero on the dislocations present in the sub-grain structure. For example, the 2D structure looks as follows in the image shown below:\n\nIn the above figure, the horizontal lines are GNBs, and the vertical lines are IDBs; in other words, they are dislocation boundaries. Since this structure is instantiated at the beginning of the simulation, I would like to refine my uniform mesh on the areas where the dislocation boundaries exist. Any suggestions?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/24959",
+          "updatedAt": "2023-07-13T03:17:25Z",
+          "publishedAt": "2023-07-12T21:12:38Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "is this information (where you want to refine) only stored in the material property?\nif so, move it to an auxiliary variable, use that as an indicator then use initial adaptivity\nhttps://mooseframework.inl.gov/source/actions/AdaptivityAction.html",
+                  "url": "https://github.com/idaholab/moose/discussions/24959#discussioncomment-6431889",
+                  "updatedAt": "2023-07-12T21:46:47Z",
+                  "publishedAt": "2023-07-12T21:46:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rayaprolu143"
+                          },
+                          "bodyText": "Thank you! I will implement this idea of yours.",
+                          "url": "https://github.com/idaholab/moose/discussions/24959#discussioncomment-6433493",
+                          "updatedAt": "2023-07-13T03:17:25Z",
+                          "publishedAt": "2023-07-13T03:17:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Output file of thermal-hyraulics can't be visualized in paraview.",
+          "author": {
+            "login": "lipxisi"
+          },
+          "bodyText": "Holle\nAll output files of single_phase_flow example in thermal-hyraulic module can't be visualized in paraview with following errors\uff0cBut all the input files can run narmally. How do I view these .e output files\uff1f\nThanks for any answer.\n Errors:\nLoguru caught a signal: SIGSEGV\nStack trace:\n56            0x40802a /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/bin/paraview-real() [0x40802a]\n55      0x7f420f829e40 __libc_start_main + 128\n54      0x7f420f829d90 /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7f420f829d90]\n53            0x407c8a /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/bin/paraview-real() [0x407c8a]\n52      0x7f420c084120 QCoreApplication::exec() + 128\n51      0x7f420c07b62a QEventLoop::exec(QFlags<QEventLoop::ProcessEventsFlag>) + 298\n50      0x7f41bac5ee0c /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/plugins/platforms/../../lib/libQt5XcbQpa.so.5(+0x5ee0c) [0x7f41bac5ee0c]\n49      0x7f41bac3a285 QXcbConnection::processXcbEvents(QFlags<QEventLoop::ProcessEventsFlag>) + 533\n48      0x7f41bac39600 QXcbConnection::handleXcbEvent(xcb_generic_event_t*) + 240\n47      0x7f41bac4c928 QXcbWindow::handleClientMessageEvent(xcb_client_message_event_t const*) + 872\n46      0x7f41bac65250 /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/plugins/platforms/../../lib/libQt5XcbQpa.so.5(+0x65250) [0x7f41bac65250]\n45      0x7f420c8eda80 QWindowSystemInterface::handleDrop(QWindow*, QMimeData const*, QPoint const&, QFlags<Qt::DropAction>, QFlags<Qt::MouseButton>, QFlags<Qt::KeyboardModifier>) + 160\n44      0x7f420c9130e6 QGuiApplicationPrivate::processDrop(QWindow*, QMimeData const*, QPoint const&, QFlags<Qt::DropAction>, QFlags<Qt::MouseButton>, QFlags<Qt::KeyboardModifier>) + 182\n43      0x7f420c07cdd8 QCoreApplication::notifyInternal2(QObject*, QEvent*) + 280\n42      0x7f420e963260 QApplication::notify(QObject*, QEvent*) + 704\n41      0x7f420e95c18c QApplicationPrivate::notify_helper(QObject*, QEvent*) + 156\n40      0x7f420e9b6936 /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/bin/../lib/libQt5Widgets.so.5(+0x1b6936) [0x7f420e9b6936]\n39      0x7f420e9b5c0c /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/bin/../lib/libQt5Widgets.so.5(+0x1b5c0c) [0x7f420e9b5c0c]\n38      0x7f420c07cdd8 QCoreApplication::notifyInternal2(QObject*, QEvent*) + 280\n37      0x7f420e9638d4 QApplication::notify(QObject*, QEvent*) + 2356\n36      0x7f420e95c18c QApplicationPrivate::notify_helper(QObject*, QEvent*) + 156\n35      0x7f420ea9acbc QMainWindow::event(QEvent*) + 76\n34      0x7f420e999c28 QWidget::event(QEvent*) + 424\n33      0x7f420d67a792 pqMainWindowEventManager::drop(QDropEvent*) + 50\n32      0x7f420c0ab1ea QMetaObject::activate(QObject*, int, int, void**) + 1850\n31      0x7f420f371946 pqMainWindowEventBehavior::onDrop(QDropEvent*) + 1302\n30      0x7f420f36b622 pqLoadDataReaction::loadData(QStringList const&, QString const&, QString const&, pqServer*) + 98\n29      0x7f420f36a523 pqLoadDataReaction::loadData(QList<QStringList> const&, QString const&, QString const&, pqServer*) + 867\n28      0x7f420f369a21 pqLoadDataReaction::LoadFile(QStringList const&, pqServer*, QPair<QString, QString> const&) + 49\n27      0x7f420d710fc2 pqObjectBuilder::createReader(QString const&, QString const&, QStringList const&, pqServer*) + 1378\n26      0x7f420d70e523 /home/zhao/ParaView-5.10.1-MPI-Linux-Python3.9-x86_64/bin/../lib/libpqCore-pv5.10.so.1(+0x10e523) [0x7f420d70e523]\n25      0x7f41fca19400 vtkSMParaViewPipelineControllerWithRendering::PostInitializeProxy(vtkSMProxy*) + 48\n24      0x7f420a982f10 vtkSMParaViewPipelineController::PostInitializeProxy(vtkSMProxy*) + 1264\n23      0x7f420a9fa74a vtkSMSourceProxy::UpdatePipelineInformation() + 106\n22      0x7f420a8c3c25 vtkPVSessionBase::ExecuteStream(unsigned int, vtkClientServerStream const&, bool) + 53\n21      0x7f420a8c4bfb vtkPVSessionCore::ExecuteStream(unsigned int, vtkClientServerStream const&, bool) + 59\n20      0x7f420a8c4dc2 vtkPVSessionCore::ExecuteStreamInternal(vtkClientServerStream const&, bool) + 242\n19      0x7f4208c1128d vtkClientServerInterpreter::ProcessStream(vtkClientServerStream const&) + 29\n18      0x7f4208c10fee vtkClientServerInterpreter::ProcessOneMessage(vtkClientServerStream const&, int) + 1294\n17      0x7f4208c108bd vtkClientServerInterpreter::ProcessCommandInvoke(vtkClientServerStream const&, int) + 1229\n16      0x7f4208c10259 vtkClientServerInterpreter::CallCommandFunction(char const*, vtkObjectBase*, char const*, vtkClientServerStream const&, vtkClientServerStream&) + 345\n15      0x7f41fdea2b28 vtkSISourceProxyCommand(vtkClientServerInterpreter*, vtkObjectBase*, char const*, vtkClientServerStream const&, vtkClientServerStream&, void*) + 824\n14      0x7f420a8fda8c vtkSISourceProxy::UpdatePipelineInformation() + 300\n13      0x7f42044c4b05 vtkStreamingDemandDrivenPipeline::ProcessRequest(vtkInformation*, vtkInformationVector**, vtkInformationVector*) + 1349\n12      0x7f420446bc84 vtkDemandDrivenPipeline::ProcessRequest(vtkInformation*, vtkInformationVector**, vtkInformationVector*) + 580\n11      0x7f42044c5009 vtkStreamingDemandDrivenPipeline::ExecuteInformation(vtkInformation*, vtkInformationVector**, vtkInformationVector*) + 25\n10      0x7f420446f2ce vtkExecutive::CallAlgorithm(vtkInformation*, int, vtkInformationVector**, vtkInformationVector*) + 62\n9       0x7f41df41ea5c vtkIOSSReader::ProcessRequest(vtkInformation*, vtkInformationVector**, vtkInformationVector*) + 12\n8       0x7f4204482174 vtkReaderAlgorithm::ProcessRequest(vtkInformation*, vtkInformationVector**, vtkInformationVector*) + 228\n7       0x7f41df41c714 vtkIOSSReader::ReadMetaData(vtkInformation*) + 84\n6       0x7f41df41a0bc vtkIOSSReader::vtkInternals::UpdateTimeInformation(vtkIOSSReader*) + 1788\n5       0x7f41df412e54 vtkIOSSReader::vtkInternals::GetRegion(std::string const&, int) + 1540\n4       0x7f41c21380ca vtkioss_Ioss::Region::Region(vtkioss_Ioss::DatabaseIO*, std::string const&) + 2346\n3       0x7f41c21ed6bc vtkioss_Ioex::DatabaseIO::read_meta_data__() + 220\n2       0x7f41c21eae81 vtkioss_Ioex::DatabaseIO::get_sidesets() + 3537\n1       0x7f42006f5764 std::string::append(std::string const&) + 20\n0       0x7f420f842520 /lib/x86_64-linux-gnu/libc.so.6(+0x42520) [0x7f420f842520]\n(  12.142s) [paraview        ]                       :0     FATL| Signal: SIGSEGV",
+          "url": "https://github.com/idaholab/moose/discussions/24960",
+          "updatedAt": "2023-07-13T03:06:34Z",
+          "publishedAt": "2023-07-13T01:31:34Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nTry using the legacy exodus reader\nthere's been issues with 5.10 before for that reason\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24960#discussioncomment-6433397",
+                  "updatedAt": "2023-07-13T02:57:39Z",
+                  "publishedAt": "2023-07-13T02:57:38Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Define a flux on a boundary",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "I want to add a diffusion model.\n$$J=-D(\\frac{dx(r)}{dr}+\\frac{T_Q}{T^2}x(r)\\frac{dT}{dr})$$\nwhere $T_Q$ is a const (640). T is the temperature. and x is a rate.\nin the boundary the $J$ is zero.\nthere is my code\n#pragma once\n#include \"IntegratedBC.h\"\n\n/**\n * $\\triangledown x = \\frac{T_Q}{T^2}x\\triangledown T$\n * x is H/Zr rate T_Q is transfer and T is the temperature\n */\n\nclass HydrogenFluxBC : public IntegratedBC\n{\npublic:\n  static InputParameters validParams();\n  HydrogenFluxBC(const InputParameters & parameters);\n\nprotected:\n  virtual Real computeQpResidual() override;\nprivate:\n  const VariableValue & _temp;\n  const VariableGradient & _grad_temp;\n  Real _heat_transport;\n};\nand\n#include \"HydrogenFluxBC.h\"\n\nregisterMooseObject(\"PulseApp\", HydrogenFluxBC);\n\nInputParameters\nHydrogenFluxBC::validParams()\n{\n  InputParameters params = IntegratedBC::validParams();\n  params.addRequiredCoupledVar(\"temperature\", \"coupled fuel temperature\");\n  return params;\n}\n\nHydrogenFluxBC::HydrogenFluxBC(const InputParameters & parameters) : IntegratedBC(parameters),\n  _temp(coupledValue(\"temperature\")),\n  _grad_temp(coupledGradient(\"temperature\"))\n{\n  _heat_transport = 640;\n}\n\nReal\nHydrogenFluxBC::computeQpResidual()\n{\n  return _test[_i][_qp] * _heat_transport * _u[_qp] / std::pow(_temp[_qp], 2) * (_grad_temp[_qp] * _normals[_qp]);\n}\nand my test\n[Mesh]\n  type = GeneratedMesh\n  dim = 1\n  nx = 10\n  xmin = 0\n  xmax = 18e-3\n  coord_type = RZ\n[]\n\n[Variables]\n  [rate]\n    initial_condition = 1.6\n  []\n[]\n\n[AuxVariables]\n  [temp]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[AuxKernels]\n  [temp]\n    type = ParsedAux\n    variable = temp\n    expression = '780+170*(1-(x/18e-3)^2)'\n    use_xyzt = true\n  []\n[]\n\n[Kernels]\n  [diff]\n    type = HydrogenDiffusion\n    variable = rate\n  []\n  [transfer]\n    type = HydrogenHeatTransfer\n    temperature = temp\n    variable = rate\n  []\n[]\n\n[Materials]\n  [const]\n    type = GenericConstantMaterial\n    prop_names = 'hydrogen_diffusion Zr_density Zr_atomic_weight'\n    prop_values = '1 1 1'\n  []\n[]\n\n[BCs]\nactive = all_default\n  [all]\n    type = HydrogenFluxBC\n    variable = rate\n    temperature = temp\n    boundary = 'left right'\n  []\n  [all_default]\n    type = NeumannBC\n    variable = rate\n    boundary = 'left right'\n    value = 0\n  []\n[]\n\n[Preconditioning]\n  [FDP]\n    type = FDP\n\n    solve_type = 'PJFNK'\n\n    petsc_options_iname = '-pc_type -mat_fd_coloring_err -mat_fd_type'\n    petsc_options_value = 'lu       1e-6                 ds'\n  []\n[]\n\n[Functions]\n  [exact]\n    type = ParsedFunction\n    symbol_names = 'A0'\n    symbol_values = '0.7428'\n    expression = 'A0 * exp(640/(780+170*(1-(x/18e-3)^2)))'\n  []\n[]\n\n[Postprocessors]\n  [error]\n    type = NodalL2Error\n    variable = rate\n    function = exact\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = 'PJFNK'\n  line_search = none\n\n  l_abs_tol = 1e-5\n  nl_abs_tol = 1e-5\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n[]\n\n[VectorPostprocessors]\n  [line]\n    type = LineValueSampler\n    start_point = '0 0 0'\n    end_point = '18e-3 0 0'\n    sort_by = x\n    variable = rate\n    num_points = 99\n  []\n[]\nbut the solution is wrong. anyone can help me? I think is due to the BC but i don't know how to modify it.\nthe Kernels is $$\\triangledown J=0$$\nThanks for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/24953",
+          "updatedAt": "2023-07-13T01:00:13Z",
+          "publishedAt": "2023-07-12T05:14:38Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n_u[_qp] is not x(r). It s T here since the variable is T\nYou should look at _q_point  instead for x\nYou're also missing a computeQpJacobian()\nI would recommend you modify the code to avoid needing to define the Jacobian, using AD (automatic differentiation)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24953#discussioncomment-6428700",
+                  "updatedAt": "2023-07-12T15:07:48Z",
+                  "publishedAt": "2023-07-12T15:07:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "in BC the variable is x(rate). and i add computeqpjacobian the result is same.",
+                          "url": "https://github.com/idaholab/moose/discussions/24953#discussioncomment-6429280",
+                          "updatedAt": "2023-07-12T16:02:36Z",
+                          "publishedAt": "2023-07-12T16:02:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh yeah I see now.\nok it is \"rate\". Is that corresponding to x ?\nThe sign should be negative I think",
+                          "url": "https://github.com/idaholab/moose/discussions/24953#discussioncomment-6432585",
+                          "updatedAt": "2023-07-13T00:27:15Z",
+                          "publishedAt": "2023-07-13T00:27:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "sorry\uff0cthe x is confusing. i use it for $ZrH_x$.",
+                          "url": "https://github.com/idaholab/moose/discussions/24953#discussioncomment-6432730",
+                          "updatedAt": "2023-07-13T01:00:14Z",
+                          "publishedAt": "2023-07-13T01:00:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Wall shear stress BC in INSAD module",
+          "author": {
+            "login": "Eilloo"
+          },
+          "bodyText": "Hi all,\nI am trying to understand how one might impose a wall shear stress BC in the finite element Navier-Stokes module - or even if it makes sense to do so.\nSince we have the relation wall shear stress = viscosity * du/dy where du and dy are parallel and perpendicular to the wall respectively, it made sense to try this with a Neumann BC.\nI had a go at something similar to ADVectorFunctionNeumannBC, but instead of a function, passed in a vector containing wall shear components divided by viscosity.\nHowever, the BC seemed to have no effect on the simulation, even if I changed the scale factors to be very large.\nSince we might already have a no slip condition, I am having trouble understanding whether we can meaningfully impose a wall shea BC as well here - or in finite element at all.\nIf we were to do this, is using an integrated BC in this manner the way to go?\nI should add that I am using the vector variable versions of the INSAD kernels, which I believe use the Laplace form of the INS equations.\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/24958",
+          "updatedAt": "2023-07-12T18:33:50Z",
+          "publishedAt": "2023-07-12T16:14:03Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "So the weak term at the boundary for a given momentum component will be (for the Laplace form):\ntest * (n * mu * grad(u_comp) + n(comp) * pressure)\n\nif you integrate the pressure by parts. If you don't integrate pressure by parts then you drop the second term. So if you want to supply a particular shear stress, then you can supply your vector of shear stresses and they should not be divided by the viscosity. And if you are integrating the pressure by parts, then you will also need to add a BC to handle that, e.g. a BC like:\ntest * n * pressure\n\nfor the vector INSAD implementation",
+                  "url": "https://github.com/idaholab/moose/discussions/24958#discussioncomment-6430538",
+                  "updatedAt": "2023-07-12T18:33:50Z",
+                  "publishedAt": "2023-07-12T18:33:49Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to add  '-std=c++17'  to compiler flags",
+          "author": {
+            "login": "Bigdogcat"
+          },
+          "bodyText": "I'd like to ask how to add  '-std=c++17'  to compiler flags. I'm asking this because after updating MOOSE, the following error comes up when compiling\n/Users/sunqingpei/projects/moose/framework/build/header_symlinks/Moose.h:55:1: error: static_assert failed due to requirement '201402L >= 201703L' \"MOOSE requires a C++17 compatible compiler (GCC >= 7.5.0, Clang >= 5.0.2). Please update your compiler or, if compatible, add '-std=c++17' to your compiler flags and try again. If using the MOOSE conda package, please attempt a MOOSE environment update (using mamba update --all). If this update is not successful, please create a new MOOSE environment (see https://mooseframework.inl.gov/getting_started/installation/conda.html#uninstall-conda-moose-environment).\"",
+          "url": "https://github.com/idaholab/moose/discussions/24957",
+          "updatedAt": "2023-07-12T15:11:50Z",
+          "publishedAt": "2023-07-12T11:24:55Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "You can type \u2018env \u2018 and look at all the environment variables defined, in particular the compiling flags.\nYou can then add this flags to CXXFLAGS using export CXXFLAGS=\"\u2014std=c++17:$CXXFLAGS\"",
+                  "url": "https://github.com/idaholab/moose/discussions/24957#discussioncomment-6427800",
+                  "updatedAt": "2023-07-12T14:01:45Z",
+                  "publishedAt": "2023-07-12T14:01:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You should not have opened two posts for the same issue. Closing this one",
+                          "url": "https://github.com/idaholab/moose/discussions/24957#discussioncomment-6428733",
+                          "updatedAt": "2023-07-12T15:11:39Z",
+                          "publishedAt": "2023-07-12T15:11:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

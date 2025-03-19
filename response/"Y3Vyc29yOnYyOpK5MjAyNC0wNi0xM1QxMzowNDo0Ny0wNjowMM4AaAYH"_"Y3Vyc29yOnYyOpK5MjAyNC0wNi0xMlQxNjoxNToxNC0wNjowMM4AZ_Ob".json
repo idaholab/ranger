@@ -1,0 +1,1383 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNi0xMlQxNjoxNToxNC0wNjowMM4AZ_Ob"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Utilizing Block Restriction To Generate Two GlobalStrain Objects",
+          "author": {
+            "login": "lkuna24"
+          },
+          "bodyText": "Hi All,\nI am trying to carry out a simulation of a thin film with an applied epitaxy in the form of an eigenstrain.  In the simulation the thin film sits on top of a substrate which imposes a uniform mismatch strain throughout the film (so long as the film is sufficiently thin).  The domain (both film and substrate) is periodic in the x and y direction.  Applying GlobalStrain to both the film and substrate with just the epitaxy (in the form of an eigenstrain) acting on the film yields some unexpected results, but block restricting and applying GlobalStrain to only the film with the epitaxy applied gives the expected result.  I wanted to attempt to separate out GlobalStrain utilizing block restriction as shown in the input file below, but I get the error:\n*** ERROR ***\nThe following error occurred in the Problem 'MOOSE Problem' of type FEProblem.\n\nMaterial property 'global_strain_film', requested by 'Ferroelectric_SM_strain' is not defined on block 0\nMaterial property 'global_strain_sub', requested by 'Substrate_SM_strain' is not defined on block 1\n\nAs I need the whole domain to be periodic, I believe I need a GlobalStrain on both blocks.  According to the documentation here GlobalStrain, it seems as though I should be able to separate GlobalStrain Objects utilizing block restriction, or is this actually not possible?\nUltimately there will be another eigenstrain contributing to the thin film which will be coupled to the evolution of polarization throughout the volume of the film.  But for now, I am just trying to see if I can establish the mechanical properties of the film and substrate.\nThanks for you time.\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 3\n    nx = 10\n    ny = 10\n    nz = 20\n    xmin = -10.0\n    xmax = 10.0\n    ymin = -10.0\n    ymax = 10.0\n    zmin = -10.0\n    zmax = 10.0\n    elem_type = HEX8\n  []\n  [./cnode]\n    input = gen\n    type = ExtraNodesetGenerator\n    coord = '-10.0 -10.0 -10.0'\n    new_boundary = 100\n  [../]\n\n  [subdomains]\n    type = SubdomainBoundingBoxGenerator\n    input = cnode\n    bottom_left = '-10.0 -10.0 -10.0'\n    block_id = 1\n    top_right = '10.0 10.0 0.0'\n    location = INSIDE\n  []\n  [film_interface]\n    type = SideSetsBetweenSubdomainsGenerator\n    input = subdomains\n    primary_block = 0\n    paired_block = 1\n    new_boundary = 52\n  []\n[]\n\n[GlobalParams]\n  displacements = 'u_x u_y u_z'\n[]\n\n[Variables]\n  [./global_strain_film]\n    order = SIXTH\n    family = SCALAR\n    block = '0'\n  [../]\n\n  [./global_strain_substrate]\n    order = SIXTH\n    family = SCALAR\n    block = '1'\n  [../]\n\n  [./u_x]\n    order = FIRST\n    family = LAGRANGE\n    block = '0 1'\n  [../]\n  [./u_y]\n    order = FIRST\n    family = LAGRANGE\n    block = '1 0'\n  [../]\n  [./u_z]\n    order = FIRST\n    family = LAGRANGE\n    block = '1 0'\n  [../]\n[]\n\n\n[Materials]\n\n  [./eigen_strain]\n    type = ComputeEigenstrain\n    #    eigen_base = 'x y z yz xz xy'\n    eigen_base = '0.005 0.005 0.003725 0 0 0'\n    eigenstrain_name = epitaxy\n    block = '1 0'\n  [../]\n\n  [./elasticity_tensor_1]\n    type = ComputeElasticityTensor\n    fill_method = symmetric9\n    C_ijkl = '179.073 66.71 66.71 179.073 66.71 179.073 82.6446 82.6446 82.6446'\n  [../]\n\n  [./stress_1]\n    type = ComputeLinearElasticStress\n  [../]\n[]\n\n[Physics]\n  [SolidMechanics]\n    [QuasiStatic]\n      [./Ferroelectric_SM]\n        strain = SMALL\n        add_variables = true\n        incremental = false\n        global_strain = global_strain_film\n        eigenstrain_names = 'epitaxy'\n        generate_output = 'strain_xx strain_xy strain_xz strain_yy strain_yz strain_zz vonmises_stress'\n\t       block = '0'\n      [../]\n\n      [./Substrate_SM]\n        strain = SMALL\n        add_variables = true\n        global_strain = global_strain_substrate\n  #      eigenstrain_names = 'epitaxy'\n        incremental = false\n        generate_output = 'strain_xx strain_xy strain_xz strain_yy strain_yz strain_zz vonmises_stress'\n        block = '1'\n      [../]\n    []\n\n    [./GlobalStrain]\n      [./global_strain_film]\n        scalar_global_strain = global_strain_film\n        displacements = 'u_x u_y u_z'\n        auxiliary_displacements = 'disp_x disp_y disp_z'\n        global_displacements = 'ug_x ug_y ug_z'\n        block = '0'\n      [../]\n      [./global_strain_sub]\n        scalar_global_strain = global_strain_substrate\n        displacements = 'u_x u_y u_z'\n        auxiliary_displacements = 'disps_x disps_y disps_z'\n        global_displacements = 'ugs_x ugs_y ugs_z'\n        block = '1'\n      [../]\n    [../]\n  []\n[]\n\n[BCs]\n  [./Periodic]\n    [./xy]\n      auto_direction = 'x y'\n      variable = 'u_x u_y u_z'\n    [../]\n  [../]\n  [./centerfix_x]\n    type = DirichletBC\n    boundary = 100\n    variable = u_x\n    value = 0\n  [../]\n  [./centerfix_y]\n    type = DirichletBC\n    boundary = 100\n    variable = u_y\n    value = 0\n  [../]\n  [./centerfix_z]\n    type = DirichletBC\n    boundary = 100\n    variable = u_z\n    value = 0\n  [../]\n[]\n\n[Preconditioning]\n  [./smp]\n    type = SMP\n    full = true\n    petsc_options = '-snes_ksp_ew'\n    petsc_options_iname = '-ksp_gmres_restart -snes_atol -snes_rtol -ksp_rtol -pc_type'\n    petsc_options_value = '    160             1e-8        1e-6      1e-5        bjacobi'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = 'PJFNK'\n  scheme = 'implicit-euler'\n  dtmin = 1e-13\n  dtmax = 2.0\n  end_time = 10\n  l_max_its = 200\n  automatic_scaling = true\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    optimal_iterations = 8\n    growth_factor = 1.1\n    cutback_factor = 0.8\n    linear_iteration_ratio = 1000\n    dt = 0.5\n  [../]\n  verbose = true\n  nl_max_its = 16\n[]\n\n[Outputs]\n  print_linear_residuals = false\n  perf_graph = false\n  [./out]\n    type = Exodus\n    file_base = out_GS_Test\n    interval = 2\n  [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/27885",
+          "updatedAt": "2024-06-13T16:02:31Z",
+          "publishedAt": "2024-06-12T19:49:36Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@SudiptaBiswas\nBlock restriction seems to be implemented so this looks like the expected syntax\nUse Debug/show_material_props to see what names are being used for the global strain material property when they are being declared. Then adapt the input to use the correct names",
+                  "url": "https://github.com/idaholab/moose/discussions/27885#discussioncomment-9757915",
+                  "updatedAt": "2024-06-13T01:46:05Z",
+                  "publishedAt": "2024-06-13T01:46:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mangerij"
+                  },
+                  "bodyText": "@lkuna24 your zz epitaxy should be minus :)\nI just want to (re)iterate that this is part of a long standing issue within Ferret of computing ferroelectric thin film phase diagrams:\nSee\nAppl. Phys. Lett. 78, 3878\u20133880 (2001)\nhttps://doi.org/10.1063/1.1377855\nWe get many requests (approx 1-2/month) to be able to solve this problem and I think its time we finally pin this down.\nWe are slowly refactoring things to make them use more MOOSE systems but we still can't find what is going on. As soon as we throw in a second eigenstrain (proportional to the square of the phase field variable), we find that it dominates the calculation whereas instead we expect that at the end of the solve, the global strain of the film block should be very much equal to the eigenstrain \"epitaxy\" that we apply above.\nAs such, the epitaxial condition (eigenstrain) coupling to the phase field problem is only a weak influence.",
+                  "url": "https://github.com/idaholab/moose/discussions/27885#discussioncomment-9759267",
+                  "updatedAt": "2024-06-13T06:49:05Z",
+                  "publishedAt": "2024-06-13T05:56:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hi @mangerij\nmaybe @bwspenc will know who to bring in on this",
+                          "url": "https://github.com/idaholab/moose/discussions/27885#discussioncomment-9765333",
+                          "updatedAt": "2024-06-13T16:02:31Z",
+                          "publishedAt": "2024-06-13T16:02:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can I get the material property in ADNodalBC?",
+          "author": {
+            "login": "Always-kimi"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi there,\nI have some puzzle about ADNodalBC and ADIntergratedBC.\nIn my application, I need add some material properties or functions to calculate residual, in the ADIntergratedBC, I can easily call the getADMaterialProperty<Real>(\"mu\") method.\nHowever when I used the getADMaterialProperty<Real>(\"mu\") method in the ADNodalBC, the compiler show the error:\nCreating Unity /home/kimi/projects/validation/build/unity_src/bcs_Unity.C\nCompiling C++ (in opt mode) /home/kimi/projects/validation/build/unity_src/bcs_Unity.C...\nIn file included from /home/kimi/projects/validation/build/unity_src/bcs_Unity.C:3:\n/home/kimi/projects/validation/src/bcs/MassBC.C: In constructor 'MassBC::MassBC(const InputParameters&)':\n/home/kimi/projects/validation/src/bcs/MassBC.C:39:9: error: 'getADMaterialProperty' was not declared in this scope; did you mean 'ADMaterialProperty'?\n   39 |     _mu(getADMaterialProperty<Real>(\"mu\"))\n      |         ^~~~~~~~~~~~~~~~~~~~~\n      |         ADMaterialProperty\n/home/kimi/projects/validation/src/bcs/MassBC.C:39:35: error: expected primary-expression before '>' token\n   39 |     _mu(getADMaterialProperty<Real>(\"mu\"))\n      |                                   ^\nmake: *** [/home/kimi/projects/moose/framework/build.mk:151: /home/kimi/projects/validation/build/unity_src/bcs_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\n\nmy .h file and .C file were listed below:\n\n#pragma once\n\n#include \"ADNodalBC.h\"\n\n/**\n * Increments the boundary displacement by the product of the surface velocity and the change in\n * time through an implicit Euler disretization\n */\nclass MassBC : public ADNodalBC\n{\npublic:\n  static InputParameters validParams();\n\n  MassBC(const InputParameters & parameters);\n\nprotected:\n  virtual ADReal computeQpResidual() override;\n\n  /// The velocity\n  const Moose::Functor<ADRealVectorValue> & _velocity;\n\n  /// The previous timestep value of the displacement\n  const Real & _u_old;\n\n  /// What component of velocity/displacement this object is acting on\n  const unsigned short _component;\n\n  /// The subdomain ID along which the boundary nodeset, that this object is acting on, is\n  /// associated with\n  const SubdomainID _sub_id;\n\n  const MooseArray<ADPoint> & _ad_normals;\n\n  ADMaterialProperty<Real> & _mu;\n};\n\n\n#include \"MassBC.h\"\n#include \"SystemBase.h\"\n#include \"ImplicitEuler.h\"\n\nregisterMooseObject(\"ValidationApp\", MassBC);\n\nInputParameters\nMassBC::validParams()\n{\n  InputParameters params = ADNodalBC::validParams();\n  params.addClassDescription(\"Boundary condition for displacing a boundary\");\n  params.addRequiredParam<MooseFunctorName>(\"velocity\", \"The velocity at which to displace\");\n  params.addRequiredParam<unsigned short>(\n      \"component\", \"What component of velocity/displacement this object is acting on.\");\n  params.addRequiredParam<SubdomainName>(\n      \"associated_subdomain\",\n      \"The subdomain that the boundary nodeset is associated with. This will be passed to the \"\n      \"coupled functor for unambigious evaluation (e.g. at the edge of the node-patch where we \"\n      \"might run into the intersection of subdomains\");\n  return params;\n}\n\nMassBC::MassBC(const InputParameters & parameters)\n  : ADNodalBC(parameters),\n    _velocity(getFunctor<ADRealVectorValue>(\"velocity\")),\n    _u_old(_var.nodalValueOld()),\n    _component(getParam<unsigned short>(\"component\")),\n    _sub_id(_mesh.getSubdomainID(getParam<SubdomainName>(\"associated_subdomain\"))),\n    _ad_normals(_assembly.adNormals()),\n    _mu(getADMaterialProperty<Real>(\"mu\"))\n{\n  if (!dynamic_cast<ImplicitEuler *>(_sys.getTimeIntegrator()))\n    mooseError(\"This boundary condition hard-codes a displacement update with the form of an \"\n               \"implicit Euler discretization. Consequently please use the default time \"\n               \"integrator, ImplicitEuler.\");\n}\n\nADReal\nMassBC::computeQpResidual()\n{\n  const Moose::NodeArg nd{_current_node, _sub_id};\n  return _u - (_u_old + this->_dt * (_velocity(nd, determineState())(_component) - _mu[_qp] * _ad_normals[_qp](_component)));\n}\n\n\nHow can I get the material property correctly in ADNodalBC?",
+          "url": "https://github.com/idaholab/moose/discussions/27879",
+          "updatedAt": "2024-06-13T16:00:15Z",
+          "publishedAt": "2024-06-12T12:34:19Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere are no \"nodal\" material property with the traditional material property system, because we cannot know which block's definition of a material property to use at a node at the boundary between two blocks\nYou could use the functor materials, a new type of material properties that get evaluated on-the-fly, instead. This will require converting your material properties to the new system.",
+                  "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9751259",
+                  "updatedAt": "2024-06-12T12:37:02Z",
+                  "publishedAt": "2024-06-12T12:37:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Always-kimi"
+                          },
+                          "bodyText": "Thank you! I got it. Actually, I try to imported the function system to ADNodalBC for calculate but it also show some errors. Is there any example or page I can learn from in developing ADNodalBC?",
+                          "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9751534",
+                          "updatedAt": "2024-06-12T13:01:17Z",
+                          "publishedAt": "2024-06-12T13:01:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "we dont have a dedicated tutorial for nodal BCs\nhowever the doxygen should be very helpful, listing all the examples of that type of BC and listing all the APIs you can use\nhttps://mooseframework.inl.gov/docs/doxygen/moose/classGenericNodalBC_3_01true_01_4.html\nthe examples can be found through \"grep\" in the src folders actually, seems the doxygen isnt listing them",
+                          "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9751639",
+                          "updatedAt": "2024-06-12T13:09:22Z",
+                          "publishedAt": "2024-06-12T13:09:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Always-kimi"
+                          },
+                          "bodyText": "Thank you very much!",
+                          "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9751941",
+                          "updatedAt": "2024-06-12T13:32:40Z",
+                          "publishedAt": "2024-06-12T13:32:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Always-kimi"
+                          },
+                          "bodyText": "Hi Guillaume,\n@GiudGiud Sorry to bother you again! At your suggestion, I built my own functor materials. Despite my best efforts, however, I ended up getting stuck on getting the nodal coordinates. My source file of the functor material was listed as follow:\n\n#include \"MassAdditionFunctorMaterial.h\"\n#include \"Function.h\"\n\nregisterMooseObject(\"ValidationApp\", MassAdditionFunctorMaterial);\n\nInputParameters\nMassAdditionFunctorMaterial::validParams()\n{\n  InputParameters params = FunctorMaterial::validParams();\n  params.addClassDescription(\"Calculates the boundary condition residual contribution of the powder \"\n                             \"flux of a Gaussian laser powder impinging on a surface.\");\n  params.addRequiredParam<Real>(\"eta\",\n                                \"The effective radius describing the radial distribution of the \"\n                                \"powder energy. This should be non-dimensional.\");\n  params.addRequiredParam<Real>(\"M0\", \"The average heat flux of the laser\");\n  params.addRequiredParam<Real>(\"R\", \"The powder radius\");\n  params.addParam<FunctionName>(\"x_powder_coord\", 0, \"The x coordinate of the center of the powder\");\n  params.addParam<FunctionName>(\"y_powder_coord\", 0, \"The y coordinate of the center of the powder\");\n  params.addParam<FunctionName>(\"z_powder_coord\", 0, \"The z coordinate of the center of the powder\");\n  return params;\n}\n\nMassAdditionFunctorMaterial::MassAdditionFunctorMaterial(const InputParameters & params)\n  : FunctorMaterial(params),\n    _eta(getParam<Real>(\"eta\")),\n    _M0(getParam<Real>(\"M0\")),\n    _R(getParam<Real>(\"R\")),\n    _x_powder_coord(getFunction(\"x_powder_coord\")),\n    _y_powder_coord(getFunction(\"y_powder_coord\")),\n    _z_powder_coord(getFunction(\"z_powder_coord\"))\n{\n  addFunctorProperty<ADReal>(\n      \"mass_flow\",\n      [this](const auto & r, const auto & t)\n      {\n        RealVectorValue powder_coords{_x_powder_coord(r, t),\n                                      _y_powder_coord(r, t),\n                                      _z_powder_coord(r, t)};\n        auto R = (_q_point[_qp] - powder_coords).norm();  \n        return 2. * _eta * _M0 * std::exp(-_eta * R * R / (_R * _R));\n      });\n}\n\nThe file can be compile and there is nothing warning. At first the simulation is enable executing, but then the error message come out with Segmentation fault (core dumped):\n(moose) kimi@DESKTOP-7APSM1S:~/projects/validation/problems$ ../validation-opt -i 3d_mass_flux.i\nThe following total 1 aux variables:\n  mu\nare added for automatic output by MaterialOutputAction.\nFramework Information:\nMOOSE Version:           git commit f3d6fc1a05 on 2024-05-25\nLibMesh Version:\nPETSc Version:           3.20.3\nSLEPc Version:           3.20.1\nCurrent Time:            Thu Jun 13 14:49:32 2024\nExecutable Timestamp:    Thu Jun 13 14:49:03 2024\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh:\n  Parallel Type:           replicated\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:                   729\n  Elems:                   512\n  Num Subdomains:          1\n\nNonlinear System:\n  Num DOFs:                5832\n  Num Local DOFs:          5832\n  Variables:               \"vel\" { \"T\" \"p\" \"disp_x\" \"disp_y\" \"disp_z\" }\n  Finite Element Types:    \"LAGRANGE_VEC\" \"LAGRANGE\"\n  Approximation Orders:    \"FIRST\" \"FIRST\"\n\nAuxiliary System:\n  Num DOFs:                3072\n  Num Local DOFs:          3072\n  Variables:               { \"error_T\" \"error_dispz\" \"errorfrac_T\" \"errorfrac_dispz\" \"combo\" \"mu\" }\n  Finite Element Types:    \"MONOMIAL\"\n  Approximation Orders:    \"CONSTANT\"\n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          ImplicitEuler\n  Solver Mode:             NEWTON\n  PETSc Preconditioner:    lu\n  MOOSE Preconditioner:    SMP\n\n\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+----------------+----------------+\n| time           | nl             | num_dofs       | tot_nl         |\n+----------------+----------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+----------------+----------------+\n\n\nTime Step 1, time = 6e-06, dt = 6e-06\nSegmentation fault (core dumped)\n\nAfter testing my codes, the problem seems to be with the second last code auto R = (_q_point[_qp] - powder_coords).norm(); and I cannot to get the correct _q_point[_qp]. If I remove the _q_point[_qp] code, the simulation is well executing. Do you know how to solve this problem?",
+                          "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9760400",
+                          "updatedAt": "2024-06-13T15:13:35Z",
+                          "publishedAt": "2024-06-13T08:02:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "_q_point should not be used here.\nuse r (the spatial argument) instread.\nYou can see the list of spatial arguments in MooseFunctorArguments.h.\nFrom there, you can add code like in the FunctorSmoother to specialize how you retrieve the location to each spatial argument",
+                          "url": "https://github.com/idaholab/moose/discussions/27879#discussioncomment-9765310",
+                          "updatedAt": "2024-06-13T16:00:16Z",
+                          "publishedAt": "2024-06-13T16:00:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Polycrystalline simulation with crystal plasticity",
+          "author": {
+            "login": "PengWei97"
+          },
+          "bodyText": "Hello all,\nI am trying to build and run a polycrystalline crystal plasticity model, which uses Voronoi tesslation to establish the initial crystal structure. But there are no examples of polycrystalline modeling in the folder of cp_uer_object or other crystal plasticity examples.\nSo what I want to ask is, would you share me the  input file related to it?\nAny help would be greatly appreciated!\nThanks,\nWei Peng",
+          "url": "https://github.com/idaholab/moose/discussions/16716",
+          "updatedAt": "2024-06-13T14:38:39Z",
+          "publishedAt": "2021-01-17T05:41:59Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "Two options:\n\nassign each grain with a block id, and use read_type = block in the following block. The input file can be found at modules/tensor_mechanics/test/tests/cp_user_object/prop_block_read.i\n\n[UserObjects]\n[./prop_read]\ntype = ElementPropertyReadFile\nprop_file_name = 'euler_ang_file.txt'\n# Enter file data as prop#1, prop#2, .., prop#nprop\nnprop = 3\nread_type = block\nnblock= 2\n[../]\n[]\n\nuse ElementPropertyReadFile to perform voronoi tessellation.\n\n[UserObjects]\n[./prop_read]\ntype = ElementPropertyReadFile\nprop_file_name = 'euler_ang_file.txt'\n# Enter file data as prop#1, prop#2, .., prop#nprop\nnprop = 3\nread_type = grain\nngrain= 2\n[../]\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-289047",
+                  "updatedAt": "2022-06-15T14:12:29Z",
+                  "publishedAt": "2021-01-17T16:56:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Dear @jiangwen84,\nThanks for your reply. I have understood the first option you mentioned. But for the second option, I have a question that needs your answer. If I use voronoi tessellation to generate the initial polycrystalline structure, is the object used is the PolycrystalVoronoi built in moose, or do I need to import the initial polycrystalline structure from an external file?\nFinally, could you please provide the input file in this regard for me to solve this problem, thank you very much to jiangwen84 for your help.\nKind regards,\nWei",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-295011",
+                          "updatedAt": "2022-06-15T14:12:32Z",
+                          "publishedAt": "2021-01-20T03:55:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "For the second approach, you need  a mesh generator software, such as Cubit, Gmsh, Neper etc, to generate a mesh of polycrystalline. Each grain will be assigned a block id. Once you make such mesh, you can use FileMeshGenerator to read in the mesh, and use the  ElementPropertyReadFile to assign Euler angles to each block.\nYou might want to start with simple case,  i.e. two blocks, and get familiar with the usage.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-297558",
+                          "updatedAt": "2022-06-15T14:12:36Z",
+                          "publishedAt": "2021-01-20T23:27:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @PengWei97\nI use neper to generate the polycrystal mesh and then I read the mesh file .msh with MOOSE.\nYou can find an example with instructions in my repository:\nhttps://github.com/ngrilli/c_pfor_am/tree/main/test/tests/polycrystal\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                  "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-290907",
+                  "updatedAt": "2022-06-15T14:12:32Z",
+                  "publishedAt": "2021-01-18T14:18:51Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Hi @ngrilli ,\nThank you very much for your response. I see polycrystal_out.e, but it is not a polycrystalline structure produced by voronoi tessellation. Maybe my question is not clear. What I want is to generate a polycrystalline model similar to the figure below to simulate crystal plasticity. If you could provide relevant documents in this regard, I really appreciate it..",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-294998",
+                          "updatedAt": "2022-06-15T14:12:32Z",
+                          "publishedAt": "2021-01-20T03:43:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "Dear @PengWei97\nI think my file was produced using the \"grain growth model\" available in neper.\nVoronoi is the default option in neper.\nFor instance, the following set of commands will produce a Voronoi tessellation:\nneper -T -n 2 -id 1 -domain \"cube(3,3,3)\"\nneper -M n2-id1.tess -elttype 'hex' -cl 1.0\nwhile the following set of commands produce a grain growth tessellation:\nneper -T -n 2 -id 1 -domain \"cube(3,3,3)\" -morpho 'gg'\nneper -M n2-id1.tess -elttype 'hex' -cl 1.0\nFinally, grain growth tessellation is usually preferred to Voronoi,\nbecause it produces more realistic microstructures.\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-297939",
+                          "updatedAt": "2022-06-17T20:15:38Z",
+                          "publishedAt": "2021-01-21T02:48:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "Please check the neper manual for all tessellation options",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-297940",
+                          "updatedAt": "2022-06-17T20:15:39Z",
+                          "publishedAt": "2021-01-21T02:48:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "PengWei97"
+                          },
+                          "bodyText": "Thank you very much for your careful guidance. I will read them carefully.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-326779",
+                          "updatedAt": "2022-06-24T13:44:13Z",
+                          "publishedAt": "2021-02-01T09:46:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "p-antonioni"
+                  },
+                  "bodyText": "Hello, everyone.\nI'm trying to simulate the plasticity of polycrystals. For this reason, I used Neper to construct a voronoi tasselation, which I then imported using FileMeshGenerator. Because I need to incorporate Euler angles, so I created a UserObject that read attributes from a  .csv file using voronoi read_type. Then I utilized the object within Compute Elasticity Tensor CP.\nThe csv file has six columns: three for voronoi tessellation positions (use_random_voronoi = false) and three for Euler angles.\nThe issue is that the tessellation positions are set as Euler angles.\nAm I doing something wrong?\nI saw issue #16716 and was wondering if it was feasible to complete this type of operation using simply PropertyReadFile.\n[UserObjects]\n  [red_prop]\n    type = PropertyReadFile #Running says to use PropertyReadFile instead of elementPropertyReadFile\n    prop_file_name = 'threecry.csv'\n    use_random_voronoi = false\n    read_type = 'voronoi'\n    nvoronoi = 3\n    nprop = 6\n  []\n[]\n\n[Materials]\n  [elasticity_tensor]\n    type = ComputeElasticityTensorCP\n    C_ijkl = '1.684e5 1.214e5 1.214e5 1.684e5 1.214e5 1.684e5 0.754e5 0.754e5 0.754e5'\n    fill_method = symmetric9\n    read_prop_user_object = red_prop\n  []\n\nThanks,\nPaolo Antonioni",
+                  "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8318969",
+                  "updatedAt": "2024-01-31T16:45:17Z",
+                  "publishedAt": "2024-01-31T11:54:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI think the thing to do here is simply to ouput the material properties (there s a parameter on every material object for that) and check that the distributions are as expected.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8323357",
+                          "updatedAt": "2024-01-31T16:46:55Z",
+                          "publishedAt": "2024-01-31T16:46:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "p-antonioni"
+                          },
+                          "bodyText": "Thanks Guillaume for your answer.\nDo you mean to use the output_properties parameter in Compute Elasticity Tensor CP ?\nIf yes, is there a way to extract all of them without providing a list?\nFor a single crystal simulation I provided the euler angles directly using euler_angle_ number parameters.\nFor a polycrystal, I provided a file with x,y,z,euler_angle1,euler_angle2,euler_angle3.\nI saw from Paraview that the value of x was assigned to euler_angle_1 and similarly for other grains as well.\nDid I miss some steps? Do I need to create some further material object?\nThanks,\nPaolo",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8333959",
+                          "updatedAt": "2024-02-01T11:35:00Z",
+                          "publishedAt": "2024-02-01T11:34:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If yes, is there a way to extract all of them without providing a list?\n\nnot sure. Does setting outputs = 'name of the output exodus' suffice?",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8336594",
+                          "updatedAt": "2024-02-01T15:58:31Z",
+                          "publishedAt": "2024-02-01T15:58:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I saw from Paraview that the value of x was assigned to euler_angle_1 and similarly for other grains as well.\n\nSo the property read file is accessing the wrong column?\nWe'd have to check the implementation of ComputeElasticityTensorCP\nFor now I would suggest shuffling columns around to just make it work.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8337729",
+                          "updatedAt": "2024-02-01T17:28:22Z",
+                          "publishedAt": "2024-02-01T17:28:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "p-antonioni"
+                          },
+                          "bodyText": "I was not able to use it, I think I am making mistake.\nI have the following error message:\nunused parameter 'Materials/elasticity_tensor/output'\nI have also defined updated euler angles in AuxVariables and Postsprocessors\nIf you prefer, I can share my input file.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8337943",
+                          "updatedAt": "2024-02-01T17:47:29Z",
+                          "publishedAt": "2024-02-01T17:47:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "outputs\nyou can check the object parameters there:\nhttps://mooseframework.inl.gov/source/materials/crystal_plasticity/ComputeElasticityTensorCP.html",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8337989",
+                          "updatedAt": "2024-02-01T17:52:19Z",
+                          "publishedAt": "2024-02-01T17:52:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "p-antonioni"
+                          },
+                          "bodyText": "Thanks for your help and patience.\nI am rather new to MOOSE and I am not getting how to use outputs and output_properties to output the material properties in this case.\nCould you suggest me how to modify the input file to be able to do this:\npolycrystal.txt\nThe x,y,z coordinates that i use in the csv file are what neper calls seed coordinates.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8339131",
+                          "updatedAt": "2024-02-01T20:18:58Z",
+                          "publishedAt": "2024-02-01T20:18:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Use Debug/show_material_props=true to see the names of the material properties.\nthen in the material you can have output_material_properties = .... (the names from the debug log)",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8339298",
+                          "updatedAt": "2024-02-01T20:41:43Z",
+                          "publishedAt": "2024-02-01T20:41:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "p-antonioni"
+                          },
+                          "bodyText": "Thanks again.\nIt appears that the x, y, and z coordinates in the csv file are utilized as both Voronoi tessellation coordinates and Euler angle values.\nI've included a picture.\nIn this scenario, the tessellation appears to have been successfully recreated, but the euler_angles_1 values are the three grains' x-coordinates.",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8345399",
+                          "updatedAt": "2024-02-02T11:08:12Z",
+                          "publishedAt": "2024-02-02T11:08:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It will take a little modification in the material to access the right column then.\nI can look at it Monday i m on travel right now. Maybe someone else on the forum can check this though",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8349749",
+                          "updatedAt": "2024-02-02T18:35:27Z",
+                          "publishedAt": "2024-02-02T18:35:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "@p-antonioni  I am not aware of the need to use 6 columns,\nif you want to read the Euler angles by grains, meaning each row of the Euler angles file represent one grain,\nthen you only need three columns with the Euler angles, you can see a test case here:\nhttps://github.com/ngrilli/c_pfor_am/blob/main/test/tests/neper/polycrystalneper.i\nI am not familiar with the option of inputting the voronoi tessellation positions,\nI would normally create the polycrystal with neper and then input the ready mesh as described above.",
+                  "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8324379",
+                  "updatedAt": "2024-01-31T17:38:54Z",
+                  "publishedAt": "2024-01-31T17:38:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "p-antonioni"
+                          },
+                          "bodyText": "Thanks Nicol\u00f2 for your answer.\nI saw this procdure in the PropertyReadFile documentation which states:\n\"In grain/voronoi mode, a Voronoi tessellation with \"nvoronoi\" random centers is either created randomly or read from the first columns of the CSV file, depending on the \"use_random_voronoi\". The file read should still contain [\"nprop\"] columns, even though 1-3 columns may be used for the Voronoi tessellation positions.\"\nThanks a lot for sharing your examples codes which work and were really useful to understand the procedure you use.\nBest regards,\nPaolo",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-8335238",
+                          "updatedAt": "2024-02-01T13:54:03Z",
+                          "publishedAt": "2024-02-01T13:54:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "amassaf"
+                          },
+                          "bodyText": "@p-antonioni I am not aware of the need to use 6 columns, if you want to read the Euler angles by grains, meaning each row of the Euler angles file represent one grain, then you only need three columns with the Euler angles, you can see a test case here: https://github.com/ngrilli/c_pfor_am/blob/main/test/tests/neper/polycrystalneper.i\nI am not familiar with the option of inputting the voronoi tessellation positions, I would normally create the polycrystal with neper and then input the ready mesh as described above.\n\nHi @ngrilli I followed your instructions for neper mesh with ComputeElasticityTensorCPGrain and GrainPropertyReadFile but when I try to output the elasticity tensor components all of the grains of the polycrystal show the same value though they do show different values for the euler angles. Does this show that the rotation wasn't taken into consideration for the calculation or is it just an output error?thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/16716#discussioncomment-9764332",
+                          "updatedAt": "2024-06-13T14:38:39Z",
+                          "publishedAt": "2024-06-13T14:38:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Segmentation fault",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "After running my input script below is the error I get.\nmpirun noticed that process rank 0 with PID 28365 on node tc007 exited on signal 11 (Segmentation fault).\n\nAny help?",
+          "url": "https://github.com/idaholab/moose/discussions/27790",
+          "updatedAt": "2024-06-13T04:47:56Z",
+          "publishedAt": "2024-06-04T20:46:40Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCan you reproduce the error in serial? It would be easier to debug",
+                  "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9670780",
+                  "updatedAt": "2024-06-04T23:46:22Z",
+                  "publishedAt": "2024-06-04T23:46:21Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Can you elaborate on that?",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9670926",
+                          "updatedAt": "2024-06-05T00:21:32Z",
+                          "publishedAt": "2024-06-05T00:21:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you run with mpirun -n 1 can you get the same error?",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9671125",
+                          "updatedAt": "2024-06-05T00:57:09Z",
+                          "publishedAt": "2024-06-05T00:57:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I am new to this and I do not really get your question but below is how I submit my job for it to run\n#!/bin/bash                                                                     \n#SBATCH --job-name fileread_add3                                               \n#SBATCH --out  fileread_add3.out        \n#SBATCH --nodes 1                                                               \n#SBATCH --ntasks 2\n#SBATCH --cpus-per-task 8\n#SBATCH --account amcorrosion                                                  \n##SBATCH --partition normal_q                                                   \n#SBATCH --time=100:00:00    \n##SBATCH --mem=gpu:pascal:4                                                     \n#SBATCH --export=NONE # this makes sure the compute environment is clean        \n#SBATCH --mail-user emmanuel324@vt.edu\n#SBATCH --mail-type=begin\n#SBATCH --mail-type=end\n\n\nmodule reset\nmodule load apps site/tinkercliffs/easybuild/setup\nmodule load apps site/tinkercliffs-rome/easybuild/setup\nmodule load OpenMPI CMake\nexport CC=mpicc CXX=mpicxx FC=mpif90 F90=mpif90 F77=mpif77\nmamba activate python-stack\n\n\ncd \"${submitdir}\"\n#rm kks_multiphase_largescale_large_csv*\n#rm kks_multiphase_largescale_large_out.e*\nmpirun --mca orte_base_help_aggregate 0 -np 2 /home/emmanuel324/projects/belson/belson-opt  -i  fileread_add3.i",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9671148",
+                          "updatedAt": "2024-06-05T01:00:39Z",
+                          "publishedAt": "2024-06-05T01:00:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In the final line use -np 1 to use a single process\nYou could also adapt the resource request in the first few lines (sbatch) but it's not necessary",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9671389",
+                          "updatedAt": "2024-06-05T01:42:03Z",
+                          "publishedAt": "2024-06-05T01:36:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Below is the .out file after using a single process\n*** Warning, This code is deprecated and will be removed in future versions:\n/home/emmanuel324/projects/belson/restartkks/restartkks.i:210.3: The 'Kernels/TensorMechanics' syntax is deprecated. Please use 'Physics/SolidMechanics/QuasiStatic' instead.\ufffd[39m\nStack frames: 14\n0: libMesh::print_trace(std::ostream&)\n1: void moose::internal::mooseDeprecatedStream<libMesh::BasicOStreamProxy<char, std::char_traits<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >(libMesh::BasicOStreamProxy<char, std::char_traits<char> >&, bool, bool, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&&)\n2: Moose::Builder::walkRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, hit::Node*)\n3: Moose::Builder::walk(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, hit::Node*)\n4: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n5: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n6: hit::Node::walk(hit::Walker*, hit::NodeType, hit::TraversalOrder)\n7: Moose::Builder::build()\n8: MooseApp::setupOptions()\n9: MooseApp::run()\n10: /home/emmanuel324/projects/belson/belson-opt() [0x404253]\n11: main\n12: __libc_start_main\n13: /home/emmanuel324/projects/belson/belson-opt() [0x4044c1]\n\n\n\ufffd[36m\n*** Info ***\nSolidMechanics Action: selecting 'total small strain' formulation. Use `incremental = true` to select 'incremental small strain' instead.\ufffd[39m\n--------------------------------------------------------------------------\nPrimary job  terminated normally, but 1 process returned\na non-zero exit code. Per user-direction, the job has been aborted.\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nmpirun noticed that process rank 0 with PID 134860 on node tc037 exited on signal 11 (Segmentation fault)",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9681684",
+                          "updatedAt": "2024-06-05T19:14:52Z",
+                          "publishedAt": "2024-06-05T19:14:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThis is not the same as a backtrace. You ll have to follow the debugging instructions on the website to get a backtrace",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9683188",
+                          "updatedAt": "2024-06-05T23:07:36Z",
+                          "publishedAt": "2024-06-05T23:07:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I was trying to get the backtrace following the debugging steps. Did I do something wrong:\n(python-stack) [emmanuel324@tinkercliffs1 belson]$ gdb --args ./belson-dbg -i bicrystal_test6.i\nGNU gdb (GDB) Red Hat Enterprise Linux 7.6.1-120.el7\nCopyright (C) 2013 Free Software Foundation, Inc.\nLicense GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>\nThis is free software: you are free to change and redistribute it.\nThere is NO WARRANTY, to the extent permitted by law.  Type \"show copying\"\nand \"show warranty\" for details.\nThis GDB was configured as \"x86_64-redhat-linux-gnu\".\nFor bug reporting instructions, please see:\n<http://www.gnu.org/software/gdb/bugs/>...\nReading symbols from /home/emmanuel324/projects/belson/belson-dbg...Dwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/emmanuel324/projects/b\nelson/belson-dbg]\n(no debugging symbols found)...done.\n(gdb) b MPI_Abort\nFunction \"MPI_Abort\" not defined.\nMake breakpoint pending on future shared library load? (y or [n]) y\nBreakpoint 1 (MPI_Abort) pending.\n(gdb) r\nStarting program: /home/emmanuel324/projects/belson/./belson-dbg -i bicrystal_test6.i\nDwarf Error: wrong version in compilation unit header (is 5, should be 2, 3, or 4) [in module /home/emmanuel324/projects/belson/test/lib/libbelson_test-dbg.so.0]\nKilled",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9756595",
+                          "updatedAt": "2024-06-12T21:31:24Z",
+                          "publishedAt": "2024-06-12T21:31:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "does this\n /home/emmanuel324/projects/belson/./belson-dbg -i bicrystal_test6.i\n\nrun outside the debugger?",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9757607",
+                          "updatedAt": "2024-06-13T00:47:46Z",
+                          "publishedAt": "2024-06-13T00:47:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Below is the outcome\n(base) [emmanuel324@tinkercliffs1 belson]$  /home/emmanuel324/projects/belson/./belson-dbg -i bicrystal_test6.i\nSetting UpIn UnstructuredMesh::stitch_meshes:\nThis mesh has 228 nodes on boundary `right' (1).\nOther mesh has 174 nodes on boundary `' (7).\nMinimum edge length on both surfaces is 1.\nIn UnstructuredMesh::stitch_meshes:\nFound 0 matching nodes.\n.\n  Initializing\n    Initializing Equation Systems...........                                             [ 64.13 s] [  850 MB]\n    Initializing Displaced Equation System....                                           [ 31.04 s] [  850 MB]\n  Finished Initializing                                                                  [ 98.68 s] [  850 MB]\nFinished Setting Up                                                                      [120.91 s] [  850 MB]\nSegmentation fault (core dumped)",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9757668",
+                          "updatedAt": "2024-06-13T01:02:27Z",
+                          "publishedAt": "2024-06-13T01:02:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok good. Now we just need to figure out the debugger\nnote that this:\nFound 0 matching nodes.\n\nmeans your stitiching is completely failing. Fixing this could remove the problem maybe.. It would be worth for you to take a look into it now",
+                          "url": "https://github.com/idaholab/moose/discussions/27790#discussioncomment-9757716",
+                          "updatedAt": "2024-06-13T01:11:47Z",
+                          "publishedAt": "2024-06-13T01:11:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Subdomain do not exist",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "Below is a snippet of my mesh block\n[Mesh]\n   [file]\n      type = FileMeshGenerator\n      file = my_kks_noload_twophase_out.e-s180\n      use_for_exodus_restart = true\n      add_subdomain_ids = '1'\n      add_subdomain_names = file\n   []\n[]\n\nBelow is the error I get I have tried adding the block id but it does not work\nThe following error occurred in the MooseMesh 'mesh' of type MeshGeneratorMesh.check_inp(moose_srv)\nRequested subdomain 1 does not exist.",
+          "url": "https://github.com/idaholab/moose/discussions/27803",
+          "updatedAt": "2024-06-13T04:48:13Z",
+          "publishedAt": "2024-06-05T22:25:49Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe parameter is not at the right place.\nAdd_subdomain_ should be under the Mesh block directly",
+                  "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683152",
+                  "updatedAt": "2024-06-05T23:00:32Z",
+                  "publishedAt": "2024-06-05T23:00:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "After putting it in the right I still get the error below\n                                                                               [\ufffd[33m  1.36 s\ufffd[39m] [\ufffd[33m  423 MB\ufffd[39m]\nFramework Information:\nMOOSE Version:           git commit 23349b8 on 2024-05-14\nLibMesh Version:         7dbd90ade88cb16a5e855a4c345454c9c146ebec\nPETSc Version:           3.20.3\nSLEPc Version:           3.20.1\nCurrent Time:            Wed Jun  5 19:30:24 2024\nExecutable Timestamp:    Tue Jun  4 18:20:46 2024\n\nParallelism:\n  Num Processors:          2\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   \n    Total:                 37988\n    Local:                 19712\n    Min/Max/Avg:           18276/19712/18994\n  Elems:                   \n    Total:                 35931\n    Local:                 17966\n    Min/Max/Avg:           17965/17966/17965\n  Num Subdomains:          1\n  Num Partitions:          2\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                151952\n  Num Local DOFs:          78848\n  Variables:               { \"eta0\" \"eta1\" \"disp_x\" \"disp_y\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                251517\n  Num Local DOFs:          125762\n  Variables:               { \"pk2\" \"fp_xx\" \"e_xx\" } { \"eta0_gss\" \"eta0_slip_increment\" } { \"eta1_gss\" \n                             \"eta1_slip_increment\" } { \"eta0_stress_xx\" \"eta1_stress_xx\" } \n  Finite Element Types:    \"MONOMIAL\" \"MONOMIAL\" \"MONOMIAL\" \"MONOMIAL\" \n  Approximation Orders:    \"CONSTANT\" \"CONSTANT\" \"CONSTANT\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          ImplicitEuler\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    asm \n  MOOSE Preconditioner:    SMP\n\nCurrently Executing\n  Performing Initial Setup\n    Setting Up Materials\n      Finished Computing Initial Material Values                                         [\ufffd[33m  0.35 s\ufffd[39m] [\ufffd[33m  643 MB\ufffd[39m]\n    Finished Setting Up Materials                                                        [\ufffd[33m  0.35 s\ufffd[39m] [\ufffd[33m  643 MB\ufffd[39m]\n  Finished Performing Initial Setup                                                      [\ufffd[33m  1.05 s\ufffd[39m] [\ufffd[33m  652 MB\ufffd[39m]\n\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+---------------------+----------------+----------------+----------------+\n\nWarning:  This MeshOutput subclass only supports meshes which are contiguously renumbered!\nlibMesh terminating:\nExodusII_IO_Helper: block id 1 not found in block_ids.\n[0] ../src/mesh/exodusII_io_helper.C, line 3251, compiled May 15 2024 at 20:45:54",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683307",
+                          "updatedAt": "2024-06-05T23:32:21Z",
+                          "publishedAt": "2024-06-05T23:32:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "That's a different error\nAdd an exodus block to your outputs block, then specify execute_on to be after block 1 has been created on the mesh",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683320",
+                          "updatedAt": "2024-06-05T23:39:23Z",
+                          "publishedAt": "2024-06-05T23:39:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "There is already 'exodus = true' in my output block as shown below\n[Outputs]\n  exodus = true\n  csv = true\n  perf_graph = true\n[]\n\nHow do I implement the second part of your submission?",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683522",
+                          "updatedAt": "2024-06-06T00:19:21Z",
+                          "publishedAt": "2024-06-06T00:19:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "See this page\nhttps://mooseframework.inl.gov/moose/source/outputs/Exodus.html",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683550",
+                          "updatedAt": "2024-06-06T00:22:36Z",
+                          "publishedAt": "2024-06-06T00:22:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I am kinda confused on what to do. There is little info actually\nI tried the block below but it did not work\n[Outputs]\n  exodus = true\n  csv = true\n  perf_graph = true\n  execute_on = 'INITIAL TIMESTEP_END' \n[]\n\nI also tried using \"output_extra_element_ids\". I could not implement in the blocks.",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683692",
+                          "updatedAt": "2024-06-06T00:48:41Z",
+                          "publishedAt": "2024-06-06T00:48:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There are example inputs on that page. You can look at how they defined an Exodus outputs block",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9683786",
+                          "updatedAt": "2024-06-06T01:05:10Z",
+                          "publishedAt": "2024-06-06T01:05:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I did this\n[Outputs]\n  csv = true\n  perf_graph = true\n  [out]\n    type = Exodus\n    execute_on = 'TIMESTEP_END'\n  []\n[]\n\nAnd it's running now but I do not know if that was the right thing",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9684131",
+                          "updatedAt": "2024-06-06T01:55:31Z",
+                          "publishedAt": "2024-06-06T01:55:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This looks right",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9684612",
+                          "updatedAt": "2024-06-06T03:13:50Z",
+                          "publishedAt": "2024-06-06T03:13:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "The simulation is  not done but I see some steps being skipped in the .out file. Is this major issue.\nBelow is the the .out file\nUsing EXPERIMENTAL Stateful Material Property projection with Adaptivity!\nFinished Setting Up                                                                      [\ufffd[33m  1.36 s\ufffd[39m] [\ufffd[33m  423 MB\ufffd[39m]\nFramework Information:\nMOOSE Version:           git commit 23349b8 on 2024-05-14\nLibMesh Version:         7dbd90ade88cb16a5e855a4c345454c9c146ebec\nPETSc Version:           3.20.3\nSLEPc Version:           3.20.1\nCurrent Time:            Wed Jun  5 23:30:22 2024\nExecutable Timestamp:    Tue Jun  4 18:20:46 2024\n\nParallelism:\n  Num Processors:          2\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   \n    Total:                 37988\n    Local:                 19712\n    Min/Max/Avg:           18276/19712/18994\n  Elems:                   \n    Total:                 35931\n    Local:                 17966\n    Min/Max/Avg:           17965/17966/17965\n  Num Subdomains:          1\n  Num Partitions:          2\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                151952\n  Num Local DOFs:          78848\n  Variables:               { \"eta0\" \"eta1\" \"disp_x\" \"disp_y\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                251517\n  Num Local DOFs:          125762\n  Variables:               { \"pk2\" \"fp_xx\" \"e_xx\" } { \"eta0_gss\" \"eta0_slip_increment\" } { \"eta1_gss\" \n                             \"eta1_slip_increment\" } { \"eta0_stress_xx\" \"eta1_stress_xx\" } \n  Finite Element Types:    \"MONOMIAL\" \"MONOMIAL\" \"MONOMIAL\" \"MONOMIAL\" \n  Approximation Orders:    \"CONSTANT\" \"CONSTANT\" \"CONSTANT\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          ImplicitEuler\n  Solver Mode:             Preconditioned JFNK\n  PETSc Preconditioner:    lu \n  MOOSE Preconditioner:    SMP\n\nCurrently Executing\n  Performing Initial Setup\n    Setting Up Materials\n      Finished Computing Initial Material Values                                         [\ufffd[33m  0.34 s\ufffd[39m] [\ufffd[33m  644 MB\ufffd[39m]\n    Finished Setting Up Materials                                                        [\ufffd[33m  0.34 s\ufffd[39m] [\ufffd[33m  644 MB\ufffd[39m]\n  Finished Performing Initial Setup                                                      [\ufffd[33m  1.03 s\ufffd[39m] [\ufffd[33m  652 MB\ufffd[39m]\n\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n+----------------+---------------------+----------------+----------------+----------------+\n\n\nTime Step 1, time = 0.0005, dt = 0.0005\n 0 Nonlinear |R| = \ufffd[32m1.238731e+01\ufffd[39m\n      0 Linear |R| = \ufffd[32m1.238731e+01\ufffd[39m\n      1 Linear |R| = \ufffd[32m1.075551e-02\ufffd[39m\n 1 Nonlinear |R| = \ufffd[32m2.385894e-02\ufffd[39m\n      0 Linear |R| = \ufffd[32m2.385894e-02\ufffd[39m\n      1 Linear |R| = \ufffd[32m3.169581e-08\ufffd[39m\n 2 Nonlinear |R| = \ufffd[32m4.903236e-09\ufffd[39m\n  Finished Solving                                                                       [\ufffd[33m 18.27 s\ufffd[39m] [\ufffd[33m  755 MB\ufffd[39m]\n\ufffd[32m Solve Converged!\ufffd[39m\n\nOutlier Variable Residual Norms:\n  disp_x: \ufffd[31m3.895046e-09\ufffd[39m\n  disp_y: \ufffd[31m2.978311e-09\ufffd[39m\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |   0.000000e+00 |   6.080000e+01 |       -1.304814e-55 |   1.316273e-03 |           -nan |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |                -nan |           -nan |   1.000000e+00 |   5.513992e-04 |\n+----------------+---------------------+----------------+----------------+----------------+\n\n  Finished Adapting Mesh                                                                 [\ufffd[33m  9.49 s\ufffd[39m] [\ufffd[33m 1110 MB\ufffd[39m]\n\nTime Step 2, time = 0.0011, dt = 0.0006\n 0 Nonlinear |R| = \ufffd[32m1.663910e+01\ufffd[39m\n\n    Computing Jacobian                                                                   [\ufffd[33m  5.10 s\ufffd[39m] [\ufffd[33m 1157 MB\ufffd[39m]\n      0 Linear |R| = \ufffd[32m1.663910e+01\ufffd[39m\n      1 Linear |R| = \ufffd[32m1.161480e-01\ufffd[39m\n      2 Linear |R| = \ufffd[32m3.460144e-04\ufffd[39m\n 1 Nonlinear |R| = \ufffd[32m1.169844e-01\ufffd[39m\n    Computing Jacobian                                                                   [\ufffd[33m  5.16 s\ufffd[39m] [\ufffd[33m 1707 MB\ufffd[39m]\n      0 Linear |R| = \ufffd[32m1.169844e-01\ufffd[39m\n      1 Linear |R| = \ufffd[32m2.061683e-07\ufffd[39m\n 2 Nonlinear |R| = \ufffd[32m7.027928e-09\ufffd[39m\n  Finished Solving                                                                       [\ufffd[33m 46.94 s\ufffd[39m] [\ufffd[33m 1188 MB\ufffd[39m]\n\ufffd[32m Solve Converged!\ufffd[39m\n\nOutlier Variable Residual Norms:\n  disp_x: \ufffd[31m5.378809e-09\ufffd[39m\n  disp_y: \ufffd[31m4.523293e-09\ufffd[39m\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |   0.000000e+00 |   6.080000e+01 |       -1.304814e-55 |   1.316273e-03 |           -nan |\n|   1.100000e-03 |   0.000000e+00 |   6.080000e+01 |       -7.176719e-51 |   2.879104e-03 |           -nan |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |                -nan |           -nan |   1.000000e+00 |   5.513992e-04 |\n|   1.100000e-03 |                -nan |           -nan |   1.000000e+00 |   1.206084e-03 |\n+----------------+---------------------+----------------+----------------+----------------+\n\n  Adapting Mesh\n    Finished Adapting Mesh                                                               [\ufffd[33m  3.55 s\ufffd[39m] [\ufffd[33m 1364 MB\ufffd[39m]\n  Finished Adapting Mesh                                                                 [\ufffd[33m 11.61 s\ufffd[39m] [\ufffd[33m 1325 MB\ufffd[39m]\n\nTime Step 3, time = 0.00182, dt = 0.00072\n 0 Nonlinear |R| = \ufffd[32m2.122967e+01\ufffd[39m\n      0 Linear |R| = \ufffd[32m2.122967e+01\ufffd[39m\n      1 Linear |R| = \ufffd[32m1.114468e-01\ufffd[39m\n      2 Linear |R| = \ufffd[32m7.728442e-04\ufffd[39m\n 1 Nonlinear |R| = \ufffd[32m1.137920e-01\ufffd[39m\n\n    Computing Jacobian                                                                   [\ufffd[33m  5.54 s\ufffd[39m] [\ufffd[33m 1915 MB\ufffd[39m]\n      0 Linear |R| = \ufffd[32m1.137920e-01\ufffd[39m\n      1 Linear |R| = \ufffd[32m1.859807e-07\ufffd[39m\n 2 Nonlinear |R| = \ufffd[32m8.854351e-09\ufffd[39m\n  Finished Solving                                                                       [\ufffd[33m 48.06 s\ufffd[39m] [\ufffd[33m 1410 MB\ufffd[39m]\n\ufffd[32m Solve Converged!\ufffd[39m\n\nOutlier Variable Residual Norms:\n  disp_x: \ufffd[31m6.904315e-09\ufffd[39m\n  disp_y: \ufffd[31m5.543462e-09\ufffd[39m\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |   0.000000e+00 |   6.080000e+01 |       -1.304814e-55 |   1.316273e-03 |           -nan |\n|   1.100000e-03 |   0.000000e+00 |   6.080000e+01 |       -7.176719e-51 |   2.879104e-03 |           -nan |\n|   1.820000e-03 |   0.000000e+00 |   6.080000e+01 |       -1.588706e-48 |   4.749282e-03 |           -nan |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |                -nan |           -nan |   1.000000e+00 |   5.513992e-04 |\n|   1.100000e-03 |                -nan |           -nan |   1.000000e+00 |   1.206084e-03 |\n|   1.820000e-03 |                -nan |           -nan |   1.000000e+00 |   1.989520e-03 |\n+----------------+---------------------+----------------+----------------+----------------+\n\nMesh unchanged, skipping remaining steps...\n\nTime Step 4, time = 0.002684, dt = 0.000864\n 0 Nonlinear |R| = \ufffd[32m2.547520e+01\ufffd[39m\n      0 Linear |R| = \ufffd[32m2.547520e+01\ufffd[39m\n      1 Linear |R| = \ufffd[32m9.931555e-02\ufffd[39m\n      2 Linear |R| = \ufffd[32m1.956635e-03\ufffd[39m\n 1 Nonlinear |R| = \ufffd[32m1.042815e-01\ufffd[39m\n\n    Computing Jacobian                                                                   [\ufffd[33m  5.52 s\ufffd[39m] [\ufffd[33m 1914 MB\ufffd[39m]\n      0 Linear |R| = \ufffd[32m1.042815e-01\ufffd[39m\n      1 Linear |R| = \ufffd[32m2.162908e-07\ufffd[39m\n 2 Nonlinear |R| = \ufffd[32m1.016610e-08\ufffd[39m\n  Finished Solving                                                                       [\ufffd[33m 47.15 s\ufffd[39m] [\ufffd[33m 1372 MB\ufffd[39m]\n\ufffd[32m Solve Converged!\ufffd[39m\n\nOutlier Variable Residual Norms:\n  disp_x: \ufffd[31m8.131545e-09\ufffd[39m\n  disp_y: \ufffd[31m6.101432e-09\ufffd[39m\n\nPostprocessor Values:\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n| time           | e_xx           | eta0_gss       | eta0_slip_increment | eta0_stress_xx | eta1_gss       |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n|   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |   0.000000e+00 |   6.080000e+01 |       -1.304814e-55 |   1.316273e-03 |           -nan |\n|   1.100000e-03 |   0.000000e+00 |   6.080000e+01 |       -7.176719e-51 |   2.879104e-03 |           -nan |\n|   1.820000e-03 |   0.000000e+00 |   6.080000e+01 |       -1.588706e-48 |   4.749282e-03 |           -nan |\n|   2.684000e-03 |   0.000000e+00 |   6.080000e+01 |       -7.729560e-47 |   7.003887e-03 |           -nan |\n+----------------+----------------+----------------+---------------------+----------------+----------------+\n+----------------+---------------------+----------------+----------------+----------------+\n| time           | eta1_slip_increment | eta1_stress_xx | fp_xx          | pk2            |\n+----------------+---------------------+----------------+----------------+----------------+\n|   0.000000e+00 |        0.000000e+00 |   0.000000e+00 |   0.000000e+00 |   0.000000e+00 |\n|   5.000000e-04 |                -nan |           -nan |   1.000000e+00 |   5.513992e-04 |\n|   1.100000e-03 |                -nan |           -nan |   1.000000e+00 |   1.206084e-03 |\n|   1.820000e-03 |                -nan |           -nan |   1.000000e+00 |   1.989520e-03 |\n|   2.684000e-03 |                -nan |           -nan |   1.000000e+00 |   2.933995e-03 |\n+----------------+---------------------+----------------+----------------+----------------+\n\nMesh unchanged, skipping remaining steps...\n\nTime Step 5, time = 0.0037208, dt = 0.0010368\n 0 Nonlinear |R| = \ufffd[32m3.057036e+01\ufffd[39m\n      0 Linear |R| = \ufffd[32m3.057036e+01\ufffd[39m",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9684782",
+                          "updatedAt": "2024-06-06T03:37:09Z",
+                          "publishedAt": "2024-06-06T03:37:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The exodus file has a different name now. It matches the name in the exodus output block",
+                          "url": "https://github.com/idaholab/moose/discussions/27803#discussioncomment-9684799",
+                          "updatedAt": "2024-06-06T03:38:42Z",
+                          "publishedAt": "2024-06-06T03:38:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Template T (Real or RealValueTensor",
+          "author": {
+            "login": "ashishdhole"
+          },
+          "bodyText": "Hello,\nI want to make anisotropic interface mobility 'L' anisotropic using a tensor material. In ACBulk.h there is a comment\n/**\n * This is the Allen-Cahn equation base class that implements the bulk or\n * local energy term of the equation. It is templated on the type of the mobility,\n * which can be either a number (Real) or a tensor (RealValueTensor).\n * Note that the function computeDFDOP MUST be overridden in any kernel that inherits from\n * ACBulk.\n */\ntemplate <typename T>\n\nHow to make my input file know that I want to using 'L' as tensor?\nBecause when I am using 'L' as tensor material, I am getting following error\n*** ERROR ***\nThe following error occurred in the object \"AC_bulk_F\", of type \"KKSACBulkF\".\n\nThe requested non-AD material property 'L' of type 'double'\nis already retrieved or declared as a non-AD property of type 'libMesh::TensorValue<double>'.\n\nHere, AC_bulk_F block has type = KKSACBulkF.\nThank you\nAshish",
+          "url": "https://github.com/idaholab/moose/discussions/27814",
+          "updatedAt": "2024-06-13T03:29:09Z",
+          "publishedAt": "2024-06-07T00:19:18Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe template should be instantiated in the source code.\nThe object with the tensor instantiating (T is RealTensorValue) will have a different name (usually just Tensor added somewhere in the name)\nThat object is then created in the input file (with its different name)",
+                  "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9696433",
+                  "updatedAt": "2024-06-07T03:52:27Z",
+                  "publishedAt": "2024-06-07T03:52:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I am really sorry but I don't quite understand what exactly need to be done here. Is there any example I can look at for such changes?\nThank you\nAshish",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9705647",
+                          "updatedAt": "2024-06-07T17:46:18Z",
+                          "publishedAt": "2024-06-07T17:46:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Do I have to save the source file in my application folder and make changes to it?",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9708410",
+                          "updatedAt": "2024-06-07T23:20:56Z",
+                          "publishedAt": "2024-06-07T23:20:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "#pragma once\n\n#include \"KernelValue.h\"\n#include \"JvarMapInterface.h\"\n#include \"DerivativeMaterialInterface.h\"\n\n/**\n * This is the Allen-Cahn equation base class that implements the bulk or\n * local energy term of the equation. It is templated on the type of the mobility,\n * which can be either a number (Real) or a tensor (RealValueTensor).\n * Note that the function computeDFDOP MUST be overridden in any kernel that inherits from\n * ACBulk.\n */\ntemplate <typename T>\nclass ACBulk : public DerivativeMaterialInterface<JvarMapKernelInterface<KernelValue>>\n{\npublic:\n  ACBulk(const InputParameters & parameters);\n\n  static InputParameters validParams();\n  virtual void initialSetup();\n\nprotected:\n  virtual Real precomputeQpResidual();\n  virtual Real precomputeQpJacobian();\n  virtual Real computeQpOffDiagJacobian(unsigned int jvar);\n\n  enum PFFunctionType\n  {\n    Jacobian,\n    Residual\n  };\n\n  virtual Real computeDFDOP(PFFunctionType type) = 0;\n\n  /// Mobility\n  const MaterialProperty<T> & _L;\n\n  /// Mobility derivative w.r.t. order parameter\n  const MaterialProperty<T> & _dLdop;\n\n  /// Mobility derivative w.r.t coupled variables\n  std::vector<const MaterialProperty<T> *> _dLdarg;\n};\n\ntemplate <typename T>\nACBulk<T>::ACBulk(const InputParameters & parameters)\n  : DerivativeMaterialInterface<JvarMapKernelInterface<KernelValue>>(parameters),\n    _L(getMaterialProperty<T>(\"mob_name\")),\n    _dLdop(getMaterialPropertyDerivative<T>(\"mob_name\", _var.name())),\n    _dLdarg(_n_args)\n{\n  // Iterate over all coupled variables\n  for (unsigned int i = 0; i < _n_args; ++i)\n    _dLdarg[i] = &getMaterialPropertyDerivative<T>(\"mob_name\", i);\n}\n\ntemplate <typename T>\nInputParameters\nACBulk<T>::validParams()\n{\n  InputParameters params = JvarMapKernelInterface<KernelValue>::validParams();\n  params.addClassDescription(\"Allen-Cahn base Kernel\");\n  params.addParam<MaterialPropertyName>(\"mob_name\", \"L\", \"The mobility used with the kernel\");\n  return params;\n}\n\ntemplate <typename T>\nvoid\nACBulk<T>::initialSetup()\n{\n  validateNonlinearCoupling<Real>(\"mob_name\");\n}\n\ntemplate <typename T>\nReal\nACBulk<T>::precomputeQpResidual()\n{\n  // Get free energy derivative from function\n  Real dFdop = computeDFDOP(Residual);\n\n  // Set residual\n  return _L[_qp] * dFdop;\n}\n\ntemplate <typename T>\nReal\nACBulk<T>::precomputeQpJacobian()\n{\n  // Get free energy derivative and Jacobian\n  Real dFdop = computeDFDOP(Residual);\n\n  Real JdFdop = computeDFDOP(Jacobian);\n\n  // Set Jacobian value using product rule\n  return _L[_qp] * JdFdop + _dLdop[_qp] * _phi[_j][_qp] * dFdop;\n}\n\ntemplate <typename T>\nReal\nACBulk<T>::computeQpOffDiagJacobian(unsigned int jvar)\n{\n  // Get the coupled variable jvar is referring to\n  const unsigned int cvar = mapJvarToCvar(jvar);\n\n  // Set off-diagonal Jacobian term from mobility derivatives\n  return (*_dLdarg[cvar])[_qp] * _phi[_j][_qp] * computeDFDOP(Residual) * _test[_i][_qp];\n}\n\nusing RealACBulk = ACBulk<Real>;\nusing TensorACBulk = ACBulk<RealTensorValue>;\n\nIs this a correct way to Instantiate template?\nAshish",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9709191",
+                          "updatedAt": "2024-06-08T01:53:32Z",
+                          "publishedAt": "2024-06-08T01:53:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nFirst you should look in the phase field module if there is a tensor version of KKSACBulkF\nif not then you are right you will need to instantiate ACBuild with a RealTensorValue if it has not been done already\nLike this:\n typedef ACBulk<RealTensorValue> TensorACBulk;\n\nif you want to call ACBulk<RealTensorValue> by the name TensorACBulk. However you don't really need to do that, when you define the derived class you could just write ACBulk<RealTensorValue> and the template will be instantiated then",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9711008",
+                          "updatedAt": "2024-06-08T06:32:37Z",
+                          "publishedAt": "2024-06-08T06:32:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "Hello thanks for the help. One more C++ related question. DO I have to use template class  ACBulk<RealTensorValue>; in my KKSACBulkBase.C to use tensor type material property _L mentioned in ACBulk.h?\nAshish",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9715622",
+                          "updatedAt": "2024-06-08T18:12:31Z",
+                          "publishedAt": "2024-06-08T18:12:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "I am getting following error\nerror: cannot convert 'libMesh::boostcopy::enable_if_c<true, libMesh::TypeTensor<double> >::type' {aka 'libMesh::TypeTensor<double>'} to 'libMesh::Real' {aka 'double'} in return\n   82 |   return _L[_qp] * dFdop;\n\nwhen I am instantiating the template as RealTensorValue. The error is from ACBulk.h file\nThank you\nAshish",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9715636",
+                          "updatedAt": "2024-06-08T18:14:52Z",
+                          "publishedAt": "2024-06-08T18:14:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "is it because the Real and RealTensorValue mulitplication in\ntemplate <typename T>\nReal\nACBulk<T>::precomputeQpResidual()\n{\n  // Get free energy derivative from function\n  Real dFdop = computeDFDOP(Residual);\n\n  // Set residual\n  return _L[_qp] * dFdop;\n}\n\nin ACBulk.h is not valid?\nAshish",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9715719",
+                          "updatedAt": "2024-06-08T18:32:20Z",
+                          "publishedAt": "2024-06-08T18:32:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This operation should amount to a Real, the residual\nIf _L is a tensor this does not work.\nMaybe it should be a different expression than this when _L is a tensor? Like something that contracts the dimension, or maybe accesses a certain component of the tensor",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9717081",
+                          "updatedAt": "2024-06-09T02:32:45Z",
+                          "publishedAt": "2024-06-09T02:31:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ashishdhole"
+                          },
+                          "bodyText": "if L is given as a tensor in the input, how to choose individual component? I am trying to create anisotropic mobility.",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9758288",
+                          "updatedAt": "2024-06-13T03:04:23Z",
+                          "publishedAt": "2024-06-13T03:04:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Usually it's the parenthesis operator for components.\nSee the doxygen or AuxKernels that output tensor compoonents for this",
+                          "url": "https://github.com/idaholab/moose/discussions/27814#discussioncomment-9758410",
+                          "updatedAt": "2024-06-13T03:29:09Z",
+                          "publishedAt": "2024-06-13T03:29:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can I solve the error about \"Not a registered object.\"",
+          "author": {
+            "login": "Y-Y-JIn"
+          },
+          "bodyText": "Hello, I got this error message after running the input file. How can I do now?? please help me to fix it.\nA 'CoupledSplitCHInterface' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.",
+          "url": "https://github.com/idaholab/moose/discussions/27771",
+          "updatedAt": "2024-06-13T01:59:18Z",
+          "publishedAt": "2024-06-03T14:10:05Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "See this issue #27623\nhope it will help you.\nRahim",
+                  "url": "https://github.com/idaholab/moose/discussions/27771#discussioncomment-9650442",
+                  "updatedAt": "2024-06-03T15:24:38Z",
+                  "publishedAt": "2024-06-03T15:23:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes make sure to include the right module inn your makefile then recompile",
+                          "url": "https://github.com/idaholab/moose/discussions/27771#discussioncomment-9657003",
+                          "updatedAt": "2024-06-04T02:46:45Z",
+                          "publishedAt": "2024-06-04T02:46:45Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "HakunanMatatat"
+                  },
+                  "bodyText": "idaholab/mastodon#448\nI have the same problem, all the modules in the makefile are loaded.",
+                  "url": "https://github.com/idaholab/moose/discussions/27771#discussioncomment-9757981",
+                  "updatedAt": "2024-06-13T01:59:18Z",
+                  "publishedAt": "2024-06-13T01:59:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "deformation induced grain nucleation for dynamic recrystallization",
+          "author": {
+            "login": "jbair34"
+          },
+          "bodyText": "Hi All,\nI am having trouble figuring out how to make new grains nucleate in a dynamic recrystallization model with deformation induced nucleation. I am trying to follow the https://mooseframework.inl.gov/modules/phase_field/Nucleation/DiscreteNucleation.html instructions below:\n\"Direct order parameter modification\n...\nNucleation of new grains in a polycrystalline model with GrainTracker requires the use of reserved (or staging) order parameters (order parameters which the grain tracker detects new grains in, but never uses as a target for remapping) in which new grain nuclei can be inserted and successively get picked up and remapped onto the evolving order parameters.\nApply both a DiscreteNucleationForce and a Reaction kernel to a reserved order parameter and set the hold_time in the inserter to 0. This will cause the modification of the reserved OP during only a single timestep, which will be enough for the GrainTracker to pick up and remap the new nucleus.\"\nFrom that I have made a discrete nucleation inserter which has a rate dependent on the stress as a function of dislocation density and it does make the nuclei as the domain deforms. However, the nuclei just disappear without forming new grains. Is there something missing in this description where I can set a new random euler angle in the nucleus or make sure the relevant non conserved OP goes to 0 or something so a new grain will form?\nI have combined moose/modules/combined/examples/phase_field-mechanics/hex_grain_growth_2D_eldrforce.i with the nucleation inputs in moose/modules/phase_field/examples/nucleation/refine.i which I modified as a test to have a probability linked to the vonmises stress. The probability seems to work fine putting nuclei in reasonable locations they just don't seem to stick...\nThanks,\nJake",
+          "url": "https://github.com/idaholab/moose/discussions/20093",
+          "updatedAt": "2024-06-13T01:55:19Z",
+          "publishedAt": "2022-01-20T20:27:51Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi Jake- when you say the particles are appearing and disappearing, are you saying that based on what's happening in the reserved order parameter? Or are you looking an AuxVariable generated by DiscreteNucleationAux? I'm trying to figure out if the problem is with the reserved OP not getting modified, or with the GrainTracker not picking it up and remapping it.",
+                  "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2019485",
+                  "updatedAt": "2022-06-04T14:43:28Z",
+                  "publishedAt": "2022-01-21T22:51:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jbair34"
+                          },
+                          "bodyText": "I am looking at the reserved order parameter, I can see where the nuclei are supposed to be, but the maximum value of my reserved order parameter (gr7 in my case) in the center of the nuclei is around 0.06 which doesn't seem like enough to cause remapping to me. I set the nuc_value to 1 in the discreteNucleationForce kernel but that doesn't seem to be happening. I wasn't paying attention to how low they were before my last post so sorry for missing that information the first time around.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2019843",
+                          "updatedAt": "2022-06-04T14:43:29Z",
+                          "publishedAt": "2022-01-22T00:13:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Are you sure you have the reaction kernel in place and also assigned to the reserved OP? There should only be 2 kernels associated with the reserved OP, DiscreteNucleationForce and Reaction. I thought the Reaction kernel should make the reserved OP value to match the DiscreteNucleationForce value exactly.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2019872",
+                          "updatedAt": "2022-06-04T14:43:31Z",
+                          "publishedAt": "2022-01-22T00:26:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jbair34"
+                          },
+                          "bodyText": "Here is my input for the kernels (reserved OP 3rd and 4th entries):\n[Kernels]\n  [./PolycrystalKernel]\n  [../]\n  [./PolycrystalElasticDrivingForce]\n  [../]\n  [./nuc_force]\n    type = DiscreteNucleationForce\n    variable = gr7\n    map = map\n    no_nucleus_value = 0\n    nucleus_value = 2\n  [../]\n  [./nuc_react]\n    type = Reaction\n    variable = gr7\n  [../]\n  [./TensorMechanics]\n    displacements = 'disp_x disp_y'\n  [../]\n[]\n\nMy grain tracker set up for 8 OPs is as follows:\n[./grain_tracker]\n    type = GrainTrackerElasticity\n    threshold = 0.2\n    compute_var_to_feature_map = true\n    execute_on = 'initial timestep_begin'\n    flood_entity_type = ELEMENTAL\n\n    fill_method = symmetric9\n    C_ijkl = '1.27e5 0.708e5 0.708e5 1.27e5 0.708e5 1.27e5 0.7355e5 0.7355e5 0.7355e5'\n    euler_angle_provider = euler_angle_file\n    reserve_op = 1\n    reserve_op_threshold = 0.95\n  [../]\n\nI double checked and it does appear the gr7 is the one that is reserved. I don't see an option to set a value in the Reaction Kernel options...",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2035680",
+                          "updatedAt": "2022-06-04T14:43:31Z",
+                          "publishedAt": "2022-01-24T16:42:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Are you sure that the PolycrystalKernel action isn't populating kernels for gr7? If you are setting a global num_ops parameter to 8 it is probably adding the kernels for gr7. It might be worth using the DumpObjectsProblem syntax to see exactly what kernels are getting added to your input file. To me it seems like something is keeping gr7 from getting set to exactly the value specified by DiscreteNucleationForce.\nhttps://mooseframework.inl.gov/source/problems/DumpObjectsProblem.html",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2038258",
+                          "updatedAt": "2022-09-01T04:53:18Z",
+                          "publishedAt": "2022-01-24T22:02:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jbair34"
+                          },
+                          "bodyText": "I am having trouble getting the DumpObjectsProblem to actually output anything besides Solve Converged on my input file. I can get it to reproduce the example but when I try to run it with:\n./combined-opt -i examples/phase_field-mechanics/hex_grain_growth_2D_eldrforce.i  Problem/type=DumpObjectsProblem Problem/dump_path=Modules/Combined/Master/grain_tracker\nIt is just saying Solve Converged and I don't see an output anywhere to look at. I think from the example that the dump path is asking for the name of the action that I want to look at right?\nI do know that gr7 is not mapped to any grains in the domain initially, and that it only changes once a certain stress threshold is passed when I can see nuclei form but they don't affect the simulation it seems. See the attached images for initial and after significant stress. I have gr7 set to display the max and min value so you can see the nucleation is only getting it to about 0.048.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2044874",
+                          "updatedAt": "2022-09-01T04:53:18Z",
+                          "publishedAt": "2022-01-25T17:34:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "I'm not sure that DiscreteNucleation is what's actually causing these nuclei to form. These nuclei don't look spherical and I think the DiscreteNucleationInserter can only insert spherical shapes. So here are a couple of suggestions:\n-Try outputting the nucleation map to an AuxVariable using the DiscreteNucleationAux AuxKernel to see if the positions of these nuclei are in the same position as where the map is putting them\n-Try running without applied stress. Unless the mesh displacement is significantly magnified it looks like there is a very high strain and probably very high elastic energy. It could be that the free energy elastic contribution is so large that it's becoming energetically favorable to form new nuclei in non-zero order parameters.\nAs far as the dump objects problem, I think if you leave the dump path blank it will just show the entire contents of the input file with actions substituted.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2045556",
+                          "updatedAt": "2022-09-01T04:53:20Z",
+                          "publishedAt": "2022-01-25T19:20:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jbair34"
+                          },
+                          "bodyText": "I've output the nucleation map and it is in line with gr7. I think the reason they aren't circles is that the mesh doesn't adapt to gr7 right when the nuclei form so unless the spot is right on a grain boundary the mesh is pretty coarse. I am going to try increasing my nucleus size to see if maybe it is a mesh thing and the nuclei just aren't large enough to increase gr7 higher. I'll post how it goes later today.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2052670",
+                          "updatedAt": "2022-09-01T04:53:20Z",
+                          "publishedAt": "2022-01-26T17:24:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jbair34"
+                          },
+                          "bodyText": "I ran it without stress. I also tried to have the nucleated spots have more refined meshes with a small amount of sucess. The max gr7 is still only getting to about 0.14. The nuc_map values corresponding with those locations is getting up to 1 but it isn't changing gr7 that much and it is also not changing the euler angles. Do you think I should try with a hold time more than the 0 recommended on mooseframework?",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2060596",
+                          "updatedAt": "2022-09-01T04:53:22Z",
+                          "publishedAt": "2022-01-27T17:05:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "I will ask @SudiptaBiswas to chime in here- she has done this successfully in UO2 with nucleation driven by dislocation density.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2061256",
+                          "updatedAt": "2022-09-01T04:53:23Z",
+                          "publishedAt": "2022-01-27T18:41:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SudiptaBiswas"
+                          },
+                          "bodyText": "Hi Jake, Just from looking at the nucleation events, it appears to me that either the nuclei are too small or the mesh is too coarse. For the mesh, you can try the DiscreteNucleationMarker to refine the mesh around the nucleation location. https://mooseframework.inl.gov/modules/phase_field/Nucleation/DiscreteNucleation.html\nIn some cases, I have seen nuclei disappear when the driving force is not enough for them to grow. It might be good to check if there is a critical nuclei size that you need for your physics.",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-2061478",
+                          "updatedAt": "2022-09-01T04:53:23Z",
+                          "publishedAt": "2022-01-27T19:12:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "YXY101676"
+                  },
+                  "bodyText": "Hi, I want to know how you implemented nucleation in polycrystalline structure. I tried to combine the two files you mentioned, but there was an error that the variable could not be found.Can you teach me how to solve this problem?Thanks",
+                  "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-8923844",
+                  "updatedAt": "2024-03-27T06:11:42Z",
+                  "publishedAt": "2024-03-27T06:11:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nplease create your own post and include the input files and the error\nyou can reference this post for context of course\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/20093#discussioncomment-8929278",
+                          "updatedAt": "2024-03-27T14:29:30Z",
+                          "publishedAt": "2024-03-27T14:29:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to make external code by libtool",
+          "author": {
+            "login": "lvkas521424"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello, everone :\nCurrently, as far as I can tell from my limited knowledge of moose, the code guidelines are given to the build.mk file, and you can use libtool directly to compile this code and generate external dynamic link libraries for mutiapp to call. I have successfully compiled Cpp and Gfortran code with it and completed its function calls. But now there is a problem that bothers me, currently I have a Fortran based program, but it can only be compiled by ifort, but when I switch the server to ifort environment, compiling it by using moose's libtool tool will show me an error, whereas when I compile it directly with ifort externally, I won't have any problem. I would like to ask you guys why this is the case.\nMy app is named program. The display of the error report looks like this :\n\nyours,\nJiahuiLv",
+          "url": "https://github.com/idaholab/moose/discussions/27877",
+          "updatedAt": "2024-06-13T01:31:20Z",
+          "publishedAt": "2024-06-12T01:19:16Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe don't support the intel compilers. Pleasery to make your external program be compilable with gfortran and the rest of our compilers, so you can use a consistent set of compilers across the entire program.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27877#discussioncomment-9751346",
+                  "updatedAt": "2024-06-12T12:44:58Z",
+                  "publishedAt": "2024-06-12T12:44:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lvkas521424"
+                  },
+                  "bodyText": "Thanks for your reply, I'm sorry, I just assumed before that moose's petsc module doesn't support ifort, I will modify my program to accommodate moose doing external coupling.\nyours\nJiahui Lv",
+                  "url": "https://github.com/idaholab/moose/discussions/27877#discussioncomment-9757827",
+                  "updatedAt": "2024-06-13T01:31:20Z",
+                  "publishedAt": "2024-06-13T01:31:20Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Explicit Dynamics: Initial Velocity Condition",
+          "author": {
+            "login": "ddm42"
+          },
+          "bodyText": "Hello! I am trying to run a problem using the \"CentralDifference\" TimeIntegrator derived from the ActuallyExplicitTimeIntergrator class, and there doesn't seem to be a way to set an initial velocity condition on the body. Is there a way to do this? I tried to implement a quick fix in CentralDifference::computeTimeDerivativeHelper() where I could make temporary u_old and u_older variables on the first time step, but I am unable to add or subtract a number from those classes. Is there a better way to implement this?",
+          "url": "https://github.com/idaholab/moose/discussions/27880",
+          "updatedAt": "2024-06-12T22:15:14Z",
+          "publishedAt": "2024-06-12T14:15:34Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs velocity a variable?\nOr is it computed from the derivative of the displacement?",
+                  "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9752961",
+                  "updatedAt": "2024-06-12T14:48:47Z",
+                  "publishedAt": "2024-06-12T14:48:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ddm42"
+                  },
+                  "bodyText": "It is computed from the derivative of displacement. I used to extract it as an AuxVariable through the implicit dynamics system. And we were also able to set the initial condition through the auxvariable.",
+                  "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9752990",
+                  "updatedAt": "2024-06-12T14:51:19Z",
+                  "publishedAt": "2024-06-12T14:51:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Setting the intiial value of the auxvariable should be fine.",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753039",
+                          "updatedAt": "2024-06-12T14:55:01Z",
+                          "publishedAt": "2024-06-12T14:55:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ddm42"
+                          },
+                          "bodyText": "It doesn't work with the central difference time integrator. I have tried.",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753060",
+                          "updatedAt": "2024-06-12T14:56:16Z",
+                          "publishedAt": "2024-06-12T14:56:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@bwspenc who is a good person to tag for dynamics? I'm guessing @cbolisetti",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753779",
+                          "updatedAt": "2024-06-12T15:52:08Z",
+                          "publishedAt": "2024-06-12T15:52:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "@dschwen too",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753817",
+                          "updatedAt": "2024-06-12T15:54:40Z",
+                          "publishedAt": "2024-06-12T15:54:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "@ddm42 can you try using the testnewmarkTI auxkernel as described in this example? Another thing to make sure is that your displacement history (if that's what your input is), is consistent with the velocity and acceleration initial conditions. If no initial conditions are set, moose will assume they are all zero, which is not always the case when you input displacements.\nAlso, I think @dschwen is working on improving all of this, so he might have more updated information.",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753894",
+                          "updatedAt": "2024-06-12T15:59:57Z",
+                          "publishedAt": "2024-06-12T15:59:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ddm42"
+                          },
+                          "bodyText": "Yes I have also been using the testnewmarkTI auxkernel to extract the velocity and accelertion. This is my input file. The example also did not use ICs. Also, I am in Daniel Schwen's group and he was unable to find a solution.\n[Mesh]\n  coord_type = RZ\n\n  [rock]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 10\n    ny = 80\n    # nx = 20\n    # ny = 10\n    xmin = 0\n    xmax = ${units 0.1 in -> m}\n    ymin = ${units -10 in -> m}\n    ymax = 0\n  []\n  [rock_block]\n    type = SubdomainIDGenerator\n    input = rock\n    subdomain_id = 1\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n  large_kinematics = true\n[]\n\n[Problem]\n  kernel_coverage_check = false\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n[]\n\n[AuxVariables]\n  [vel_x]\n    block = 1\n  []\n  [vel_y]\n    block = 1\n  []\n  [accel_x]\n    block = 1\n  []\n  [accel_y]\n    block = 1\n  []\n  [T]\n    initial_condition = ${units x degC}\n  []\n  [wall]\n  []\n[]\n\n[Kernels]\n  [sdx]\n    type = TotalLagrangianStressDivergenceAxisymmetricCylindrical\n    # type = TotalLagrangianStressDivergence\n    variable = disp_x\n    component = 0\n    block = 1\n  []\n  [sdy]\n    type = TotalLagrangianStressDivergenceAxisymmetricCylindrical\n    # type = TotalLagrangianStressDivergence\n    variable = disp_y\n    component = 1\n    block = 1\n  []\n\n  [ifx]\n    type = InertialForce\n    variable = disp_x\n    # velocity = vel_x\n    # acceleration = accel_x\n    # alpha = 0 # not implemented in TotalLagrangianStressDivergence\n    block = 1\n  []\n  [ify]\n    type = InertialForce\n    variable = disp_y\n    # velocity = vel_y\n    # acceleration = accel_y\n    # alpha = 0 # not implemented in TotalLagrangianStressDivergence\n    block = 1\n  []\n[]\n\n[AuxKernels]\n  [vel_x]\n    type = TestNewmarkTI\n    variable = vel_x\n    displacement = disp_x\n    first = true\n    execute_on = 'LINEAR TIMESTEP_BEGIN TIMESTEP_END'\n  []\n  [vel_y]\n    type = TestNewmarkTI\n    variable = vel_y\n    displacement = disp_y\n    first = true\n    execute_on = 'LINEAR TIMESTEP_BEGIN TIMESTEP_END'\n  []\n\n  [accel_x]\n    type = TestNewmarkTI\n    variable = accel_x\n    displacement = disp_x\n    first = false\n    execute_on = 'LINEAR TIMESTEP_BEGIN TIMESTEP_END'\n  []\n  [accel_y]\n    type = TestNewmarkTI\n    variable = accel_y\n    displacement = disp_y\n    first = false\n    execute_on = 'LINEAR TIMESTEP_BEGIN TIMESTEP_END'\n  []\n\n  [wall]\n    type = ParsedAux\n    variable = wall\n    coupled_variables = 'vel_y'\n    expression = 'if(y>0, -y*1e15-vel_y*1e8, 0)'\n    use_xyzt = true\n    use_displaced_mesh = true\n  []\n[]\n\n[Materials]\n  [rock_strain]\n    type = ComputeLagrangianStrainAxisymmetricCylindrical\n    # type = ComputeLagrangianStrain\n    block = 1\n  []\n  [rock_stress]\n    type = ComputeLagrangianLinearElasticStress\n    block = 1\n  []\n  [elasticity_rock]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = ${units 20 GPa -> Pa}\n    poissons_ratio = 0.3\n    block = 1\n  []\n  [rock_density]\n    type = Density\n    density = ${units x kg/m^3}\n  []\n[]\n\n[ICs]\n  [vel_y]\n    type = ConstantIC\n    variable = vel_y\n    value = ${units x m/s}\n    block = 1\n  []\n[]\n\n[BCs]\n  [wall]\n    type = CoupledVarNeumannBC\n    variable = disp_y\n    boundary = top\n    v = wall\n    use_displaced_mesh = true\n  []\n  [symmetry]\n    type = DirichletBC\n    variable = disp_x\n    value = 0\n    boundary = left\n  []\n[]\n\n[Postprocessors]\n  [vel_y]\n    type = ElementAverageValue\n    variable = vel_y\n    block = 1\n  []\n  [gap_y]\n    type = SideAverageValue\n    variable = disp_y\n    boundary = top\n  []\n[]\n\n[Executioner]\n  type = Transient\n  [TimeIntegrator]\n    type = CentralDifference\n    solve_type = lumped\n  []\n  solve_type = LINEAR\n  dt = ${units 1e-8 s}\n  num_steps = 2000\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n  print_linear_residuals = false\n  perf_graph = true\n  time_step_interval = 1\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9753966",
+                          "updatedAt": "2024-06-12T16:13:39Z",
+                          "publishedAt": "2024-06-12T16:07:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ddm42"
+                          },
+                          "bodyText": "I am currently trying to make a fix in the initialConditionTempl.C file, where I am trying to set the variable being affected by the IC to an older solution state if specified. Then all the IC objects could work on old solution states, similarly to the current state.\nSpecifically I have added this line of code in the constructor of \"InitialConditionTempl\" with the appropriate corresponding changes in the header file and validParams().\n_var( getParam(\"_set_old_soln_state\") ? _sys.solutionState(getParam(\"_old_soln_state_number\")) : _sys.getActualFieldVariable(parameters.get<THREAD_ID>(\"_tid\"),parameters.get(\"variable\")) ),\nThe full constructor is below.\ntemplate \nInitialConditionTempl::InitialConditionTempl(const InputParameters & parameters)\n: InitialConditionBase(parameters),\n_fe_problem(*getCheckedPointerParam<FEProblemBase *>(\"_fe_problem_base\")),\n_tid(getParam<THREAD_ID>(\"_tid\")),\n_t(_fe_problem.time()),\n_var((getParam(\"_set_old_soln_state\")) ? _sys.solutionState(getParam(\"_old_soln_state_number\")) : _sys.getActualFieldVariable(parameters.get<THREAD_ID>(\"_tid\"),parameters.get(\"variable\"))),\n_fe_var(dynamic_cast<MooseVariableFE *>(&_var)),\n_assembly(\n_fe_problem.assembly(_tid, _var.kind() == Moose::VAR_SOLVER ? _var.sys().number() : 0)),\n_coord_sys(_assembly.coordSystem()),\n_current_elem(_var.currentElem()),\n_current_elem_volume(_assembly.elemVolume()),\n_current_node(nullptr),\n_qp(0),\n_fe_type(_var.feType())\n{\n}\nThe problem is that the old states and current field variables are stored as different data types. How do I access the old state in a way that matches the field variable data type? I need this if it is to be compatible with the current IC system.\n@lindsayad",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9756743",
+                          "updatedAt": "2024-06-12T21:55:53Z",
+                          "publishedAt": "2024-06-12T21:55:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You don't need to change the initialization of _var. What you would need to do in order to set \"initial conditions\" for the old value of _var is to change what's at the end of InitialConditionTempl<T>::compute(). Instead of a call to _var.setDofValue, you would need a call to something like _var.setDofValueOld. That API doesn't currently exist though. If you add it, then I would make it private and make InitialConditionTempl a friend template. We do not want other code to have the ability to modify old values",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9756846",
+                          "updatedAt": "2024-06-12T22:13:43Z",
+                          "publishedAt": "2024-06-12T22:13:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ddm42"
+                          },
+                          "bodyText": "Great thank you for the help",
+                          "url": "https://github.com/idaholab/moose/discussions/27880#discussioncomment-9756853",
+                          "updatedAt": "2024-06-12T22:15:15Z",
+                          "publishedAt": "2024-06-12T22:15:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

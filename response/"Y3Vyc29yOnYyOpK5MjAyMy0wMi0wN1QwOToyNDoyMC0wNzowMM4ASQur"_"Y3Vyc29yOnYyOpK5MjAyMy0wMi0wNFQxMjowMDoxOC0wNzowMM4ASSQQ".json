@@ -1,0 +1,1530 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMi0wNFQxMjowMDoxOC0wNzowMM4ASSQQ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Preconditioners for FE INS simulations",
+          "author": {
+            "login": "Eilloo"
+          },
+          "bodyText": "Hello,\nI've been trying to run INS simulations with various open flow type geometries. For instance, flow around a circular cylinder, or flow over a flat plate.\nUsing the lu preconditioner, I am able to run simulations even at high Reynolds numbers (I'm wanting to experiment up to around Re~1e6).\nHowever, even at much lower Reynolds numbers, I have been unable to achieve convergence of the linear solves using any preconditioner besides lu.\nI am hoping to simulate some large meshes in future and I gather that whilst robust, lu is very memory intensive. Therefore, I would like to have the option to use some other preconditioner better suited to large problems.\nGenerally speaking, I have seen no difference between steady and transient solves.\nFor transient solves, I have also tried ramping the viscosity so that the simulation starts with a low Reynolds number, then gradually increasing it with time.\nWhilst the residual starts off smaller, the convergence appears to be no better even at the first time step.\nWorth mentioning among the options I have tried so far, I noticed that adjusting pc_factor_levels with ilu did not seem to make a difference.\nHowever, from my understanding, the more 'levels of fill' with ilu, the closer its resemblance to lu?\nI would therefore expect to see some difference, and wonder if I am misunderstanding something about what ilu is doing.\nI have also read through #16113 and tried:\npetsc_options_iname = '-pc_type -pc_asm_overlap -sub_pc_type -sub_pc_factor_levels  -ksp_gmres_restart'\npetsc_options_value = 'bjacobi      2               ilu          4       200'\n\nand a few variations, but no avail.\nIn my related thread #23274, GiudGiud suggests that something involving FSP could be helpful here; however, in #16113, lindsayad mentions that he's found asm and bjacobi to be better for INS problems.\nAny advice on where I should look here would be greatly appreciated. Choosing appropriate preconditioners still seems something of a mystery to me at times!\nFor what it's worth, below is an example input file in case there are other mistakes I'm making!\nThanks!\nfilename = exampleFile\nvelocity_x = 5 # 5 for Re=5million at x=1\n\n[Mesh]\n    [base]\n        type = FileMeshGenerator\n        file = ./mesh/FlatPlateMesh_2D.msh\n    []\n[]\n\n[Variables]\n    [velocity]\n        family = LAGRANGE_VEC\n        block = 'fluid'\n    []\n    [pressure]\n        block = 'fluid'\n    []\n[]\n\n[ICs]\n    [velocity]\n        type = VectorConstantIC\n        x_value = ${velocity_x}\n        y_value = 1e-13\n        variable = velocity\n    []\n[]\n\n[Functions]\n    # [mu]                         #Use this to try ramping Re in transient solves\n    #     type = ParsedFunction\n    #     value = 'if (t <= 0.5, 1.789e-5 - ((t-0.1)*(1.789 - 1.789e-5)/0.1), 1.789e-5)'    #Ramps from 1.7e-2 to 1.7e-5\n    # []\n    [mu]                           #Fixed mu for SS solves\n        type = ParsedFunction\n        value = '1.789e-5'\n    []\n[]\n\n[Materials]\n    [fluid] # Air, ISA sea lvl\n        type = ADGenericFunctionMaterial\n        prop_names = 'rho mu T cp k'\n        prop_values = '1.225 mu 288 1005 0.02596'\n        block = 'fluid'\n    []\n    [ins_mat]\n        type = INSADStabilized3Eqn\n        velocity = velocity\n        pressure = pressure\n        temperature = '288'\n        block = 'fluid'\n        alpha = 1.0\n    []\n[]\n\n[Kernels]\n    [mass_conservation]\n        type = INSADMass\n        variable = pressure\n    []\n    # [momentum_time]\n    #     type = INSADMomentumTimeDerivative\n    #     variable = velocity\n    # []\n    [momentum_advection]\n        type = INSADMomentumAdvection\n        variable = velocity\n    []\n    [momentum_pressure]\n        type = INSADMomentumPressure\n        variable = velocity\n        pressure = pressure\n    []\n    [momentum_viscous]\n        type = INSADMomentumViscous\n        variable = velocity\n    []\n\n    [momentum_supg]\n        type = INSADMomentumSUPG\n        variable = velocity\n        velocity = velocity\n    []\n    [mass_pspg]\n        type = INSADMassPSPG\n        variable = pressure\n    []\n[]\n\n[BCs]\n    [inlet]\n        type = VectorDirichletBC\n        values = '${velocity_x} 0 0'\n        variable = velocity\n        boundary = 'inlet'\n    []\n    [outlet]\n        type = ADDirichletBC\n        value = 0\n        variable = pressure\n        boundary = 'outlet'\n    []\n    [free_slip]\n        type = ADVectorFunctionDirichletBC\n        variable = velocity\n        boundary = 'bottom_upstream top'\n        function_y = 0\n        set_x_comp = False\n        set_y_comp = True\n        set_z_comp = False\n    []\n    [no_slip_wall]\n        type = VectorDirichletBC\n        values = '0 0 0'\n        variable = velocity\n        boundary = 'plate'\n    []\n[]\n\n[Preconditioning]\n    [precond]\n        type = SMP\n        full = true\n    []\n[]\n\n[Executioner]\n    type = Steady\n    # dt = 0.0025\n    # end_time = 1\n    solve_type = NEWTON\n    nl_rel_tol = 1e-10\n    nl_max_its = 35\n    l_tol = 1e-10\n    l_max_its = 50\n    automatic_scaling = true\n    line_search = default\n\n    #These petsc options work:\n    petsc_options_iname = '-pc_type -pc_factor_shift_type'      \n    petsc_options_value = 'lu       NONZERO'\n\n\n    #Uncomment below for transient solves\n\n    # dtmax = 0.0025\n    # [TimeStepper]\n    #     type = IterationAdaptiveDT\n    #     # dt = 1E-5\n    #     dt = 0.0001\n    #     growth_factor = 1.5\n    #     cutback_factor = 0.8\n    # []\n[]\n\n[Outputs]\n    [OutputFile]\n        type = Exodus\n        file_base = ${filename}\n    []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23319",
+          "updatedAt": "2023-06-24T20:01:00Z",
+          "publishedAt": "2023-02-02T14:24:24Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Have you tried field splits?",
+                  "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4854004",
+                  "updatedAt": "2023-02-02T17:14:47Z",
+                  "publishedAt": "2023-02-02T17:14:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Not yet, as I believe vector variables are not currently accommodated? However, to use the momentum SUPG kernel, I am required to pass a vector variable for velocity.\nI am going to try rewriting the input file with separate variables for u and v, perhaps without SUPG or perhaps using aux variables to convert between vectors and standard variables.\nThis should enable me to try field split, and I will report back.",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4860653",
+                          "updatedAt": "2023-02-03T10:15:13Z",
+                          "publishedAt": "2023-02-03T10:15:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We have added more support for field splits with vector variables about two months ago.\nAuxVariables for conversions likely wont work. Auxvariables wont keep track of the dependencies of residual terms on variables\nWhat flow regime is this? What s the Reynolds number? You might have to use SUPG",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4863614",
+                          "updatedAt": "2023-02-03T16:02:38Z",
+                          "publishedAt": "2023-02-03T16:02:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Reynolds number wise, I am going as high as e6 (I will be experimenting with turbulence options when Re is this high), so I suspect SUPG will be needed?\nAh, good to hear - I'll make sure I'm up-to-date. With the new support, are we able to split a vector variable into its constituent components for the field split?\nOr would we be treating the vector as one variable, and preconditioning this (ie, all 3 components) in one split, and other variables such as pressure in another?\nIf the case is the former, I have been struggling to find how to - or indeed, if it is possible to - refer to a specific component of a vector variable from the MOOSE input file.",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4881519",
+                          "updatedAt": "2023-02-06T11:41:43Z",
+                          "publishedAt": "2023-02-06T11:41:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You will need SUPG\nNo you wont be able to split vector variables by component. You can take a look at test/tests/preconditioning/fsp/vector-test.i for an example.",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4883254",
+                          "updatedAt": "2023-02-06T14:47:08Z",
+                          "publishedAt": "2023-02-06T14:47:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Thanks for confirming - I'll try splitting my velocity vector and pressure variables and see if things improve",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4883336",
+                          "updatedAt": "2023-02-06T14:53:24Z",
+                          "publishedAt": "2023-02-06T14:53:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can have a look at this PR on the same topic but just finite volume\n#22405",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4883350",
+                          "updatedAt": "2023-02-06T14:54:23Z",
+                          "publishedAt": "2023-02-06T14:54:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "@Eilloo This might work for you. Let me know if it speeds up the problem!\n[FSP]\n    type = FSP\n    topsplit = 'all'\n    [all]\n      splitting = 'mom mass'\n      splitting_type = schur\n      schur_type = full\n      petsc_options_iname = '-pc_fieldsplit_schur_fact_type -pc_fieldsplit_schur_precondition'\n      petsc_options_value = 'full selfp '\n    []\n    [mom]\n      vars = 'velocity'\n      petsc_options_iname = '-ksp_type -pc_type -sub_pc_type -sub_ksp_type'\n      petsc_options_value = ' preonly  asm      jacobi          preonly'\n    []\n    [mass]\n      vars = 'pressure'\n      petsc_options_iname = '-ksp_type -pc_type -pc_hypre_type '\n      petsc_options_value = ' preonly   hypre  boomeramg'\n    []\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4883373",
+                          "updatedAt": "2023-02-06T14:58:09Z",
+                          "publishedAt": "2023-02-06T14:57:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "An update on this: the good news is that I am getting convergence with some field split options:\nWhat I've tried is far from exhaustive, but so far the following basic options are working okay:\nsplitting_type = multiplicative\nand for both pressure, and velocity separately:\n-pc-type = ilu\nIt's not the fastest, taking around 80 linear iterations each nl solve, but it is converging without lu which is progress.\nMax, I did try the options suggested above, but this diverged at the first iteration for me.\nAs for the settings which worked, these are fairly arbitrary currently, and I'm trying to get a better idea of what's actually going on.\nThe splitting type certainly makes a big difference - 'additive', for instance does not work nearly as well. I haven't found much detail in the docs on what the differences are so this has been trial and error so far...\nMany of the suggestions, including Max's above, involve Schur's complement. From what I have read in the Petsc docs, it seems that whilst there are built-in methods, preconditioning of the Schur's complement matrix itself is non-trivial and often problem specific?\nAnother general observation which I'm not sure I was expecting, is that the convergence is completely different using FSP with, say, both variables preconditioned with ilu, compared to straight ilu with no field split.\nIs this because the systems are decoupled in some way? (Perhaps 'decoupled' is the wrong word here - what I'm getting at is that it's hard to picture how two coupled variables are being isolated in separately preconditioned systems)\nAfter looking at the FV bits linked to, I wonder if you can clarify one more thing for me:\nWhat is the SMP preconditioner acting on? The fact we define both the SMP block, then separately some other preconditioners suggestes they operate on different systems, and I'm interested to know roughly what's going on here.",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4891883",
+                          "updatedAt": "2023-02-07T10:03:43Z",
+                          "publishedAt": "2023-02-07T10:03:43Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is the documentation on field splits\nhttps://petsc.org/release/docs/manualpages/PC/PCFIELDSPLIT/\nYou shoud be able to map additive, multiplicative and Schur to which term in the coupling is being considered.",
+                          "url": "https://github.com/idaholab/moose/discussions/23319#discussioncomment-4894108",
+                          "updatedAt": "2023-02-07T14:21:09Z",
+                          "publishedAt": "2023-02-07T14:21:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about using adaptive mesh on Level-Set",
+          "author": {
+            "login": "doquang"
+          },
+          "bodyText": "Dear Moose Team,\nI'm trying to use Level Sets module and I have a question about model convergence with \"some kind\" of mesh refinements through the level set interface.\nPlease see attached input file for detailed information. Note that, if you disable Adaptivity, the model converge to a correct solution! Or if you disable option #2, and enable option #1, the model will show a correct solution!\nThank you very much for your help,\n/ Minh\nsize = 1\n# Option 1: Adaptive mesh over all geometry size. Solution is ok\n#asize = ${size}\n\n# Option 2: Adaptive mesh over 1/3 geometry size. Solution is not ok\nasize = ${fparse size/3}\n[Mesh]\n  type = GeneratedMesh\n  dim = 3\n  xmin = 0\n  xmax = ${size}\n  ymin = 0\n  ymax = ${size}\n  zmin = 0\n  zmax = ${size}\n  nx = 10\n  ny = 10\n  nz = 10\n[]\n\n[Variables]\n  [./phi]\n  [../]\n[]\n\n[AuxVariables]\n  [./velocity]\n    family = LAGRANGE_VEC\n  [../]\n[]\n\n[ICs]\n  [./phi_ic]\n    type = FunctionIC\n    function = phi_exact\n    variable = phi\n  [../]\n  [./vel_ic]\n    type = VectorFunctionIC\n    variable = velocity\n    function = velocity_func\n  []\n[]\n\n[Functions]\n  [./phi_exact]\n    type = LevelSetOlssonPlane\n    point = '${fparse size/2} ${fparse size/2} ${fparse size/2}'\n    normal = '0 0 1'\n    epsilon = ${fparse size/15}\n  [../]\n  [./velocity_func]\n    type = ParsedVectorFunction\n    expression_x = '1e-15'\n    expression_y = '1e-15'\n    expression_z = '1e-15'\n  [../]\n[]\n\n[BCs]\n  [top]\n    type = DirichletBC\n    variable = phi\n    boundary = front\n    value = 1\n  []\n  [bottom]\n    type = DirichletBC\n    variable = phi\n    boundary = back\n    value = 0\n  []\n[]\n\n[Kernels]\n  [./advection]\n    type = LevelSetAdvection\n    velocity = velocity\n    variable = phi\n  [../]\n  [./advection_supg]\n    type = LevelSetAdvectionSUPG\n    velocity = velocity\n    variable = phi\n  [../]\n[]\n\n[Adaptivity]\n  initial_marker = initial_marker_phi\n  initial_steps = 2\n  max_h_level = 2\n  cycles_per_step = 2\n  recompute_markers_during_cycles = true\n\n  marker = initial_marker_phi\n  steps = 1\n\n  [Markers]\n    [initial_marker_phi]\n      type = BoxMarker\n      bottom_left = '0 0 ${fparse size/2.5}'\n      top_right = '${size} ${asize} ${fparse size/2}'\n      inside = refine\n      outside = do_nothing\n    []\n  []\n[]\n\n[Executioner]\n  type = Steady\n  nl_rel_tol = 1e-3\n  nl_abs_tol = 1e-7\n  solve_type = NEWTON\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n  petsc_options_value = 'lu       superlu_dist'\n[]\n\n[Outputs]\n  csv = true\n  exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23279",
+          "updatedAt": "2023-06-24T20:00:43Z",
+          "publishedAt": "2023-01-30T20:11:30Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "doquang"
+                  },
+                  "bodyText": "Correct solution\n\nWrong solution",
+                  "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4822887",
+                  "updatedAt": "2023-01-30T20:18:46Z",
+                  "publishedAt": "2023-01-30T20:18:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Are these results converged? Can you paste the execution log for the second case",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4822967",
+                          "updatedAt": "2023-01-30T20:28:41Z",
+                          "publishedAt": "2023-01-30T20:28:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "Framework Information:\nMOOSE Version:           git commit 9721739139 on 2023-01-25\nLibMesh Version:         a476dcb36d78923b9d2ed13b937b388f00da77f4\nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\nCurrent Time:            Mon Jan 30 21:29:49 2023\nExecutable Timestamp:    Tue Jan 24 13:56:40 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:                   1331\n  Elems:                   1000\n  Num Subdomains:          1\n\nNonlinear System:\n  Num DOFs:                1331\n  Num Local DOFs:          1331\n  Variables:               \"phi\" \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                4993\n  Num Local DOFs:          4993\n  Variables:               \"velocity\" \"initial_marker_phi\" \n  Finite Element Types:    \"LAGRANGE_VEC\" \"MONOMIAL\" \n  Approximation Orders:    \"FIRST\" \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Steady\n  Solver Mode:             NEWTON\n  MOOSE Preconditioner:    SMP (auto)\n\n 0 Nonlinear |R| = 1.662917e-01\n      0 Linear |R| = 1.662917e-01\n      1 Linear |R| = 4.558296e-13\n 1 Nonlinear |R| = 4.197392e-13\n Solve Converged!\nMesh unchanged, skipping remaining steps...\n 0 Nonlinear |R| = 2.624513e-19\n Solve Converged!",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4822987",
+                          "updatedAt": "2023-01-30T20:31:29Z",
+                          "publishedAt": "2023-01-30T20:31:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Seems to be well converging, much below the tolerances set",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4823029",
+                          "updatedAt": "2023-01-30T20:36:19Z",
+                          "publishedAt": "2023-01-30T20:36:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Any update on this?",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4867993",
+                          "updatedAt": "2023-02-04T06:40:44Z",
+                          "publishedAt": "2023-02-04T06:40:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "No,\nI still can not simulate a steady-state of a level-set problem with a different mesh size (adaptive mesh level) over the level-set interface.",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4868455",
+                          "updatedAt": "2023-02-04T09:03:49Z",
+                          "publishedAt": "2023-02-04T09:02:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok thanks for the update.\nAt this point I think this is because the problem is ill-posed.\nYou have Dirichlet BCs on both sides yet are advecting from one face to the other. What do you think the steady state would look like?\nHow does phi go from 1 to 0 with just an advection (with a fixed velocity) process",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4870014",
+                          "updatedAt": "2023-02-04T15:37:14Z",
+                          "publishedAt": "2023-02-04T15:37:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "Thanks @GiudGiud !\nMy problem occurs in the first stage of the simulation, when the velocity is very small. And it worked for me with the above BC diriclet, for a simple mesh (option #1).\nBy removing the BCs, I got a convergence for option #2, but it converged to a linear solution. Do you think it would be better using re-initialization?",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4870191",
+                          "updatedAt": "2023-02-04T16:11:50Z",
+                          "publishedAt": "2023-02-04T16:11:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If the system is ill-posed the solution will depend on the mesh but is not really to be trusted.\nLinear seems odd as well.\nDont you expect the value to just propagate through the entire mesh from the dirichlet BC?",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4870207",
+                          "updatedAt": "2023-02-04T16:15:24Z",
+                          "publishedAt": "2023-02-04T16:15:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "I just expected, with a very small velocity, it should not convect the level-set, but it seems doesn't work for me, for the Steady state solver. Now I am testing my problem on a Transient system instead.\nThank you very much!",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4870220",
+                          "updatedAt": "2023-02-04T16:19:13Z",
+                          "publishedAt": "2023-02-04T16:19:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Transient seems like a good idea.\nIn steady even a tiny velocity will be able to advect across the domain, the timestep is essentially 'infinite'",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4870229",
+                          "updatedAt": "2023-02-04T16:20:47Z",
+                          "publishedAt": "2023-02-04T16:20:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "nl_rel_tol = 1e-3\nnl_abs_tol = 1e-7\nthis seems much too loose.\nYou need to tighten both",
+                  "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4822970",
+                  "updatedAt": "2023-01-30T20:29:06Z",
+                  "publishedAt": "2023-01-30T20:29:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "Yes, I will.\nThis is just for testing",
+                          "url": "https://github.com/idaholab/moose/discussions/23279#discussioncomment-4822994",
+                          "updatedAt": "2023-01-30T20:32:28Z",
+                          "publishedAt": "2023-01-30T20:32:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "timestep_limiting_postprocessor settings",
+          "author": {
+            "login": "lieochar"
+          },
+          "bodyText": "I am trying to implement an adaptive time stepping scheme based on the change of value of one or more of my internal state variables (AuxVariables). I looked up the manual and it says that the option timestep_limiting_processor enables one to specify a list of postprocessor values used as an upper limit for the current time step length. I am very much confused by this without further examples. Suppose I want to make sure that the time step size is such that the variable xalpha does not change by more than 10^-3 over a time step. Should the corresponding specification be something like the following?\n[Executioner]\n   ...\n    [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1.0e2\n    optimal_iterations = 20\n    iteration_window = 10\n    linear_iteration_ratio = 100\n    force_step_every_function_point = true\n    timestep_limiting_postprocessor = dt_pp\n  []\n[]\n...\n[Postprocessor]\n  [xalpha]\n    type = ElementIntegralVariablePostprocessor\n    variable = xalpha\n    use_displaced_mesh = false\n  []\n  [dxalpha]\n    type = ChangeOverTimePostprocessor\n    postprocessor = xalpha\n  []\n  [dt]\n    type = TimestepSize\n  []\n  [dt_pp]\n    type = ParsedPostprocessor\n    constant_names = target_delta\n    constant_expressions = 1e-3\n    pp_names = 'dt dxalpha xalpha'\n    function = 'dt*target_delta/dxalpha'\n  []\n[]\n\nAlso, I tried to play around with options. I notice that with a setting of dtmin = 1 and dtmax = 1e6, whenever I have this postprocessor on, the time step size would drop to dtmin = 1, then double until it reaches 64, and drops all the way to 1 again, repeating itself. For my problem at hand this will be exceedingly slow. I wonder if there's any way to rectify this and not have it reset to dtmin whenever I need it to decrease? Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/23344",
+          "updatedAt": "2023-06-24T20:00:20Z",
+          "publishedAt": "2023-02-04T21:19:36Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo if the auxvariable changes more than 1e-3 over a timestep, what do you want to do?\nRestart the time step or accept it but diminish the timestep size for the next one?\nThe doubling and cutting of the IterationAdaptiveDT is tied to the number of non linear iterations. There's a window where the dt is constant, and if the solver takes more than N + window_size non linear iterations, the time step decreases.\nSimilarly, if the solver takes less than N-window_size NL iterations to converge, the time step increases\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871635",
+                  "updatedAt": "2023-02-04T22:20:56Z",
+                  "publishedAt": "2023-02-04T21:50:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lieochar"
+                          },
+                          "bodyText": "I would think that the most prudent course of action, if the AuxVariable changes too much, would be to restart the time step, halve the step size, but not decrease it all the way to dtmin.\nAre there other settings (e.g., number of linear and/or nonlinear iterations) that I need to make?\nThank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871668",
+                          "updatedAt": "2023-02-04T22:00:15Z",
+                          "publishedAt": "2023-02-04T22:00:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Unfortunately I dont think we have this kind of behavior available.\nThis is likely the closest thing to be able to accept or reject time steps, but it will need to be adapted, it s not very close.\nhttps://mooseframework.inl.gov/source/timesteppers/AB2PredictorCorrector.html\nIn fact the actual closest one that used to be able to accept/reject after the fact got removed\n#21576",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871757",
+                          "updatedAt": "2023-02-04T22:25:38Z",
+                          "publishedAt": "2023-02-04T22:23:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@loganharbour is DT2 still functional if we bring it back locally? The OP could just host it in their own app since they want something similar",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871771",
+                          "updatedAt": "2023-02-04T22:26:54Z",
+                          "publishedAt": "2023-02-04T22:26:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lieochar"
+                          },
+                          "bodyText": "Unfortunately I dont think we have this kind of behavior available.\nThis is likely the closest thing to be able to accept or reject time steps, but it will need to be adapted, it s not very close. https://mooseframework.inl.gov/source/timesteppers/AB2PredictorCorrector.html\nIn fact the actual closest one that used to be able to accept/reject after the fact got removed #21576\n\nThis is interesting. I had used IterationAdaptiveDT before, but with timestep_limiting_function and without timestep_limiting_postprocessor. I was under the impression that IterationAdaptiveDT, at least with the timestep_limiting_function option, would cut the time step size by half by default, instead of dropping it all the way to dtmin?",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871855",
+                          "updatedAt": "2023-02-04T22:50:49Z",
+                          "publishedAt": "2023-02-04T22:50:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes it can cut the timestep by half.\nHowever it accepts the solution before doing so. If you want to reject the solution then try again, this was removed with DT2",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871878",
+                          "updatedAt": "2023-02-04T22:56:48Z",
+                          "publishedAt": "2023-02-04T22:56:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it must be that the value does not change after the timestep is cut. So it keep cutting ?\nCould you please attach the log?",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871884",
+                          "updatedAt": "2023-02-04T22:57:32Z",
+                          "publishedAt": "2023-02-04T22:57:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lieochar"
+                          },
+                          "bodyText": "There is no log file (is there a way to generate one?), but I append the screen output at the step when dt drops from 64 to 1. From this point on dt may double all the way to 64 before dropping to 1 at the subsequent step.\nTime Step 34, time = 315905, dt = 64\n 0 Nonlinear |R| = 1.492114e+00\n    |residual|_2 of individual variables:\n                     disp_x: 1.48325\n                     disp_y: 0.162427\n                     temp:   0.00148177\n   Solution, reference convergence variable norms:\n   disp_x: 1.48325  disp_x_ref: 12496.5\n   disp_y: 0.162427  disp_y_ref: 2865.53\n   temp:   0.00148177  temp_ref:   416.708\n      0 Linear |R| = 1.492114e+00\n      1 Linear |R| = 8.848718e-01\n      2 Linear |R| = 1.571879e-01\n 1 Nonlinear |R| = 1.571848e-01\n    |residual|_2 of individual variables:\n                     disp_x: 0.10502\n                     disp_y: 0.116952\n                     temp:   0.000341083\n   Solution, reference convergence variable norms:\n   disp_x: 0.10502  disp_x_ref: 12495.8\n   disp_y: 0.116952  disp_y_ref: 2865.51\n   temp:   0.000341083  temp_ref:   416.709\n Solve Converged!\n\n...\n\nTime Step 35, time = 315906, dt = 1\n 0 Nonlinear |R| = 1.586037e-01\n    |residual|_2 of individual variables:\n                     disp_x: 0.106828\n                     disp_y: 0.11723\n                     temp:   0.000349773\n   Solution, reference convergence variable norms:\n   disp_x: 0.106828  disp_x_ref: 12495.8\n   disp_y: 0.11723  disp_y_ref: 2865.51\n   temp:   0.000349773  temp_ref:   416.709\n Solve Converged!\n\nI presume the postprocessor values are not of interest...",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871917",
+                          "updatedAt": "2023-02-04T23:07:35Z",
+                          "publishedAt": "2023-02-04T23:07:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Actually all of that is of interest.\nCould you please attach the full console output, with the postprocessor values",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871936",
+                          "updatedAt": "2023-02-04T23:11:52Z",
+                          "publishedAt": "2023-02-04T23:11:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lieochar"
+                          },
+                          "bodyText": "I'll copy another instance when dt drops from 64 to 1. The entire console output is too large. Hope this helps.\nTime Step 70, time = 316421, dt = 64\n 0 Nonlinear |R| = 1.489104e+00\n    |residual|_2 of individual variables:\n                     disp_x: 1.48398\n                     disp_y: 0.123426\n                     temp:   0.00151118\n   Solution, reference convergence variable norms:\n   disp_x: 1.48398  disp_x_ref: 12496.5\n   disp_y: 0.123426  disp_y_ref: 2865.42\n   temp:   0.00151118  temp_ref:   416.71\n      0 Linear |R| = 1.489104e+00\n      1 Linear |R| = 9.077622e-01\n      2 Linear |R| = 1.089439e-01\n 1 Nonlinear |R| = 1.089410e-01\n    |residual|_2 of individual variables:\n                     disp_x: 0.0801368\n                     disp_y: 0.0737978\n                     temp:   0.000348664\n   Solution, reference convergence variable norms:\n   disp_x: 0.0801368  disp_x_ref: 12495.8\n   disp_y: 0.0737978  disp_y_ref: 2865.41\n   temp:   0.000348664  temp_ref:   416.71\n Solve Converged!\n\nPostprocessor Values:\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+\n| time           | TC_temp        | ave_fission_rate | average_burnup | average_centerline_fuel_temperature | average_interior_clad_temperature | dt             | dt_pp          | dxalpha        | fission_gas_generated | fission_gas_released | fission_gas_released_percentage | flux_from_clad | flux_from_fuel | initial_moles  | maximum_clad_elongation | maximum_fuel_elongation | pellet_volume  | plenum_pressure| plenum_temp    | plenum_temperature | plenum_volume  | rod_total_power| xalpha         |\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+\n:                :                :                  :                :                                     :                                   :                :                :                :                       :                      :                                 :                :                :                :                         :                         :                :                :                :                    :                :                :                :\n|   3.160370e+05 |   8.473774e+02 |     6.388687e+18 |   7.567319e-05 |                        9.369841e+02 |                      5.862491e+02 |   1.000000e+00 |   1.359337e+09 |   2.700176e-18 |          1.588447e-05 |         8.565160e-16 |                    5.392159e-09 |  -3.726099e+03 |   3.694318e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721907e+03 |   1.835224e-08 |\n|   3.160390e+05 |   8.473774e+02 |     6.388688e+18 |   7.567375e-05 |                        9.369841e+02 |                      5.862491e+02 |   2.000000e+00 |   1.315910e+09 |   5.578572e-18 |          1.588459e-05 |         8.563268e-16 |                    5.390929e-09 |  -3.726099e+03 |   3.694318e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160430e+05 |   8.473774e+02 |     6.388688e+18 |   7.567486e-05 |                        9.369841e+02 |                      5.862491e+02 |   4.000000e+00 |   1.088620e+09 |   1.348660e-17 |          1.588482e-05 |         8.560739e-16 |                    5.389257e-09 |  -3.726099e+03 |   3.694318e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160510e+05 |   8.473774e+02 |     6.388688e+18 |   7.567708e-05 |                        9.369841e+02 |                      5.862491e+02 |   8.000000e+00 |   1.088527e+09 |   2.697552e-17 |          1.588529e-05 |         8.560447e-16 |                    5.388915e-09 |  -3.726099e+03 |   3.694317e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160670e+05 |   8.473774e+02 |     6.388689e+18 |   7.568152e-05 |                        9.369841e+02 |                      5.862491e+02 |   1.600000e+01 |   1.088340e+09 |   5.396031e-17 |          1.588622e-05 |         8.563090e-16 |                    5.390263e-09 |  -3.726099e+03 |   3.694317e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160990e+05 |   8.473773e+02 |     6.388690e+18 |   7.569041e-05 |                        9.369841e+02 |                      5.862492e+02 |   3.200000e+01 |   1.087966e+09 |   1.079577e-16 |          1.588808e-05 |         8.581964e-16 |                    5.401510e-09 |  -3.726101e+03 |   3.694319e+03 |   7.377027e-03 |            4.123342e-04 |            1.494769e-03 |  -1.858714e-05 |   4.725385e+06 |   5.750845e+02 |       6.435630e+02 |   7.464514e-06 |   3.721909e+03 |   1.835224e-08 |\n|   3.161630e+05 |   8.473773e+02 |     6.388693e+18 |   7.570817e-05 |                        9.369841e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.638745e+08 |  -1.433467e-15 |          1.589181e-05 |         8.565291e-16 |                    5.389751e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161640e+05 |   8.473773e+02 |     6.388693e+18 |   7.570845e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |  -2.535188e+06 |  -1.447801e-15 |          1.589187e-05 |         8.564220e-16 |                    5.389057e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161650e+05 |   8.473773e+02 |     6.388693e+18 |   7.570873e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |  -1.259447e+08 |  -2.914334e-17 |          1.589193e-05 |         8.563151e-16 |                    5.388364e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161660e+05 |   8.473773e+02 |     6.388693e+18 |   7.570900e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |   1.358598e+09 |   2.701645e-18 |          1.589199e-05 |         8.562082e-16 |                    5.387672e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161680e+05 |   8.473773e+02 |     6.388693e+18 |   7.570956e-05 |                        9.369841e+02 |                      5.862492e+02 |   2.000000e+00 |   1.315217e+09 |   5.581507e-18 |          1.589210e-05 |         8.560028e-16 |                    5.386340e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161720e+05 |   8.473773e+02 |     6.388693e+18 |   7.571067e-05 |                        9.369841e+02 |                      5.862492e+02 |   4.000000e+00 |   1.088132e+09 |   1.349266e-17 |          1.589234e-05 |         8.556980e-16 |                    5.384343e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161800e+05 |   8.473773e+02 |     6.388694e+18 |   7.571289e-05 |                        9.369841e+02 |                      5.862492e+02 |   8.000000e+00 |   1.088039e+09 |   2.698762e-17 |          1.589280e-05 |         8.555692e-16 |                    5.383375e-09 |  -3.726103e+03 |   3.694320e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161960e+05 |   8.473773e+02 |     6.388694e+18 |   7.571733e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.600000e+01 |   1.087852e+09 |   5.398452e-17 |          1.589374e-05 |         8.558340e-16 |                    5.384725e-09 |  -3.726103e+03 |   3.694320e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.162280e+05 |   8.473773e+02 |     6.388696e+18 |   7.572622e-05 |                        9.369842e+02 |                      5.862492e+02 |   3.200000e+01 |   1.087479e+09 |   1.080061e-16 |          1.589560e-05 |         8.577455e-16 |                    5.396119e-09 |  -3.726105e+03 |   3.694323e+03 |   7.377027e-03 |            4.123386e-04 |            1.494760e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464512e-06 |   3.721912e+03 |   1.835224e-08 |\n|   3.162920e+05 |   8.473773e+02 |     6.388698e+18 |   7.574398e-05 |                        9.369842e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.632659e+08 |  -1.438811e-15 |          1.589933e-05 |         8.560867e-16 |                    5.384420e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162930e+05 |   8.473773e+02 |     6.388698e+18 |   7.574426e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |  -2.531033e+06 |  -1.450177e-15 |          1.589939e-05 |         8.559795e-16 |                    5.383726e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162940e+05 |   8.473773e+02 |     6.388698e+18 |   7.574454e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |  -1.267703e+08 |  -2.895353e-17 |          1.589945e-05 |         8.558724e-16 |                    5.383033e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162950e+05 |   8.473773e+02 |     6.388698e+18 |   7.574481e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |   1.357869e+09 |   2.703094e-18 |          1.589951e-05 |         8.557655e-16 |                    5.382340e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162970e+05 |   8.473773e+02 |     6.388698e+18 |   7.574537e-05 |                        9.369842e+02 |                      5.862492e+02 |   2.000000e+00 |   1.314539e+09 |   5.584389e-18 |          1.589962e-05 |         8.555576e-16 |                    5.380994e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163010e+05 |   8.473773e+02 |     6.388699e+18 |   7.574648e-05 |                        9.369842e+02 |                      5.862492e+02 |   4.000000e+00 |   1.087653e+09 |   1.349860e-17 |          1.589985e-05 |         8.552416e-16 |                    5.378927e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163090e+05 |   8.473773e+02 |     6.388699e+18 |   7.574870e-05 |                        9.369842e+02 |                      5.862492e+02 |   8.000000e+00 |   1.087558e+09 |   2.699954e-17 |          1.590032e-05 |         8.550884e-16 |                    5.377806e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163250e+05 |   8.473773e+02 |     6.388700e+18 |   7.575314e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.600000e+01 |   1.087372e+09 |   5.400833e-17 |          1.590125e-05 |         8.553538e-16 |                    5.379159e-09 |  -3.726106e+03 |   3.694323e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721915e+03 |   1.835224e-08 |\n|   3.163570e+05 |   8.473773e+02 |     6.388701e+18 |   7.576203e-05 |                        9.369842e+02 |                      5.862492e+02 |   3.200000e+01 |   1.086999e+09 |   1.080538e-16 |          1.590312e-05 |         8.572724e-16 |                    5.390593e-09 |  -3.726108e+03 |   3.694326e+03 |   7.377027e-03 |            4.123430e-04 |            1.494750e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721915e+03 |   1.835224e-08 |\n|   3.164210e+05 |   8.473773e+02 |     6.388704e+18 |   7.577979e-05 |                        9.369843e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.631021e+08 |  -1.440255e-15 |          1.590685e-05 |         8.556155e-16 |                    5.378913e-09 |  -3.726110e+03 |   3.694327e+03 |   7.377027e-03 |            4.123452e-04 |            1.494746e-03 |  -1.858714e-05 |   4.725388e+06 |   5.750845e+02 |       6.435628e+02 |   7.464510e-06 |   3.721917e+03 |   1.835224e-08 |\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+\n\n\nTime Step 71, time = 316422, dt = 1\n 0 Nonlinear |R| = 1.113785e-01\n    |residual|_2 of individual variables:\n                     disp_x: 0.0830256\n                     disp_y: 0.0742414\n                     temp:   0.000357435\n   Solution, reference convergence variable norms:\n   disp_x: 0.0830256  disp_x_ref: 12495.8\n   disp_y: 0.0742414  disp_y_ref: 2865.41\n   temp:   0.000357435  temp_ref:   416.71\n Solve Converged!\n\nPostprocessor Values:\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+\n| time           | TC_temp        | ave_fission_rate | average_burnup | average_centerline_fuel_temperature | average_interior_clad_temperature | dt             | dt_pp          | dxalpha        | fission_gas_generated | fission_gas_released | fission_gas_released_percentage | flux_from_clad | flux_from_fuel | initial_moles  | maximum_clad_elongation | maximum_fuel_elongation | pellet_volume  | plenum_pressure| plenum_temp    | plenum_temperature | plenum_volume  | rod_total_power| xalpha         |\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+\n:                :                :                  :                :                                     :                                   :                :                :                :                       :                      :                                 :                :                :                :                         :                         :                :                :                :                    :                :                :                :\n|   3.160390e+05 |   8.473774e+02 |     6.388688e+18 |   7.567375e-05 |                        9.369841e+02 |                      5.862491e+02 |   2.000000e+00 |   1.315910e+09 |   5.578572e-18 |          1.588459e-05 |         8.563268e-16 |                    5.390929e-09 |  -3.726099e+03 |   3.694318e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160430e+05 |   8.473774e+02 |     6.388688e+18 |   7.567486e-05 |                        9.369841e+02 |                      5.862491e+02 |   4.000000e+00 |   1.088620e+09 |   1.348660e-17 |          1.588482e-05 |         8.560739e-16 |                    5.389257e-09 |  -3.726099e+03 |   3.694318e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160510e+05 |   8.473774e+02 |     6.388688e+18 |   7.567708e-05 |                        9.369841e+02 |                      5.862491e+02 |   8.000000e+00 |   1.088527e+09 |   2.697552e-17 |          1.588529e-05 |         8.560447e-16 |                    5.388915e-09 |  -3.726099e+03 |   3.694317e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160670e+05 |   8.473774e+02 |     6.388689e+18 |   7.568152e-05 |                        9.369841e+02 |                      5.862491e+02 |   1.600000e+01 |   1.088340e+09 |   5.396031e-17 |          1.588622e-05 |         8.563090e-16 |                    5.390263e-09 |  -3.726099e+03 |   3.694317e+03 |   7.377027e-03 |            4.123320e-04 |            1.494774e-03 |  -1.858715e-05 |   4.725384e+06 |   5.750845e+02 |       6.435631e+02 |   7.464515e-06 |   3.721908e+03 |   1.835224e-08 |\n|   3.160990e+05 |   8.473773e+02 |     6.388690e+18 |   7.569041e-05 |                        9.369841e+02 |                      5.862492e+02 |   3.200000e+01 |   1.087966e+09 |   1.079577e-16 |          1.588808e-05 |         8.581964e-16 |                    5.401510e-09 |  -3.726101e+03 |   3.694319e+03 |   7.377027e-03 |            4.123342e-04 |            1.494769e-03 |  -1.858714e-05 |   4.725385e+06 |   5.750845e+02 |       6.435630e+02 |   7.464514e-06 |   3.721909e+03 |   1.835224e-08 |\n|   3.161630e+05 |   8.473773e+02 |     6.388693e+18 |   7.570817e-05 |                        9.369841e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.638745e+08 |  -1.433467e-15 |          1.589181e-05 |         8.565291e-16 |                    5.389751e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161640e+05 |   8.473773e+02 |     6.388693e+18 |   7.570845e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |  -2.535188e+06 |  -1.447801e-15 |          1.589187e-05 |         8.564220e-16 |                    5.389057e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161650e+05 |   8.473773e+02 |     6.388693e+18 |   7.570873e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |  -1.259447e+08 |  -2.914334e-17 |          1.589193e-05 |         8.563151e-16 |                    5.388364e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161660e+05 |   8.473773e+02 |     6.388693e+18 |   7.570900e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.000000e+00 |   1.358598e+09 |   2.701645e-18 |          1.589199e-05 |         8.562082e-16 |                    5.387672e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161680e+05 |   8.473773e+02 |     6.388693e+18 |   7.570956e-05 |                        9.369841e+02 |                      5.862492e+02 |   2.000000e+00 |   1.315217e+09 |   5.581507e-18 |          1.589210e-05 |         8.560028e-16 |                    5.386340e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161720e+05 |   8.473773e+02 |     6.388693e+18 |   7.571067e-05 |                        9.369841e+02 |                      5.862492e+02 |   4.000000e+00 |   1.088132e+09 |   1.349266e-17 |          1.589234e-05 |         8.556980e-16 |                    5.384343e-09 |  -3.726103e+03 |   3.694321e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161800e+05 |   8.473773e+02 |     6.388694e+18 |   7.571289e-05 |                        9.369841e+02 |                      5.862492e+02 |   8.000000e+00 |   1.088039e+09 |   2.698762e-17 |          1.589280e-05 |         8.555692e-16 |                    5.383375e-09 |  -3.726103e+03 |   3.694320e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.161960e+05 |   8.473773e+02 |     6.388694e+18 |   7.571733e-05 |                        9.369841e+02 |                      5.862492e+02 |   1.600000e+01 |   1.087852e+09 |   5.398452e-17 |          1.589374e-05 |         8.558340e-16 |                    5.384725e-09 |  -3.726103e+03 |   3.694320e+03 |   7.377027e-03 |            4.123364e-04 |            1.494765e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464513e-06 |   3.721911e+03 |   1.835224e-08 |\n|   3.162280e+05 |   8.473773e+02 |     6.388696e+18 |   7.572622e-05 |                        9.369842e+02 |                      5.862492e+02 |   3.200000e+01 |   1.087479e+09 |   1.080061e-16 |          1.589560e-05 |         8.577455e-16 |                    5.396119e-09 |  -3.726105e+03 |   3.694323e+03 |   7.377027e-03 |            4.123386e-04 |            1.494760e-03 |  -1.858714e-05 |   4.725386e+06 |   5.750845e+02 |       6.435630e+02 |   7.464512e-06 |   3.721912e+03 |   1.835224e-08 |\n|   3.162920e+05 |   8.473773e+02 |     6.388698e+18 |   7.574398e-05 |                        9.369842e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.632659e+08 |  -1.438811e-15 |          1.589933e-05 |         8.560867e-16 |                    5.384420e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162930e+05 |   8.473773e+02 |     6.388698e+18 |   7.574426e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |  -2.531033e+06 |  -1.450177e-15 |          1.589939e-05 |         8.559795e-16 |                    5.383726e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162940e+05 |   8.473773e+02 |     6.388698e+18 |   7.574454e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |  -1.267703e+08 |  -2.895353e-17 |          1.589945e-05 |         8.558724e-16 |                    5.383033e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162950e+05 |   8.473773e+02 |     6.388698e+18 |   7.574481e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.000000e+00 |   1.357869e+09 |   2.703094e-18 |          1.589951e-05 |         8.557655e-16 |                    5.382340e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.162970e+05 |   8.473773e+02 |     6.388698e+18 |   7.574537e-05 |                        9.369842e+02 |                      5.862492e+02 |   2.000000e+00 |   1.314539e+09 |   5.584389e-18 |          1.589962e-05 |         8.555576e-16 |                    5.380994e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163010e+05 |   8.473773e+02 |     6.388699e+18 |   7.574648e-05 |                        9.369842e+02 |                      5.862492e+02 |   4.000000e+00 |   1.087653e+09 |   1.349860e-17 |          1.589985e-05 |         8.552416e-16 |                    5.378927e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163090e+05 |   8.473773e+02 |     6.388699e+18 |   7.574870e-05 |                        9.369842e+02 |                      5.862492e+02 |   8.000000e+00 |   1.087558e+09 |   2.699954e-17 |          1.590032e-05 |         8.550884e-16 |                    5.377806e-09 |  -3.726106e+03 |   3.694324e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721914e+03 |   1.835224e-08 |\n|   3.163250e+05 |   8.473773e+02 |     6.388700e+18 |   7.575314e-05 |                        9.369842e+02 |                      5.862492e+02 |   1.600000e+01 |   1.087372e+09 |   5.400833e-17 |          1.590125e-05 |         8.553538e-16 |                    5.379159e-09 |  -3.726106e+03 |   3.694323e+03 |   7.377027e-03 |            4.123408e-04 |            1.494755e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721915e+03 |   1.835224e-08 |\n|   3.163570e+05 |   8.473773e+02 |     6.388701e+18 |   7.576203e-05 |                        9.369842e+02 |                      5.862492e+02 |   3.200000e+01 |   1.086999e+09 |   1.080538e-16 |          1.590312e-05 |         8.572724e-16 |                    5.390593e-09 |  -3.726108e+03 |   3.694326e+03 |   7.377027e-03 |            4.123430e-04 |            1.494750e-03 |  -1.858714e-05 |   4.725387e+06 |   5.750845e+02 |       6.435629e+02 |   7.464511e-06 |   3.721915e+03 |   1.835224e-08 |\n|   3.164210e+05 |   8.473773e+02 |     6.388704e+18 |   7.577979e-05 |                        9.369843e+02 |                      5.862492e+02 |   6.400000e+01 |  -1.631021e+08 |  -1.440255e-15 |          1.590685e-05 |         8.556155e-16 |                    5.378913e-09 |  -3.726110e+03 |   3.694327e+03 |   7.377027e-03 |            4.123452e-04 |            1.494746e-03 |  -1.858714e-05 |   4.725388e+06 |   5.750845e+02 |       6.435628e+02 |   7.464510e-06 |   3.721917e+03 |   1.835224e-08 |\n|   3.164220e+05 |   8.473773e+02 |     6.388704e+18 |   7.578007e-05 |                        9.369843e+02 |                      5.862492e+02 |   1.000000e+00 |  -2.529656e+06 |  -1.450967e-15 |          1.590691e-05 |         8.555081e-16 |                    5.378218e-09 |  -3.726110e+03 |   3.694327e+03 |   7.377027e-03 |            4.123452e-04 |            1.494746e-03 |  -1.858714e-05 |   4.725388e+06 |   5.750845e+02 |       6.435628e+02 |   7.464510e-06 |   3.721917e+03 |   1.835223e-08 |\n+----------------+----------------+------------------+----------------+-------------------------------------+-----------------------------------+----------------+----------------+----------------+-----------------------+----------------------+---------------------------------+----------------+----------------+----------------+-------------------------+-------------------------+----------------+----------------+----------------+--------------------+----------------+----------------+----------------+",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871968",
+                          "updatedAt": "2023-02-04T23:18:11Z",
+                          "publishedAt": "2023-02-04T23:18:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lieochar"
+                          },
+                          "bodyText": "By the way here I used, in my postprocessor,\n  [dt_pp]\n    type = ParsedPostprocessor\n    constant_names = target_delta\n    constant_expressions = 2e-1\n    pp_names = 'dt dxalpha xalpha'\n    function = 'dt*target_delta/(dxalpha/xalpha)'\n  []\n\nI played with other expressions for function and values for target_delta and I end up with the same situation of dt dropping all the way to 1 and then increasing until it maxes out at 64 and drops again cyclically.",
+                          "url": "https://github.com/idaholab/moose/discussions/23344#discussioncomment-4871975",
+                          "updatedAt": "2023-02-04T23:22:19Z",
+                          "publishedAt": "2023-02-04T23:22:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Cannot open VcXsrv (Peacock) Windows 11",
+          "author": {
+            "login": "Erikad1212"
+          },
+          "bodyText": "I have recently downloaded MOOSE using the Windows 10 instructions, however, I am technically on Windows 11. I am unable to display VcXsrv to use peacock but I can run the examples provided in moose. I have ran through the downloading steps again to ensure I did not miss a step. Does anyone have any advice?",
+          "url": "https://github.com/idaholab/moose/discussions/22507",
+          "updatedAt": "2023-04-07T16:50:58Z",
+          "publishedAt": "2022-10-26T18:19:18Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you do everything in the documentation:\nhttps://mooseframework.inl.gov/getting_started/installation/windows.html#f21a2a8e-8f48-4c31-bc33-f52b73e4f1a4\n\nLaunched VcXsrv before WSL\nDisabled access control\nAllowed network connections VcXsrv\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22507#discussioncomment-4870035",
+                  "updatedAt": "2023-02-04T15:40:56Z",
+                  "publishedAt": "2023-02-04T15:40:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Windows 11 provides native GL support. There is no need to install VcXsrv (Ref a recent discussion: #22718 (reply in thread)). None of us here have a Windows 11 machine to test on, this was something I discovered via Microsoft's help topics).\nHowever, you may still find some useful information within that post...",
+                          "url": "https://github.com/idaholab/moose/discussions/22507#discussioncomment-4882929",
+                          "updatedAt": "2023-02-06T14:16:49Z",
+                          "publishedAt": "2023-02-06T14:16:26Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "mpi_init() not found",
+          "author": {
+            "login": "ryani42"
+          },
+          "bodyText": "Hi, im using cardinal to install MOOSE, and when I try to install PETSc by running this line in cardinal './contrib/moose/scripts/update_and_rebuild_petsc.sh', I get the following error:\n\nI have installed mpi using mpich, and cannot see what the problem could be.\nAny help would be appreciated",
+          "url": "https://github.com/idaholab/moose/discussions/23317",
+          "updatedAt": "2023-02-06T14:01:28Z",
+          "publishedAt": "2023-02-02T12:13:47Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "In the future please do not post screenshots of text, paste the text instead. Otherwise your post would not be searchable by its contents.\nCan you please share what install process you used for mpich? Our preferred method in this case would be use conda (see here) with the moose-mpich package for a mpich environment that is tested rigorously by us.\nIt is significantly more difficult for us to support environment installations that are not covered in our instructions.",
+                  "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4852487",
+                  "updatedAt": "2023-02-02T14:53:54Z",
+                  "publishedAt": "2023-02-02T14:53:08Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ryani42"
+                          },
+                          "bodyText": "Hi,\nApologies I will use that in the future. I used the mpich installation guide outlined here: https://www.mpich.org/static/downloads/4.1/mpich-4.1-README.txt. However the problem was that I was missing a line in my bashrc file so this problem has now been fixed. I cannot use a conda environment due to conflicts with NekRS which I intend to use later.\nI now have run into the following problem, these are the last few lines of the console output:\n================================================================================      Configuring PARMETIS with cmake; this may take several minutes            ================================================================================================================================================================      Compiling and installing PARMETIS; this may take several minutes          ================================================================================TESTING: configureLibrary from config.packages.hdf5(config/BuildSystem/config/pa*******************************************************************************\n         UNABLE to CONFIGURE with GIVEN OPTIONS    (see configure.log for details):\n-------------------------------------------------------------------------------\n--with-hdf5-dir=/home/ryan/.local/share/Trash/files/cardinal/contrib/moose/petsc/src/binding/petsc4py/src/include did not work\n*******************************************************************************\n\nThere was an error. Exiting...   \n\nThe last few lines of the configure.log file are:\n\n*******************************************************************************\n         UNABLE to CONFIGURE with GIVEN OPTIONS    (see configure.log for details):\n-------------------------------------------------------------------------------\n--with-hdf5-dir=/home/ryan/.local/share/Trash/files/cardinal/contrib/moose/petsc/src/binding/petsc4py/src/include did not work\n*******************************************************************************\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/configure.py\", line 467, in petsc_configure\n    framework.configure(out = sys.stdout)\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/framework.py\", line 1389, in configure\n    self.processChildren()\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/framework.py\", line 1377, in processChildren\n    self.serialEvaluation(self.childGraph)\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/framework.py\", line 1352, in serialEvaluation\n    child.configure()\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/package.py\", line 1191, in configure\n    self.executeTest(self.configureLibrary)\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/base.py\", line 138, in executeTest\n    ret = test(*args,**kargs)\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/packages/hdf5.py\", line 94, in configureLibrary\n    config.package.GNUPackage.configureLibrary(self)\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/package.py\", line 937, in configureLibrary\n    for location, directory, lib, incl in self.generateGuesses():\n  File \"/home/ryan/cardinal/contrib/moose/petsc/config/BuildSystem/config/package.py\", line 566, in generateGuesses\n    raise RuntimeError('--with-'+self.package+'-dir='+self.argDB['with-'+self.package+'-dir']+' did not work')\n================================================================================\nFinishing configure run at Thu, 02 Feb 2023 15:23:08 +0000\n================================================================================\n\n\nI understand if this is not the correct forum for this, however I have been directed here from cardinal. Thanks in advance",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4852852",
+                          "updatedAt": "2023-02-02T15:27:57Z",
+                          "publishedAt": "2023-02-02T15:27:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nCan you attach the config.log file and the moose/scripts/diagnostic output\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4853978",
+                          "updatedAt": "2023-02-02T17:11:43Z",
+                          "publishedAt": "2023-02-02T17:11:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ryani42"
+                          },
+                          "bodyText": "Ive attached both config.log and configure.log just incase you meant configure.log, thanks in advance\nconfig.log\nconfigure.log\n\n(base) ryan@ryan-VirtualBox:~/cardinal/contrib/moose/scripts$ ./diagnostics.sh\nThu  2 Feb 17:19:26 GMT 2023\nNo LSB modules are available.\n\nSystem Arch: Distributor ID: Ubuntu Description: Ubuntu 22.04.1 LTS Release: 22.04 Codename: jammy\n\nMOOSE Package Version: Custom Build\n\nCPU Count: 4\n\nMemory Free: 1338.898 MB\n\nVariable `which $CC` check:\n/mpich-install/bin/mpicc\n\n$CC --version:\ngcc (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nMPICC:\nwhich mpicc:\n\t/mpich-install/bin/mpicc\nmpicc -show:\n\tgcc -I/mpich-install/include -L/mpich-install/lib -Wl,-rpath -Wl,/mpich-install/lib -Wl,--enable-new-dtags -lmpi\n\nCOMPILER gcc:\ngcc (Ubuntu 11.3.0-1ubuntu1~22.04) 11.3.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nPython:\n\t/home/ryan/anaconda3/bin/python\n\tPython 3.9.12\n\nMODULES NOT AVAILABLE\n\nPETSC_DIR not set\n\nENVIRONMENT:\nSHELL=/bin/bash\nSESSION_MANAGER=local/ryan-VirtualBox:@/tmp/.ICE-unix/1507,unix/ryan-VirtualBox:/tmp/.ICE-unix/1507\nQT_ACCESSIBILITY=1\nCOLORTERM=truecolor\nXDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg\nSSH_AGENT_LAUNCHER=gnome-keyring\nXDG_MENU_PREFIX=gnome-\nGNOME_DESKTOP_SESSION_ID=this-is-deprecated\nCONDA_EXE=/home/ryan/anaconda3/bin/conda\n_CE_M=\nNEKRS_HOME=/home/ryan/cardinal/install\nLANGUAGE=en_GB:en\nGNOME_SHELL_SESSION_MODE=ubuntu\nSSH_AUTH_SOCK=/run/user/1000/keyring/ssh\nXMODIFIERS=@im=ibus\nDESKTOP_SESSION=ubuntu\nGTK_MODULES=gail:atk-bridge\nDBUS_STARTER_BUS_TYPE=session\nPWD=/home/ryan/cardinal/contrib/moose/scripts\nXDG_SESSION_DESKTOP=ubuntu\nLOGNAME=ryan\nXDG_SESSION_TYPE=wayland\nCONDA_PREFIX=/home/ryan/anaconda3\nSYSTEMD_EXEC_PID=1507\nCXX=mpicxx\nXAUTHORITY=/run/user/1000/.mutter-Xwaylandauth.FVLFZ1\nHOME=/home/ryan\nUSERNAME=ryan\nIM_CONFIG_PHASE=1\nLANG=en_GB.UTF-8\nLS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:\nXDG_CURRENT_DESKTOP=ubuntu:GNOME\nVTE_VERSION=6800\nWAYLAND_DISPLAY=wayland-0\nCONDA_PROMPT_MODIFIER=(base) \nGNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/88cb9e2f_7412_4eba_90bf_5e00d0b11bb5\nGNOME_SETUP_DISPLAY=:1\nOPENMC_CROSS_SECTIONS=/home/ryan/cross_sections/endfb71_hdf5/cross_sections.xml\nLESSCLOSE=/usr/bin/lesspipe %s %s\nXDG_SESSION_CLASS=user\nTERM=xterm-256color\nMPICH_FC=gfortran\n_CE_CONDA=\nNEKRS_OCCA_MODE_DEFAULT=CPU\nLESSOPEN=| /usr/bin/lesspipe %s\nUSER=ryan\nGNOME_TERMINAL_SERVICE=:1.97\nCONDA_SHLVL=1\nDISPLAY=:0\nSHLVL=1\nQT_IM_MODULE=ibus\nDBUS_STARTER_ADDRESS=unix:path=/run/user/1000/bus,guid=f37942dcc9f2a9746ac9623a63dbe22e\nCONDA_PYTHON_EXE=/home/ryan/anaconda3/bin/python\nLD_LIBRARY_PATH=:/home/ryan/opt/openmpi/lib\nXDG_RUNTIME_DIR=/run/user/1000\nCONDA_DEFAULT_ENV=base\nFC=mpif90\nXDG_DATA_DIRS=/usr/share/ubuntu:/usr/local/share/:/usr/share/:/var/lib/snapd/desktop\nPATH=/mpich-install:/mpich-install/bin:/home/ryan/anaconda3/bin:/home/ryan/anaconda3/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/ryan/opt/openmpi/bin\nGDMSESSION=ubuntu\nCC=mpicc\nDBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus,guid=f37942dcc9f2a9746ac9623a63dbe22e\n_=/usr/bin/env",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4854091",
+                          "updatedAt": "2023-02-02T17:21:05Z",
+                          "publishedAt": "2023-02-02T17:21:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Memory Free: 1338.898 MB\nWhat machine are you running on? this isnt enough to build moose, and petsc probably (I dont know)",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4854123",
+                          "updatedAt": "2023-02-02T17:24:55Z",
+                          "publishedAt": "2023-02-02T17:24:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ryani42"
+                          },
+                          "bodyText": "Im using a virtual machine that has 5024 mb allocated to it. My host machine only has 8gb but ill try and allocate it an extra gb and close down any processes using memory. Ive rerun that script and its saying 2300 mb now. Is 5024mb enough?",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4854232",
+                          "updatedAt": "2023-02-02T17:37:39Z",
+                          "publishedAt": "2023-02-02T17:37:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "https://mooseframework.inl.gov/sqa/minimum_requirements.html\non paper we need the full 8 Gb.\nIn practice you may be able to wing it.\nwhen you compile, use -j 1 everywhere to limit the memory consumption. It will take forever though",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4854297",
+                          "updatedAt": "2023-02-02T17:45:17Z",
+                          "publishedAt": "2023-02-02T17:45:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ryani42"
+                          },
+                          "bodyText": "Well thats not ideal. Thank you for your help, hopefully i'll be able to find a fix.",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4854389",
+                          "updatedAt": "2023-02-02T17:54:03Z",
+                          "publishedAt": "2023-02-02T17:54:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Something else to be sure about; I see both MPICH and OpenMPI available within your PATH. Sometimes things afoul can occur due to this.",
+                          "url": "https://github.com/idaholab/moose/discussions/23317#discussioncomment-4882737",
+                          "updatedAt": "2023-02-06T14:01:29Z",
+                          "publishedAt": "2023-02-06T14:01:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Issue in using Volumetric EigenStrain module",
+          "author": {
+            "login": "avtarsinghh1991"
+          },
+          "bodyText": "Hello Moose Experts, I am trying to use ComputeVolumetricEigenstrain as follows for axisymmetric (RZ) problem.\n[./volumetric_eigenstrain]\n    type = ComputeVolumetricEigenstrain\n    volumetric_materials = volumetric_change\n    eigenstrain_name = eigenstrain\n    args = ''\n    block = 'silicon'\n[../]\n\n  [./volumetric_change]\n    type = GenericFunctionMaterial\n    prop_names = volumetric_change\n    prop_values = 't'\n    block = 'silicon'\n  [../]\n\nin which t is end time of the simulation which I am using as t=2. However, when I am trying to extract the volume of the mesh block using VolumePostProcessor, I am getting V/V_0=2.6621. Can you please help me to understand why this value is more than 2 when my input value is 2.\nI am also calculating the volumetric_strain using following module:\n  [./volumetric_strain]\n    type = RankTwoScalarAux\n    scalar_type = VolumetricStrain\n    rank_two_tensor = total_strain\n    variable = volumetric_strain\n  [../]\n\nand with this total volumetric strain I am getting is 1.91. I also wonder why this value is less than 2.\nThank you very much.\nBest,\nAvtar",
+          "url": "https://github.com/idaholab/moose/discussions/23304",
+          "updatedAt": "2023-06-24T19:58:36Z",
+          "publishedAt": "2023-02-01T17:46:13Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "avtarsinghh1991"
+                  },
+                  "bodyText": "Update:\nI found out that I need to subtract 1 from the volume ratio.\nSo, 2.6621-1 = 1.6621\nBut the volumetric strain I am getting is 1.91.\nI have tried with fine mesh as well but the changes are at the second digit level.\nBest,\nAvtar",
+                  "url": "https://github.com/idaholab/moose/discussions/23304#discussioncomment-4853987",
+                  "updatedAt": "2023-02-02T17:12:46Z",
+                  "publishedAt": "2023-02-02T17:12:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In which number of dimensions is this?\nThe volume does not scale linearly if the system is expanding in all directions",
+                          "url": "https://github.com/idaholab/moose/discussions/23304#discussioncomment-4868000",
+                          "updatedAt": "2023-02-04T06:43:36Z",
+                          "publishedAt": "2023-02-04T06:43:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hello Guillaume,\nThis is in axis-symmetric problem (RZ-direction).\nBest,\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/23304#discussioncomment-4872790",
+                          "updatedAt": "2023-02-05T05:27:20Z",
+                          "publishedAt": "2023-02-05T05:27:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think you ll need to double check the analytical formula. Expansion is Z causes a linear expansion in volume but in R it s quadratic with a Pi factor in there",
+                          "url": "https://github.com/idaholab/moose/discussions/23304#discussioncomment-4877308",
+                          "updatedAt": "2023-02-05T23:54:16Z",
+                          "publishedAt": "2023-02-05T23:54:16Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to record historical maximum value?",
+          "author": {
+            "login": "RWTHLHK"
+          },
+          "bodyText": "I use a custom AuxKernel to help calculate the strain energy in an uni-axial loading simulation. I also need to record the maximum historical strain energy of each node, but I have no idea how to do that. Could anyone please give me some advice?",
+          "url": "https://github.com/idaholab/moose/discussions/23346",
+          "updatedAt": "2023-02-06T15:19:12Z",
+          "publishedAt": "2023-02-05T16:21:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Use a ElementExtremeValue to get the max on every time step\nthen use a ParsedPostprocessor to perform the max operation between the previous value (saved in the parsed one) and the current max\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23346#discussioncomment-4877295",
+                  "updatedAt": "2023-02-05T23:51:34Z",
+                  "publishedAt": "2023-02-05T23:51:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Welcome to MOOSE Discussions!",
+          "author": {
+            "login": "aeslaughter"
+          },
+          "bodyText": "Welcome!\nWe are exploring the use of Discussions as place to connect with other members of the MOOSE community. We hope that you:\n\nAsk questions.\nShare ideas.\nEngage with other MOOSE users and developers.\n\nTo get started, comment below with an introduction of yourself and tell us about what you doing with MOOSE.",
+          "url": "https://github.com/idaholab/moose/discussions/15774",
+          "updatedAt": "2023-02-05T22:54:45Z",
+          "publishedAt": "2020-08-19T22:20:07Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "We are just testing this out, but I believe this may be a replacement (or at least an alternative) to the mailing list.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53473",
+                  "updatedAt": "2022-06-08T13:28:08Z",
+                  "publishedAt": "2020-08-19T22:21:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "somu15"
+                  },
+                  "bodyText": "I am Som. My background is in uncertainty quantification. I am currently developing a fluid-structure interaction module in MOOSE.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53478",
+                  "updatedAt": "2022-06-08T13:28:03Z",
+                  "publishedAt": "2020-08-19T22:28:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "@aeslaughter, where's your intro?",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53481",
+                  "updatedAt": "2022-06-08T13:28:28Z",
+                  "publishedAt": "2020-08-19T22:34:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "I am Andrew and have been a MOOSE developer since 2013. My academic background is in engineering mechanics. Within MOOSE I have all sorts of jobs, including leading the stochastic tools module development.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53485",
+                  "updatedAt": "2022-06-08T13:28:36Z",
+                  "publishedAt": "2020-08-19T22:37:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "I've been working with the MOOSE team for about a year now, and have been using MOOSE for the last four years. My primary research interest is radiation transport, but I've also been working recently on general framework development as well.\nI'm gonna play around with this answered thing real quick...",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53488",
+                  "updatedAt": "2022-06-08T13:28:36Z",
+                  "publishedAt": "2020-08-19T22:46:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "I am replying, to see what that looks like.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53489",
+                          "updatedAt": "2022-06-08T13:28:40Z",
+                          "publishedAt": "2020-08-19T22:47:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "Hello there!",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53491",
+                          "updatedAt": "2022-06-08T13:28:40Z",
+                          "publishedAt": "2020-08-19T22:47:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "...man I really like the threading versus doing this over a standard e-mail list.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53492",
+                          "updatedAt": "2022-06-08T13:28:40Z",
+                          "publishedAt": "2020-08-19T22:48:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "The ability to easily reference discussion numbers in issues and PRs and visa versa seems amazing. I could easily see this replacing the mailing list",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53515",
+                          "updatedAt": "2022-08-27T18:55:40Z",
+                          "publishedAt": "2020-08-19T23:31:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "How hard to search for a topic on the platform?",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53800",
+                          "updatedAt": "2022-08-27T18:55:40Z",
+                          "publishedAt": "2020-08-20T16:18:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "Hi, I'm Cody and I'm currently managing the Computational Frameworks team at the Idaho National Laboratory who maintain MOOSE. I'm always looking for new collaborative opportunities to get this framework into the community.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53495",
+                  "updatedAt": "2022-06-08T13:28:41Z",
+                  "publishedAt": "2020-08-19T22:51:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "Hi, I'm Casey! I've been working with the MOOSE team for about 2.5 years now, and have been using MOOSE for around the last 4-5 years. My research is focused on electromagnetics and low temperature plasma physics modeling and simulation (with some fusion work here and there). I also do occasional MOOSE framework and module development.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53499",
+                  "updatedAt": "2022-06-08T13:28:42Z",
+                  "publishedAt": "2020-08-19T22:55:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "I locked the discussion, but \"Collaborators\" still have the power.",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53502",
+                  "updatedAt": "2022-06-08T13:28:43Z",
+                  "publishedAt": "2020-08-19T22:58:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53504",
+                          "updatedAt": "2022-06-08T13:28:44Z",
+                          "publishedAt": "2020-08-19T22:59:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rwcarlsen"
+                          },
+                          "bodyText": "What exactly does discussion locking do?  Does it prevent everyone from adding new posts.  Does it prevent replies?  Does it only affect non-collaborators? etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53808",
+                          "updatedAt": "2022-06-08T13:28:44Z",
+                          "publishedAt": "2020-08-20T16:32:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "Locking prevents everyone who doesn't have write access to MOOSE from making new comments.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-53810",
+                          "updatedAt": "2022-06-08T13:28:47Z",
+                          "publishedAt": "2020-08-20T16:36:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "Should we announce this forum on moose-users?",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55550",
+                  "updatedAt": "2022-06-08T13:28:46Z",
+                  "publishedAt": "2020-08-24T14:57:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "I\u2019d say post that we\u2019re considering using it more and welcome questions here as well. With a note that we\u2019re not switching yet, we would just like some use here so we can gauge if we like it or not.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55554",
+                          "updatedAt": "2022-06-08T13:28:48Z",
+                          "publishedAt": "2020-08-24T14:59:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "I agree - also, the more feedback we can send up based on user engagement to possibly improve it more to our liking, the better",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55566",
+                          "updatedAt": "2022-06-08T13:28:47Z",
+                          "publishedAt": "2020-08-24T15:10:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rwcarlsen"
+                          },
+                          "bodyText": "I'm just not sure how many simultaneous places I can pay attention.  groups, slack, teams, email, github discussions, tiny-town (or whatever), etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55615",
+                          "updatedAt": "2022-06-08T13:29:08Z",
+                          "publishedAt": "2020-08-24T16:03:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "I hope this replaces the mailing list and helps with this problem. I am using github.com/notifications which would include posts to the discussions. If we switch it would actually eliminate one place you need to pay attention to.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55640",
+                          "updatedAt": "2023-11-05T01:04:03Z",
+                          "publishedAt": "2020-08-24T16:27:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rwcarlsen"
+                          },
+                          "bodyText": "I agree.  I know we had contemplated a discourse/discord sort of thing also.  I guess I'm just advocating for keeping the intermediate timeframe where we simultaneously have multiple platforms being used down to a minimum (i.e. short evaluation/transition period).  This would indeed be an improvement - I often forget about the mailing list because I'm just busy other places like github.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55766",
+                          "updatedAt": "2023-11-05T01:04:06Z",
+                          "publishedAt": "2020-08-24T19:19:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "I hope we're not hemorrhaging too many users with the switch. Also this support channel requires users to sign up for a new service (whereas pretty much everyone already has email).\nI'm curious as to what you think the advantages of this over email are? I like the \"accepted answer\"  feature, although it is not always applicable in our threads, where answers from multiple people can be complementary or incremental.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55772",
+                          "updatedAt": "2023-11-05T01:04:06Z",
+                          "publishedAt": "2020-08-24T19:27:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rwcarlsen"
+                          },
+                          "bodyText": "I suspect integration with github issues/PRs will also be nice.  Plus many of the devs are already spending time perusing github - it will be easier for us (at least for me) to engage more regularly I think.  But - needing a github account is a pretty big downside :-/",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55776",
+                          "updatedAt": "2023-11-05T01:04:06Z",
+                          "publishedAt": "2020-08-24T19:36:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "I think the threaded conversation is the main advantage with accepted answers being another nice feature. But, I also like the idea of having all MOOSE activity in one location. It will be easier to link to issues, etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-55813",
+                          "updatedAt": "2023-11-05T01:04:25Z",
+                          "publishedAt": "2020-08-24T20:45:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "No offline support either.",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-57224",
+                          "updatedAt": "2023-11-05T01:04:26Z",
+                          "publishedAt": "2020-08-26T16:56:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "Is that really an issue?",
+                          "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-57229",
+                          "updatedAt": "2023-11-05T01:04:27Z",
+                          "publishedAt": "2020-08-26T16:59:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "aeslaughter"
+                  },
+                  "bodyText": "Testing email reply.\n\u2026\nOn Wed, Aug 26, 2020 at 4:43 PM Alex Lindsay ***@***.***> wrote:\n Also, perhaps unlikely, but maybe a greater chance that users put their\n code on github... It would be pretty awesome to link directly to issues/PRs\n on their own repository from a MOOSE discussion\n\n \u2014\n You are receiving this because you were mentioned.\n Reply to this email directly, view it on GitHub\n <#15774 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/AACTKVNYW7RWOIXPQCSJLH3SCWF2RANCNFSM4QFNG7IA>\n .",
+                  "url": "https://github.com/idaholab/moose/discussions/15774#discussioncomment-83812",
+                  "updatedAt": "2022-06-08T13:28:48Z",
+                  "publishedAt": "2020-09-23T19:23:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Shortcut Keys",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "Is there a listing somewhere of the shortcut key functions that are available in Ubuntu text editor? I am attempting to use the python Ctrl+/ method to comment out a line, but that is not working as expected.",
+          "url": "https://github.com/idaholab/moose/discussions/23343",
+          "updatedAt": "2023-02-05T18:43:39Z",
+          "publishedAt": "2023-02-04T20:11:54Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhich text editor?\nWe have a VSCode plugin that handles these things\nhttps://mooseframework.inl.gov/help/development/VSCode.html\nThere's no extra list, it's more the classic VSCode shortcuts adapted to MOOSE inputs\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23343#discussioncomment-4871372",
+                  "updatedAt": "2023-02-04T20:39:37Z",
+                  "publishedAt": "2023-02-04T20:39:36Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Coupling Velocity with other variables",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Hello everyone,\nI am new to MOOSE and trying to solve coupled PDE equation (Cahn-Hilliard Navier-Stokes). My problem is that I do not how to correctly couple velocity and concentration.\nThis problem is similar to the convection heat transfer when we need to couple the velocity and temperature.\nIt would be much appreciated if someone can guide me here by introducing a relevant input file or explaining the way that the kernels must be set.\nRegards,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/23254",
+          "updatedAt": "2023-06-24T19:58:20Z",
+          "publishedAt": "2023-01-26T02:35:40Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre you using the finite element or finite volume implementations of Navier Stokes?\nFor finite volume, you ll want to have a look at this input that transports a scalar concentration using the determined velocity\nhttps://github.com/idaholab/moose/tree/next/modules/navier_stokes/test/tests/finite_volume/ins/multiapp-scalar-transport\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4784116",
+                  "updatedAt": "2023-01-26T04:51:18Z",
+                  "publishedAt": "2023-01-26T04:51:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alimostafavi24"
+                  },
+                  "bodyText": "Hi,\nThank you for your answer!\nI am actually using the finite element method to couple Navier stokes and Cahn hilliard equation which requires velocity coupling.\nThanks,\nAli",
+                  "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4790643",
+                  "updatedAt": "2023-01-26T18:59:32Z",
+                  "publishedAt": "2023-01-26T18:59:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nwe don\u2019t have scalar transport in finite element navier stokes right now.\nYou can implement it fairly easily from the energy advection kernels.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4791674",
+                          "updatedAt": "2023-01-26T21:36:11Z",
+                          "publishedAt": "2023-01-26T21:36:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alimostafavi24"
+                  },
+                  "bodyText": "I am trying to couple these 2 PDEs. So, both c and u are coupled variables.\n\n[image: Screen Shot 2023-01-27 at 12.25.36 PM.png]\n[image: Screen Shot 2023-01-27 at 12.26.02 PM.png]\n[image: Screen Shot 2023-01-27 at 12.26.10 PM.png]\n\nMy question is that are there specific kernels that I can use to couple\nthose variables or I should develop my own kernels to couple them?\n\nThanks,\nAli\n\u2026\nOn Thu, Jan 26, 2023 at 2:36 PM Guillaume Giudicelli < ***@***.***> wrote:\n Hello\n\n we don\u2019t have scalar transport in finite element navier stokes right now.\n\n You can implement it fairly easily from the energy advection kernels.\n\n Guillaume\n\n \u2014\n Reply to this email directly, view it on GitHub\n <#23254 (reply in thread)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/A4TMUC4ST5VIZAUUCVXJU23WULU5LANCNFSM6AAAAAAUHAQ6T4>\n .\n You are receiving this because you authored the thread.Message ID:\n ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800130",
+                  "updatedAt": "2023-01-27T19:28:57Z",
+                  "publishedAt": "2023-01-27T19:28:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The images did not work.\nIf you are doing scalar transport with finite element in more than one dimension, then you need your own kernels.\nUnless you have access to Griffin ? (it s an export controlled reactor physics code)",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800146",
+                          "updatedAt": "2023-01-27T19:30:35Z",
+                          "publishedAt": "2023-01-27T19:30:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "I think now equations can be seen. No, I don't have access to Griffin. And I want to solve it in 2D.",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800270",
+                          "updatedAt": "2023-01-27T19:51:59Z",
+                          "publishedAt": "2023-01-27T19:51:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok then you need to implement a set of kernels, and we would be interested in the contribution of these afterwards btw\nTo do that you may:\n\nhave a look at energy advection FE kernels. Energy and scalars are advected similarly\nhave a look at the scalar advection FV kernels, consider verifying your work with a similar FV solution",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800583",
+                          "updatedAt": "2023-01-27T20:46:31Z",
+                          "publishedAt": "2023-01-27T20:46:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "All right! I had one more question. I developed a custom kernel myself. Is there any way that during compilation this can be added to combined-opt? For example, I added the .h and .c file of my custom kernel to Navier-stokes module and it did not work. What is the best way to add our custom kernels to existing MOOSE kernels and compile everything?",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800828",
+                          "updatedAt": "2023-01-27T21:25:02Z",
+                          "publishedAt": "2023-01-27T21:25:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it should be added to the combined-opt if:\n\nyou placed the files in navier_stokes/src/kernels and navier_stokes/include/kernels respectively\nyou recompiled the navier stokes module or combined afte\nthey were registered to the right application",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4800845",
+                          "updatedAt": "2023-01-27T21:28:40Z",
+                          "publishedAt": "2023-01-27T21:28:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "It is odd! I write my custom kernel (AdvectionC) and put in a correct path on navier-stokes and phase-field modules and compiled them. Then I compiled for combined-opt and use it to run my input file. This is the error I got.\nA 'AdvectionC' is not a registered object.\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4801447",
+                          "updatedAt": "2023-01-27T23:22:18Z",
+                          "publishedAt": "2023-01-27T23:22:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What name did you use for registering?\nit needs to be exact",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4801455",
+                          "updatedAt": "2023-01-27T23:24:08Z",
+                          "publishedAt": "2023-01-27T23:24:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "It is. This is from the input file.\n[./conv]\ntype = AdvectionC\nvariable = c\nvelocity_x = vel_x\nvelocity_y = vel_y\n[../]",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4801485",
+                          "updatedAt": "2023-01-27T23:33:46Z",
+                          "publishedAt": "2023-01-27T23:33:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Registering is in the source file.\nYou should have something like:\nregisterMooseObject(\"NavierStokesApp\", PressureGradient);",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4802183",
+                          "updatedAt": "2023-01-28T03:12:46Z",
+                          "publishedAt": "2023-01-28T03:12:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "I understand the problem. Now it is working fine.\nThanks,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4805428",
+                          "updatedAt": "2023-01-28T18:51:43Z",
+                          "publishedAt": "2023-01-28T18:51:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "alimostafavi24"
+                  },
+                  "bodyText": "Hello,\nI think using ADEnergyAdvection is problematic for my problem. I need another kernel to couple velocity and concentration that does not require velocity as a vector or AD kernel. Do you have any suggestion that might help me?\nThanks,\nAli",
+                  "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4857062",
+                  "updatedAt": "2023-02-03T00:31:25Z",
+                  "publishedAt": "2023-02-03T00:31:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can try this one\nhttps://mooseframework.inl.gov/source/kernels/ConservativeAdvection.html\nbut at the end of the day, an advection kernel is not the hardest thing to make so you could also just code one",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4857795",
+                          "updatedAt": "2023-02-03T02:55:45Z",
+                          "publishedAt": "2023-02-03T02:55:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Hello,\nI have one more question!\n[Materials]\n  [./const]\n    type = ADGenericConstantMaterial\n    prop_names = 'rho mu cp k'\n    prop_values = '1  1  1  .01'\n  [../]\n  [ins_mat]\n    type = INSADStabilized3Eqn\n    velocity = velocity\n    pressure = p\n    temperature = temperature\n  []\n[]\n\nI want to use ADGenericFunctionMaterial. Do you know how I can describe mu and rho as a function of c (They are not constant in my problem)? I tried different ways and all gave me an error.\nThanks,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865625",
+                          "updatedAt": "2023-02-03T20:06:15Z",
+                          "publishedAt": "2023-02-03T20:06:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can use a ParsedMaterial for that instead. Functions are meant to be pre-determined in space and time at the beginning of the simulation, they cant have local variation on local quantities",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865677",
+                          "updatedAt": "2023-02-03T20:14:10Z",
+                          "publishedAt": "2023-02-03T20:14:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Ok. I will use ADParsedMaterial. What about the syntax (considering the simple case that rho='c' and mu='c')?",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865732",
+                          "updatedAt": "2023-02-03T20:20:36Z",
+                          "publishedAt": "2023-02-03T20:20:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I pasted ParsedMaterial examples above a few days ago. The syntax should be fairly clear from those",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865747",
+                          "updatedAt": "2023-02-03T20:22:32Z",
+                          "publishedAt": "2023-02-03T20:22:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Yes, it is. But I cannot use that. My input file is similar to this (modules/navier_stokes/test/tests/finite_element/ins/RZ_cone/ad_rz_cone_no_parts_steady_stabilized.i). When I used that kind of syntax which you mentioned previously, I get this error.\n\n'Materials/const/type'\n\tDoc String: \"A string representing the Moose Object that will be built by this Action\"\n\nIs there anyway that we can modify the below part and express rho and mu as a function of c?\n  [./const]\n    type = ADGenericConstantMaterial\n    prop_names = 'rho mu cp k'\n    prop_values = '1  1  1  .01'\n  [../]",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865800",
+                          "updatedAt": "2023-02-03T20:31:49Z",
+                          "publishedAt": "2023-02-03T20:31:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no there is not. A constant cannot become a parsed expression in this context\nWhat you pasted is not an error either or maybe you forgot one part of it.",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4865828",
+                          "updatedAt": "2023-02-03T20:36:51Z",
+                          "publishedAt": "2023-02-03T20:36:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Right. Regarding developing a custom advection kernel, I will start with the ConservativeAdvection which requires velocity as a vector. Could you please the main things that I should look for in order to modify this using velocity components?\nThanks,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4867238",
+                          "updatedAt": "2023-02-04T00:56:29Z",
+                          "publishedAt": "2023-02-04T00:56:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "that part should be easy:\ncoupledVectorValue -> coupledValue in the constructor\nVectorVariableValue -> VariableValue in the header\nand add the other components\nthe to access them: _vel_x[_qp] and same for yz",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4867878",
+                          "updatedAt": "2023-02-04T05:42:43Z",
+                          "publishedAt": "2023-02-04T05:42:42Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Right. This is the error that I get after substituting those in the constructor.\n/home/ali/projects/moose/modules/navier_stokes/src/kernels/ConservativeAdvectionn.C: In member function 'libMesh::Real ConservativeAdvectionn::negSpeedQp() const':\n/home/ali/projects/moose/modules/navier_stokes/src/kernels/ConservativeAdvectionn.C:49:31: error: cannot convert 'libMesh::boostcopy::enable_if_c<true, libMesh::TypeVector<double> >::type' {aka 'libMesh::TypeVector<double>'} to 'libMesh::Real' {aka 'double'} in return\n   49 |   return -_grad_test[_i][_qp] * _velocity_x[_qp];\n/home/ali/projects/moose/modules/navier_stokes/src/kernels/ConservativeAdvectionn.C:50:31: error: cannot convert 'libMesh::boostcopy::enable_if_c<true, libMesh::TypeVector<double> >::type' {aka 'libMesh::TypeVector<double>'} to 'libMesh::Real' {aka 'double'} in return\n   50 |   return -_grad_test[_i][_qp] * _velocity_y[_qp];\nmake: *** [/home/ali/projects/moose/framework/build.mk:145: /home/ali/projects/moose/modules/navier_stokes/build/unity_src/kernels_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1",
+                          "url": "https://github.com/idaholab/moose/discussions/23254#discussioncomment-4870990",
+                          "updatedAt": "2023-02-04T19:00:18Z",
+                          "publishedAt": "2023-02-04T19:00:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

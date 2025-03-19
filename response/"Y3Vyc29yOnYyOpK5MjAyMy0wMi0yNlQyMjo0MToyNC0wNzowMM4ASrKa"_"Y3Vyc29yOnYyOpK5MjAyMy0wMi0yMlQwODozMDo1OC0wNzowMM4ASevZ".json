@@ -1,0 +1,862 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMi0yMlQwODozMDo1OC0wNzowMM4ASevZ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "LevelSetMeshRefinementTransfer do not transfer with initial_steps != 0",
+          "author": {
+            "login": "doquang"
+          },
+          "bodyText": "I am having a problem when transferring adaptivity information that contain an information of 'initial_steps':\nThe following error occurred in the object \"marker_to_sub\", of type \"LevelSetMeshRefinementTransfer\".\nThe meshes must be identical to utilize MultiAppDofCopyTransfer::transfer.\n\nIt seems the LevelSetMeshRefinementTransfer do not support it yet. My code will run without the setting of 'initial_steps', or 'initial_steps=0'\nHere is the input from parent.i\n[Adaptivity]\n  initial_marker = markers\n  initial_steps = 2\n  max_h_level = 2\n  cycles_per_step = 2\n  marker = markers\n  ...\n\n[MultiApps]\n  [sub]\n    type = TransientMultiApp\n    input_files = 'sub.i'\n    execute_on = TIMESTEP_END\n  []\n[]\n[Transfers]\n  [marker_to_sub]\n    type = LevelSetMeshRefinementTransfer\n    to_multi_app = sub\n    source_variable = markers\n    variable = markers\n    check_multiapp_execute_on = false\n  []",
+          "url": "https://github.com/idaholab/moose/discussions/23533",
+          "updatedAt": "2023-02-26T18:54:05Z",
+          "publishedAt": "2023-02-25T13:25:45Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "I am not able to reproduce your error.\nI added initial_steps=2 in the modules/level_set/test/tests/transfers/markers/multi_level/parent.i. The modified input file was ran without any error.",
+                  "url": "https://github.com/idaholab/moose/discussions/23533#discussioncomment-5109118",
+                  "updatedAt": "2023-02-25T16:08:54Z",
+                  "publishedAt": "2023-02-25T16:08:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "Hi @jiangwen84 ,\nPlease use this input file instead of modules/level_set/test/tests/transfers/markers/multi_level/parent.i:\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 10\n  ny = 10\n  uniform_refine = 2\n[]\n\n[Adaptivity]\n  initial_marker = init_marker\n  initial_steps = 2\n  marker = marker\n  max_h_level = 2\n  cycles_per_step = 2\n  [./Indicators]\n    [./error]\n      type = GradientJumpIndicator\n      variable = u\n    [../]\n  [../]\n  [./Markers]\n    [./marker]\n      type = ErrorFractionMarker\n      coarsen = 0.4\n      refine = 0.5\n      indicator = error\n    [../]\n    [init_marker]\n      type = BoxMarker\n      bottom_left = '0.35 0.25 0'\n      top_right = '0.5 0.5 0'\n      inside = refine\n      outside = coarsen\n    []\n  [../]\n[]\n\n[Variables]\n  [./u]\n  [../]\n[]\n\n[Kernels]\n  [./time]\n    type = TimeDerivative\n    variable = u\n  [../]\n  [./diff]\n    type = Diffusion\n    variable = u\n  [../]\n[]\n\n[BCs]\n  [./left]\n    type = DirichletBC\n    variable = u\n    boundary = left\n    value = 0\n  [../]\n  [./right]\n    type = DirichletBC\n    variable = u\n    boundary = right\n    value = 1\n  [../]\n[]\n\n[Problem]\n  type = LevelSetProblem\n[]\n\n[Executioner]\n  type = Transient\n  dt = 0.02\n  num_steps = 4\n  solve_type = 'PJFNK'\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n[]\n\n[MultiApps]\n  [./sub]\n    type = TransientMultiApp\n    input_files = 'sub.i'\n    execute_on = TIMESTEP_END\n  [../]\n[]\n\n[Transfers]\n  [./marker_to_sub]\n    type = LevelSetMeshRefinementTransfer\n    to_multi_app = sub\n    source_variable = marker\n    variable = marker\n    check_multiapp_execute_on = false\n  [../]\n[]\n\n[Outputs]\n  hide = u\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/23533#discussioncomment-5109297",
+                          "updatedAt": "2023-02-25T16:37:29Z",
+                          "publishedAt": "2023-02-25T16:31:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "Ok, I see.\nAs you can see from your input file, the marker is transferred to the sub app through LevelSetMeshRefinementTransfer. We have not implemented the code to transfer initial_marker, so the sub app won't do the initial adaptivity. It should be straightforward to add this capability by following what has been done in   LevelSetMeshRefinementTransfer.\nDo you have to use initial adaptivity? I think you can work around it if you do not want to write new codes.",
+                          "url": "https://github.com/idaholab/moose/discussions/23533#discussioncomment-5109564",
+                          "updatedAt": "2023-02-25T17:13:00Z",
+                          "publishedAt": "2023-02-25T17:12:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "doquang"
+                          },
+                          "bodyText": "With an initial adaptivity, variables will be initialized with good resolution. Without it, all variables will start with coarse resolution in the first few steps.",
+                          "url": "https://github.com/idaholab/moose/discussions/23533#discussioncomment-5112906",
+                          "updatedAt": "2023-02-26T07:53:36Z",
+                          "publishedAt": "2023-02-26T07:53:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "With an initial adaptivity, variables will be initialized with good resolution. Without it, all variables will start with coarse resolution in the first few steps.\n\nYou can probably use higher level uniform refinement, i.e. uniform_refine = 4, for your initial conditions. As level set evolves, the mesh can be coarsen or refined just near the level set region.",
+                          "url": "https://github.com/idaholab/moose/discussions/23533#discussioncomment-5115766",
+                          "updatedAt": "2023-02-26T18:54:05Z",
+                          "publishedAt": "2023-02-26T18:54:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to couple aux variable of current timestep",
+          "author": {
+            "login": "xiaojbing"
+          },
+          "bodyText": "By defalult\uff0ccoupling aux variable is the old value of last timestep, right? So, How to couple aux variable of current timestep?",
+          "url": "https://github.com/idaholab/moose/discussions/23536",
+          "updatedAt": "2023-02-26T16:01:03Z",
+          "publishedAt": "2023-02-26T02:37:29Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nNo coupledValue is by default the current timestep, and for an implicit time integration scheme it's actually more the \"next\" time step.\nTo get the old value you use coupleValuesOld or coupledValuesOlder for the one before that\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23536#discussioncomment-5114953",
+                  "updatedAt": "2023-02-26T16:01:03Z",
+                  "publishedAt": "2023-02-26T16:01:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to include a source term in the continuity equation (INSFVMassAdvection)",
+          "author": {
+            "login": "AnthonyB08"
+          },
+          "bodyText": "Hi all,\nI am trying to impose a arbitrary source term by utilizing the fvkernal : FVBodyForce.  The variable that this object residual is dependent on is pressure and the function is rho*2, i.e 2000. However, when I postprocess the simulation results with VolumetricFlowRate object  :\n[inlet_mass]\ntype = VolumetricFlowRate\nboundary ='left'\nvel_x = u\nvel_y = v\nadvected_quantity = ${rho}\n[]\nI see no accumulation in my results:\n\nWhat am I not understanding about FVBodyForce or am I using the wrong postprocessing method?\n-Thanks",
+          "url": "https://github.com/idaholab/moose/discussions/23529",
+          "updatedAt": "2023-02-27T15:13:41Z",
+          "publishedAt": "2023-02-24T15:58:44Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIn which equation did you add this source term?\n(eg what variable did you specify for the kernel)\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23529#discussioncomment-5102344",
+                  "updatedAt": "2023-02-24T16:36:07Z",
+                  "publishedAt": "2023-02-24T16:36:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AnthonyB08"
+                          },
+                          "bodyText": "################## Source Term #########################\n[mass_source]\ntype = FVBodyForce\nvariable = pressure\nfunction = 2000\n#value=1000\n[]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/23529#discussioncomment-5102432",
+                          "updatedAt": "2023-02-24T16:44:22Z",
+                          "publishedAt": "2023-02-24T16:44:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AnthonyB08"
+                          },
+                          "bodyText": "This is how the source term is being implemented",
+                          "url": "https://github.com/idaholab/moose/discussions/23529#discussioncomment-5102433",
+                          "updatedAt": "2023-02-24T16:44:35Z",
+                          "publishedAt": "2023-02-24T16:44:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "AnthonyB08"
+                          },
+                          "bodyText": "I got it to work, disregard.",
+                          "url": "https://github.com/idaholab/moose/discussions/23529#discussioncomment-5102731",
+                          "updatedAt": "2023-02-24T17:16:09Z",
+                          "publishedAt": "2023-02-24T17:16:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Help understanding the fsi flat channel input file",
+          "author": {
+            "login": "Eilloo"
+          },
+          "bodyText": "Hi all,\nApologies if this is a little basic, but I am having trouble understanding exactly what is going on in the fsi module to enable the transfer of fluid pressure forces to the solid.\nBased on the example input file (pasted below for convenience) and my understanding of the documentation, the interface kernels seem to be doing the following:\n\nSetting the fluid and solid velocities to be equal at the interface (this makes sense to me as the 'no slip' condition).\nSetting the flux of the fluid velocity to equal the solid displacement.\n\nThe second part I am having trouble understanding, although in some ways it makes sense to me as the flux of the fluid velocity represents its displacement?\nIntuitively, and based on my own reading online, I would expect something more along the lines of setting the normal force on the solid side of the interface equal to the pressure on the fluid side to enable each medium to act on the other.\nMy other question here is why we need the velocity source/reaction terms? I can see the effect they have by manipulating them in the simulation, but I am not clear on what they physically represent.\nCan someone help explain how the coupling is achieved here, and/or point me in the direction of any documentation/papers this is based on?\nThanks!\n[GlobalParams]\n    gravity = '0 0 0'\n    integrate_p_by_parts = true\n    laplace = true\n    convective_term = true\n    transient_term = true\n    pspg = true\n    displacements = 'disp_x disp_y'\n[]\n  \n[Mesh]\n    [gmg]\n        type = GeneratedMeshGenerator\n        dim = 2\n        xmin = 0\n        xmax = 3.0\n        ymin = 0\n        ymax = 1.0\n        nx = 10\n        ny = 15\n        elem_type = QUAD4\n    []\n\n    [subdomain1]\n        type = SubdomainBoundingBoxGenerator\n        bottom_left = '0.0 0.5 0'\n        block_id = 1\n        top_right = '3.0 1.0 0'\n        input = gmg\n    []\n\n    [interface]\n        type = SideSetsBetweenSubdomainsGenerator\n        primary_block = '0'\n        paired_block = '1'\n        new_boundary = 'master0_interface'\n        input = subdomain1\n    []\n\n    [break_boundary]\n        type = BreakBoundaryOnSubdomainGenerator\n        input = interface\n    []\n[]\n  \n[Variables]\n    [./vel_x]\n        block = 0\n    [../]\n    [./vel_y]\n        block = 0\n    [../]\n    [./p]\n        block = 0\n    [../]\n    [./disp_x]\n    [../]\n    [./disp_y]\n    [../]\n    [./vel_x_solid]\n        block = 1\n    [../]\n    [./vel_y_solid]\n        block = 1\n    [../]\n[]\n  \n[Kernels]\n    [./vel_x_time]\n        type = INSMomentumTimeDerivative\n        variable = vel_x\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./vel_y_time]\n        type = INSMomentumTimeDerivative\n        variable = vel_y\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./mass]\n        type = INSMass\n        variable = p\n        u = vel_x\n        v = vel_y\n        pressure = p\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./x_momentum_space]\n        type = INSMomentumLaplaceForm\n        variable = vel_x\n        u = vel_x\n        v = vel_y\n        pressure = p\n        component = 0\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./y_momentum_space]\n        type = INSMomentumLaplaceForm\n        variable = vel_y\n        u = vel_x\n        v = vel_y\n        pressure = p\n        component = 1\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./vel_x_mesh]\n        type = ConvectedMesh\n        disp_x = disp_x\n        disp_y = disp_y\n        variable = vel_x\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./vel_y_mesh]\n        type = ConvectedMesh\n        disp_x = disp_x\n        disp_y = disp_y\n        variable = vel_y\n        block = 0\n        use_displaced_mesh = true\n    [../]\n    [./disp_x_fluid]\n        type = Diffusion\n        variable = disp_x\n        block = 0\n    [../]\n    [./disp_y_fluid]\n        type = Diffusion\n        variable = disp_y\n        block = 0\n    [../]\n    [./accel_tensor_x]\n        type = CoupledTimeDerivative\n        variable = disp_x\n        v = vel_x_solid\n        block = 1\n    [../]\n    [./accel_tensor_y]\n        type = CoupledTimeDerivative\n        variable = disp_y\n        v = vel_y_solid\n        block = 1\n    [../]\n    [./vxs_time_derivative_term]\n        type = CoupledTimeDerivative\n        variable = vel_x_solid\n        v = disp_x\n        block = 1\n    [../]\n    [./vys_time_derivative_term]\n        type = CoupledTimeDerivative\n        variable = vel_y_solid\n        v = disp_y\n        block = 1\n    [../]\n    [./source_vxs]\n        type = MatReaction\n        variable = vel_x_solid\n        block = 1\n        mob_name = 1\n    [../]\n    [./source_vys]\n        type = MatReaction\n        variable = vel_y_solid\n        block = 1\n        mob_name = 1\n    [../]\n[]\n  \n[InterfaceKernels]\n    [./penalty_interface_x]\n        type = CoupledPenaltyInterfaceDiffusion\n        variable = vel_x\n        neighbor_var = disp_x\n        secondary_coupled_var = vel_x_solid\n        boundary = master0_interface\n        penalty = 1e6\n    [../]\n    [./penalty_interface_y]\n        type = CoupledPenaltyInterfaceDiffusion\n        variable = vel_y\n        neighbor_var = disp_y\n        secondary_coupled_var = vel_y_solid\n        boundary = master0_interface\n        penalty = 1e6\n    [../]\n[]\n  \n[Modules/TensorMechanics/Master]\n    [./solid_domain]\n        strain = SMALL\n        incremental = false\n        # generate_output = 'strain_xx strain_yy strain_zz' ## Not at all necessary, but nice\n      block = '1'\n    [../]\n[]\n  \n[Materials]\n    [./elasticity_tensor]\n        type = ComputeIsotropicElasticityTensor\n        youngs_modulus = 1e2\n        poissons_ratio = 0.3\n        block = '1'\n    [../]\n    [./small_stress]\n        type = ComputeLinearElasticStress\n        block = 1\n    [../]\n    [./const]\n        type = GenericConstantMaterial\n        block = 0\n        prop_names = 'rho mu'\n        prop_values = '1  1'\n    [../]\n[]\n  \n[BCs]\n    [./fluid_x_no_slip]\n        type = DirichletBC\n        variable = vel_x\n        boundary = 'bottom'\n        value = 0.0\n    [../]\n    [./fluid_y_no_slip]\n        type = DirichletBC\n        variable = vel_y\n        boundary = 'bottom left_to_0'\n        value = 0.0\n    [../]\n    [./x_inlet]\n        type = FunctionDirichletBC\n        variable = vel_x\n        boundary = 'left_to_0'\n        function = 'inlet_func'\n    [../]\n    [./no_disp_x]\n        type = DirichletBC\n        variable = disp_x\n        boundary = 'bottom top left_to_1 right_to_1 left_to_0 right_to_0'\n        value = 0\n    [../]\n    [./no_disp_y]\n        type = DirichletBC\n        variable = disp_y\n        boundary = 'bottom top left_to_1 right_to_1 left_to_0 right_to_0'\n        value = 0\n    [../]\n    [./solid_x_no_slip]\n        type = DirichletBC\n        variable = vel_x_solid\n        boundary = 'top left_to_1 right_to_1'\n        value = 0.0\n    [../]\n    [./solid_y_no_slip]\n        type = DirichletBC\n        variable = vel_y_solid\n        boundary = 'top left_to_1 right_to_1'\n        value = 0.0\n    [../]\n[]\n  \n[Preconditioning]\n    [./SMP]\n        type = SMP\n        full = true\n    [../]\n[]\n  \n[Executioner]\n    type = Transient\n    num_steps = 5\n    # num_steps = 60\n    dt = 0.1\n    dtmin = 0.1\n    solve_type = 'PJFNK'\n    petsc_options_iname = '-pc_type'\n    petsc_options_value = 'lu'\n    line_search = none\n[]\n  \n[Outputs]\n    [./out]\n        type = Exodus\n    [../]\n[]\n  \n[Functions]\n    [./inlet_func]\n        type = ParsedFunction\n        value = '(-16 * (y - 0.25)^2 + 1) * (1 + cos(t))'\n    [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23484",
+          "updatedAt": "2023-02-24T16:28:46Z",
+          "publishedAt": "2023-02-20T15:43:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cbolisetti if you could please help here",
+                  "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5054934",
+                  "updatedAt": "2023-02-20T15:46:27Z",
+                  "publishedAt": "2023-02-20T15:46:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cbolisetti"
+                  },
+                  "bodyText": "@Eilloo can you please provide the documentation link where you got the two bullets from? That's actually not what we do, at least for acoustic fluids. For acoustics, our solution variable for the fluid is pressure and not velocity. And the solution variable for the structure is displacement. So here's what we ensure at the interface:\n\nPressure of the fluid is equal to the normal stress\nRelationship between the pressure of the fluid and acceleration of the structure as derived here\n\nThe link describes what we do briefly and here's a paper that describes the FSI implementation in detail as well as a V&V for earthquake applications.\nAlso, if you are ok with using acoustic fluid (small particle displacements, irrotational, inviscid), I would recommend starting with this input file instead: modules/fsi/test/tests/fsi_acoustics/1D_struc_acoustic/1D_struc_acoustic.i",
+                  "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5055238",
+                  "updatedAt": "2023-02-20T16:17:39Z",
+                  "publishedAt": "2023-02-20T16:13:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Eilloo"
+                  },
+                  "bodyText": "@cbolisetti,\nThanks for the response - I suspect I have misunderstood how this interface kernel works. The input file above is at the bottom of the linked page too.\nHere is an explanation of what I previously thought this meant:\nIn the example input file, the variable appears to be the fluid velocity, and the neighbour variable is solid displacement. The class description states: \"This class ensures the continuity of flux of variable and neighbor_var across an interface\"\nI was not able to understand why we might want the flux of the fluid velocity and the flux of the solid displacement to match at the interface, and so wondered if this meant the flux of 'variable', and the value of neighbour_var.\nThe thinking here was that the flux of the fluid velocity is its surface integral, and so this could be interpreted as a displacement.\nThe class description also sates that continuity is enforced between the value of the primary and secondary variables. Here, we only specify a secondary variable, which is solid velocity, so the primary variable defaults to 'variable' - in this case, the fluid velocity. This is where I got the first bullet from, thinking that it makes sense to match the fluid and solid velocities at the interface.\nUnfortunately I cannot access the paper linked to; however, the other link makes me wonder if my misunderstanding was related to something else:\nFor some reason, I had thought the fsi module provided two routes, one with the acoustic formulation and one without. I assumed the input file above did not involve acoustics, but it sounds like the latter is maybe this is the only option?\nMy intention is to try fsi with some INS flows where inviscid and irrotational assumptions may not be valid. Indeed, the above example includes 'INSMomentumLaplaceForm' kernels, which include viscous terms(?), contrary to the assumptions made in the linked docs page. Again, I could be mistaken here as I am more familiar with the vector INS kernels.",
+                  "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5055571",
+                  "updatedAt": "2023-02-20T16:44:44Z",
+                  "publishedAt": "2023-02-20T16:44:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cbolisetti"
+                          },
+                          "bodyText": "I see. Note that variable or neighbor_var are the variables that depend on what MOOSE modules or formulations your are using. Also, the FSI module has been V&V'ed for acoustic fluid domains, but I don't know how mature it is for the INS formulation. @GiudGiud or @lindsayad might be able to answer that or might know someone that would.",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5057409",
+                          "updatedAt": "2023-02-20T21:11:04Z",
+                          "publishedAt": "2023-02-20T21:04:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "An InterfaceKernel is much like an IntegratedBC.\nIt might make things easier to think about the physics that CoupledPenaltyInterfaceDiffusion suggests, so let's imagine having just diffusion on either side of the interface. When you integrate a diffusion problem by parts, you wind up with the surface term <test, -normals * grad u>. Now imagine we have integrated by parts on the other side: <test_neighbor, normals * grad v>\nNow by writing the element residual: <test, penalty * (u - v)>, what you have implicitly done is set: -normals * grad u = penalty * (u - v)\nAnd similarly if you set the neighbor residual: <test_neighbor, -penalty * (u - v)>, then you have implicitly set: normals * grad v = -penalty * (u - v)\nSo what have you done? Looking at those two implicit equations you can see you've set: -normals * grad u = -normals * grad v = penalty * (u - v)\nSo by the first equality you have set continuity of flux (diffusive flux). And through the penalty parameter you are driving u and v to be equal to each other.\nGeneralizing this to the FSI problem, you are asking for continuity of stress between the fluid and solid, and you are driving the difference in velocities (liquid and solid) to zero. So stress for the fluid in this case (where you are using the Laplace form for the viscous term and have integrated the pressure by parts), when dotted with the normal, is component-wise: <test, p * normals(component) - mu * grad v_component * normals> where v is the velocity, and v_component is a component of the velocity. So this fluid stress will be made equal to whatever stresses exist in the solid phase.\nDoes that make sense?",
+                  "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5059017",
+                  "updatedAt": "2023-02-21T02:06:24Z",
+                  "publishedAt": "2023-02-21T02:04:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Thanks for the explanation - I'm definitely getting there, but there's a couple of steps I still want to clarify:\nFirstly, in the diffusion example, suppose we set the residual in a boundary element to <test, anything arbitrary>, are we implying that the 'anything arbitrary' is equal to 'normalsgrad_u', since 'normalsgrad_u' is the natural BC?\nThen, choosing penalty*(u-v) is convenient as it enables us to drive u and v to be equal (or indeed, any two variables - in the fsi case, the fluid and solid velocities).\nFrom the input file, the continuity of stress between solid and fluid occurs when 'normalsgrad_fluidVelocity' is equal to 'normalsgrad_solidDisplacement'?\nFirstly, does grad_solidDisplacement actually represent the stress in the solid? I'm hazy on the solid mech side of things, but I had expected this term to be proportional only to the displacement, not the gradient?\nI'm happy with the above definition of fluid stress, but am still struggling with how this is implied simply by choosing fluid velocity and solid displacement as variable and neighbour variable...\nWould we not want to include the pressure term, viscosity, etc. in our residual, for instance?\nFor what it's worth, the idea to make this work with the vector INS kernels is to accept a the velocity vector as the variable, and have the user specify a component, which is then used in calculating the residual (the displacements would be left as individual components). In the input file, you would simply have three of these kernels, all of which have the velocity vector as the variable, but each of which has taken a different component when applying 'penalty*(u-v)'. It feels slightly messy but based on the above, I think it should work?\nHopefully this all makes sense, at least in terms of explaining the bits I don't quite understand!",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5062874",
+                          "updatedAt": "2023-02-21T10:58:42Z",
+                          "publishedAt": "2023-02-21T10:58:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Firstly, in the diffusion example, suppose we set the residual in a boundary element to <test, anything arbitrary>, are we implying that the 'anything arbitrary' is equal to 'normals_grad_u', since 'normals_grad_u' is the natural BC?\n\nThat's exactly right.\n\nFrom the input file, the continuity of stress between solid and fluid occurs when 'normals_grad_fluidVelocity' is equal to 'normals_grad_solidDisplacement'?\n\nContinuity of stress will occur if the interface kernel element and neighbor residual statements in the interface kernel are the same (after division by the respective test functions). You can imagine that if you set the element residual to A and the neighbor residual to B, then in that case you are requiring the stress in the fluid on the boundary to be different than the stress in the solid.\n\nFirstly, does grad_solidDisplacement actually represent the stress in the solid? I'm hazy on the solid mech side of things, but I had expected this term to be proportional only to the displacement, not the gradient?\n\nI don't think I said that the stress is proportional to the displacement gradient, but I do think that is the case. You can imagine that if you displaced every portion of a solid equally, then you have merely translated the solid and you would not have any internal stresses in the body.\nBut whether you are a solid mechanics expert or not (I am also not), luckily I don't think you need to know anything about what goes into the stress computation in the solid.\n\nFor what it's worth, the idea to make this work with the vector INS kernels is to accept a the velocity vector as the variable, and have the user specify a component, which is then used in calculating the residual (the displacements would be left as individual components).\n\nWhat would you do about the fluid velocity test functions? They are vectors. I think that if you also indexed those by component, then what you are proposing would work.",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5068095",
+                          "updatedAt": "2023-02-21T18:33:22Z",
+                          "publishedAt": "2023-02-21T18:33:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Okay, I think I'm more or less there with this now.\nI'm happy with the idea that setting the residuals of elements on each side of the boundary implies continuity of flux between u and v, for instance.\nThe main sticky point for me is still relating to the choice of variables and neighbour and how they specifically infer continuity of stress, as opposed to some other quantity.\nSo, to check: by choosing variable and neighbour variable as velocity and displacement, both of these must appear in a diffusion term in the defining equations of their respective mediums, and that diffusion term must also represent the stress in that medium?\nThe reason for mentioning displacement gradient is because the natural BC from our diffusion equation is normals * grad_var, so if var is displacement on the solid side, this has to represent a stress. The example you gave is a great way of thinking about this!\nR.e. using interface kernels with a vector velocity variable, I hadn't thought about the test functions - good point!\nI'll make sure I take components of these too.\nLooking into the code side a little more, I think there may also be issues specifying 'variable' as a vector, but 'neighbour_var' as a scalar - even if I do intend to only use one component of the vector. I believe the existing class template (understandably) doesn't allow this... perhaps I'll need to copy the interface kernel template and make some changes to this too.",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5075721",
+                          "updatedAt": "2023-02-22T10:48:30Z",
+                          "publishedAt": "2023-02-22T10:48:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "The main sticky point for me is still relating to the choice of variables and neighbour and how they specifically infer continuity of stress, as opposed to some other quantity.\n\nSo generically speaking, if you set the element and neighbor residuals to the same thing (after dividing by the respective test functions) then you will be setting the surface terms resulting from integration by parts of the variables' (variable and neighbor_var) equations equal to each other. So generically speaking the surface terms may be stress, they may be diffusive flux, they may be advective plus diffusive flux, etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5079372",
+                          "updatedAt": "2023-02-22T16:51:20Z",
+                          "publishedAt": "2023-02-22T16:51:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Okay nice, this makes sense to me now.\nSince we're here, if I could ask one final thing about the input file itself:\nWhat is the purpose of the source_vsx and source_vsy kernels here?\nI would not have thought to add these, but I can see that nothing deforms if they are removed.",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5086186",
+                          "updatedAt": "2023-02-23T09:16:27Z",
+                          "publishedAt": "2023-02-23T09:16:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "These are not super physical; they were just a means to incur some displacement in the solid in order to \"make stuff happen\". I came up with this test really quickly a few years ago just to show that MOOSE could do some kind of fluid-structure interaction (well before the fsi module actually existed)",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5092813",
+                          "updatedAt": "2023-02-23T20:20:02Z",
+                          "publishedAt": "2023-02-23T20:20:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Eilloo"
+                          },
+                          "bodyText": "Ah, I see - thanks very much for your help!",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5098500",
+                          "updatedAt": "2023-02-24T10:12:16Z",
+                          "publishedAt": "2023-02-24T10:12:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You're welcome. Great questions!",
+                          "url": "https://github.com/idaholab/moose/discussions/23484#discussioncomment-5102186",
+                          "updatedAt": "2023-02-24T16:28:47Z",
+                          "publishedAt": "2023-02-24T16:28:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Homogenisation System Issues",
+          "author": {
+            "login": "Zoophish"
+          },
+          "bodyText": "Hi,\nI'm trying to use the homogenisation system to extract the effective stiffnesses of a small hex-packed fibre composite RVE:\n\nMy issue is that the simulation gets stuck on Setting Up Equation Systems.... before solving. I've given this process hours on a HPC to try and complete, but it never does.\nThe setup I am using is based off the input files in the Lagrangian/cartesian/homogenisation test folder. I've essentially just changed the materials and mesh file. I've tried using the master action and manual setup but both methods get stuck.\n\n  My input file (manual setup):\nmesh_file = 'micro.msh'\ncsv_file = 'cell_average_values'\n\n[GlobalParams]\ndisplacements = 'disp_x disp_y disp_z'\nlarge_kinematics = false\nmacro_gradient = hvar\nhomogenization_constraint = homogenization\n[]\n\n[Variables]\n[disp_x]\n[]\n[disp_y]\n[]\n[disp_z]\n[]\n[hvar]\n  family = SCALAR\n  order = NINTH\n[]\n[]\n\n[UserObjects]\n[homogenization]\n  type = HomogenizationConstraint\n  constraint_types = 'stress strain strain strain stress strain strain strain strain'\n  targets = 'stress11 strain21 strain31 strain12 stress22 strain32 strain13 strain23 strain33'\n  execute_on = 'INITIAL LINEAR NONLINEAR'\n[]\n[]\n\n[Kernels]\n[sdx]\n  type = HomogenizedTotalLagrangianStressDivergence\n  variable = disp_x\n  component = 0\n[]\n[sdy]\n  type = HomogenizedTotalLagrangianStressDivergence\n  variable = disp_y\n  component = 1\n[]\n[sdz]\n  type = HomogenizedTotalLagrangianStressDivergence\n  variable = disp_z\n  component = 2\n[]\n[]\n\n[ScalarKernels]\n[enforce]\n  type = HomogenizationConstraintScalarKernel\n  variable = hvar\n[]\n[]\n\n[Mesh]\n[base]\n  type = FileMeshGenerator\n  file = ${mesh_file}\n[]\n[]\n\n# [Modules]\n#   [TensorMechanics]\n#     [Master]\n#       [all]\n#         strain = SMALL\n#         add_variables = true\n#         new_system = true\n#         formulation = TOTAL\n#         volumetric_locking_correction = true\n#         constraint_types = 'stress strain strain strain stress strain strain strain strain'\n#         # targets = 'stress11 strain21 strain31 strain12 stress22 strain32 strain13 strain23 strain33'\n#         targets = 'zero small small small zero small small small small'\n#         generate_output = 'pk1_stress_xx pk1_stress_xy pk1_stress_xz pk1_stress_yx pk1_stress_yy pk1_stress_yz pk1_stress_zx pk1_stress_zy pk1_stress_zz deformation_gradient_xx deformation_gradient_xy deformation_gradient_xz deformation_gradient_yx deformation_gradient_yy deformation_gradient_yz deformation_gradient_zx deformation_gradient_zy deformation_gradient_zz cauchy_stress_xx cauchy_stress_xy cauchy_stress_xz cauchy_stress_yx cauchy_stress_yy cauchy_stress_yz cauchy_stress_zx cauchy_stress_zy cauchy_stress_zz strain_xx strain_xy strain_xz strain_yx strain_yy strain_yz strain_zx strain_zy strain_zz l2norm_pk1_stress'\n#       []\n#     []\n#   []\n# []\n\n[Functions]\n[stress11]\n  type = ParsedFunction\n  value = '2e-12*t'\n[]\n[stress22]\n  type = ParsedFunction\n  value = '1-12*t'\n[]\n[strain33]\n  type = ParsedFunction\n  value = '8.0e-3*t'\n[]\n[strain23]\n  type = ParsedFunction\n  value = '2.0e-3*t'\n[]\n[strain13]\n  type = ParsedFunction\n  value = '-7.0e-3*t'\n[]\n[strain12]\n  type = ParsedFunction\n  value = '1.0e-3*t'\n[]\n[strain32]\n  type = ParsedFunction\n  value = '1.0e-3*t'\n[]\n[strain31]\n  type = ParsedFunction\n  value = '2.0e-3*t'\n[]\n[strain21]\n  type = ParsedFunction\n  value = '-1.5e-3*t'\n[]\n[zero]\n  type = ConstantFunction\n  value = 0\n[]\n[small]\n  type = ConstantFunction\n  value = 1e-9\n[]\n[]\n\n[BCs]\n# periodic BCs\n# for complex periodic models, have to do\n# do this manually?\n[Periodic]\n  # [x]\n  #   variable = disp_x\n  #   auto_direction = 'x y z'\n  #   #   primary = 'front'\n  # []\n  # [y]\n  #   variable = disp_y\n  #   auto_direction = 'x y z'\n  # []\n  # [z]\n  #   variable = disp_z\n  #   auto_direction = 'x y z'\n  # []\n  [x]\n    variable = disp_x\n    primary = 'right'\n    secondary = 'left'\n    translation = '-22 0 0'\n  []\n  [y]\n    variable = disp_y\n    primary = 'top'\n    secondary = 'bottom'\n    translation = '0 -38.1051177665153 0'\n  []\n  [z]\n    variable = disp_z\n    primary = 'front'\n    secondary = 'back'\n    translation = '0 0 -38.1051177665153'\n  []\n[]\n\n# constraint BCs\n[fix_all_x]\n  type = DirichletBC\n  boundary = \"fix_all\"\n  variable = disp_x\n  value = 0\n[]\n[fix_all_y]\n  type = DirichletBC\n  boundary = \"fix_all\"\n  variable = disp_y\n  value = 0\n[]\n[fix_all_z]\n  type = DirichletBC\n  boundary = \"fix_all\"\n  variable = disp_z\n  value = 0\n[]\n[fix_xy_x]\n  type = DirichletBC\n  boundary = \"fix_xy\"\n  variable = disp_x\n  value = 0\n[]\n[fix_xy_y]\n  type = DirichletBC\n  boundary = \"fix_xy\"\n  variable = disp_y\n  value = 0\n[]\n[fix_xy_z]\n  type = DirichletBC\n  boundary = \"fix_xy\"\n  variable = disp_z\n  value = 0\n[]\n[fix_z]\n  type = DirichletBC\n  boundary = \"fix_z\"\n  variable = disp_z\n  value = 0\n[]\n[]\n\n[Materials]\n[elastic_tensor_1]\n  type = ComputeIsotropicElasticityTensor\n  youngs_modulus = 35e-3 # N/\u00b5m\n  poissons_ratio = 0.389\n  block = 'matrix'\n[]\n[elastic_tensor_2]\n  type = ComputeIsotropicElasticityTensor\n  youngs_modulus = 350e-3 # N/\u00b5m\n  poissons_ratio = 0.21\n  block = 'fibre'\n[]\n[compute_stress]\n  type = ComputeLagrangianLinearElasticStress\n[]\n[compute_strain]\n  type = ComputeLagrangianStrain\n  homogenization_gradient_names = 'homogenization_gradient'\n[]\n[compute_homogenization_gradient]\n  type = ComputeHomogenizedLagrangianStrain\n[]\n[]\n\n[Executioner]\ntype = Transient\nsolve_type = NEWTON\nline_search = none\nautomatic_scaling = false\ncompute_scaling_once = false\nl_max_its = 10000\npetsc_options_iname = '-pc_type'\npetsc_options_value = 'lu'\nl_tol = 1e-14\nnl_rel_tol = 1e-8\nnl_abs_tol = 5e-10\n\nstart_time = 0.0\ndt = 0.1\nend_time = 1.0\n[]\n\n[Outputs]\n[mesh]\n  type = Exodus\n  file_base = ${csv_file}\n[]\n[average_variable_values]\n  type = CSV\n  execute_on = 'TIMESTEP_END'\n  file_base = ${csv_file}\n[]\n[]\n\n\nDoes this issue look familiar to anyone / any clues on what I am doing wrong here?\nThanks in advance,\nSam",
+          "url": "https://github.com/idaholab/moose/discussions/23483",
+          "updatedAt": "2023-02-24T12:17:56Z",
+          "publishedAt": "2023-02-20T15:04:48Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@hugary1995",
+                  "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5054819",
+                  "updatedAt": "2023-02-20T15:34:34Z",
+                  "publishedAt": "2023-02-20T15:34:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "This seems like a framework issue to me. @Zoophish: Does this behavior persist if you re-run the same simulation? We've had a similar issue on our cluster, but it was rather just random hangs -- could be at initializing equation system, a residual evaluation, or even an exodus output. We managed to fix the issue we encountered by using a different MPI.\nAnother possible cause of this issue is non-zero Jacobian allocations. Though I doubt that will make the equation system initialization system hang. IIRC we've already fixed the non-zero Jacobian allocation issue. But you could still try adding\n[Problem]\n  error_on_jacobian_nonzero_reallocation = true\n[]\n\nand see if it results in an error, which might give us more information.\nThe best way to figure out exactly what's going on is to diff the stack traces on all the processes. If one core has a unique stack trace, then that's most likely what leads to the hang. There is a script at https://github.com/idaholab/moose/blob/next/framework/scripts/find_hung_process.py that might help you get started.",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5055364",
+                          "updatedAt": "2023-02-20T16:26:07Z",
+                          "publishedAt": "2023-02-20T16:26:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "Thanks for the quick reply.\nWe just updated to the next version of moose and it no longer seems to hang on the initialisation.\nI am struggling to get it to converge in the non-linear iterations however. Do you have any advice on what could be causing this with the homogenisation system?\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5063467",
+                          "updatedAt": "2023-02-21T12:12:04Z",
+                          "publishedAt": "2023-02-21T12:12:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Some base advice\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html\nWe would need to see the entire console log (attached if possible, not pasted) to say more",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5063527",
+                          "updatedAt": "2023-02-21T12:18:59Z",
+                          "publishedAt": "2023-02-21T12:18:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Hypre/amg doesn't work well on a saddle point problem in my experience. There might be a combination of options that can get hypre to work, but I've not found it yet. Field split should help in theory, but I also have had no luck with it yet.\nHowever, a stronger preconditioner like lu or ilu have always worked well for me.",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5063695",
+                          "updatedAt": "2023-02-21T12:37:51Z",
+                          "publishedAt": "2023-02-21T12:37:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "The input file you attached uses the default parallel lu package which is mumps I believe. That doesn't scale very well. Try asm and/or ilu.",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5063753",
+                          "updatedAt": "2023-02-21T12:44:45Z",
+                          "publishedAt": "2023-02-21T12:44:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "Am I right in thinking that lu will be the best (given I can run it)? I tried asm and ilu, but they use up more iterations.\nI also noticed that on the tilmestep before the solve fails, there is a stress concentration on the boundary:\n\nThis seems a bit bizarre to me - could it be an issue with the periodic BCs?",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5066138",
+                          "updatedAt": "2023-02-21T15:39:11Z",
+                          "publishedAt": "2023-02-21T15:39:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I think we need to see the colorbar range in the figure as well as the convergence log before making any further hypothesis.",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5066193",
+                          "updatedAt": "2023-02-21T15:42:50Z",
+                          "publishedAt": "2023-02-21T15:42:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "Sure, here's the log.\nconvergence_issues.out.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5074636",
+                          "updatedAt": "2023-02-22T09:05:43Z",
+                          "publishedAt": "2023-02-22T09:05:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Zoophish"
+                          },
+                          "bodyText": "And this is the strange stress concentration in X on the last time step it can solve:",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5074869",
+                          "updatedAt": "2023-02-22T09:27:44Z",
+                          "publishedAt": "2023-02-22T09:27:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Trying to impose a constraint on the order of -12 is extremely challenging numerically. Please consider using a different unit system.",
+                          "url": "https://github.com/idaholab/moose/discussions/23483#discussioncomment-5076813",
+                          "updatedAt": "2023-02-22T12:44:58Z",
+                          "publishedAt": "2023-02-22T12:44:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to define a \"condition function\" or \"boolean function\" in an input file?",
+          "author": {
+            "login": "Minjiang-Zhu"
+          },
+          "bodyText": "Specifically, I want to enable or disable a sub-APP. There is a tag \"enable(Default:True)\" to control if we run this sub-APP. I wonder how to define a boolean function to control it.",
+          "url": "https://github.com/idaholab/moose/discussions/23524",
+          "updatedAt": "2023-02-24T04:37:12Z",
+          "publishedAt": "2023-02-23T21:18:01Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Minjiang-Zhu"
+                  },
+                  "bodyText": "The BoolFunctionControl solves my problem perfectly.",
+                  "url": "https://github.com/idaholab/moose/discussions/23524#discussioncomment-5094072",
+                  "updatedAt": "2023-02-24T04:37:10Z",
+                  "publishedAt": "2023-02-23T21:32:39Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "eigenstrain about two variables",
+          "author": {
+            "login": "wangzhaohao"
+          },
+          "bodyText": "I want to self edite a eigenstrain. So i see the ComputeThermalExpansionEigenstrainBase and ComputeThermalExpansionEigenstrain. i have a question about the _deigenstrain_dT. The strian formaltion is that\n$\\epsilon_D = \\triangle \\rho (e^{\\frac{T}{B}})$\nin there the variables are T and B\ni don't konw the _deigenstrain_dT is only derivative about T or about T and B. If later, i should write the addIa(thermal_strain.derivatives()) and addIa(thermal_strain.derivatives())(which is about B)`?\n// in ComputeThermalExpansionEigenstrainBase.C\n_deigenstrain_dT(is_ad ? nullptr \n                       : &this->tempalte declarePropertyDerivative<RankTwoTensor>(\n                       \"_eigenstrain_name, this->getVar(\"temperature\", 0)->name()))\n\n(*_deigenstrain_dT)[_qp].addIa(thermal_strain.derivatives());\n// in myself define\n_deiginstrain_dT...// same like above\n_deigenstrain_dB....// same like above\n(*_deigenstrain_dT)[_qp].addIa.//xxxxx(i can't)\nI think my question core is that i don't farmaily with deigenstrain (what's this doing in MOOSE? to construct the Jacobian?)\nthanks for your help!\nzhaohao Wang",
+          "url": "https://github.com/idaholab/moose/discussions/23510",
+          "updatedAt": "2023-02-23T05:13:10Z",
+          "publishedAt": "2023-02-22T13:42:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use the \"coupled()\" routine on temperature to get the index of temperature. Then you should be able to index into derivatives() to retrieve the derivative with regards to temperature. You ll need to get the degree of freedom (dof) index, this can be found from the element or the node.\nEither that or if you have a pointer to the variable (using getVar in the constructor for example) then there are \"number()\" routines.\nAn example of doing that:\n    const Elem * const sided_elem = ssf.face_side;\n    const auto dof_number = sided_elem->dof_number(_sys.number(), _var.number(), 0);\n    const auto rho_face = _rho(ssf);\n    const Real d_rho_face_d_dof = rho_face.derivatives()[dof_number];\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5081815",
+                  "updatedAt": "2023-02-22T20:59:17Z",
+                  "publishedAt": "2023-02-22T20:59:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "but there are two variables. your mean is that i only need to care about T? don't need B?",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5083008",
+                          "updatedAt": "2023-02-22T23:57:23Z",
+                          "publishedAt": "2023-02-22T23:57:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No I mean that both derivatives are there when you call derivatives() so you need to pick the right one for setting deigenstrain_dT.\nSame for deigenstrain_dB",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5083169",
+                          "updatedAt": "2023-02-23T00:16:27Z",
+                          "publishedAt": "2023-02-23T00:16:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "is there are some example for this?\nI think if there have  similar Material will help me a lot.",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5083888",
+                          "updatedAt": "2023-02-23T02:41:33Z",
+                          "publishedAt": "2023-02-23T02:41:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "not that I know but feel free to grep the repository for \"derivatives()\"",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5084118",
+                          "updatedAt": "2023-02-23T03:30:00Z",
+                          "publishedAt": "2023-02-23T03:30:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "derivatives() is a MetaPhysicL routine for retrieving derivatives of a dual number in forward mode automatic differentiation.\nFor the common AD use case where you are interested in the derivative of a function g(f) with a known variable f and its known derivatives df/dx, forward mode AD gives you the dual number (g, dg/dx) by evaluating g(f).\nThe code snippet you showed above is a more advanced usage of MetaPhysicL's forward AD. For the more advanced use case, we are using forward mode AD to also compute the second derivative.\nThe comment in the source file does a good job at explaining what's happening:\n  /**\n   * computeThermalStrain must be overridden in derived classes. The return type\n   * ValueAndDerivative<is_ad> contains the value for the thermal strain and its\n   * temperature derivative. Derived classes should use `_temperature[_qp]` to obtain\n   * the current temperature. In the is_ad == false case that member variable is\n   * agumented and will be of the type ChainedReal. I.e. even with is_ad == false\n   * a variant of forward mode automatic differentiation will be used internally to\n   * compute the thermal strain and no manual implementation of the temperature derivative\n   * is needed.\n   */\n\nHowever, downstream developers are responsible for overriding the compute eigenstrain method to also compute the derivative of the eigenstrain w.r.t. other variables, if any. Derivatives of the eigenstrain w.r.t. other variables will eventually appear in the Jacobian as you said.",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5084216",
+                          "updatedAt": "2023-02-23T03:49:21Z",
+                          "publishedAt": "2023-02-23T03:49:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "So i use ComputeVariableEigenstrain is OK?",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5084536",
+                          "updatedAt": "2023-02-23T05:05:50Z",
+                          "publishedAt": "2023-02-23T05:05:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangzhaohao"
+                          },
+                          "bodyText": "or can i use this\n_deigenstrain_dT[_qp].addIa(instantaneous_cte_T)\n_deigenstrain_dB[_qp].addIa(instantaneous_cte_B)",
+                          "url": "https://github.com/idaholab/moose/discussions/23510#discussioncomment-5084565",
+                          "updatedAt": "2023-02-23T05:13:11Z",
+                          "publishedAt": "2023-02-23T05:13:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "I wonder the difference between the two Settings",
+          "author": {
+            "login": "DYLDYLDYL"
+          },
+          "bodyText": "Hi\uff01\nI wonder the difference between the two Settings.  The former I learn from Examples and Tutorials, the latter I learn from Combined Examples.\nAnd if  I use the latter, how to output vonmises_stress?\n[Modules/TensorMechanics/Master]\n  [all]\n    block = 1\n    add_variables = true\n    strain = SMALL\n    automatic_eigenstrain_names = true\n    generate_output = 'vonmises_stress'\n  []\n    [all_2]\n    block = 2\n    add_variables = true\n    strain = SMALL\n    automatic_eigenstrain_names = true\n    generate_output = 'vonmises_stress'\n  []\n\n  [TensorMechanics]\n    displacements = 'disp_x disp_y disp_z'\n  []\n\n  [strain_inner] #We use small deformation mechanics\n    type = ComputeSmallStrain\n    displacements = 'disp_x disp_y disp_z'\n    eigenstrain_names = 'ther_expansion solid_expansion'\n    block = 1\n  []\n  [strain_outer] #We use small deformation mechanics\n    type = ComputeSmallStrain\n    displacements = 'disp_x disp_y disp_z'\n    eigenstrain_names = 'ther_expansion_2 zr'\n    block = 2\n  []\n\nThanks in advance for your help!",
+          "url": "https://github.com/idaholab/moose/discussions/23155",
+          "updatedAt": "2023-02-23T04:53:43Z",
+          "publishedAt": "2023-01-13T07:09:07Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthe first one is called an Action, the TensorMechanics master action, and it\u2019s a shorter syntax that behind the hood creates much of the second syntax. The second syntax is specifying objects more manually.\nUsing actions is less prone to user errors.\nYou can output material properties by specifying in the Material block that defines them which output you would like to place them in.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23155#discussioncomment-4678696",
+                  "updatedAt": "2023-01-13T14:58:37Z",
+                  "publishedAt": "2023-01-13T14:58:37Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Guillaume is correct. If you want to see which objects get created by the action, add these options to the Problem block:\n[Problem]\n  type = DumpObjectsProblem\n  dump_path = Modules/TensorMechanics/Master/all\n[]\nOnce you do that, you will see that RankTwoScalarAux is responsible for computing the vonmises stress.",
+                          "url": "https://github.com/idaholab/moose/discussions/23155#discussioncomment-4692229",
+                          "updatedAt": "2023-01-15T22:25:18Z",
+                          "publishedAt": "2023-01-15T22:25:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "DYLDYLDYL"
+                          },
+                          "bodyText": "Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/23155#discussioncomment-5084489",
+                          "updatedAt": "2023-02-23T04:53:43Z",
+                          "publishedAt": "2023-02-23T04:53:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Normalization of Velocity Profile for Use in Another Model IC",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "In order to have an initial guess near the expected final solution, I am solving a problem domain for the velocity profile using fluid properties that provide a more easily converged solution. I would like to then take that solution and normalize it in relation to the maximum velocity. Is there a way for me to then use, the stored solution, normalize it, then provide a multiplier for the expected max velocity based on the actual fluid properties to be used, to then be the initial conditions based on the normalized and multiplied velocity profile?",
+          "url": "https://github.com/idaholab/moose/discussions/23347",
+          "updatedAt": "2023-02-22T20:41:05Z",
+          "publishedAt": "2023-02-05T18:54:15Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nyes you can do that.\nyou ll want to save the variables in an exodus output for example. Then load them into auxiliary variables. Then use an auxkernel (likely ParsedAux) to perform the operations you wanton that field and save the output in another auxvariable.\nyou can then use this other auxiliary variable for the initialization by loading it from a file again.\nBasically you ll need an intermediate input file to perform these operations\nIf you\u2019re comfortable with MultiApps you could do this in a multi app executed on INITIAL\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23347#discussioncomment-4877290",
+                  "updatedAt": "2023-02-05T23:50:09Z",
+                  "publishedAt": "2023-02-05T23:50:08Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "If my initial solution is solved on a course mesh, Is it possible to interpolate nearest node/element solutions onto a finer mesh using the normalized values determined from the course mesh solution as the initial guess for the fine mesh problem solve?",
+                          "url": "https://github.com/idaholab/moose/discussions/23347#discussioncomment-5081569",
+                          "updatedAt": "2023-02-22T20:29:14Z",
+                          "publishedAt": "2023-02-22T20:29:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Sure.\nYou can look at using a MultiApp for that. Load your solution in the multiapp, then the transfers will do this projection from one mesh to the other for you",
+                          "url": "https://github.com/idaholab/moose/discussions/23347#discussioncomment-5081658",
+                          "updatedAt": "2023-02-22T20:41:06Z",
+                          "publishedAt": "2023-02-22T20:41:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using mesh generated by gmsh",
+          "author": {
+            "login": "RWTHLHK"
+          },
+          "bodyText": "I also need a mesh as in discussion and used the same .geo file to generate a mesh. But I have trouble defining BCs by using this mesh.  It always reports an error \"boundary top can't be found\". I checked mesh using peacock and found top, bottom and so on are blocks not boundaries. So how should I define these as boundaries in gmsh? What is the correspondence between gmsh objects and MOOSE objects? This is really not documented in detail.",
+          "url": "https://github.com/idaholab/moose/discussions/23396",
+          "updatedAt": "2023-06-24T19:44:30Z",
+          "publishedAt": "2023-02-10T10:20:16Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "RWTHLHK"
+                  },
+                  "bodyText": "The solution is to add a phsical surface, then this physical surface will be in block. The other physical curves are in boundaries.",
+                  "url": "https://github.com/idaholab/moose/discussions/23396#discussioncomment-4933905",
+                  "updatedAt": "2023-02-10T11:16:05Z",
+                  "publishedAt": "2023-02-10T11:16:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Rahim-Habibi"
+                  },
+                  "bodyText": "Hi,\ncan you share your final .geo file here.",
+                  "url": "https://github.com/idaholab/moose/discussions/23396#discussioncomment-5078473",
+                  "updatedAt": "2023-02-22T15:30:58Z",
+                  "publishedAt": "2023-02-22T15:30:58Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1110 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wNC0xM1QxOTozNzowOC0wNjowMM4APPpf"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Extra output from MaterialVectorPostprocessor in Transient simulation?",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "I'm trying to use a MaterialVectorPostprocessor to view the values of my material property at quadrature points. When I do this in a transient simulation, it seems I'm getting the full history in each csv file up to the current time. The current MaterialVectorPostprocessor test is a steady state test, so this behavior isn't seen. But if I modify the input file to do a Transient simulation like this:\n# test that all scalar material properties are properly recorded in basic usage.\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 10\n  ny = 10\n[]\n\n[Variables]\n  [./u]\n  [../]\n[]\n\n[Kernels]\n  [./diff]\n    type = Diffusion\n    variable = u\n  [../]\n  [./time]\n    type = TimeDerivative\n    variable = u\n  [../]\n[]\n\n[BCs]\n  [./left]\n    type = DirichletBC\n    variable = u\n    boundary = left\n    value = 0\n  [../]\n  [./right]\n    type = DirichletBC\n    variable = u\n    boundary = right\n    value = 1\n  [../]\n[]\n\n[Materials]\n  [./mat]\n    type = GenericConstantMaterial\n    prop_names = 'prop1 prop2 prop3'\n    prop_values = '1 2 42'\n  [../]\n[]\n\n[VectorPostprocessors]\n  [./vpp]\n    type = MaterialVectorPostprocessor\n    material = 'mat'\n    elem_ids = '3 4 7 42 88'\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  dt = 1\n  num_steps = 3\n  solve_type = PJFNK\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n[]\n\n[Outputs]\n  execute_on = 'initial timestep_end'\n  csv = true\n[]\n\nthen each CSV file is longer than the previous and presumably contains data from previous timesteps. This does not seem like the correct behavior as other Transient VPP tests will output more or less the same size number of lines on each timestep.",
+          "url": "https://github.com/idaholab/moose/discussions/20761",
+          "updatedAt": "2022-06-23T11:48:20Z",
+          "publishedAt": "2022-04-11T15:21:09Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "what do you get with this flag contains_complete_history ?\nDo you get a single file with the complete history or do you get another dissimilar behavior?\nWhat you describe seems to be in between what this option should do and what should be done normally.\nIf we can confirm this we ll raise an issue, thanks for reporting",
+                  "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2545757",
+                  "updatedAt": "2022-06-28T18:38:34Z",
+                  "publishedAt": "2022-04-11T15:34:14Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "When I set contains_complete_history = false, I see multiple csv files rather than one big one, but each one seems to contain information from all timesteps before it. If I set that flag to true, then I'm not seeing what I expect either. There is a single csv file, but, for instance, info from element 88 seems to be printed 6 times but element 3 only once? Doesn't seem right.",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2545802",
+                          "updatedAt": "2022-06-28T18:38:34Z",
+                          "publishedAt": "2022-04-11T15:41:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "@GiudGiud FWIW I don't see a call to initialize() in MaterialVectorPostprocessor.C, so is it possible we are not resetting the vectors after each iteration?",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2546840",
+                          "updatedAt": "2022-06-28T18:38:34Z",
+                          "publishedAt": "2022-04-11T18:23:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Might just be that. I have not gotten to verifying this",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2546944",
+                          "updatedAt": "2022-06-28T18:38:35Z",
+                          "publishedAt": "2022-04-11T18:42:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "I tried adding this:\nvoid\nMaterialVectorPostprocessor::initialize()\n{\n    _elem_ids.clear();\n    _qp_ids.clear();\n}\n\nWhich sort of works - the values are no longer duplicated in the output, but a bunch of zeros also get written out, and more of them when I run in parallel.",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2560691",
+                          "updatedAt": "2023-03-30T15:10:39Z",
+                          "publishedAt": "2022-04-13T15:30:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "No, that's not it. The material properties are static in this simulation and they are still being carried from one timestep to the next.\nIn the meantime, is Sampler1DReal a good substitute? Only differences as far as I can tell is you specify blocks rather than element numbers. You don't get the element and qp number either, but that's ok.",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2562300",
+                          "updatedAt": "2023-03-30T15:10:40Z",
+                          "publishedAt": "2022-04-13T19:37:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "only if you are using the thermal hydraulics module",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2562572",
+                          "updatedAt": "2023-03-30T15:10:31Z",
+                          "publishedAt": "2022-04-13T20:32:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "well that might be an exageration. But you will definitely need to link the module in your application to use it",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2562577",
+                          "updatedAt": "2023-03-30T15:10:31Z",
+                          "publishedAt": "2022-04-13T20:33:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "I'm working in a Stork app so I can just edit the Makefile to bring it in. I would assume it's only a temporary solution until someone can fix the VPP.",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2562592",
+                          "updatedAt": "2023-03-30T15:10:31Z",
+                          "publishedAt": "2022-04-13T20:36:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I can reproduce this.\nI think it's just the code that uses push_back everywhere, adding in the vectors instead of replacing the values.\nI ll make a PR",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2575495",
+                          "updatedAt": "2023-03-30T15:10:31Z",
+                          "publishedAt": "2022-04-15T17:04:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Great, thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/20761#discussioncomment-2576643",
+                          "updatedAt": "2023-03-30T15:10:31Z",
+                          "publishedAt": "2022-04-15T20:31:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Issues in output inherited from base class 'CrystalPlasticityStressUpdateBase'",
+          "author": {
+            "login": "xchengood"
+          },
+          "bodyText": "Hi moose experts or users,\nI recently developed a custom class studying creep behavior (e.g. strain vs. time, strain rate vs. time)in which the base class CrystalPlasticityStressUpdateBase is used. I checked some functions in the base class that has been overwritten in the child class and printed out some key variables. All look good. The problem is that all outputted strain_zz are 0 under a certain temperature and pressure in BCs. But if I used tensile load like '0.01*t', there will output non-zero values. This is very strange. I hope the simulation is performed using the former conditions. Could anyone share ideas and advice with me to fix it?",
+          "url": "https://github.com/idaholab/moose/discussions/20593",
+          "updatedAt": "2022-07-27T14:11:27Z",
+          "publishedAt": "2022-03-18T18:57:35Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "sapitts"
+                  },
+                  "bodyText": "Hi @xchengood,\nHave you been able to replicate this issue with one of the crystal plasticity classes (that inherits from CrystalPlasticityStressUpdateBase) in the MOOSE repository? If not, would you please create an input file that uses one of the classes checked into the MOOSE repository please? I'd recommend using CrystalPlasticityKalidindiUpdate and just the pressure BC to start\nHaving an input file that uses a checked-in class will allow us to narrow where the problem occurs. And having a MOOSE-repository based input file means it will be easier for me to look at your input file too.\nHope this helps,\nStephanie",
+                  "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2423131",
+                  "updatedAt": "2022-07-27T14:11:27Z",
+                  "publishedAt": "2022-03-23T14:35:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Hi @sapitts. Thank you for your advice. I tried to use CrystalPlasticityKalidindiUpdate and CrystalPlasticityHCPDislocationSlipBeyerleinUpdate and both are set pressure as BCs.\nFor the CrystalPlasticityKalidindiUpdate, the input file is below.\nupdate_method_test-1.txt\nThe outputted total lagrangian strain (e_zz) and plastic deformation gradient (fp_zz) as a function of time at 1350K under 200MPa look good as shown below.\n\nFor the CrystalPlasticityHCPDislocationSlipBeyerleinUpdate, the input file is below.\nupdate_method_hcp_no_substructure111.txt\nBut the outputted total lagrangian strain (e_zz) and plastic deformation gradient (fp_zz) at 1300K under 100MPa look weird and are constant. The curves are shown below. I thought this is probably caused by not setting high enough temperature and tensile stress, So I try at 1600K and 200MPa. It still outputs constant e_zz and fp_zz.\n\n\nHaving an input file that uses a checked-in class will allow us to narrow where the problem occurs?\n\nSorry, could you share more about how to use a checked-in class with me in an input file?\nThank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2431362",
+                          "updatedAt": "2022-07-27T14:11:31Z",
+                          "publishedAt": "2022-03-24T16:03:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sapitts"
+                          },
+                          "bodyText": "Sorry, could you share more about how to use a checked-in class with me in an input file?\n\nYou've done this with the attached text files. Thanks for adding those! I'll take a look and get back to you next week",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2431581",
+                          "updatedAt": "2022-07-27T14:11:40Z",
+                          "publishedAt": "2022-03-24T16:29:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2431845",
+                          "updatedAt": "2022-07-27T14:11:40Z",
+                          "publishedAt": "2022-03-24T17:02:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sapitts"
+                          },
+                          "bodyText": "Hi @xchengood,\nThere are a couple of changes that needed to be made to the input file using the the CrystalPlasticityHCPDislocationSlipBeyerleinUpdate class to show variation in the strain and plastic deformation measures (in the zz component):\n\nUse of physical values for the substructure rate coefficients: Change the line\nsubstructure_rate_coefficient_per_mode = '-355 -0.4' #artifical, non-physical values for testing purposes\nto reflect physical properties, such as\nsubstructure_rate_coefficient_per_mode = '355 0.4' #from Capolungo et al MSEA (2009)\nas given in the regression test update_method_hcp_aprismatic_capyramidal.i.\nApply a higher stress value so as to overcome the slip system resistance:\nIn the provided input file, the resolved shear stress on the active slip systems was less than 3% of the slip system resistance. As a result, no dislocation evolution occurred in the simulation.\n\nThe simulation results from these input file changes do show the evolution of the total lagrangian strain (beyond the initial elastic response you showed above) and plastic deformation gradient. For quick reference, here are the two input files I used to investigate this issue:\n\nModified input file: userlist_hcp_corrected.txt\nOriginal input file, with additional outputs for the dislocation densities:\nuserlist_hcp_original_extra_outputs.txt\n\nI'll add figures to compare the results early next week. I hope the comparison input files will help in debugging your custom creep behavior class",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2489084",
+                          "updatedAt": "2022-07-27T14:11:44Z",
+                          "publishedAt": "2022-04-01T23:35:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@sapitts. Thank you very much. That is very helpful. Let me run it and look at how the strain changes with time.",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2502046",
+                          "updatedAt": "2022-12-20T16:56:38Z",
+                          "publishedAt": "2022-04-04T16:51:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "sapitts"
+                  },
+                  "bodyText": "Here are the plots comparing the original hcp input file (userlist_hcp_original_extra_outputs.txt)\nand the modified input file (userlist_hcp_corrected_tension.txt). Please note that I've corrected the modified input file from Friday to use a tensile pressure instead of the default compressive pressure.\nThe total lagranian strain and the plastic deformation gradient show elastic behavior for the original input and plastic deformation behavior for the modified input file (temperature constant at 1300K):\n   \nThis difference in behavior is primarily because the slip resistance (on the first prismatic slip system which is active in this loading orientation)  is an order of magnitude larger than the applied resolved shear stress on the same system:\n\n\nThis mismatch in the applied resolved shear stress and the slip system resistance is such that the forest dislocation density (on the same prismatic slip system) and substructure density (total quantity) can only evolve in the modified input file:",
+                  "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2504552",
+                  "updatedAt": "2022-07-27T14:11:42Z",
+                  "publishedAt": "2022-04-05T01:34:36Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Hi @sapitts. Sorry for the late reply. Thank you very much for your detailed comparison information. I ran it and got the same results and had a careful look at the output variable values. It is really helpful for me to check my test file.\nLast one small question, what software do you use to draw those figures. They look brief but beautiful. It seems not to use Excel or origin.",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2524360",
+                          "updatedAt": "2022-07-27T14:11:53Z",
+                          "publishedAt": "2022-04-07T14:42:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "@xchengood  should be matplotlib I guess",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2540623",
+                          "updatedAt": "2022-07-27T14:11:53Z",
+                          "publishedAt": "2022-04-10T19:52:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sapitts"
+                          },
+                          "bodyText": "Hi @xchengood, @ngrilli  is correct, I used matplotlib and pandas to generate those graphs. Here's the python script (which you will have to resave as a *.py file in order to run):\nplot_physical_quantities_comparison.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2575815",
+                          "updatedAt": "2022-07-27T14:11:53Z",
+                          "publishedAt": "2022-04-15T17:14:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@ngrilli and @sapitts, Thank you very much.",
+                          "url": "https://github.com/idaholab/moose/discussions/20593#discussioncomment-2576503",
+                          "updatedAt": "2023-01-11T02:52:46Z",
+                          "publishedAt": "2022-04-15T19:55:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "error compiling test: no matching function for call to \u2018isinf(const MetaPhysicL",
+          "author": {
+            "login": "dealmeidavf"
+          },
+          "bodyText": "Hello,\nIn a recent MOOSE pull from repo, and full recompile (GCC upgraded to 11.2.1) on Linux, the test build had an error:\n/usr/include/eigen3/Eigen/src/Core/MathFunctions.h:1004:36: error: no matching function for call to \u2018isinf(const MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, unsigned int, MetaPhysicL::NWrapper<53> >, true>&)\u2019\n 1004 |     return isinf EIGEN_NOT_A_MACRO (x);\n      |            ~~~~~~~~~~~~~~~~~~~~~~~~^~~\nIn file included from /usr/lib/gcc/x86_64-pc-linux-gnu/11.2.1/include/g++-v11/complex:44,\n                 from /home/dealmeida/gentoo-home/work/codes/moose/scripts/../libmesh/installed/include/libmesh/libmesh_common.h:46,\n                 from /home/dealmeida/gentoo-home/work/codes/moose/framework/build/header_symlinks/DualReal.h:14,\n                 from /home/dealmeida/gentoo-home/work/codes/moose/framework/build/header_symlinks/DualRealOps.h:13,\n                 from /home/dealmeida/gentoo-home/work/codes/moose/framework/src/utils/RankTwoTensor.C:10:\n/usr/lib/gcc/x86_64-pc-linux-gnu/11.2.1/include/g++-v11/cmath:605:5: note: candidate: \u2018template<class _Tp> constexpr typename __gnu_cxx::__enable_if<std::__is_integer<_Tp>::__value, bool>::__type std::isinf(_Tp)\u2019\n  605 |     isinf(_Tp __x)\n      |     ^~~~~\n/usr/lib/gcc/x86_64-pc-linux-gnu/11.2.1/include/g++-v11/cmath:605:5: note:   template argument deduction/substitution failed:\n\n[snip]\n\nmake: *** [/home/dealmeida/gentoo-home/work/codes/moose/framework/build.mk:145: /home/dealmeida/gentoo-home/work/codes/moose/framework/src/utils/RankTwoTensor.x86_64-pc-linux-gnu.opt.lo] Error 1\nI also updated and recompiled PETSc to version 3.16.5, OMPI 4.1.2 and GCC 11.2.1\nThanks for inputs.\n--\nValmor",
+          "url": "https://github.com/idaholab/moose/discussions/20597",
+          "updatedAt": "2022-07-04T18:24:25Z",
+          "publishedAt": "2022-03-20T16:34:15Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Valmor\nlooks like you just need to update libmesh. Please run \u2018mamba update moose-libmesh\u2019 and see if it fixes it. If it doesn\u2019t then please report the output of \u2018mamba list\u2019\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2398916",
+                  "updatedAt": "2022-07-04T18:24:25Z",
+                  "publishedAt": "2022-03-20T22:01:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dealmeidavf"
+                          },
+                          "bodyText": "Hello Guillaume,\nI do not have mamba installed on my linux system. Is that necessary?\nlibmesh has been fully recompiled with: ./scripts/update_and_rebuild_libmesh.sh issued in the path-to/moose/ directory. Before that, the following git commands were used:\n\u2022 git clean -xfd\n\u2022 git submodule deinit -f libmesh\n\u2022 git submodule update --init --recursive libmesh\nThanks,\n--\nValmor",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2407966",
+                          "updatedAt": "2022-07-10T04:01:11Z",
+                          "publishedAt": "2022-03-21T15:46:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No it's not, using update_and_rebuild_libmesh.sh script is valid too.\nBut you dont need to initialize or update the libmesh submodule, the script does it for you. I'd deinit it then try the script again",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2408024",
+                          "updatedAt": "2022-07-10T04:01:11Z",
+                          "publishedAt": "2022-03-21T15:53:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dealmeidavf"
+                          },
+                          "bodyText": "I did:\n\ngit clean -xfd\ngit submodule deinit -f libmesh\n./scripts/update_and_rebuild_libmesh.sh\ncd test\nmake -j 4\n\nStill the same error; unable to compile tests or any app. I am not using tensors in my apps but still make will not work. Apparently if the test directory does not compile, apps will not compile either?\nThanks for inputs.\n--\nValmor",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2411903",
+                          "updatedAt": "2022-07-10T04:01:16Z",
+                          "publishedAt": "2022-03-22T04:58:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The error message seems to come from eigen, but not one we install, one that is already present on your system.\nDid you modify your LIBRARY_PATH environment variable?",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2411932",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T05:10:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dealmeidavf"
+                          },
+                          "bodyText": "No change to LIBRARY_PATH. I recompiled PETSc; is eigen from PETSc? I noticed I was not able to compile with fblaslapack and did not download it because I thought the Fortran version of blas and lapack are not used with c++ code; could this be the problem? That is, fblaslapack need to be downloaded with PETSc and compiled. The only reason to have PETSc on my system is to use it with MOOSE.",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2411950",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T05:17:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh the petsc is too new. 3.16 is not supported yet.\nCould you please use the update_abd_rebuild_petsc script instead of installing it yourself?",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2412004",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T05:38:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "PETSc 3.16.5 will be supported by the end of the week (likely sooner) in #20580.",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2415410",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T14:42:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dealmeidavf"
+                          },
+                          "bodyText": "I did recompile PETSc with fblaslapack (using the gitlab repo this turns out to be version 3.16.5) and recompiled the whole of MOOSE (libmesh included). The test build let to:\nchecking /usr/local/petsc_ompi//include/petscversion.h usability... no\nchecking /usr/local/petsc_ompi//include/petscversion.h presence... no\nchecking for /usr/local/petsc_ompi//include/petscversion.h... no\nchecking /usr/local/petsc_ompi/include/petscversion.h usability... no\nchecking /usr/local/petsc_ompi/include/petscversion.h presence... no\nchecking for /usr/local/petsc_ompi/include/petscversion.h... no\nconfigure: error: *** PETSc was not found, but --enable-petsc-required was specified.\nPETSc is definitely on my system, is this a version issue then? It would be nice to have a warning about the unsupported version if this is the case. Is there a file in the MOOSE directory that shows which version of PETSc is supported?\nThanks,\n--\nValmor",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2416629",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T17:37:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It is currently not supported. Please downgrade petsc if you want to work with MOOSE today.\nTo do that, use the update_and_rebuild_petsc script.",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2416956",
+                          "updatedAt": "2022-08-02T15:21:47Z",
+                          "publishedAt": "2022-03-22T18:33:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Petsc is updated (has been for 2 weeks roughly)\nso you can use this petsc now btw",
+                          "url": "https://github.com/idaholab/moose/discussions/20597#discussioncomment-2504947",
+                          "updatedAt": "2022-08-02T15:21:48Z",
+                          "publishedAt": "2022-04-05T03:15:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error in Moose Installation",
+          "author": {
+            "login": "npaloskey"
+          },
+          "bodyText": "I keep getting the following errors when attempting to run tests after compiling libmesh\nmisc/check_error.steady_no_converge: Working Directory: /storage/home/n/ngp11/projects/moose/test/tests/misc/check_error\nmisc/check_error.steady_no_converge: Running command: /storage/home/n/ngp11/projects/moose/test/moose_test-opt -i steady_no_converge.i --error --error-unused --error-override --no-gdb-backtrace\nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: Framework Information:\nmisc/check_error.steady_no_converge: MOOSE Version:           git commit 16505c7 on 2022-03-28\nmisc/check_error.steady_no_converge: LibMesh Version:         7315cdb99555e4d774fc149b8c659f1e56955053\nmisc/check_error.steady_no_converge: PETSc Version:           3.16.5\nmisc/check_error.steady_no_converge: SLEPc Version:           3.16.2\nmisc/check_error.steady_no_converge: Current Time:            Wed Mar 30 11:56:42 2022\nmisc/check_error.steady_no_converge: Executable Timestamp:    Wed Mar 30 03:40:32 2022\nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: Parallelism:\nmisc/check_error.steady_no_converge:   Num Processors:          1\nmisc/check_error.steady_no_converge:   Num Threads:             1\nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: Mesh: \nmisc/check_error.steady_no_converge:   Parallel Type:           replicated\nmisc/check_error.steady_no_converge:   Mesh Dimension:          2\nmisc/check_error.steady_no_converge:   Spatial Dimension:       2\nmisc/check_error.steady_no_converge:   Nodes:                   121\nmisc/check_error.steady_no_converge:   Elems:                   100\nmisc/check_error.steady_no_converge:   Num Subdomains:          1\nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: Nonlinear System:\nmisc/check_error.steady_no_converge:   Num DOFs:                121\nmisc/check_error.steady_no_converge:   Num Local DOFs:          121\nmisc/check_error.steady_no_converge:   Variables:               \"u\" \nmisc/check_error.steady_no_converge:   Finite Element Types:    \"LAGRANGE\" \nmisc/check_error.steady_no_converge:   Approximation Orders:    \"FIRST\" \nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: Execution Information:\nmisc/check_error.steady_no_converge:   Executioner:             Steady\nmisc/check_error.steady_no_converge:   Solver Mode:             Preconditioned JFNK\nmisc/check_error.steady_no_converge:   PETSc Preconditioner:    hypre boomeramg \nmisc/check_error.steady_no_converge: \nmisc/check_error.steady_no_converge: HDF5-DIAG: Error detected in HDF5 (1.12.1) thread 0:\nmisc/check_error.steady_no_converge:   #000: H5T.c line 1929 in H5Tcopy(): not a datatype or dataset\nmisc/check_error.steady_no_converge:     major: Invalid arguments to routine\nmisc/check_error.steady_no_converge:     minor: Inappropriate type\n\nNot sure what the issue is here but the tests stop after about 176 passing and 50 failed.",
+          "url": "https://github.com/idaholab/moose/discussions/20672",
+          "updatedAt": "2022-05-31T15:04:03Z",
+          "publishedAt": "2022-03-30T16:03:16Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nLooks like an hdf5 error.\nCan you please paste the output of ldd <your_executable (probably moose_test-opt)>  ?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2471387",
+                  "updatedAt": "2022-05-31T15:04:03Z",
+                  "publishedAt": "2022-03-30T16:17:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "yes, below is the output:\n(tutorial-env) [ngp11@submit-004 moose]$ ldd /storage/home/ngp11/projects/moose/test/moose_test-opt\nDue to MODULEPATH changes, the following have been reloaded:\n\ncmake/3.18.4\n\nlinux-vdso.so.1 =>  (0x00007fffb1fdc000)\nlibmoose_test-opt.so.0 => /storage/home/ngp11/projects/moose/test/lib/libmoose_test-opt.so.0 (0x00007f560a3c0000)\nlibmoose-opt.so.0 => /storage/home/ngp11/projects/moose/framework/libmoose-opt.so.0 (0x00007f5608306000)\nlibpcre-opt.so.0 => /storage/home/ngp11/projects/moose/framework/contrib/pcre/libpcre-opt.so.0 (0x00007f56080db000)\nlibhit-opt.so.0 => /storage/home/ngp11/projects/moose/framework/contrib/hit/libhit-opt.so.0 (0x00007f5607e78000)\nlibmesh_opt.so.0 => /storage/home/ngp11/projects/moose/scripts/../libmesh/installed/lib/libmesh_opt.so.0 (0x00007f56068e8000)\nlibnetcdf.so.13 => /storage/home/ngp11/projects/moose/scripts/../libmesh/installed/lib/libnetcdf.so.13 (0x00007f56065db000)\nlibsz.so.2 => /lib64/libsz.so.2 (0x00007f56063d8000)\nlibtimpi_opt.so.10 => /storage/home/ngp11/projects/moose/scripts/../libmesh/installed/lib/libtimpi_opt.so.10 (0x00007f56061bc000)\nlibhdf5_cpp.so.8 => /lib64/libhdf5_cpp.so.8 (0x00007f5605f67000)\nlibz.so.1 => /lib64/libz.so.1 (0x00007f5605d51000)\nlibslepc.so.3.16 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libslepc.so.3.16 (0x00007f560579d000)\nlibpetsc.so.3.16 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libpetsc.so.3.16 (0x00007f5603dea000)\nlibHYPRE-2.23.0.so => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libHYPRE-2.23.0.so (0x00007f56037c9000)\nlibstrumpack.so => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libstrumpack.so (0x00007f5602d6a000)\nlibsuperlu_dist.so.7 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libsuperlu_dist.so.7 (0x00007f5602a6a000)\nlibpthread.so.0 => /lib64/libpthread.so.0 (0x00007f560284e000)\nlibhdf5_hl.so.200 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libhdf5_hl.so.200 (0x00007f560262c000)\nlibhdf5.so.200 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libhdf5.so.200 (0x00007f5601fb0000)\nlibparmetis.so => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libparmetis.so (0x00007f5601d71000)\nlibmetis.so => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libmetis.so (0x00007f5601b0f000)\nlibX11.so.6 => /lib64/libX11.so.6 (0x00007f56017d1000)\nlibmpifort.so.12 => /opt/aci/sw/mpich/3.2_gcc-8.3.1-uia/lib/libmpifort.so.12 (0x00007f5601598000)\nlibmpi.so.12 => /opt/aci/sw/mpich/3.2_gcc-8.3.1-uia/lib/libmpi.so.12 (0x00007f5601125000)\nlibgfortran.so.5 => /lib64/libgfortran.so.5 (0x00007f5600cad000)\nlibgcc_s.so.1 => /lib64/libgcc_s.so.1 (0x00007f5600a97000)\nlibrt.so.1 => /lib64/librt.so.1 (0x00007f560088f000)\nlibquadmath.so.0 => /lib64/libquadmath.so.0 (0x00007f5600653000)\nlibstdc++.so.6 => /lib64/libstdc++.so.6 (0x00007f560034b000)\nlibdl.so.2 => /lib64/libdl.so.2 (0x00007f5600147000)\nlibmpicxx.so.12 => /opt/aci/sw/mpich/3.2_gcc-8.3.1-uia/lib/libmpicxx.so.12 (0x00007f55fff26000)\nlibm.so.6 => /lib64/libm.so.6 (0x00007f55ffc24000)\nlibgomp.so.1 => /lib64/libgomp.so.1 (0x00007f55ff9fe000)\nlibc.so.6 => /lib64/libc.so.6 (0x00007f55ff630000)\nlibaec.so.0 => /lib64/libaec.so.0 (0x00007f55ff428000)\nlibhdf5.so.8 => /lib64/libhdf5.so.8 (0x00007f55fef82000)\n/lib64/ld-linux-x86-64.so.2 (0x00007f560aefe000)\nlibxcb.so.1 => /lib64/libxcb.so.1 (0x00007f55fed5a000)\nlibXau.so.6 => /lib64/libXau.so.6 (0x00007f55feb56000)\n\n(tutorial-env) [ngp11@submit-004 moose]$\nThanks for the quick reply Guillaume! Also to note, the installation is for an HPC cluster. Ive installed before and have had no problems,  I had to delete and reinstall due to storage issues and now I'm running into these problems.",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2471837",
+                          "updatedAt": "2022-05-31T15:04:03Z",
+                          "publishedAt": "2022-03-30T17:16:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so\nlibhdf5_hl.so.200 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libhdf5_hl.so.200 (0x00007f560262c000)\nlibhdf5.so.200 => /storage/home/n/ngp11/projects/moose/petsc/arch-moose/lib/libhdf5.so.200 (0x00007f5601fb0000)\n\nand\nlibhdf5.so.8 => /lib64/libhdf5.so.8 (0x00007f55fef82000)\n\nmeans we are linking to two different hdf5 libraries, which is a recipe for trouble.\nYou ll have to re-install and tell petsc where the hdf5 library is (set HDF5_DIR I or _ROOT I think), or find a way to hide the systemh df5 library.\n@milljm do you know how to do that?",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2471923",
+                          "updatedAt": "2022-07-01T13:29:25Z",
+                          "publishedAt": "2022-03-30T17:28:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "do you know which hdf5 library would be the correct one to use?",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472044",
+                          "updatedAt": "2022-07-01T13:29:27Z",
+                          "publishedAt": "2022-03-30T17:49:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We might have restrictions on versions.\n@cticenhour will know too",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472134",
+                          "updatedAt": "2022-08-02T15:18:11Z",
+                          "publishedAt": "2022-03-30T18:10:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The correct library will be the one provided by PETSc. Preventing the discovery of system hdf5 though... I sorta thought we had that figured out in libMesh. I'm afraid I won't be of much help on the latter...",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472228",
+                          "updatedAt": "2022-08-02T15:18:11Z",
+                          "publishedAt": "2022-03-30T18:27:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "Attempting to install again but this time placing Petsc outside of moose in another directory i created to see if it changes anything. It looks like at the bottom of the code pasted below that PETSC did not detect a system hdf5 and is using its own so i think the problem lies in the libmesh compilation if the same error persists once I compile libmesh again. I will provide updates soon\n(tutorial-env) [ngp11@submit-006 moose]$ ./scripts/update_and_rebuild_petsc.sh --prefix=/storage/home/ngp11/projects/petsc_install\n\nDue to MODULEPATH changes, the following have been reloaded:\n  1) cmake/3.18.4\n\n/storage/home/ngp11/projects/moose/scripts\nSubmodule 'petsc' (https://gitlab.com/petsc/petsc.git) registered for path 'petsc'\nCloning into 'petsc'...\nremote: Enumerating objects: 1002562, done.\nremote: Counting objects: 100% (45790/45790), done.\nremote: Compressing objects: 100% (5880/5880), done.\nremote: Total 1002562 (delta 43771), reused 40586 (delta 39906), pack-reused 956772\nReceiving objects: 100% (1002562/1002562), 294.59 MiB | 45.08 MiB/s, done.\nResolving deltas: 100% (769619/769619), done.\nSubmodule path 'petsc': checked out 'f855b95493736b087b8ccc16dc6c5b29bc4b5aa8'\nINFO: Checking for HDF5...\nINFO: HDF5 library not detected, opting to download via PETSc...\n=============================================================================================\n                      Configuring PETSc to compile on your system",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472498",
+                          "updatedAt": "2022-08-02T15:18:12Z",
+                          "publishedAt": "2022-03-30T19:02:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "That\u2019s a good point. It could be libmesh or even moose (doubt it very much) looking at the wrong hdf5. Let s build the test executables for petsc and libmesh then check with ldd",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472617",
+                          "updatedAt": "2022-08-02T15:18:13Z",
+                          "publishedAt": "2022-03-30T19:19:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "sounds good, it takes like 2ish hours to compile libmesh so ill get back to you when thats completed. Thanks again!",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2472764",
+                          "updatedAt": "2022-08-02T15:18:13Z",
+                          "publishedAt": "2022-03-30T19:44:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "@GiudGiud, looks like the same issue again, all the same tests are failing. Do you know where I could find the test executables for libmesh and petsc so we can check with ldd?",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2473789",
+                          "updatedAt": "2022-08-02T15:18:13Z",
+                          "publishedAt": "2022-03-30T22:18:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "npaloskey"
+                          },
+                          "bodyText": "Found this in the March MOOSE newsletter, could this have something to do with the issue here?\nHDF5 support in PETSc and libMesh now requested by default\nThe update_and_rebuild_petsc script now performs a basic search for a supported HDF5 installation in the local environment by default. Developers can place an HDF5 installation in the following searched locations:\n/usr/lib/hdf5\n/usr/local/hdf5\n/usr/share/hdf5\n/usr/local/hdf5/share\n$HOME/.local\nOr select a custom location by setting one of the environment variables HDF5_DIR, HDF5DIR, or HDF5_ROOT. If a compatible installation cannot be found, PETSc will download and build it for the user on Linux. This fallback download option is not yet available on MacOS, but will be coming soon. Subsequently, the update_and_rebuild_libmesh script now uses the --enable-hdf5 configure flag and, with recent libMesh changes, attempts to find the HDF5 installation used by PETSc.\nThe new conda packages mentioned above all contain the PETSc default HDF5 on Linux, but no HDF5 is currently provided on MacOS (coming soon). A serial, pre-built HDF5 is available within the moose-tools package on either platform if this is sufficient for developer needs.",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2474279",
+                          "updatedAt": "2022-08-02T15:18:13Z",
+                          "publishedAt": "2022-03-31T00:30:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "npaloskey"
+                  },
+                  "bodyText": "Set HDF5_DIR env variable to location of HDF5 installation in system",
+                  "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2478988",
+                  "updatedAt": "2022-07-01T13:29:26Z",
+                  "publishedAt": "2022-03-31T14:53:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I was unaware of HDF5_DIR as an influential environment variable. Good to know, and I probably should have :) Cheers!",
+                          "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2479296",
+                          "updatedAt": "2022-07-01T13:29:31Z",
+                          "publishedAt": "2022-03-31T15:29:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Thanks all. Had this same problem. Fixed by using system HDF5, which was 1.10.7.",
+                  "url": "https://github.com/idaholab/moose/discussions/20672#discussioncomment-2574220",
+                  "updatedAt": "2022-07-01T13:29:33Z",
+                  "publishedAt": "2022-04-15T13:48:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Eigenstrain in Phase Field Models",
+          "author": {
+            "login": "ppandit95"
+          },
+          "bodyText": "Dear MOOSE Community\nI am working with the martensite transformation simulation for which my model is 2D and I need to add variable eigenstrain for which I have specified the eigen_base as \"0.1 0 0 0 -0.1 0 0 0 0\" as I wanted to incorporate a vector \"0.1 -0.1 0\" but I am not sure that I have implemented it correctly.So any help in this regard will be beneficial.\nMany Thanks\nPushkar",
+          "url": "https://github.com/idaholab/moose/discussions/20726",
+          "updatedAt": "2022-10-28T14:40:14Z",
+          "publishedAt": "2022-04-06T12:47:51Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAny benchmarks you know of he could check his implementation on?\n@SudiptaBiswas @jiangwen84\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20726#discussioncomment-2568333",
+                  "updatedAt": "2022-10-28T14:40:33Z",
+                  "publishedAt": "2022-04-14T16:57:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ppandit95"
+                          },
+                          "bodyText": "Thanks @GiudGiud",
+                          "url": "https://github.com/idaholab/moose/discussions/20726#discussioncomment-2570694",
+                          "updatedAt": "2022-10-28T14:40:47Z",
+                          "publishedAt": "2022-04-15T02:40:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "SudiptaBiswas"
+                  },
+                  "bodyText": "@ppandit95 You can visualize the deformation of your simulation block to make sure you have implemented the eigen-strain correctly. You can find an example in Section 5 of this paper, https://www.sciencedirect.com/science/article/pii/S0168874X20301165.\nAlso, there are multiple examples in,  https://github.com/idaholab/moose/tree/next/modules/combined/examples/phase_field-mechanics.",
+                  "url": "https://github.com/idaholab/moose/discussions/20726#discussioncomment-2568473",
+                  "updatedAt": "2022-10-28T14:40:47Z",
+                  "publishedAt": "2022-04-14T17:21:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ppandit95"
+                          },
+                          "bodyText": "Thanks @SudiptaBiswas for directing to relevant sources ...",
+                          "url": "https://github.com/idaholab/moose/discussions/20726#discussioncomment-2570688",
+                          "updatedAt": "2022-10-28T14:40:47Z",
+                          "publishedAt": "2022-04-15T02:38:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Find specified object in a dynamically linked library",
+          "author": {
+            "login": "hhy2022"
+          },
+          "bodyText": "Hello, I was trying to develop one simple advection application and I followed the guidance on this page: [https://mooseframework.inl.gov/source/kernels/ConservativeAdvection.html]\nI got this message:\n*** ERROR ***\nA 'InflowBC' is not a registered object.\n\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 1\nFinished: Exit code: 1\n\nI understood that I didn't link my appliction to the right library and I tried to do so by enabling some physical module in the \"Makefile\" file and re-compile the application.\nAfter that, I check my library with the comman ls src/* include/* and the messages were:\nsrc/main.C\nsrc/main.x86_64-conda-linux-gnu.opt.lo\nsrc/main.x86_64-conda-linux-gnu.opt.lo.d\ninclude/base:\nCatApp.h\nsrc/base:\nCatApp.C                              CatApp.x86_64-conda-linux-gnu.opt.lo.d\nCatApp.x86_64-conda-linux-gnu.opt.lo\nIt seemed that I didn't change anything. I might use the wrong way to link my application to the library and I am confused on how to do so.\nBesides, If I only know the specified parts (like ConservativeAdvection Kernel) I would like to use, which physical module should I enable to make sure I could use those parts successefully? I checked the link https://mooseframework.inl.gov/modules/ and didn't find the ConservativeAdvection Kernel at any module, so I am wondering if there is  a list on the module detailed information.\nThank you so much for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/20787",
+          "updatedAt": "2022-06-13T14:42:14Z",
+          "publishedAt": "2022-04-14T08:03:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nlinking to an application is not going to modify the source and headers in your application. It will just link to something that was compiled elsewhere.\nWhere is this InflowBC you need? I dont see it in the moose modules.\nConservativeAdvection is a framework object, so it's available by default\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20787#discussioncomment-2568069",
+                  "updatedAt": "2022-06-13T14:42:20Z",
+                  "publishedAt": "2022-04-14T16:19:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hhy2022"
+                          },
+                          "bodyText": "InflowBC was used in the boundary conditions. Since it was a advection problem, I would need to defined mass flow inlet and outlet.\nI followed the guidance on this page .\nSo this was a test kernel and if I would like to use it, I had to copied some of the .h and .c files to my own directory and compiled them. Right?",
+                          "url": "https://github.com/idaholab/moose/discussions/20787#discussioncomment-2570271",
+                          "updatedAt": "2022-06-13T14:42:14Z",
+                          "publishedAt": "2022-04-14T23:59:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hhy2022"
+                          },
+                          "bodyText": "Sorry, I link was: https://mooseframework.inl.gov/source/kernels/ConservativeAdvection.html",
+                          "url": "https://github.com/idaholab/moose/discussions/20787#discussioncomment-2570277",
+                          "updatedAt": "2022-06-13T14:42:14Z",
+                          "publishedAt": "2022-04-14T23:59:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ConservativeAdvection is not a test kernel. You can use it in your app by default because it's part of the framework kernels.\nInflowBC is a test object in MOOSE. So yes you would need to move it to your application",
+                          "url": "https://github.com/idaholab/moose/discussions/20787#discussioncomment-2570305",
+                          "updatedAt": "2022-06-13T14:42:15Z",
+                          "publishedAt": "2022-04-15T00:09:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hhy2022"
+                          },
+                          "bodyText": "Got you. Thank you so much for your help.",
+                          "url": "https://github.com/idaholab/moose/discussions/20787#discussioncomment-2570325",
+                          "updatedAt": "2022-06-20T18:20:25Z",
+                          "publishedAt": "2022-04-15T00:18:20Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Microstructural evolution of multi-component and multi-phase steel",
+          "author": {
+            "login": "aminsakic"
+          },
+          "bodyText": "Hello everyone,\nI started studying the phase field method and there are some things that I am confused about.\nSo, first i want to reproduce the results from the paper https://www.sciencedirect.com/science/article/pii/S0927025615007053?casa_token=qMFeBGAUOtYAAAAA:1h1ybuqIpB-BVNrFld5PLev3m4h_8ekojyxLKndauo_uqAhKJcVbOGy3i_96LX63QNdhVs3rjwA.\nAnd I'm already having a hard time getting an initial polycrystalline microstructure like in Figures 3a and 3b. Can this be achieved with the PolycrystalVoronoi object?\nThank you for reading my post, I would really appreciate your answers.\nBest regards,\nAmin",
+          "url": "https://github.com/idaholab/moose/discussions/20732",
+          "updatedAt": "2022-06-09T07:55:50Z",
+          "publishedAt": "2022-04-07T07:09:49Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@SudiptaBiswas @laagesen any thoughts on this?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20732#discussioncomment-2568312",
+                  "updatedAt": "2022-06-09T07:56:08Z",
+                  "publishedAt": "2022-04-14T16:55:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "SudiptaBiswas"
+                  },
+                  "bodyText": "The 3D microstructure in the linked paper (3b) looks like a typical Voronoi structure. You should be able to generate something similar with PolycrystalVoronoi objects. See initial condition examples in MOOSE.\nThe 2D microstructure seems to have curved grain boundaries, the Voronoi initial condition would not create that (it only creates straight boundaries). You will have to include some sort of anisotropy and then let the structure evolve to such a state.\nNote: In either of these cases, reproducing the exact microstructure might not be feasible without knowing the grain centers.",
+                  "url": "https://github.com/idaholab/moose/discussions/20732#discussioncomment-2568428",
+                  "updatedAt": "2022-06-09T07:56:10Z",
+                  "publishedAt": "2022-04-14T17:13:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Time of Preconditioner's tasks",
+          "author": {
+            "login": "jinca"
+          },
+          "bodyText": "Hello dear MOOSE group,\nIt is very clear for me to identify the memory spent by a preconditioner in an input file.\nIt is a chart where it is indicated the \"Reports information only for process 0.\"\nMay I ask about the time spent for the preconditioner?\nIn the chart there is a part about Preconditioner Setup + Applying the PC\nIs that the sum of those times, the total time spent for all the operation of the preconditioner?\ne.g.\nPCSetUp                3 1.0 1.2164e+00 1.0 0.00e+00 0.0 0.0e+00 0.0e+00 1.2e+01  0  0  0  0  1   0  0  0  0  1     0\nPCApply              461 1.0 2.0880e+01 1.0 0.00e+00 0.0 0.0e+00 0.0e+00 0.0e+00  5  0  0  0  0   5  0  0  0  0     0\nThe time spent here is 1.2164 + 2.0880 seconds?\nIn the report of the ouput is also shown the total time of the execution:\nThe Main Stage: 4.0190e+02 :: 401.9 seconds.\nThanks in advance for the answer,\nJulita",
+          "url": "https://github.com/idaholab/moose/discussions/20757",
+          "updatedAt": "2023-01-31T13:56:31Z",
+          "publishedAt": "2022-04-09T18:10:24Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is more of petsc profiling than MOOSE.\nPlease see the petsc docs https://petsc.org/release/docs/manualpages/Profiling/index.html\n@fdkong if you have done this before could you please share some thoughts or resources\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20757#discussioncomment-2568258",
+                  "updatedAt": "2023-01-31T13:56:33Z",
+                  "publishedAt": "2022-04-14T16:48:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "fdkong"
+                  },
+                  "bodyText": "The time spent here is 1.2164 + 2.0880 seconds?\n\nCorrect. This is the total time on the preconditioner.\nHere is more information on how to interpret the result of \"-log_view\" https://petsc.org/release/docs/manual/profiling/\nIf you still have anything unclear after going through the above link, please feel free to ask .",
+                  "url": "https://github.com/idaholab/moose/discussions/20757#discussioncomment-2568346",
+                  "updatedAt": "2023-01-31T13:56:38Z",
+                  "publishedAt": "2022-04-14T16:59:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Symmetry about an arbitrary line",
+          "author": {
+            "login": "ndaman"
+          },
+          "bodyText": "I'm trying to impose a symmetric boundary about a diagonal line in my model (such that the vector variable,  u, dotted with the normal vector to that line, n = 0). I did find the penalty inclined no displacement (https://mooseframework.inl.gov/source/bcs/PenaltyInclinedNoDisplacementBC.html), is that the best way to reach this boundary condition?",
+          "url": "https://github.com/idaholab/moose/discussions/20471",
+          "updatedAt": "2022-08-21T11:35:18Z",
+          "publishedAt": "2022-03-03T22:33:38Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs this line inside the mesh? Or on the edge?\nThe regular BC, no flux, is usually pretty good for performing symmetry conditions.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/20471#discussioncomment-2568344",
+                  "updatedAt": "2022-08-21T11:35:18Z",
+                  "publishedAt": "2022-04-14T16:58:55Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Using ComputeSmallStrain in AbaqusUMATStress",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "Hi all -\nI'm looking through the Tensor Mechanics tests for the UMAT interface and they all appear to use a finite strain assumption. Furthermore, in looking at the AbaqusUMATStress source, it appears to be requesting a strain_increment material, among others, which are not available in the ComputeSmallStrain class.\nSo it appears the AbaqusUMATStress functionality is (currently) not compatible with a small strain approximation. Is this an Abaqus limitation? Or could AbaqusUMATStress be modified to also handle small strains?",
+          "url": "https://github.com/idaholab/moose/discussions/20748",
+          "updatedAt": "2022-07-27T13:59:03Z",
+          "publishedAt": "2022-04-08T14:34:04Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Tagging @dschwen @recuero since they worked on this.",
+                  "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2531584",
+                  "updatedAt": "2022-07-27T13:59:03Z",
+                  "publishedAt": "2022-04-08T14:40:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "Dear @jessecarterMOOSE\nYes, I agree there is no way to switch to small strain,\nhowever, I believe there is no need to do so.\nYou can use the small strain input variable DSTRAN and STRAN\nto calculate the Cauchy stress inside the UMAT.\nThe concept of small/large strain in the UMAT depends on the specific choice of how the Cauchy stress is calculated,\nif it is calculated with DSTRAN, STRAN, then you are using a small strain approximation,\nif it is calculated with the the deformation gradients DFGRD0 and DFGRD1, then you are using a large strain formulation,\nMOOSE is agnostic on the strategy you use to calculate the Cauchy stress, that is up to you,\nMOOSE provides you with both small/large quantities and you can choose.\nThe use_displaced_mesh flag will be on by default,\ntherefore stress divergence calculation is made on the deformed mesh.\nBest Regards,\nNicol\u00f2",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2540615",
+                          "updatedAt": "2022-07-27T13:59:47Z",
+                          "publishedAt": "2022-04-10T19:49:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "That makes sense and seems like a possible path, but from a programming standpoint, I already have a UMAT that works with Abaqus and I'd like to avoid making changes to make it compatible with MOOSE or making a MOOSE-specific version for different strain formulations.",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2546694",
+                          "updatedAt": "2022-07-27T13:59:52Z",
+                          "publishedAt": "2022-04-11T17:56:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "After a short discussion with @recuero I think we see what the issue is. Currently the AbaqusUMATStress material requires the material properties provided by our finite strain formulation to be present, even if the UMAT implements a small strain formulation. We can certainly fix that by adding a flag that makes the finite strain increments optional.\nEither way, it should not be necessary to have a custom UMAT with \"changes to make it compatible with MOOSE\".",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2547898",
+                          "updatedAt": "2022-07-27T13:59:53Z",
+                          "publishedAt": "2022-04-11T22:04:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "I'll go ahead and create an issue from this discussion.",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2547905",
+                          "updatedAt": "2022-07-27T14:08:52Z",
+                          "publishedAt": "2022-04-11T22:07:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "#20765",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2547911",
+                          "updatedAt": "2022-07-27T14:08:52Z",
+                          "publishedAt": "2022-04-11T22:10:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "@jessecarterMOOSE check out #20775",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2555880",
+                          "updatedAt": "2022-07-27T14:08:52Z",
+                          "publishedAt": "2022-04-13T00:20:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Wow, I've been out of the loop a while. There are optional material properties now?",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2555918",
+                          "updatedAt": "2022-07-27T14:08:52Z",
+                          "publishedAt": "2022-04-13T00:33:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dschwen"
+                          },
+                          "bodyText": "Yep. I added then a little while ago. Hit me up if you want to know more about it.\nBut going back to the original question. Why don;t you just use incremental small strain, which should be fully compatible with our UMAT interface as is?",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2561392",
+                          "updatedAt": "2022-07-27T14:08:52Z",
+                          "publishedAt": "2022-04-13T17:15:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "Didn't realize that was an option. I'm curious to see if any of our Abaqus users would use that...",
+                          "url": "https://github.com/idaholab/moose/discussions/20748#discussioncomment-2563669",
+                          "updatedAt": "2022-07-27T14:08:57Z",
+                          "publishedAt": "2022-04-14T01:37:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

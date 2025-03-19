@@ -1,0 +1,889 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNS0wMi0wNVQxNToxMjozNC0wNzowMM4AeIh5"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Initiation Issue",
+          "author": {
+            "login": "julianseb"
+          },
+          "bodyText": "This is in continuation of #29644. So maybe @cpgr or @lynnmunday could help me out again. Any other help is also very appreciated.\nAfter the other model worked out fine, i tried to implement the open water body i was talking about in the previous discussion. I set up another PorousFlowDictator (dictator_wasser) with only one component and one phase, because i see the open water body as fully saturated. I set the porosity to 0.9999.\nI set up some OutflowBCs for temperature and the porepressure at the bottom of the water body (boundary: grund) in each direction with the complimentary dictators. I set the porepressure at the water surface (boundary: wasserspiegel) the same as the gas pressure in the ground at atmospheric pressure (101325 Pa).\nI've managed to get a 1-phase model of it running, but there i only used one PorousFlowDictator.\nBut when i try to run the inputfile it initializes, tabulates the fluidproperties for the gas phase but then shows this error:\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          ImplicitEuler\n  Solver Mode:             NEWTON\n  PETSc Preconditioner:    asm \n  MOOSE Preconditioner:    SMP\n\ndampf_tabulated: Generating (p, T) tabulated data\n\n\n*** ERROR ***\nThe following error occurred in the Problem 'MOOSE Problem' of type FEProblem.\n\nThe following parallel-communicated exception was detected during INITIAL evaluation:\nPressure 0 is outside the range of tabulated pressure (12523, 3e+06).\nBecause this did not occur during residual evaluation, there is no way to handle this, so the solution is aborting.\n\nSo there must be a problem with the gas pressure, because the gas phase is the one with the tabulated properties. But i didn't do any changes to that in comparrison to the aformentioned case that was running.\nDoes anybody have an idea why the pressure apperently drops to 0 Pa? Is this because of a shared boundary between the dictators?\nThis is my mesh:\n\n\nHere are my inputfile and the mesh:\nCurrent_state.zip\nI also added my inputfile here:\n[Mesh]\n  [mesh]\n    type = FileMeshGenerator\n    file = Gewaesser_nah_klein.msh\n  []\n[]\n\n[GlobalParams]\n  gravity = '0 -9.8065 0'\n[]\n\n[Variables]\n  [temperature]\n    initial_condition = 293.15\n  []\n  [pp]\n  []\n  [gp]\n  []\n[]\n\n[ICs]\n  [InitialConditionBoden]\n    type = FunctionIC\n    variable = pp\n    function = gradient\n    block = 'boden'\n  []\n  [ICDampf]\n    type = ConstantIC\n    value = 101325\n    variable = gp\n    block = 'boden'\n  []\n  [InitialConditionWasser]\n    type = FunctionIC\n    variable = pp\n    function = wasser\n    block = 'wasser'\n  []\n[]\n\n[Functions]\n  [gradient]\n    type = ParsedFunction\n    symbol_names = 'rho g gradient left_head'\n    symbol_values = '1000 9.8065 0.1 10'\n    expression = '101325 + (left_head-y-(x*gradient))*(g*rho)'\n  []\n  [t_kabel]\n      type = ParsedFunction\n      expression = 'if(t <= 14400, (293.15 + (363.15 - 293.15) * t / 14400), 363.15)'\n  []\n  [wasser]\n    type = ParsedFunction\n    symbol_names = 'rho g left_head'\n    symbol_values = '1000 9.8065 10'\n    expression = '101325 + (left_head-y)*(g*rho)'\n  []\n[]\n\n[BCs]\n    [flow]\n      type = FunctionDirichletBC\n      function = gradient      \n      variable = 'pp'\n      boundary = 'rechts links unten oben'\n    []\n    [outflow_gp]\n      type = PorousFlowOutflowBC \n      flux_type = fluid\n      variable = 'gp'\n      boundary = 'rechts'\n      PorousFlowDictator = dictator_boden\n      mass_fraction_component = 1\n    []\n    [top]\n      type = DirichletBC\n      boundary = 'oben'\n      value = 101325\n      variable = 'gp'\n    []    \n    [top_wasserspiegel]\n      type = FunctionDirichletBC\n      variable = pp\n      boundary = wasserspiegel\n      function = wasser\n    []\n    # [temp_kabel]\n    #   type = FunctionDirichletBC\n    #   boundary = 'kabel'\n    #   function = t_kabel\n    #   variable = temperature\n    # []\n    [temp_out]\n      type = PorousFlowOutflowBC\n      PorousFlowDictator = dictator_boden\n      boundary = 'rechts'\n      variable = temperature\n      flux_type = heat\n    []\n    [temp_in]\n      type = DirichletBC\n      boundary = links\n      value = 293.15\n      variable = temperature\n    []\n    [temp_unten]\n      type = ADConvectiveHeatFluxBC\n      T_infinity = 293.15\n      boundary = 'unten rechts'\n      heat_transfer_coefficient = 20\n      variable = temperature\n    []\n    [temp_atm]\n      type = ADConvectiveHeatFluxBC\n      T_infinity = 293.15\n      boundary = 'oben wasserspiegel'\n      heat_transfer_coefficient = 5\n      variable = temperature\n    []\n    [outflow_pp_wasser]\n      type = PorousFlowOutflowBC\n      variable = pp\n      flux_type = FLUID\n      boundary = 'grund'\n      PorousFlowDictator = dictator_wasser\n    []\n    [outflow_pp_boden]\n      type = PorousFlowOutflowBC\n      variable = pp\n      flux_type = FLUID\n      boundary = 'grund'\n      PorousFlowDictator = dictator_boden\n    []\n\n    [t_grund_boden]\n      type = PorousFlowOutflowBC\n      PorousFlowDictator = dictator_boden\n      boundary = grund\n      variable = temperature\n      flux_type = HEAT\n    []\n    [t_grund_wasser]\n      type = PorousFlowOutflowBC\n      variable = temperature\n      boundary = grund\n      PorousFlowDictator = dictator_wasser\n      flux_type = HEAT\n    []\n[]\n\n[Kernels]\n  [temperature_dt_boden]\n    type = PorousFlowEnergyTimeDerivative\n    variable = temperature\n    PorousFlowDictator = dictator_boden\n    block = 'boden'\n  []\n  [advectionT_boden]\n    type = PorousFlowHeatAdvection\n    variable = temperature\n    block = 'boden'\n    PorousFlowDictator = dictator_boden\n  []\n  [conductionT_boden]\n    type = PorousFlowHeatConduction\n    variable = temperature\n    block = 'boden'\n    PorousFlowDictator = dictator_boden\n  []\n  [pressure_dt_pp_boden]\n    type = PorousFlowMassTimeDerivative\n    variable = pp\n    block = 'boden'\n    PorousFlowDictator = dictator_boden\n    fluid_component = 0\n  []\n  [pressure_dt_gp]\n    type = PorousFlowMassTimeDerivative\n    variable = gp\n    PorousFlowDictator = dictator_boden\n    block = 'boden'\n    fluid_component = 1\n  []\n  [pp_disp_boden]\n    type = PorousFlowDispersiveFlux\n    disp_long = '1E-4 1E-4'\n    disp_trans = '1E-5 1E-5'\n    fluid_component = 0\n    block = 'boden'\n    variable = pp\n    PorousFlowDictator = dictator_boden\n  []\n  [gp_disp_boden]\n    type = PorousFlowDispersiveFlux\n    disp_long = '5E-4 5E-4'\n    disp_trans = '5E-5 5E-5'\n    fluid_component = 1\n    block = 'boden'\n    variable = gp\n    PorousFlowDictator = dictator_boden\n  []\n  [pp_advective_boden]\n    type = PorousFlowAdvectiveFlux\n    variable = pp\n    block = 'boden'\n    PorousFlowDictator = dictator_boden\n    fluid_component = 0\n  []\n  [gp_advective]\n    type = PorousFlowAdvectiveFlux\n    variable = gp\n    PorousFlowDictator = dictator_boden\n    block = 'boden'\n    fluid_component = 1\n  []\n  [temperature_dt_wasser]\n    type = PorousFlowEnergyTimeDerivative\n    variable = temperature\n    PorousFlowDictator = dictator_wasser\n    block = 'wasser'\n  []\n  [advectionT_wasser]\n    type = PorousFlowHeatAdvection\n    variable = temperature\n    block = 'wasser'\n    PorousFlowDictator = dictator_wasser\n  []\n  [conductionT_wasser]\n    type = PorousFlowHeatConduction\n    variable = temperature\n    block = 'wasser'\n    PorousFlowDictator = dictator_wasser\n  []\n  [pressure_dt_pp_wasser]\n    type = PorousFlowMassTimeDerivative\n    variable = pp\n    block = 'wasser'\n    PorousFlowDictator = dictator_wasser\n    fluid_component = 0\n  []\n  [pp_disp_wasser]\n    type = PorousFlowDispersiveFlux\n    disp_long = '1E-6'\n    disp_trans = '1E-7'\n    block = 'wasser'\n    variable = pp\n    fluid_component = 0\n    PorousFlowDictator = dictator_wasser\n  []\n  [pp_advective_wasser]\n    type = PorousFlowAdvectiveFlux\n    variable = pp\n    block = 'wasser'\n    fluid_component = 0\n    PorousFlowDictator = dictator_wasser\n  []\n[]\n\n[AuxVariables]\n  [darcy_x_p0]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [darcy_y_p0]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [darcy_x_p1]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [darcy_y_p1]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [sat_p0]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [sat_p1]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [cp]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [vis]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [density]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n[]\n\n[AuxKernels]\n  [d_v_x_boden_p0]\n    type = PorousFlowDarcyVelocityComponent\n    component = x\n    variable = darcy_x_p0\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    fluid_phase = 0\n  []\n  [d_v_y_boden_p0]\n    type = PorousFlowDarcyVelocityComponent\n    component = y\n    variable = darcy_y_p0\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    fluid_phase = 0\n  []\n  [d_v_x_boden_p1]\n    type = PorousFlowDarcyVelocityComponent\n    component = x\n    variable = darcy_x_p1\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    fluid_phase = 1\n  []\n  [d_v_y_boden_p1]\n    type = PorousFlowDarcyVelocityComponent\n    component = y\n    variable = darcy_y_p1\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    fluid_phase = 1\n  []\n  [d_v_x_wasser_p0]\n    type = PorousFlowDarcyVelocityComponent\n    component = x\n    variable = darcy_x_p0\n    block = 'wasser'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_wasser\n    fluid_phase = 0\n  []\n  [d_v_y_wasser_p0]\n    type = PorousFlowDarcyVelocityComponent\n    component = y\n    variable = darcy_y_p0\n    block = 'wasser'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_wasser\n    fluid_phase = 0\n  []\n  [saturation_boden_p0]\n    type = PorousFlowPropertyAux\n    variable = sat_p0\n    property = saturation\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    phase = 0\n  []\n  [saturation_boden_p1]\n    type = PorousFlowPropertyAux\n    variable = sat_p1\n    property = saturation\n    block = 'boden'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    phase = 1\n  []\n  [saturation_wasser]\n    type = PorousFlowPropertyAux\n    variable = sat_p0\n    property = saturation\n    block = 'wasser'\n    execute_on = 'INITIAL TIMESTEP_END'\n    PorousFlowDictator = dictator_wasser\n    phase = 0\n  []\n  [capillary_pressure]\n    type = PorousFlowPropertyAux\n    property = capillary_pressure\n    variable = cp\n    block = 'boden'\n    execute_on = 'LINEAR TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n    liquid_phase = 0\n  []\n  [viscosity_boden]\n    type = PorousFlowPropertyAux\n    variable = vis\n    property = viscosity\n    block = boden\n    execute_on = 'LINEAR TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n  []\n  [viscosity_wasser]\n    type = PorousFlowPropertyAux\n    variable = vis\n    property = viscosity\n    block = wasser\n    execute_on = 'LINEAR TIMESTEP_END'\n    PorousFlowDictator = dictator_wasser\n  []\n  [density_boden]\n    type = PorousFlowPropertyAux\n    variable = density\n    property = density\n    block = boden\n    execute_on = 'LINEAR TIMESTEP_END'\n    PorousFlowDictator = dictator_boden\n  []\n  [density_wasser]\n    type = PorousFlowPropertyAux\n    variable = density\n    property = density\n    block = wasser\n    execute_on = 'LINEAR TIMESTEP_END'\n    PorousFlowDictator = dictator_wasser\n  []\n[]\n\n[FluidProperties]\n  [wasser]\n    type = Water97FluidProperties\n  []\n  [dampf]\n    type = NitrogenFluidProperties\n  []\n  [dampf_tabulated]\n    type = TabulatedBicubicFluidProperties\n    fp = dampf\n    interpolated_properties = 'density enthalpy internal_energy viscosity k c cv cp'\n    construct_pT_from_ve = false\n    construct_pT_from_vh = false\n    temperature_min = 274\n    temperature_max = 400\n    pressure_min = 12523\n    pressure_max = 3e6\n    tolerance = 1e-8\n    T_initial_guess = 293.15\n    p_initial_guess = 1e5\n  []\n[]\n\n\n\n[Materials]\n    [internal_energy_boden]\n      type = PorousFlowMatrixInternalEnergy\n      density = 2600\n      specific_heat_capacity = 1000\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [thermal_conductivity_boden]\n      type = PorousFlowThermalConductivityIdeal\n      dry_thermal_conductivity = '0.4 0 0  0 0.4 0 0 0 0.4'\n      wet_thermal_conductivity = '1 0 0    0 1 0   0 0 1'\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [porosity_boden]\n      type = PorousFlowPorosityConst\n      porosity = 0.3\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [permeablity_boden]\n      type = PorousFlowPermeabilityConst\n      block = 'boden'\n      permeability = '1E-12 0 0    0 1E-12 0    0 0 1E-12'\n      PorousFlowDictator = dictator_boden\n    []\n    [fluid_boden]\n      type = PorousFlowSingleComponentFluid\n      fp = 'wasser'\n      phase = 0\n      PorousFlowDictator = dictator_boden\n      block = 'boden'\n    []\n    [dampf]\n      type = PorousFlowSingleComponentFluid\n      fp = 'dampf_tabulated'\n      phase = 1\n      PorousFlowDictator = dictator_boden\n      block = 'boden'\n    []\n    [temperature_qp_boden]\n      type = PorousFlowTemperature\n      temperature = temperature\n      PorousFlowDictator = dictator_boden\n      block = 'boden'\n    []\n    [saturation_calculator_boden]\n      type = PorousFlow2PhasePP\n      PorousFlowDictator = dictator_boden\n      phase0_porepressure = pp\n      phase1_porepressure = gp\n      capillary_pressure = capillary_pressure_boden\n      block = 'boden'\n    []\n    [relperm_boden_dampf]\n      type = PorousFlowRelativePermeabilityCorey\n      n = 2\n      phase = 1\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [relperm_boden_fluid]\n      type = PorousFlowRelativePermeabilityCorey\n      n = 2\n      s_res = 0.1\n      sum_s_res = 0.1\n      phase = 0\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [mass_frac_boden]\n      type = PorousFlowMassFraction\n      PorousFlowDictator = dictator_boden\n      block = 'boden'\n      mass_fraction_vars = '1 0'\n    []\n    [diff_boden]\n      type = PorousFlowDiffusivityConst\n      diffusion_coeff = '1E-6 1E-5 1E-6 1E-5'\n      tortuosity = '0.5 0.5'\n      block = 'boden'\n      PorousFlowDictator = dictator_boden\n    []\n    [internal_energy_wasser]\n      type = PorousFlowMatrixInternalEnergy\n      density = 1000\n      specific_heat_capacity = 4200\n      block = 'wasser'\n      PorousFlowDictator = dictator_wasser\n    []\n    [thermal_conductivity_wasser]\n      type = PorousFlowThermalConductivityIdeal\n      dry_thermal_conductivity = '0.6 0 0    0 0.6 0   0 0 0.6'\n      wet_thermal_conductivity = '0.6 0 0    0 0.6 0   0 0 0.6'\n      block = 'wasser'\n      PorousFlowDictator = dictator_wasser\n    []\n    [porosity_wasser]\n      type = PorousFlowPorosityConst\n      porosity = 0.9999\n      block = 'wasser'\n      PorousFlowDictator = dictator_wasser\n    []\n    [permeablity_wasser]\n      type = PorousFlowPermeabilityConst\n      block = 'wasser'\n      permeability = '1E-4 0 0    0 1E-4 0    0 0 1E-4'\n      PorousFlowDictator = dictator_wasser\n    []\n    [fluid_wasser]\n      type = PorousFlowSingleComponentFluid\n      fp = 'wasser'\n      phase = 0\n      PorousFlowDictator = dictator_wasser\n      block = 'wasser'\n    []\n    [temperature_qp_wasser]\n      type = PorousFlowTemperature\n      temperature = temperature\n      PorousFlowDictator = dictator_wasser\n      block = 'wasser'\n    []\n    [saturation_calculator_wasser]\n      type = PorousFlow1PhaseP\n      capillary_pressure = capillary_pressure_wasser\n      PorousFlowDictator = dictator_wasser\n      porepressure = pp\n      block = 'wasser'\n    []\n    [relperm_wasser]\n      type = PorousFlowRelativePermeabilityConst\n      PorousFlowDictator = dictator_wasser\n      phase = 0\n      kr = 1\n      block = 'wasser'\n    []\n    [mass_frac_wasser]\n      type = PorousFlowMassFraction\n      PorousFlowDictator = dictator_wasser\n      block = 'wasser'\n    []\n    [diff_wasser]\n      type = PorousFlowDiffusivityConst\n      diffusion_coeff = '1.4E-7'\n      tortuosity = '1'\n      block = 'wasser'\n      PorousFlowDictator = dictator_wasser\n    []\n[]\n\n[UserObjects]\n  [dictator_boden]\n    type = PorousFlowDictator\n    number_fluid_components = 2\n    number_fluid_phases = 2\n    porous_flow_vars = 'pp temperature gp'\n  []\n  [dictator_wasser]\n    type = PorousFlowDictator\n    number_fluid_components = 1\n    number_fluid_phases = 1\n    porous_flow_vars = 'pp temperature'\n  []\n  [capillary_pressure_boden]\n    type = PorousFlowCapillaryPressureVG\n    alpha = 1E-4\n    m = 0.5\n    block = 'boden'\n  []\n  [capillary_pressure_wasser]\n    type = PorousFlowCapillaryPressureConst\n    block = 'wasser'\n    pc = 0\n  []\n[]\n\n# [Postprocessors]\n#   [heat]\n#     type = PorousFlowHeatEnergy\n#     outputs = csv\n#     PorousFlowDictator = dictator_boden\n#   []\n#   [Fluid]\n#     type = PorousFlowFluidMass\n#     PorousFlowDictator = dictator_boden\n#     outputs = csv\n#     fluid_component = 0\n#   []\n#   [Gas]\n#     type = PorousFlowFluidMass\n#     PorousFlowDictator = dictator_boden\n#     outputs = csv\n#     fluid_component = 1\n#   []\n# []\n\n\n[Preconditioning]\n  [basic]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type'\n    petsc_options_value = ' asm      lu           NONZERO'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  automatic_scaling = true\n  compute_scaling_once = true\n  end_time = 1E9\n  nl_abs_tol = 1E-6\n  nl_rel_tol = 1E-6\n  nl_max_its = 20\n  \n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1\n    growth_factor = 2\n    cutback_factor = 0.5\n  []\n[]\n\n[Debug]\n  show_var_residual_norms = true\n[]\n\n[Outputs]\n  exodus = true\n  print_linear_residuals = true\n  # [csv]\n  #   type = CSV\n  # []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/29720",
+          "updatedAt": "2025-02-10T17:53:32Z",
+          "publishedAt": "2025-01-21T20:10:31Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lynnmunday"
+                  },
+                  "bodyText": "I've never seen a simulation with more than one PorousFlowDictator objects.  I didn't think you could do that.  I looked through the test suite and I didn't find an example that used more than one.  Did you find any tests that do something similar with only one PorousFlowDictator?  Can you use one?",
+                  "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-11908028",
+                  "updatedAt": "2025-01-21T21:34:45Z",
+                  "publishedAt": "2025-01-21T21:34:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "julianseb"
+                          },
+                          "bodyText": "No i did not find tests doing that. But i thought since the PorousFlowDictator is a UserObject that is called upon by the Kernels, Materials, etc. i could use a arbitrary number of Dictators as long as they are used by different Objects. At least it was worth a try.\nI guess i will have to use one PorousFlowDictator then or maybe look at an multiapp system (which seems a bit overwhelming at the moment).\nBut anyway. Thanks a lot :)",
+                          "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-11913154",
+                          "updatedAt": "2025-01-22T08:54:48Z",
+                          "publishedAt": "2025-01-22T08:54:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "@WilkAndy or @cpgr can multiple porousFlowDictator's be used in a single input file?",
+                          "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-11919809",
+                          "updatedAt": "2025-01-22T17:49:17Z",
+                          "publishedAt": "2025-01-22T17:49:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "julianseb"
+                  },
+                  "bodyText": "So i rewrote my inputfile so it only contains one PorousFlowDictator.\nIf i don't have any BC on the border between the ground and the open water body it runs as expected like #29644 but with a no flow boundary in its way.\nBut i want to have a coupling of the to blocks so that heat and porepressure are exchanged. I tried to implement this with the OutflowBCs. For only the porepressure it seems fine. When i only engage the temperature it also runs, but i get artifacts on the border from the waterbody to the unsaturated zone and there seem to be some cooling i can not explain.\n\nSometimes i get an error message like this that would explain that there is cooling but unfortunately not why it is happening:\nTemperature 270.67 is out of range in wasser: inRegion()\nTo recover, the solution will fail and then be re-attempted with a reduced time step.\n\nA MooseException was raised during FEProblemBase::computeResidualTags\nTemperature 270.67 is out of range in wasser: inRegion()\nTo recover, the solution will fail and then be re-attempted with a reduced time step.\n\n  Nonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 8\n Solve Did NOT Converge!\n\nAnd when i engage the temperature and the porepressure OutflowBCs at the same time the convergence is really bad and it cuts the timestep constantly.\n...\nTime Step 1, time = 0.03125, dt = 0.03125\n    |residual|_2 of individual variables:\n                temperature: 0.0676454\n                pp:          0.00275448\n                gp:          1.55676\n 0 Nonlinear |R| = 1.558232e+00\n      0 Linear |R| = 1.558232e+00\n      1 Linear |R| = 3.733900e-09\n    |residual|_2 of individual variables:\n                temperature: 0.180709\n                pp:          0.00227147\n                gp:          0.000387099\n 1 Nonlinear |R| = 1.807236e-01\n      0 Linear |R| = 1.807236e-01\n      1 Linear |R| = 2.343165e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0450336\n                pp:          0.000574951\n                gp:          1.89311e-09\n 2 Nonlinear |R| = 4.503732e-02\n      0 Linear |R| = 4.503732e-02\n      1 Linear |R| = 1.773325e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0236775\n                pp:          0.000298875\n                gp:          7.56092e-10\n 3 Nonlinear |R| = 2.367936e-02\n      0 Linear |R| = 2.367936e-02\n      1 Linear |R| = 2.251880e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0171082\n                pp:          0.000216034\n                gp:          5.8726e-10\n 4 Nonlinear |R| = 1.710954e-02\n      0 Linear |R| = 1.710954e-02\n      1 Linear |R| = 5.675462e-11\n    |residual|_2 of individual variables:\n                temperature: 0.0142076\n                pp:          0.000178531\n                gp:          3.70942e-10\n 5 Nonlinear |R| = 1.420868e-02\n      0 Linear |R| = 1.420868e-02\n      1 Linear |R| = 3.797841e-11\n    |residual|_2 of individual variables:\n                temperature: 0.0106693\n                pp:          0.00013447\n                gp:          2.0394e-10\n 6 Nonlinear |R| = 1.067016e-02\n      0 Linear |R| = 1.067016e-02\n      1 Linear |R| = 1.301987e-10\n    |residual|_2 of individual variables:\n                temperature: 0.00889562\n                pp:          0.00011211\n                gp:          2.42013e-10\n 7 Nonlinear |R| = 8.896326e-03\n      0 Linear |R| = 8.896326e-03\n      1 Linear |R| = 6.176494e-11\n    |residual|_2 of individual variables:\n                temperature: 0.00763035\n                pp:          9.6169e-05\n                gp:          2.65802e-10\n 8 Nonlinear |R| = 7.630958e-03\n      0 Linear |R| = 7.630958e-03\n      1 Linear |R| = 4.222395e-11\n    |residual|_2 of individual variables:\n                temperature: 0.00747023\n                pp:          9.40895e-05\n                gp:          2.80426e-10\n 9 Nonlinear |R| = 7.470826e-03\n      0 Linear |R| = 7.470826e-03\n      1 Linear |R| = 2.566226e-11\n    |residual|_2 of individual variables:\n                temperature: 0.00707274\n                pp:          8.90493e-05\n                gp:          2.89188e-10\n10 Nonlinear |R| = 7.073304e-03\n  Nonlinear solve did not converge due to DIVERGED_MAX_IT iterations 10\n  Finished Solving                                                                       [103.61 s] [  343 MB]\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nTime Step 1, time = 0.015625, dt = 0.015625\n    |residual|_2 of individual variables:\n                temperature: 0.0676454\n                pp:          0.00275448\n                gp:          1.55676\n 0 Nonlinear |R| = 1.558232e+00\n      0 Linear |R| = 1.558232e+00\n      1 Linear |R| = 3.131965e-09\n    |residual|_2 of individual variables:\n                temperature: 0.21916\n                pp:          0.00273185\n                gp:          0.000386187\n 1 Nonlinear |R| = 2.191774e-01\n      0 Linear |R| = 2.191774e-01\n      1 Linear |R| = 2.852329e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0555337\n                pp:          0.00070943\n                gp:          4.09194e-09\n 2 Nonlinear |R| = 5.553823e-02\n      0 Linear |R| = 5.553823e-02\n      1 Linear |R| = 3.365325e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0301049\n                pp:          0.000374472\n                gp:          5.37534e-09\n 3 Nonlinear |R| = 3.010720e-02\n      0 Linear |R| = 3.010720e-02\n      1 Linear |R| = 2.476050e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0252734\n                pp:          0.000314313\n                gp:          4.5801e-09\n 4 Nonlinear |R| = 2.527531e-02\n      0 Linear |R| = 2.527531e-02\n      1 Linear |R| = 1.504118e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0202637\n                pp:          0.00025191\n                gp:          3.51368e-09\n 5 Nonlinear |R| = 2.026522e-02\n      0 Linear |R| = 2.026522e-02\n      1 Linear |R| = 5.070768e-11\n    |residual|_2 of individual variables:\n                temperature: 0.0169667\n                pp:          0.000212282\n                gp:          2.28632e-10\n 6 Nonlinear |R| = 1.696800e-02\n      0 Linear |R| = 1.696800e-02\n      1 Linear |R| = 1.885023e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0151194\n                pp:          0.000189108\n                gp:          2.69138e-10\n 7 Nonlinear |R| = 1.512060e-02\n      0 Linear |R| = 1.512060e-02\n      1 Linear |R| = 1.330392e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0135125\n                pp:          0.000168974\n                gp:          2.85915e-10\n 8 Nonlinear |R| = 1.351356e-02\n      0 Linear |R| = 1.351356e-02\n      1 Linear |R| = 1.037414e-10\n    |residual|_2 of individual variables:\n                temperature: 0.0121035\n                pp:          0.000151336\n                gp:          3.11829e-10\n 9 Nonlinear |R| = 1.210447e-02\n      0 Linear |R| = 1.210447e-02\n      1 Linear |R| = 8.473254e-11\n    |residual|_2 of individual variables:\n                temperature: 0.011714\n                pp:          0.000146466\n                gp:          3.34518e-10\n10 Nonlinear |R| = 1.171495e-02\n  Nonlinear solve did not converge due to DIVERGED_MAX_IT iterations 10\n Solve Did NOT Converge!\n  Finished Solving                                                                       [103.06 s] [  343 MB]\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nTime Step 1, time = 0.0078125, dt = 0.0078125\n    |residual|_2 of individual variables:\n                temperature: 0.0676454\n                pp:          0.00275448\n                gp:          1.55676\n 0 Nonlinear |R| = 1.558232e+00\n...\n\nAlso adding the gaspressure would be nice, but isn't really necessary.\nIs ther a better way to couple two blocks like there is no boundary than with OutflowBCs?\nThis is my current BC block. I also added my current inputfile and mesh:\nCurrent_state.zip\n[BCs]\n    [flow]\n      type = FunctionDirichletBC\n      function = gradient      \n      variable = 'pp'\n      boundary = 'rechts links unten oben'\n    []\n    [outflow_gp]\n      type = PorousFlowOutflowBC \n      flux_type = fluid\n      variable = 'gp'\n      boundary = 'rechts'\n      PorousFlowDictator = dictator_boden\n      mass_fraction_component = 1\n    []\n    [top]\n      type = DirichletBC\n      boundary = 'oben wasserspiegel'\n      value = 101325\n      variable = 'gp'\n    []\n    [top_wasserspiegel]\n      type = FunctionDirichletBC\n      variable = pp\n      boundary = wasserspiegel\n      function = wasser\n    []\n    # [temp_kabel]\n    #   type = FunctionDirichletBC\n    #   boundary = 'kabel'\n    #   function = t_kabel\n    #   variable = temperature\n    # []\n    [temp_out]\n      type = PorousFlowOutflowBC\n      PorousFlowDictator = dictator_boden\n      boundary = 'rechts oben'\n      variable = temperature\n      flux_type = heat\n    []\n    [temp_in]\n      type = DirichletBC\n      boundary = links\n      value = 293.15\n      variable = temperature\n    []\n    [temp_unten]\n      type = ADConvectiveHeatFluxBC\n      T_infinity = 293.15\n      boundary = 'unten rechts'\n      heat_transfer_coefficient = 20\n      variable = temperature\n    []\n    [temp_atm]\n      type = DirichletBC\n      boundary = 'oben wasserspiegel'\n      variable = temperature\n      value = 293.15\n    []\n    [pp_grund]\n      type = PorousFlowOutflowBC\n      variable = pp\n      flux_type = FLUID\n      boundary = 'grund'\n      PorousFlowDictator = dictator_boden\n      mass_fraction_component = 0\n    []\n    [t_grund]\n      type = PorousFlowOutflowBC\n      PorousFlowDictator = dictator_boden\n      boundary = grund\n      variable = temperature\n      flux_type = HEAT\n    []\n    # [gp_grund]\n    #   type = PorousFlowOutflowBC\n    #   variable = gp\n    #   flux_type = FLUID\n    #   boundary = 'grund'\n    #   PorousFlowDictator = dictator_boden\n    #   mass_fraction_component = 1\n    # []\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-11930282",
+                  "updatedAt": "2025-01-23T14:02:58Z",
+                  "publishedAt": "2025-01-23T13:51:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "Since it works for one variable but not both, it makes me think the diagonal terms of the jacobian are fine and there is something wrong in the off-diagonal jacobian term.  I looked at the code and it is including off-diagonal thermal and darcy contributions to the Jacobian.  You can also check the Jacobian for a small problem (20 elements), see the svdpreconditioner on this page: https://mooseframework.inl.gov/moose/application_usage/failed_solves.html\nCan you make your whole problem use Automatic Differentiation?  @cpgr  implemented AD for lots of porous flow so looking at those recent changes to input files might give you a clue how to do it.  I think you need to change something with the dictator since that controls the manual calculation of jacobians.\nWhere is the bc problem occurring, is it happening between the white and red part of the picture or is it happening at the edges of the domain?  I'm not sure where the bcs rechts and grund are.  If a bc at the edge of your domain is causing the problem, I just make the domain way bigger user coarse tet elements.  You shouldn't have a bc between the red and white blocks, they should just be coupled and exchange fluid and heat automatically by sharing nodes.",
+                          "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-12123671",
+                          "updatedAt": "2025-02-10T17:09:18Z",
+                          "publishedAt": "2025-02-10T16:57:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "julianseb"
+                          },
+                          "bodyText": "Thanks for your answer. It was my mistake. I set a boundary on the part between the two blocks, where there should be none. After taking the BC's there out it worked fine with one dictator. I thougt in the beginning that there must be a BC between the blocks for them to communicate.\nI will close this discussion since it is resolved. Sorry, that i didn't do that earlier. Thanks again.",
+                          "url": "https://github.com/idaholab/moose/discussions/29720#discussioncomment-12124700",
+                          "updatedAt": "2025-02-10T17:53:33Z",
+                          "publishedAt": "2025-02-10T17:53:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "question about running moose",
+          "author": {
+            "login": "HPL001"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello, I run Moose from the command line with the following command. Mine uses WSL mode to install (installed on disk D) and run Moose. I now want to save the output file to another disk (J disk), how should I modify my command?\nmpiexec -n 88 ./combined-opt -i Fe_iso.i Outputs/file_base='./datas/Fe/01/out'",
+          "url": "https://github.com/idaholab/moose/discussions/29840",
+          "updatedAt": "2025-02-10T09:36:15Z",
+          "publishedAt": "2025-02-08T03:21:40Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis looks like a fine way to do it.\nThe file base will let you change the output directory\n./ would be the local path not the absolute path.",
+                  "url": "https://github.com/idaholab/moose/discussions/29840#discussioncomment-12100466",
+                  "updatedAt": "2025-02-09T19:02:19Z",
+                  "publishedAt": "2025-02-08T03:28:38Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HPL001"
+                          },
+                          "bodyText": "But now my commands can only be output in this directory, if I want to change the output disk, I use this code\uff0c\nOutputs/file_base='/mnt/J/datas/Fe/01/out'\nstill in the original directory output.",
+                          "url": "https://github.com/idaholab/moose/discussions/29840#discussioncomment-12100488",
+                          "updatedAt": "2025-02-08T03:31:49Z",
+                          "publishedAt": "2025-02-08T03:31:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You could do this with ../ to back out of the current directory. We dont support absolute paths there afaik",
+                          "url": "https://github.com/idaholab/moose/discussions/29840#discussioncomment-12110511",
+                          "updatedAt": "2025-02-09T18:57:54Z",
+                          "publishedAt": "2025-02-09T18:57:53Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "HPL001"
+                          },
+                          "bodyText": "I solved the problem according to your suggestion. Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/29840#discussioncomment-12115788",
+                          "updatedAt": "2025-02-10T09:36:16Z",
+                          "publishedAt": "2025-02-10T09:36:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Control system",
+          "author": {
+            "login": "mdh23rct"
+          },
+          "bodyText": "Dear all,\nI am having a physical problem to be solved. I describe the problem:\n\nFirst, I would introduce new phase nuclei in the parent micro-structure.\nNext, let the nuclei grow for 10 s, generating new grain boundaries.\nAfter 10 s, I will introduce new phase nuclei in the updated microstructure.\n\nThese three steps will repeat at 10 s intervals of 3000 s physical computation time. My question is can I use the control system to recycle these three steps every 10 s interval without writing the control block 300 times?\nThanks.",
+          "url": "https://github.com/idaholab/moose/discussions/29796",
+          "updatedAt": "2025-02-10T07:54:46Z",
+          "publishedAt": "2025-02-03T10:15:51Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSo you plan to have all kernels defined from the start but only have a few active at the beginning and increasingly turn them on with the Control system?\nI think this is possible. I would recommend however:\n\nwrite an action to define the 300 sets of kernels, variables and whatever is tracking the grain boundaries\nwrite a custom control (rather than having 300 control objects at each of the 300 times) that works with all the previously created objects.",
+                  "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12044614",
+                  "updatedAt": "2025-02-03T16:31:48Z",
+                  "publishedAt": "2025-02-03T16:31:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@GiudGiud\nThe control system looks like this:\n\"[c1]\ntype = TimePeriod\nenable_objects = 'BCs::rot_x BCs::rot_y'\ndisable_objects = 'BCs::rot_x90 BCs::rot_y90 BCs::press'\nstart_time = '0'\nend_time = '10'\n[]\n[c2]\ntype = TimePeriod\nenable_objects = 'BCs::rot_x90 BCs::rot_y90 BCs::press'\ndisable_objects = 'BCs::rot_x BCs::rot_y '\nstart_time = '10'\nend_time = '20'\n[]\"\nI have to repeat [c1] and [c2] 300 times sequentially. The question is how to do that? Any suggestion how the custom control could look like?\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12052874",
+                          "updatedAt": "2025-02-04T09:34:44Z",
+                          "publishedAt": "2025-02-04T09:34:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can use a python script to write the 300 controls.\nOR\nyou create a new control objects. Something like:\n[c_all]\n  type = TimesSequentialControl. (this is a new name, does not exist)\n  enable_objects_of_prefix = BCs::rot_x\n  disable_objects_of_prefix = BCs::rot_x\n  start_times = 'start_times'\n  end_times = 'end_times'\n[]\n\nand you can use the Times to define the time points\n[Times]\n  [start_times]\n    type = TimeIntervalTimes\n    start_time = 0\n    end_time = ${fparse 300 * 90}\n    time_interval = 90\n  []\n  [end_times]\n    type = TimeIntervalTimes\n    start_time = 90\n    end_time = ${fparse 90 + 300 * 90}\n    time_interval = 90\n  []\n[]\n\nThe TimesSequentialControl would look a little bit like the TimesEnableControl",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12056962",
+                          "updatedAt": "2025-02-04T16:16:35Z",
+                          "publishedAt": "2025-02-04T16:16:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@GiudGiud I am having this issue:\n\"*** ERROR ***\nA 'TimesEnableControl' is not a registered object.\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\"\nI looked at the moose phase_field src folder. There, the control folder is missing.\nWhere to find the source file of TimeEnableControl?\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12081636",
+                          "updatedAt": "2025-02-06T12:54:44Z",
+                          "publishedAt": "2025-02-06T12:54:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nhow old is your version of MOOSE?\nTimesEnableControl has existed for a couple of months now\nhttps://mooseframework.inl.gov/source/controls/TimesEnableControl.html\n\nWhere to find the source file of TimeEnableControl?\n\nit s in framework/src/controls",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12084424",
+                          "updatedAt": "2025-02-06T16:51:42Z",
+                          "publishedAt": "2025-02-06T16:51:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@GiudGiud more than a year old. If I update moose, will the problem be solved?",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12084469",
+                          "updatedAt": "2025-02-06T16:55:47Z",
+                          "publishedAt": "2025-02-06T16:55:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12084486",
+                          "updatedAt": "2025-02-06T16:57:23Z",
+                          "publishedAt": "2025-02-06T16:57:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@GiudGiud I updated the moose folder. However it has messed up the whole moose installation. The applications are not working anymore.",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12085512",
+                          "updatedAt": "2025-02-06T18:36:05Z",
+                          "publishedAt": "2025-02-06T18:36:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "it's not just updating the folders. You need to update libmesh/petsc, then moose, then the applications. Everything has to be consistent.\nYou could consider just starting a fresh install if you have already muddled some steps",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12085925",
+                          "updatedAt": "2025-02-06T19:22:07Z",
+                          "publishedAt": "2025-02-06T19:22:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "@GiudGiud yes, started a new installation. However solving environment taking forever! Any suggestion how to accelerate it? trying to install moose-dev =2024.12.23",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12086566",
+                          "updatedAt": "2025-02-06T20:32:11Z",
+                          "publishedAt": "2025-02-06T20:32:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "create a new conda environment too.\nalso update conda because installing. conda update conda",
+                          "url": "https://github.com/idaholab/moose/discussions/29796#discussioncomment-12086574",
+                          "updatedAt": "2025-02-06T20:33:31Z",
+                          "publishedAt": "2025-02-06T20:33:29Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mortar Formulation",
+          "author": {
+            "login": "manikumd22"
+          },
+          "bodyText": "Hi @GiudGiud\nI am facing issues issues with the mortar contact formulation, same problem I tried with penalty it is working fine.  With mortar formulation I'm getting and error\nMaterial property 'elasticity_tensor', requested by 'stress' is not defined on block top_primary_subdomain\nMaterial property 'elasticity_tensor', requested by 'stress' is not defined on block top_secondary_subdomain\n\ufffd[39m\n\nonly difference is in this formulation = mortar (penalty working)\n[Contact]\n  [top]\n    primary = ring_outside_1\n    secondary = ring_outside_2\n    model = frictionless\n    formulation = mortar\n    penalty = 1e5\n    // # normalize_penalty = true\n    al_penetration_tolerance = 0\n  []\n[]\n\nThis is my input file\n\n\n[Mesh]\n  [gen]\n    type = FileMeshGenerator\n    file = 2d_tworing.msh\n  []\n//   # [rotate]\n//   #   type = TransformGenerator\n//   #   transform = ROTATE\n//   #   vector_value = '0 0 90'\n//   #   input = gen\n//   #   axis_point = '0 0 0'\n//   #   rotation_angle = 90\n//   # []\n//   # [rotate]\n//   #   type = TransformGenerator\n//   #   transform = ROTATE\n//   #   vector_value = '0 0 90'\n//   #   input = gen\n//   # []\n  [scale]\n    type = TransformGenerator\n    input = gen\n    transform = SCALE\n    vector_value = '1e-3 1e-3 0'\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Variables]\n  [disp_x]\n  []\n  [disp_y]\n  []\n[]\n\n[AuxVariables]\n  [./stress_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./stress_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./stress_xy]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [strain_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [strain_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [strain_xy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [deformation_gradient_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [deformation_gradient_yy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [deformation_gradient_xy]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [deformation_gradient_yx]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [./vonmises]\n    order = CONSTANT \n    family = MONOMIAL\n  [../]\n[]\n\n[AuxKernels]\n  [stress_xx]\n    type = RankTwoAux\n    rank_two_tensor = cauchy_stress\n    variable = stress_xx\n    index_i = 0\n    index_j = 0\n  []\n  [stress_yy]\n    type = RankTwoAux\n    rank_two_tensor = cauchy_stress\n    variable = stress_yy\n    index_i = 1\n    index_j = 1\n  []\n  [stress_xy]\n    type = RankTwoAux\n    rank_two_tensor = cauchy_stress\n    variable = stress_xy\n    index_i = 0\n    index_j = 1\n  []\n  [strain_xx]\n    type = RankTwoAux\n    rank_two_tensor = mechanical_strain\n    variable = strain_xx\n    index_i = 0\n    index_j = 0\n  []\n  [strain_yy]\n    type = RankTwoAux\n    rank_two_tensor = mechanical_strain\n    variable = strain_yy\n    index_i = 1\n    index_j = 1\n  []\n  [strain_xy]\n    type = RankTwoAux\n    rank_two_tensor = mechanical_strain\n    variable = strain_xy\n    index_i = 0\n    index_j = 1\n  []  \n  [deformation_gradient_xx]\n    type = RankTwoAux\n    rank_two_tensor = deformation_gradient\n    variable = deformation_gradient_xx\n    index_i = 0\n    index_j = 0\n  []\n  [deformation_gradient_xy]\n    type = RankTwoAux\n    rank_two_tensor = deformation_gradient\n    variable = deformation_gradient_xy\n    index_i = 0\n    index_j = 1\n  []\n  [deformation_gradient_yx]\n    type = RankTwoAux\n    rank_two_tensor = deformation_gradient\n    variable = deformation_gradient_yx\n    index_i = 1\n    index_j = 0\n  []\n  [deformation_gradient_yy]\n    type = RankTwoAux\n    rank_two_tensor = deformation_gradient\n    variable = deformation_gradient_yy\n    index_i = 1\n    index_j = 1\n  []\n  [./vonmises]\n    type = RankTwoScalarAux\n    rank_two_tensor = cauchy_stress\n    variable = vonmises\n    scalar_type = VonMisesStress\n    execute_on = timestep_end\n  [../]\n[]\n\n[Kernels]\n  [sdx]\n    type = TotalLagrangianStressDivergence\n    variable = disp_x\n    component = 0\n    large_kinematics = true\n  []\n  [sdy]\n    type = TotalLagrangianStressDivergence\n    variable = disp_y\n    component = 1\n    large_kinematics = true\n  []\n[]\n\n\n\n[Materials]\n  [density]\n    type = GenericConstantMaterial\n    block = 'frontbar_left_surface_1 frontbar_left_surface_2 frontbar_right_surface_1 frontbar_right_surface_2'\n    prop_names = 'density'\n    prop_values = 7800\n  []\n  [density2]\n    type = GenericConstantMaterial\n    block = ' ring_surface_1 ring_surface_2'\n    prop_names = 'density'\n    prop_values = 1200\n  []\n  [tensor]\n    type = ComputeIsotropicElasticityTensor\n    block = 'frontbar_left_surface_1 frontbar_left_surface_2 frontbar_right_surface_1 frontbar_right_surface_2'\n    youngs_modulus = 210e5\n    poissons_ratio = 0.3\n  []\n  [tensor2]\n    type = ComputeIsotropicElasticityTensor\n    block = 'ring_surface_1 ring_surface_2'\n    youngs_modulus = 1e5\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ComputeLagrangianLinearElasticStress\n    large_kinematics = true\n    objective_rate = green_naghdi #jaumann\n  []\n  [./strain]\n    type = ComputeLagrangianStrain\n    displacements = 'disp_x disp_y'\n    large_kinematics = true\n  [../]\n[]\n\n[Contact]\n  [top]\n    primary = ring_outside_1\n    secondary = ring_outside_2\n    model = frictionless\n    formulation = mortar\n    penalty = 1e5\n    // # normalize_penalty = true\n    al_penetration_tolerance = 0\n  []\n[]\n\n[BCs]\n  [jointx]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'frontbar_rightside_2 frontbar_leftside_2 frontbar_toppoint_2 frontbar_toppoint_1'\n    value = 0.0\n  []\n  [jointy]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'frontbar_toppoint_1 frontbar_toppoint_2 frontbar_rightside_2 frontbar_leftside_2'\n    value = 0.0\n  []\n  [topy]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = 'frontbar_rightside_1 '\n    function = '-2e-2*sin(0.05*pi*t)*sqrt(2)/2'\n  []\n  [boty]\n    type = FunctionDirichletBC\n    variable = disp_y\n    boundary = 'frontbar_leftside_1'\n    function = '2e-2*sin(0.05*pi*t)*sqrt(2)/2'\n  []\n  [topx]\n    type = FunctionDirichletBC\n    variable = disp_x\n    boundary = 'frontbar_rightside_1 '\n    function = '-2e-2*sin(0.05*pi*t)*sqrt(2)/2'\n  []\n  [botx]\n    type = FunctionDirichletBC\n    variable = disp_x\n    boundary = ' frontbar_leftside_1'\n    function = '2e-2*sin(0.05*pi*t)*sqrt(2)/2'\n  []\n  [./InclinedNoDisplacementBC]\n    [./left]\n      boundary = frontbar_leftbottom_1\n      penalty = 1.0e11\n      displacements = 'disp_x disp_y'\n    [../]\n    [./left2]\n      boundary = frontbar_lefttop_1\n      penalty = 1.0e11\n      displacements = 'disp_x disp_y'\n    [../]\n    [./right]\n      boundary = frontbar_righttop_1\n      penalty = 1.0e11\n      displacements = 'disp_x disp_y'\n    [../]\n    [./right2]\n      boundary = frontbar_rightbottom_1\n      penalty = 1.0e11\n      displacements = 'disp_x disp_y'\n    [../]\n  []\n[]\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  automatic_scaling = false\n  line_search = 'none'\n  petsc_options = '-snes_converged_reason -pc_svd_monitor'\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_type'\n  petsc_options_value = ' lu       superlu_dist'\n  snesmf_reuse_base = false\n  nl_rel_tol = 1e-8\n  dt = 0.125\n  end_time = 25\n[]\n\n\n[Outputs]\n  # interval = 1000\n  exodus = true\n  file_base = ./inputfiles/2d_tworing_out78\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/29849",
+          "updatedAt": "2025-02-10T04:59:09Z",
+          "publishedAt": "2025-02-10T03:47:23Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthe error message is telling you to define the elasticity tensor on two additional submodains, but your Materials are not defining it there. For example that one does not cover top_primary_subdomain or top_secondary_subdomain\n    type = ComputeIsotropicElasticityTensor\n    block = 'frontbar_left_surface_1 frontbar_left_surface_2 frontbar_right_surface_1 frontbar_right_surface_2'",
+                  "url": "https://github.com/idaholab/moose/discussions/29849#discussioncomment-12113514",
+                  "updatedAt": "2025-02-10T04:59:10Z",
+                  "publishedAt": "2025-02-10T04:59:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Boundary Conditions in different direction",
+          "author": {
+            "login": "YuanxinXiao"
+          },
+          "bodyText": "Hi @GiudGiud\n\nI want to impose a Dirichlet bc that follows the rod, but the direction of the rod is 45 degrees from the coordinate system x and y axes, so I multiply cos(45) in front of the disp_x of the FunctionDirichletBC, but I get the following error, is there any way can help me to realize it\uff1f\ncode:\n[topx]\ntype = FunctionDirichletBC\nvariable = cos(45)* disp_x\nboundary = 'frontbar_rightside_1'\nfunction = '-1e-3sin(t)'\n[]\n[botx]\ntype = FunctionDirichletBC\nvariable = cos(45) * disp_x\nboundary = 'frontbar_leftside_1'\nfunction = '1e-3t'\n[]\nerror:\nexpected '=' after parameter name '*', got 'd'\ufffd",
+          "url": "https://github.com/idaholab/moose/discussions/29842",
+          "updatedAt": "2025-02-09T06:00:48Z",
+          "publishedAt": "2025-02-08T18:23:59Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nvariable expects a name, not an expression so this variable = cos(45)* disp_x is not allowed.\nWhat you have to do is set 4 BCs here:\n\n1 for disp_x on frontbar_rightside_1 with cos(45) times the displacement (note that cos(45) might be wrong, best use sqrt(2)/2)\n1 for disp_y on frontbar_rightside_1 with sin(45) times the displacement (note that sin(45) might be wrong, best use sqrt(2)/2\nsame for the other boundary",
+                  "url": "https://github.com/idaholab/moose/discussions/29842#discussioncomment-12106102",
+                  "updatedAt": "2025-02-09T01:05:04Z",
+                  "publishedAt": "2025-02-09T01:05:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YuanxinXiao"
+                          },
+                          "bodyText": "Thank you very much, as you said I applied x and y directions separately and multiplied their components in function and they worked well!\n[topy]\ntype = FunctionDirichletBC\nvariable = disp_y\nboundary = 'frontbar_rightside_1 '\nfunction = '-2e-2sin(0.05pit)sqrt(2)/2'\n[]\n[boty]\ntype = FunctionDirichletBC\nvariable = disp_y\nboundary = 'frontbar_leftside_1'\nfunction = '2e-2sin(0.05pit)sqrt(2)/2'\n[]\n[topx]\ntype = FunctionDirichletBC\nvariable = disp_x\nboundary = 'frontbar_rightside_1 '\nfunction = '-2e-2sin(0.05pit)sqrt(2)/2'\n[]\n[botx]\ntype = FunctionDirichletBC\nvariable = disp_x\nboundary = ' frontbar_leftside_1'\nfunction = '2e-2sin(0.05pi*t)*sqrt(2)/2'\n[]\nBut then I am facing a second problem, when I compress this rod on the ab-plane, the rod bends as shown in the picture, and I want to avoid this phenomenon. Before when the bar was parallel to the x-axis of the coordinate system, I always controlled disp_y = 0 for bc1 and bc2 to avoid this deformation, but now that the bar has a 45-degree pinch foot to the coordinate axis, I can't get the bar to contract freely in the direction of pressure by simply setting disp_y = 0 or disp_x = 0. Do you have a good method to make the bar not only straight but also free to contract?",
+                          "url": "https://github.com/idaholab/moose/discussions/29842#discussioncomment-12106700",
+                          "updatedAt": "2025-02-09T05:01:32Z",
+                          "publishedAt": "2025-02-09T05:01:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if you could use a dirichletBC to achieve what you want in the non-inclined case, you should be able to use this bc in the inclined case\nhttps://mooseframework.inl.gov/source/bcs/PenaltyInclinedNoDisplacementBC.html",
+                          "url": "https://github.com/idaholab/moose/discussions/29842#discussioncomment-12106868",
+                          "updatedAt": "2025-02-09T06:00:49Z",
+                          "publishedAt": "2025-02-09T06:00:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "co-sintering in moose",
+          "author": {
+            "login": "abc-hy"
+          },
+          "bodyText": "Hi,\nI was wondering if moose has a way to implement co-sintering of two types of materials. Currently, I only found there is a GrandPotentialTensorMaterial that can deal with one type of material's sintering, because I can only input one type of material's property values. Does anyone know how to input two types of materials and can run the co-sintering of the two materials in moose?\nThank you very much.\nBest,",
+          "url": "https://github.com/idaholab/moose/discussions/29841",
+          "updatedAt": "2025-02-08T14:17:36Z",
+          "publishedAt": "2025-02-08T14:17:35Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about the FVFunctorRadiativeBC Boundary Condition",
+          "author": {
+            "login": "CadenWil"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi, this is my first time posting. I am currently learning Moose and decided to work with problems that I know the answer to.\nI have been working on recreating example problem 3.1 from the Fundamentals of Heat and Mass Transfer 6th Edition in Moose with the goal of understanding units, convective boundaries, radiative boundaries, and heat conduction. This problem is split into two parts one with water and the other with air as the cold fluid.  This is the problem statement:\n\"\"\" In Example 1.6, we calculated the heat loss rate from a human body in air and water\nenvironments. Now we consider the same conditions except that the surroundings\n(air or water) are at 10\ufffdC. To reduce the heat loss rate, the person wears special\nsporting gear (snow suit and wet suit) made from a nanostructured silica aerogel in-\nsulation with an extremely low thermal conductivity of 0.014 W/m  K. The emis-\nsivity of the outer surface of the snow and wet suits is 0.95. What thickness of aero-\ngel insulation is needed to reduce the heat loss rate to 100 W (a typical metabolic\nheat generation rate) in air and water? What are the resulting skin temperatures? \"\"\"\nThe using the variables given in the book I first focused on calculating the outer surface temperature of the insulation layer if the cold fluid was water.  This went well and I was able to get MOOSE and hand calculations to agree on the outer surface temperature of the insulation layer at 283.427\nThis is the input file I created:\n\"\"\"\n[Mesh]\n[generated]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 300\nny = 300\nxmin = 0\nxmax = 0.0091\nymax = 0.01\n[]\n[block1]\ntype = SubdomainBoundingBoxGenerator\ninput = generated\nblock_id = 1\nbottom_left = '0 0 0'\ntop_right = '0.003 0.01 0'\n[]\n[block2]\ntype = SubdomainBoundingBoxGenerator\ninput = block1\nblock_id = 2\nbottom_left = '0.003 0 0'\ntop_right = '0.0091 0.01 0'\n[]\n[]\n[Variables]\n[T]\ninitial_condition = 308.15\n[]\n[]\n[Kernels]\n[heat_conduction]\ntype = HeatConduction\nvariable = T\n[]\n[time_derivative]\ntype = HeatConductionTimeDerivative\nvariable = T\n[]\n[]\n[Materials]\n[thermal_skin]\ntype = HeatConductionMaterial\nthermal_conductivity = 0.3\nspecific_heat = 4.184\nblock = 1\n[]\n[density_skin]\ntype = GenericConstantMaterial\nprop_names = 'density'\nprop_values = 1.0\nblock = 1\n[]\n[thermal_ins]\ntype = HeatConductionMaterial\nthermal_conductivity = 0.014\nspecific_heat = 2.5\nblock = 2\n[]\n[density_ins]\ntype = GenericConstantMaterial\nprop_names = 'density'\nprop_values = 0.8\nblock = 2\n[]\n[]\n[BCs]\n[t_left]\ntype = DirichletBC\nvariable = T\nvalue = 308.15\nboundary = 'left'\n[]\n[convect_right]\ntype = ConvectiveHeatFluxBC\nvariable = T\nboundary = 'right'\nT_infinity = 283.15\nheat_transfer_coefficient = 200\n[]\n[]\n[Executioner]\ntype = Transient\nsolve_type = 'NEWTON'\npetsc_options_iname = '-pc_type -pc_factor_shift_type'\npetsc_options_value = 'lu       NONZERO'\n[TimeStepper]\ntype = IterationAdaptiveDT\ndt = 1e-3\noptimal_iterations = 6\n[]\nend_time = 5000\nnl_abs_tol = 1e-9\nnl_max_its = 50\nline_search = 'none'\nautomatic_scaling = true\noff_diagonals_in_auto_scaling = true\ncompute_scaling_once = false\n[]\n[Outputs]\nexodus = true\n[]\n\"\"\"\nI then moved to the second problem using air rather than water.  This adds a radiative boundary condition to the problem in conjunction with the convective boundary condition. I changed the necessary variables and added a FVFunctorRadiativeBC to the input.  The hand calculation indicated that the temperature would be in the ballpark of 290.18 K.  However the result of the MOOSE calculation yielded 249.12 K which is colder than the outside fluid. Below is the input file that I created.  I'm uncertain why I am getting a nonsensical answer with this input. I do get the correct answer if I instead choose to add the radiation heat transfer coefficient to the convective heat transfer coefficient in the ConvectiveHeatFluxBC and remove the FVFunctorRadiativeBC entirely.\n\"\"\"\n[Mesh]\n[generated]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 32\nny = 32\nxmin = 0\nxmax = 0.0074\nymax = 0.01\n[]\n[block1]\ntype = SubdomainBoundingBoxGenerator\ninput = generated\nblock_id = 1\nbottom_left = '0 0 0'\ntop_right = '0.003 0.1 0'\n[]\n[block2]\ntype = SubdomainBoundingBoxGenerator\ninput = block1\nblock_id = 2\nbottom_left = '0.003 0 0'\ntop_right = '0.0074 0.1 0'\n[]\n[]\n[Variables]\n[T]\ninitial_condition = 308.15\n[]\n[]\n[Kernels]\n[heat_conduction]\ntype = HeatConduction\nvariable = T\n[]\n[time_derivative]\ntype = HeatConductionTimeDerivative\nvariable = T\n[]\n[]\n[Materials]\n[thermal_skin]\ntype = HeatConductionMaterial\nthermal_conductivity = 0.3\nspecific_heat = 4.184\nblock = 1\n[]\n[density_skin]\ntype = GenericConstantMaterial\nprop_names = 'density'\nprop_values = 1.0\nblock = 1\n[]\n[thermal_ins]\ntype = HeatConductionMaterial\nthermal_conductivity = 0.014\nspecific_heat = 2.5\nblock = 2\n[]\n[density_ins]\ntype = GenericConstantMaterial\nprop_names = 'density'\nprop_values = 0.8\nblock = 2\n[]\n[]\n[BCs]\n[t_left]\ntype = DirichletBC\nvariable = T\nvalue = 308.15\nboundary = 'left'\n[]\n[convect_right]\ntype = ConvectiveHeatFluxBC\nvariable = T\nboundary = 'right'\nT_infinity = 283.15\nheat_transfer_coefficient = 2\n[]\n[Radiative_right]\n# htc/(stefan-boltzmann4T_inf^3)\ntype = FunctionRadiativeBC\nvariable = T\nboundary = 'right'\nemissivity_function = '5.9/(5.670367e-84283.15283.15283.15)'\n[]\n[]\n[Executioner]\ntype = Transient\nsolve_type = 'NEWTON'\npetsc_options_iname = '-pc_type -pc_factor_shift_type'\npetsc_options_value = 'lu       NONZERO'\n[TimeStepper]\ntype = IterationAdaptiveDT\ndt = 1e-3\noptimal_iterations = 6\n[]\nend_time = 5000\nnl_abs_tol = 1e-9\nnl_max_its = 50\nline_search = 'none'\nautomatic_scaling = true\noff_diagonals_in_auto_scaling = true\ncompute_scaling_once = false\n[]\n[Outputs]\nexodus = true\n[]\n\"\"\"\nThanks for any help that you can offer.",
+          "url": "https://github.com/idaholab/moose/discussions/29838",
+          "updatedAt": "2025-02-07T21:56:35Z",
+          "publishedAt": "2025-02-07T21:10:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe FunctionRadiativeBC has a default of 0 for the far field temperature that the surface exchanges heat with. You ll want to use the true value instead (probably around 300 or something, from the problem specifications)\nSee the T_infinity parameter here\nhttps://mooseframework.inl.gov/source/fvbcs/FVFunctorRadiativeBC.html",
+                  "url": "https://github.com/idaholab/moose/discussions/29838#discussioncomment-12098931",
+                  "updatedAt": "2025-02-07T21:16:10Z",
+                  "publishedAt": "2025-02-07T21:14:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "CadenWil"
+                          },
+                          "bodyText": "Thanks you!  Adding that in gave me an answer of 290.04 K which is much closer to the 290.18 K I got from the hand calculation.",
+                          "url": "https://github.com/idaholab/moose/discussions/29838#discussioncomment-12099171",
+                          "updatedAt": "2025-02-07T21:56:15Z",
+                          "publishedAt": "2025-02-07T21:56:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Interoperability between MOOSE versions (MPICH & OpenMPI)",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi,\nI recently did a fresh install of MOOSE on my laptop and noticed some custom objects I created had now been included in MOOSE (e.g NodesetGenerator), which was nice. However, the IT admins were unable to install the latest version because it apparently uses OpenMPI (not installed on our HPC) instead of MPICH now (their explanation). They had to switch back to an earlier \"development container\" (e930b1d) and the 2024-11-11 release.\nI am not really familiar with the IT side of things, so everything above is the literal explanation I was given. Ideally I'd like to develop objects for my physics on the same version, but seeing as I installed this local version of MOOSE recently (two weeks ago, in a conda environment following the website instructions), I was wondering if the versions are close enough to have no compatibility issues, and if not, how can I revert to the 2024-11-11 release?",
+          "url": "https://github.com/idaholab/moose/discussions/29837",
+          "updatedAt": "2025-02-07T21:09:00Z",
+          "publishedAt": "2025-02-07T20:55:34Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf you are asking about dynamic linking loading across platforms and MPI compilers, this wont work.\nIf you are asking about developing source code on your machine, and porting it to your IT-managed platform and re-compiling it there, this will work with no issue as not that much as changed in MOOSE over two months. The APIs should be the same for 99% of the code. Most of the changes you can see summarized here:\nhttps://mooseframework.inl.gov/newsletter/2024/2024_11.html\nhttps://mooseframework.inl.gov/newsletter/2024/2024_12.html\nhttps://mooseframework.inl.gov/newsletter/2025/2025_01.html\n\nHowever, the IT admins were unable to install the latest version because it apparently uses OpenMPI (not installed on our HPC) instead of MPICH now (their explanation).\n\nDo you know how they are installing moose? With a container / docker?\nThe installation from source would work with MPICH the same way it does with OpenMPI.",
+                  "url": "https://github.com/idaholab/moose/discussions/29837#discussioncomment-12098889",
+                  "updatedAt": "2025-02-07T21:09:55Z",
+                  "publishedAt": "2025-02-07T21:09:00Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Loading in RZ 2-D case",
+          "author": {
+            "login": "sidharthsarmah"
+          },
+          "bodyText": "Hi @GiudGiud , I want to do perform a tensile test of a specimen as shown.\n\n\nI want to apply a load on the end face, how do I apply a point load on the face, but it is basically an average the entire area.\nIs it enough in MOOSE the just change the coordinate to RZ type for changing the 3D to 2D as shown? How does MOOSE know which is the R or Z direction?\n\n\n[Problem]\n  type = FEProblem\n  coord_type = RZ\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/27507",
+          "updatedAt": "2025-02-06T19:41:10Z",
+          "publishedAt": "2024-04-30T01:46:09Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\n\nYou ll want to apply the load on a sideset then. Depending on the object you use, you will likely specify the local value of the tension, so the average\n\n\nThe coord_type is actually in the Mesh block now.\nIt should be enough to provide a 2D mesh.\nNote that you do not need the entire mesh, half is enough because of the symmetry\n\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9269392",
+                  "updatedAt": "2024-04-30T02:26:10Z",
+                  "publishedAt": "2024-04-30T02:26:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , thanks:\nI have modelled a quarter of the sample as shown,\n\n\nLet's say in 3D, I have a force F applied to the area of the face A, what should be the value of F1 that is should apply to the node in 2D case is it:\na) F1=F/A or b) F1=F/4A (since I am considering a quarter area?\n\n\nIs the direction R and Z implicit in this figure correct?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9279570",
+                          "updatedAt": "2024-04-30T20:17:59Z",
+                          "publishedAt": "2024-04-30T20:17:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "F/A should be correct, as long as the drawing is correct (so A is the area on only one side, and F is applied equally on both sides)\nNo the directions are not implciitly this way, you specify them using a Mesh parameter to make the Z axis the X axis it seems looking at your mesh orientation in the figure",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9279667",
+                          "updatedAt": "2024-04-30T20:31:00Z",
+                          "publishedAt": "2024-04-30T20:30:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , yes that's correct, thanks.\nIs this correct?\n[Mesh]\n  [./mesh]\n    type = FileMeshGenerator\n    file = Mesh.inp\n    coord_type = RZ\n    rz_coord_axis = X\n  [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281035",
+                          "updatedAt": "2024-05-01T01:14:24Z",
+                          "publishedAt": "2024-05-01T01:14:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no it's not. Arent you getting unused parameters warnings on the console for this? (maybe not if you are running in mesh-only mode I guess)\nIt should be\n[Mesh]\n  coord_type = RZ\n  rz_coord_axis = X\n  [load_mesh]\n    type = FileMeshGenerator\n    file = Mesh.inp\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281060",
+                          "updatedAt": "2024-05-01T01:19:41Z",
+                          "publishedAt": "2024-05-01T01:19:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , thanks for the correction.",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281066",
+                          "updatedAt": "2024-05-01T01:20:48Z",
+                          "publishedAt": "2024-05-01T01:20:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , one more thing, I want to impose a switching BC.\n\nThe surface of the sample indicated by the red outline, has conc, C=0.127 for time t=10s, after that the conc on the surface is C=0;\nSimilarly till t=10s, the force, F1=0 and once t>10s, F1=0.01*t, is these syntax correct?\n\n\n[NodalKernels]\n  [./force_z]\n    type = UserForcingFunctionNodalKernel\n    variable = disp_x\n    boundary = 'right'\n    function = 'if(t<10, 0, t*0.001)'\n  [../]\n[]\n\n  [./s_conc]\n    type = ADFunctionDirichletBC\n    variable = cL\n    boundary = 'Hsurface'\n    function = 'if(t<10, 0.127, 0)'\n  [../]",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281139",
+                          "updatedAt": "2024-05-01T01:39:27Z",
+                          "publishedAt": "2024-05-01T01:39:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this looks fine to me, if it gets parsed. I usually write ParsedFunctions but I think these expressions in the input will be parsed",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281264",
+                          "updatedAt": "2024-05-01T02:07:29Z",
+                          "publishedAt": "2024-05-01T02:07:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "though in the post you say\n\nSimilarly till t=10s, the force, F1=0 and once t>10s, F1=0.01*t, is these syntax correct?\n\nbut in the input it's t*0.001 not 0.01",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9281271",
+                          "updatedAt": "2024-05-01T02:08:12Z",
+                          "publishedAt": "2024-05-01T02:08:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , is this correct?\n[NodalKernels]\n  [./force_z]\n    type = UserForcingFunctionNodalKernel\n    variable = disp_x\n    boundary = 'right'\n    function = 'force'\n  [../]\n[]\n\n  [./s_conc]\n    type = ADFunctionDirichletBC\n    variable = cL\n    boundary = 'Hsurface'\n    function = 'conc'\n  [../]\n\n[Materials]\n  [./force_cond]\n    type = ADParsedMaterial\n    expression = 'if(t<10, 0, t*0.001)'\n    property_name = 'force'\n  [../]\n\n  [./conc_cond]\n    type = ADParsedMaterial\n    expression = 'if(t<10, 0.127, 0)'\n    property_name = 'conc'\n  [../]",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9287597",
+                          "updatedAt": "2024-05-01T17:59:54Z",
+                          "publishedAt": "2024-05-01T17:59:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this looks good to me",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9287643",
+                          "updatedAt": "2024-05-01T18:03:36Z",
+                          "publishedAt": "2024-05-01T18:03:35Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhere it applies is really defined by the sideset / node sets in use.\nSo maybe send me your mesh to check where it s being applied?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9289773",
+                  "updatedAt": "2024-05-01T23:38:02Z",
+                  "publishedAt": "2024-05-01T23:38:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , here it is, I applied it to a node ID 95.\nI applied Disp BC to boundary Load_x.\n[\nMesh.txt\n](url)",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9290155",
+                          "updatedAt": "2024-05-02T01:06:20Z",
+                          "publishedAt": "2024-05-02T01:04:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "how do you read a .txt mesh in moose? do we support that?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9294755",
+                          "updatedAt": "2024-05-02T11:51:37Z",
+                          "publishedAt": "2024-05-02T11:51:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , its.inp, .txt is just uploaded for you to check, you can just change it to .inp else here it is.\nMesh.inp.zip",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9294797",
+                          "updatedAt": "2024-05-02T11:58:31Z",
+                          "publishedAt": "2024-05-02T11:56:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "boundary 'right' does not exist in your mesh.\nI see 'load_x' but that's only a single node so it wont do if you are trying to apply the force on the entire surface.\nI suggest you re-create 'right' using a mesh generator.\nSidesetFromNormalsGenerator with a normal of '1 0 0' will do it for example.\nhttps://mooseframework.inl.gov/source/meshgenerators/SideSetsFromNormalsGenerator.html",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9295633",
+                          "updatedAt": "2024-05-02T13:19:48Z",
+                          "publishedAt": "2024-05-02T13:19:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@bwspenc are DirichletBC the right way to impose symmetry boundary conditions?\nI would expect something like 0 flux ? maybe 0 normal stress?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9300259",
+                          "updatedAt": "2024-05-02T21:52:21Z",
+                          "publishedAt": "2024-05-02T21:52:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , I have changed the variables to r and z, can you suggest if this is correct?\n[Mesh]\n  [./Load_mesh]\n    type = FileMeshGenerator\n    file = Mesh.inp\n  [../]\n[]\n[Problem]\n  coord_type = RZ\n[]\n\n[BCs]\n  [./x_left]\n    type = ADDirichletBC\n    variable = disp_z\n    boundary = 'Sym_x'\n    value = 0  \n  [../]\n  [./y_bottom]\n    type = ADDirichletBC\n    variable = disp_r\n    boundary = 'Sym_y'\n    value = 0  \n  [../]\n  [./x_load]\n    type = ADFunctionDirichletBC\n    variable = disp_z\n    boundary = 'Load_x'\n    function = t*0.003\n  [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9300829",
+                          "updatedAt": "2024-05-02T23:38:42Z",
+                          "publishedAt": "2024-05-02T23:38:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Changing the names of the variables changes nothing solve-wise\nthe coord_type is a Mesh parameter, it's deprecated to have it in Problem\nhave you found a tensile test example in MOOSE by any chance?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9300877",
+                          "updatedAt": "2024-05-02T23:50:15Z",
+                          "publishedAt": "2024-05-02T23:50:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud , the disp_x and disp_y does not work with Coord_axis = x, but the disp_r and disp_z work.\nCould you suggest if I can model this bending test for the cylindrical sample as shown in 2D.\n\nI don't think the symmetry will work here as its bending. My doubt is since the load F is applied to only the top portion, can I model it for 2D case, as there is no theta to prescribe.\nCan you suggest the 2D model on the left, gives which scenario on the right A or B:\n\nHow do I get scenario A to be implemented in 2D case with RZ coord?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9308057",
+                          "updatedAt": "2024-05-03T17:28:17Z",
+                          "publishedAt": "2024-05-03T17:18:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "hello\nthe case on the left is not symmetric in any way. Not rotationally and not with the other plane.\nIt's time to make a 3D model\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9308187",
+                          "updatedAt": "2024-05-03T17:33:39Z",
+                          "publishedAt": "2024-05-03T17:33:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sidharthsarmah"
+                          },
+                          "bodyText": "Hi @GiudGiud, I will first try to model the tensile test in the 3D half of the specimen before bending.\nCan you please suggest if there is a concept of a reference point coupling of the clamped portion as shown in fig for ABAQUS. This is because the top portion is clamped,\nDo we need it in MOOSE or we can just prescribed disp BC in all the nodes at the clamped portion?",
+                          "url": "https://github.com/idaholab/moose/discussions/27507#discussioncomment-9309671",
+                          "updatedAt": "2024-05-03T21:12:56Z",
+                          "publishedAt": "2024-05-03T21:04:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How MOOSE implement the 'SolidMechanicsPlasticMohrCoulomb' for Mohr-Coulomb non-association flow, any documents or equations?",
+          "author": {
+            "login": "Yulongggggg"
+          },
+          "bodyText": "Hi Guid, long time no see. Can you give me some documents or files about how MOOSE implements the Mohr-Coulomb non-association flow? I am wondering how it's implemented",
+          "url": "https://github.com/idaholab/moose/discussions/29785",
+          "updatedAt": "2025-02-05T22:12:34Z",
+          "publishedAt": "2025-01-31T23:32:53Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I'm afraid we dont have much documentation on this.\nMaybe look for journal articles published around the time that code was added? They might explain the model and implementation\nso around 2017 by Andrew Wilkins",
+                  "url": "https://github.com/idaholab/moose/discussions/29785#discussioncomment-12023118",
+                  "updatedAt": "2025-01-31T23:49:00Z",
+                  "publishedAt": "2025-01-31T23:48:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Kavan-Khaledi"
+                          },
+                          "bodyText": "check this, maybe it helps:\nmodules/solid_mechanics/test/tests/capped_mohr_coulomb/capped_mohr_coulomb.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/29785#discussioncomment-12023995",
+                          "updatedAt": "2025-02-01T04:34:44Z",
+                          "publishedAt": "2025-02-01T04:34:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yulongggggg"
+                          },
+                          "bodyText": "Thank you, btw do you know how MOOSE implement the CappedDruckerPragerStressUpdate, is there any documents",
+                          "url": "https://github.com/idaholab/moose/discussions/29785#discussioncomment-12075024",
+                          "updatedAt": "2025-02-05T21:59:31Z",
+                          "publishedAt": "2025-02-05T21:59:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "does this help?\nhttps://github.com/idaholab/moose/blob/next/modules/solid_mechanics/doc/theory/capped_weak_plane.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/29785#discussioncomment-12075105",
+                          "updatedAt": "2025-02-05T22:12:34Z",
+                          "publishedAt": "2025-02-05T22:12:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

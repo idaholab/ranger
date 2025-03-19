@@ -1,0 +1,714 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0wNy0xOVQyMTo0Mjo1Ni0wNjowMM4ANOvZ"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "ACMultiInterface kernel: kappa as a function of a variable?",
+          "author": {
+            "login": "scottedmuller"
+          },
+          "bodyText": "Hi everyone,\nI'm trying to implement the ACMultiInterface kernel in a 3-phase system and I would like the kappa terms to be functions of a separate order parameter (a different one than the \"eta\" order parameters from the interface). If a kappa term is defined as a DerivativeParsedMaterial as a function of theta (for example), will the changing value of kappa with theta be reflected in the ACMultiInterface kernel? And more importantly, will the ACMultiInterface kernel include the gradient of theta as it computes the divergence of the interface terms? If using a kappa term as a function of another variable is not possible, is there a workaround to get an equivalent effect?\nThanks,\nScott",
+          "url": "https://github.com/idaholab/moose/discussions/18299",
+          "updatedAt": "2022-06-09T07:55:29Z",
+          "publishedAt": "2021-07-10T00:30:06Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "SudiptaBiswas"
+                  },
+                  "bodyText": "It's not clear to me what you are trying to implement here. Could you please elaborate on the model/formulation? Kernels associated with basic phase-field equations terms are provided here, https://mooseframework.inl.gov/modules/phase_field/Phase_Field_Equations.html\nYou can also check out ACKappaFunction  which considers the derivative of the kappa term.",
+                  "url": "https://github.com/idaholab/moose/discussions/18299#discussioncomment-1023108",
+                  "updatedAt": "2022-06-09T07:55:30Z",
+                  "publishedAt": "2021-07-19T17:23:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "scottedmuller"
+                          },
+                          "bodyText": "Thank you for the response. I'm trying to implement a non-isothermal system with three distinct non-conserved phases, each of which has its own order parameter (representing the phase volume fraction),\nVariables:\nOrder parameters: phi_1, phi_2, phi_3\nTemperature: T\n\nFor brevity, I'll use phi_q to reference the order parameters in this outline. The free energy is a combination of thermodynamic terms (heat capacity and latent heat with phase changes) and coupled interface terms that may be different between any two phases,\nFree Energy:\nf(phi_q,T) = f_bulk(phi_q,T) + f_interface(phi_q,grad(phi_q))\nf_bulk(phi_q,T) = h(phi_1)*f_1(T) + h(phi_2)*f_2(T) + h(phi_3)*f_3(T)\nf_interface(phi_q,grad(phi_q)) = f_dw(phi_q) + f_grad(phi_q,grad(phi_q))\n\nI felt the ACMultiInterface kernel was most appropriate for f_grad as it handles the complex cross terms between each pair of order parameters and their gradients. I use a CrossTermBarrierFunctionMaterial for the double-well term f_dw. The evolution equations for the order parameters are then straightforward,\nEvolution equation for order parameter q:\ndphi_q/dt + L*df/dphi_q + penalty = 0 ;  q={1,2,3}\n\nThe challenge comes in deriving an evolution equation for temperature. The internal energy can be derived as\nInternal energy:\ne(phi_q,T) = f(phi_q,T) - T*df/dT = e_bulk(phi_q,T) + f_interface(phi_q,grad(phi_q))\n\nNote that the interface term is unchanged in this transformation because df_interface/dT = 0. The time evolution for temperature, with thermal conductivity k, can be expressed as,\nEvolution equation for T:\nde/dT*dT/dt + sum(de/dphi_q*dphi_q/dt + de/d(grad(phi_q))*d(grad(phi_q))/dt,q={1,2,3}) - div(k(phi_q)*grad(T)) = 0\n\nI'm not positive that the grad(phi_q) terms needs to be included here, but I don't feel that I can discard them out of hand. Even if I could, the de/dphi_q terms are themselves quite complicated as they must include portions of the cross terms from f_interface. It may be that the effect of these terms is negligible enough that they can safely be discarded, but I would have to actually set it up in order to verify it, which is what I hope to avoid.\nTo dramatically simplify this problem I could recast f_interface as being a linear function of T. The internal energy would then simply be e(phi_q,T) = e_bulk(phi_q,T) and the evolution equation for T would become\nRecast internal energy and evolution equation for T:\nde_bulk/dT*dT/dt + sum(de_bulk/dphi_q*dphi_q/dt,q={1,2,3}) - div(k(phi_q)*grad(T)) = 0\n\nHere the de_bulk/dphi_q terms are very straightforward. This modified formulation seems mathematically complete to me, and much less taxing computationally. I had hoped to implement it by making the kappa term in the ACMultiInterface kernel a simple linear function of T, but it doesn't seem to be a built-in option, hence my question.\nThe ACKappaFunction you suggested looks promising. I suppose I would use a different ACKappaFunction for each kappa value for a given order parameter. Does that sound right? Looking at ACMultiInterface, do you have any reason to think it can't be used with multiple kappa values each defined by their own ACKappaFunction? Please let me know if you have any other ideas or suggestions. Also, please let me know if you see a problem with my formulation or approach in general. Thanks again for your help!\n-Scott",
+                          "url": "https://github.com/idaholab/moose/discussions/18299#discussioncomment-1029004",
+                          "updatedAt": "2022-06-09T07:56:59Z",
+                          "publishedAt": "2021-07-20T21:31:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "In the 4th equation on https://mooseframework.inl.gov/moose/source/kernels/ACMultiInterface.html you can see that we pulled out Kappa, assuming that it is constant (i.e. has a vanishing gradient). This is consistent with the code in modules/phase_field/src/kernels/ACMultiInterface.C, where no derivatives of the kappas are used.\nFor your application you'd have to redo the derivation and implement the resulting weak form containing the dkappa/dvar derivatives for all variables your kappas depend on (to construct grad(kappa) = sum(grad(var)*dkappa/dvar).",
+                  "url": "https://github.com/idaholab/moose/discussions/18299#discussioncomment-1038778",
+                  "updatedAt": "2022-06-09T07:57:33Z",
+                  "publishedAt": "2021-07-22T17:13:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "scottedmuller"
+                          },
+                          "bodyText": "That makes sense, and answers my original question. Thanks!\nI'm probably overthinking it. The literature I've reviewed so far doesn't bother including interfacial energy terms with their internal energy when deriving temperature evolution equations for non-isothermal systems. Most seem to treat internal energy as a bulk quantity. I'm not fully convinced and would love to see a justification one way or another. I'd be grateful if you have any other advice related to my problem, or any related literature that deals with it more explicitly.\n-Scott",
+                          "url": "https://github.com/idaholab/moose/discussions/18299#discussioncomment-1039769",
+                          "updatedAt": "2022-06-09T07:57:34Z",
+                          "publishedAt": "2021-07-22T22:34:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "libmesh update",
+          "author": {
+            "login": "lindsayad"
+          },
+          "bodyText": "All, we've had a couple of libmesh updates make their way into moose master and into the conda channels in relatively close succession.\nHere are a summary of the changes:\n\nMimic stl and boost constructors in our allocators\nTry changing max order for L2 families\nAdd LumpedMassMatrix class\nTest custom FE reinit\n$LIBMESH_BENCHMARK selection of benchmarking examples\nRB: skip reinit when there are no DOFs on Elem\nCommand-line override of default Metis-vs-Parmetis\ninit_names() at more points\nFix FE side unit tests with --enable-complex\nBegin contains_vertex_of with node equality tests\nchunked_mapvector storage option\nWeaken partitioner_test for SFC on 8+ processors\nBugfix for PR libMesh/libmesh#2940\nRevert \"interior_parent fix on distributed refined multi-elem_dim meshes\"\ninterior_parent fix on distributed refined multi-elem_dim meshes\nRB EIM update\nFix for deprecated warning in SLEPc not-quite-3.15\nUse pool allocator in mapvector\nCheck for gdb in command line in print_trace when compiling with no gdb backtrace by default\nAdd a new functor for sync element integers\nSome cleanup for RB EIM code\nedgeset/nodeset/sideset unit test refactor\nMore contains_vertex_of optimization\nFix distributed p coarsening assertion",
+          "url": "https://github.com/idaholab/moose/discussions/18413",
+          "updatedAt": "2022-10-07T12:52:12Z",
+          "publishedAt": "2021-07-22T21:25:20Z",
+          "category": {
+            "name": "News"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Name of selected MooseEnum item",
+          "author": {
+            "login": "joe61vette"
+          },
+          "bodyText": "I would like to use the name (string) of an item selected in a MooseEnum to be a suffix as part of another name.  Let me try to explain.  Given the declaration:\n   const field::FieldEnum _field;\n\nand the initialization in a Material constructor:\n   _field(getParam<MooseEnum>(\"field\").getEnum<field::FieldEnum>()),\n\nI would then like to declare a property like:\n   _alfa(declareADProperty<Real>(\"alfa_\" + name_of(_field_)),\n\nwhere name_of(_field) would be the name associated with the MooseEnum item _field.  _field is (of course) an integer and I have been unable to find how to get the associated name.  I am sure this is due to my minimal understanding of MooseEnum.\nThanks for the help,\nJoe Kelly",
+          "url": "https://github.com/idaholab/moose/discussions/18398",
+          "updatedAt": "2022-10-13T20:34:52Z",
+          "publishedAt": "2021-07-20T21:45:38Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Joe\nFirst do you need to do this:\n_field(getParam(\"field\").getEnumfield::FieldEnum())\nOr could you get by with\n_field(getParam<MooseEnum>(\"field\")),\n?\nThis field enum is a structure you declared right? It inherits from MooseEnum right?\nYou want to use the name() attribute of the enumerated objects. You could retrieve the name using the MooseEnumBase::find(int ...) routine with _field. This might not be the most graceful way though.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1030379",
+                  "updatedAt": "2021-07-21T05:26:39Z",
+                  "publishedAt": "2021-07-21T05:26:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "Thanks Guillaume.  It appears that \"find(int ...)\" returns the id not the name.  So, I went ahead and added a method:\nstd::string getFieldName(int id)\n{\nswitch (id)\n{\ncase 0:\nreturn \"liquid\";\ncase 1:\n  return \"gas\";\n\ncase 2:\n  return \"drop\";\n\ndefault:\n  mooseError(\"Invalid id for FieldEnum, id = \", id);\n\n}\nJust a bit surprised that there isn't a more generic way to do this in Moose as there seems to be multiple ways to do just about anything.\nJoe",
+                          "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1032455",
+                          "updatedAt": "2021-07-21T13:08:39Z",
+                          "publishedAt": "2021-07-21T13:08:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "find with the id as argument should return an iterator which you should be able to use to call name().\nMooseEnumBase::find(int id) const\n{\n  return std::find_if(\n      _items.begin(), _items.end(), [&id](MooseEnumItem const & item) { return item.id() == id; });\n}\n\n\nAnother option is to call getNames() on the enum and access it at the right position.",
+                          "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1032952",
+                          "updatedAt": "2021-07-21T14:45:10Z",
+                          "publishedAt": "2021-07-21T14:45:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "I got the getNames() option to work.  Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1033654",
+                          "updatedAt": "2021-07-21T15:51:37Z",
+                          "publishedAt": "2021-07-21T15:51:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "just do\n_field_name(getParam<MooseEnum>(\"field\"))\n\nin your initializer list, where _field_name is a const std::string member.",
+                  "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1038034",
+                  "updatedAt": "2021-07-22T14:31:53Z",
+                  "publishedAt": "2021-07-22T14:31:43Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "Thanks Dan.  Could you please mark this as answered?\nJoe",
+                          "url": "https://github.com/idaholab/moose/discussions/18398#discussioncomment-1038087",
+                          "updatedAt": "2021-07-22T14:40:56Z",
+                          "publishedAt": "2021-07-22T14:40:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "[Peacock][Windows10]",
+          "author": {
+            "login": "coskrrb2002"
+          },
+          "bodyText": "Dear moose users,\nIs there any method to use peacock in windows 10?\nI used ubuntu as an app in windows 10 and used Paraview to analyze output files.\nBut, I found a bug in Paraview to analyze my data, so I want to use Peacock to analyze my data.\nIf it's not possible, then I will use a virtual machine or dual booting of windows and Linux...\nBest regards,\nNakkyu",
+          "url": "https://github.com/idaholab/moose/discussions/18303",
+          "updatedAt": "2022-07-10T14:53:14Z",
+          "publishedAt": "2021-07-11T06:21:57Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nAs mentioned here, you will see some artefacts when using peacock on WSL with windows 10.\nhttps://mooseframework.inl.gov/getting_started/installation/windows10.html\nBut it should launch, using the X-server for visualization\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18303#discussioncomment-991736",
+                  "updatedAt": "2022-07-10T14:53:14Z",
+                  "publishedAt": "2021-07-12T03:01:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "dongcongcong606"
+                          },
+                          "bodyText": "I \u2018ve met the same question too.",
+                          "url": "https://github.com/idaholab/moose/discussions/18303#discussioncomment-1037750",
+                          "updatedAt": "2022-07-10T14:53:52Z",
+                          "publishedAt": "2021-07-22T13:31:09Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "peacock error",
+          "author": {
+            "login": "xchengood"
+          },
+          "bodyText": "Hi Moose expert and user,\nI try to execute the input file in peacock. The following error appears. I have no idea what happened. Before I succeeded in implementing the same file in peacock and everything is fine. But I failed when performing execution again.\n\nThank you for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/18362",
+          "updatedAt": "2022-06-10T17:36:03Z",
+          "publishedAt": "2021-07-16T19:26:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis looks like a missing python package error.\nLooks like you have activated the moose environment so that's good. Could you please try updating moose and its dependencies?\nSo conda update --all then git fetch upstream, git rebase upstream/devel OR git checkout upstream/devel depending on whether you are developing or just using.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1014724",
+                  "updatedAt": "2022-06-10T17:36:10Z",
+                  "publishedAt": "2021-07-16T19:58:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@GiudGiud. Thanks. I try it according to your instruction. One message shows below when trying 'git fetch upstream'.\n\nAny advices? Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1014817",
+                          "updatedAt": "2022-06-10T17:39:17Z",
+                          "publishedAt": "2021-07-16T20:35:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The remote is probably called origin not upstream on your machine",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1016703",
+                          "updatedAt": "2022-06-10T17:39:17Z",
+                          "publishedAt": "2021-07-17T18:13:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aeslaughter"
+                          },
+                          "bodyText": "@GiudGiud is correct, you are just missing a python package. Be sure your conda enviroment has \"moose-tools\" installed, it will give you all the packages needed for Peacock. Running conda list will show if it is there or not.",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1022548",
+                          "updatedAt": "2022-06-10T17:39:18Z",
+                          "publishedAt": "2021-07-19T15:28:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "The remote is probably called origin not upstream on your machine\n\n@GiudGiud Thanks. After updating conda, when I try 'git checkout origin/devel', the message below was got. Any advice? Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1026896",
+                          "updatedAt": "2022-06-10T17:39:41Z",
+                          "publishedAt": "2021-07-20T15:14:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "@GiudGiud is correct, you are just missing a python package. Be sure your conda enviroment has \"moose-tools\" installed, it will give you all the packages needed for Peacock. Running conda list will show if it is there or not.\n\nHi @aeslaughter Thank you. I use 'conda list' to confirm there is the moose-tools. But peacock is still not working and shows same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1026913",
+                          "updatedAt": "2022-06-10T17:39:42Z",
+                          "publishedAt": "2021-07-20T15:17:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Well updating moose might not be as critical.\nIf you want to do it anyway:\nIt looks like there are some merge conflicts. You ll have to either deal with those or just get rid of your changes (git stash) before checking out the latest moose\nThe ciritical thing here is that your moose-tools package is severely outdated.\nPlease follow the instructions in this post to delete and re-install the moose environment: #18378\npasted here:\nconda deactivate\nconda env remove -n moose\nconda install mamba\nmamba create -n moose moose-libmesh moose-tools\nconda activate moose",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1027154",
+                          "updatedAt": "2022-06-10T17:39:55Z",
+                          "publishedAt": "2021-07-20T16:14:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "xchengood"
+                          },
+                          "bodyText": "Well updating moose might not be as critical.\nIf you want to do it anyway:\nIt looks like there are some merge conflicts. You ll have to either deal with those or just get rid of your changes (git stash) before checking out the latest moose\nThe ciritical thing here is that your moose-tools package is severely outdated.\nPlease follow the instructions in this post to delete and re-install the moose environment: #18378\npasted here:\nconda deactivate\nconda env remove -n moose\nconda install mamba\nmamba create -n moose moose-libmesh moose-tools\nconda activate moose\n\n\n@GiudGiud Thank you. It works well now.",
+                          "url": "https://github.com/idaholab/moose/discussions/18362#discussioncomment-1034488",
+                          "updatedAt": "2022-06-10T17:40:06Z",
+                          "publishedAt": "2021-07-21T19:09:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Cubit meshing a few elements manually / meshing a weird sector region",
+          "author": {
+            "login": "GiudGiud"
+          },
+          "bodyText": "Is there a way in Cubit to mesh a few elements manually?\nDo I need to specify just a single volume = 1 element and be careful that the volume shape corresponds to an element?\nIf I create a few elements manually, should I:\n\ndo this region first and the other volumes will pick up on the nodes I created\ndo this region last and use the nodes created by the other regions (how do I retrieve them then?)\n\nAlternatively, does anyone know a scheme that can mesh this, and connect with the hex mesh volumes nearby\nHere's a closeup on the volume (orange) I'm trying to mesh. It's an open source model.\n\nAdditional details on the mesh:\n\n2D surfaces revolved using the sweep (0 steps in angle) to create 3D volumes\n3D volumes meshed directly using the auto scheme\n\nThanks!\nGuillaume",
+          "url": "https://github.com/idaholab/moose/discussions/18341",
+          "updatedAt": "2022-10-06T06:11:09Z",
+          "publishedAt": "2021-07-15T05:57:26Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GregVernon"
+                  },
+                  "bodyText": "In your picture, it looks like the orange volume is \"pyramidal\" in shape... would you be able to share the .cub file?  If it is, in fact pyramidal, Cubit doesn't have a built-in method for meshing it with hexes (though you could tetmesh it, then thex it into hexes...).  Meshing a pyramid is the great challenge in hex-meshing, look up \"Schneider's Pyramid\".\nOne option may be to build a mixed-mesh on that volume - essentially building a pyramid-tet mesh on the orange volume that interfaces with the hex elements on the neighboring volumes.  If your volumes are imprinted & merged, trying doing the following:\nvol {orange_volume_id} scheme tetmesh\nmesh volume {orange_volume_id} \n\nOne general comment regarding meshing, not necessarily specific to Cubit is that you should mesh the \"most constrained\" regions of your model first.  And then mesh the \"next most constrained\" (which are often the neighbors of the most-constrained regions) and so on.",
+                  "url": "https://github.com/idaholab/moose/discussions/18341#discussioncomment-1025122",
+                  "updatedAt": "2022-10-06T06:11:10Z",
+                  "publishedAt": "2021-07-20T07:23:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\ncub file attached.\nI would be fine with a single tet/pyramid at the top of the pyramid and the rest being hexes.\nIs there an easy way to do that or should I just cut the top of the pyramid into one block?\nIs there a way to ask for a pyramid mesh cell?\nI ll try the test mesh -> hex route now\nfhr_core.zip\nThanks for the advice on the ordering of the mesh. I ll definitely do that once I can get a coarse-ish hex mesh for that volume.",
+                          "url": "https://github.com/idaholab/moose/discussions/18341#discussioncomment-1027439",
+                          "updatedAt": "2022-10-06T06:11:18Z",
+                          "publishedAt": "2021-07-20T16:52:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "One issue with the tet mesh is that the elements are really small, and only get smaller with the THex operation. I tried to set a really large size for the initial mesh. Should I define intervals on the curves instead?\n    cubit.cmd('volume 8 size 20')\n    cubit.cmd('volume 8 scheme Tetmesh')\n    cubit.cmd('mesh volume 8')\n    cubit.cmd('THex volume 8')",
+                          "url": "https://github.com/idaholab/moose/discussions/18341#discussioncomment-1027555",
+                          "updatedAt": "2022-10-06T06:11:23Z",
+                          "publishedAt": "2021-07-20T16:58:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GregVernon"
+                          },
+                          "bodyText": "See attached meshed geometry.\nfhr_core_meshed.zip\nHere are the cubit commands that I did:\nopen \"fhr_core.cub\"\n\n## All volumes, except for the challenge volume, are already meshed\n## The surfaces of the challenge volume that are shared with neighboring, meshed volumes, are also meshed (with quads)\n## We want to mesh the unmeshed surfaces of the challenge volume with triangles\nsurface 38 37 8  scheme trimesh geometry approximation angle 15 \nTrimesher surface gradation 1.3\nTrimesher geometry sizing on\nmesh surface 38 37 8 \n\n## Mesh the challenge region with the tetmesh scheme, resulting in a pyramid-to-tet mesh\nvolume 8  scheme tetmesh\nmesh volume 8 \n\nIn the below image: tet elements are green, pyramid are yellow, hexes are magenta\n\nAnd detail of the challenge volume:\n\n\nThe tetmesh scheme in Cubit is from the 3D Precise Mesh library licensed from Dassault, which they acquired from Distene (library was Distene MeshGems).  The tet meshing library that they provide will automatically produce a mixed tet-pyramid mesh if the input volume has even a single quad element within its bounding surfaces.\nMore information\nThe reason this was challenging is because you have a pyramid-like volume (grey).  In this below picture, you made a webcut (highlighted) that resulted in this volume's shape/topology:\n\nYou additionally assigned a block that only contained this exact volume.  This is likely intentional -- you may have a body-load or material assignment that needs to take up this exact region.  However, if you didn't mean to have this be a separate block, and it could be united with the blue volume below it, then you could generate a mesh more easily as the resulting body would be prism-like (and thus sweepable):\n\n\nNotice how we've effectively relaxed a constraint on the mesh, which makes it easier to hex-mesh.  This may not be a constraint you're able to relax, but it hopefully shows that sometimes \"less is more\".",
+                          "url": "https://github.com/idaholab/moose/discussions/18341#discussioncomment-1028788",
+                          "updatedAt": "2022-10-06T06:11:23Z",
+                          "publishedAt": "2021-07-20T21:05:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Thanks for the detailed reply. I was trying to cut the volumes into smaller chunks to make it easier to mesh / narrow down the problem to a single region. We are actually able to relax that constraint.\nWe are good with this mesh now. Thanks a lot for helping out.",
+                          "url": "https://github.com/idaholab/moose/discussions/18341#discussioncomment-1034186",
+                          "updatedAt": "2022-10-06T06:12:03Z",
+                          "publishedAt": "2021-07-21T17:55:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error when running with exported mesh",
+          "author": {
+            "login": "rtaylo45"
+          },
+          "bodyText": "Hello,\nI seem to have an error when using a pre generated mesh when trying to apply boundary conditions to my problem. I created the mesh from SAM example ex01 and im trying to run my moose app using the same mesh. This is the output of my error.\nFileMeshGenerator 'sam_mesh':  Mesh Information:\nFileMeshGenerator 'sam_mesh':   elem_dimensions()={1}\nFileMeshGenerator 'sam_mesh':   spatial_dimension()=1\nFileMeshGenerator 'sam_mesh':   n_nodes()=101\nFileMeshGenerator 'sam_mesh':     n_local_nodes()=101\nFileMeshGenerator 'sam_mesh':   n_elem()=100\nFileMeshGenerator 'sam_mesh':     n_local_elem()=100\nFileMeshGenerator 'sam_mesh':     n_active_elem()=100\nFileMeshGenerator 'sam_mesh':   n_subdomains()=1\nFileMeshGenerator 'sam_mesh':   n_partitions()=1\nFileMeshGenerator 'sam_mesh':   n_processors()=1\nFileMeshGenerator 'sam_mesh':   n_threads()=1\nFileMeshGenerator 'sam_mesh':   processor_id()=0\nFileMeshGenerator 'sam_mesh':   is_prepared()=true\nFileMeshGenerator 'sam_mesh':   is_replicated()=true\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Bounding Box:\nFileMeshGenerator 'sam_mesh':   Minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':   Maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':   Delta:   (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Element Type(s):\nFileMeshGenerator 'sam_mesh':   EDGE2\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Nodesets:\nFileMeshGenerator 'sam_mesh':   Nodeset 0 (inlet), 1 nodes\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':   Nodeset 1 (outlet), 1 nodes\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':   Nodeset 2, 101 nodes\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':   Nodeset 32766, 2 nodes\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Sidesets:\nFileMeshGenerator 'sam_mesh':   Sideset 0 (inlet), 1 sides (NODEELEM), 1 elems (EDGE2), 1 nodes\nFileMeshGenerator 'sam_mesh':    Side volume: 1\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':   Sideset 1 (outlet), 1 sides (NODEELEM), 1 elems (EDGE2), 1 nodes\nFileMeshGenerator 'sam_mesh':    Side volume: 1\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Edgesets:\nFileMeshGenerator 'sam_mesh':   None\nFileMeshGenerator 'sam_mesh':\nFileMeshGenerator 'sam_mesh':  Mesh Subdomains:\nFileMeshGenerator 'sam_mesh':   Subdomain 0 (pipe1): 100 elems (EDGE2, 100 active), 101 active nodes\nFileMeshGenerator 'sam_mesh':    Volume: 1\nFileMeshGenerator 'sam_mesh':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box maximum: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':    Bounding box delta: (x,y,z)=(       1,        0,        0)\nFileMeshGenerator 'sam_mesh':   Global mesh volume = 1\n\n\n*** ERROR ***\n(BCs/c_liquid_inlet/boundary): the following node set ids do not exist on the mesh: 32767\n\nHere is my moose version\nFramework Information:\nMOOSE Version:           git commit 00fa7c0bbe on 2021-06-01\nLibMesh Version:\nPETSc Version:           3.15.1\nSLEPc Version:           3.15.1\n\nI think SAM does some internal meshing under the hood so im not sure if this would be related to that.",
+          "url": "https://github.com/idaholab/moose/discussions/18399",
+          "updatedAt": "2024-01-23T05:08:02Z",
+          "publishedAt": "2021-07-21T02:11:16Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat is the boundary specified for c_liquid_inlet?\nThe output log should tell us if it does exist.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18399#discussioncomment-1030345",
+                  "updatedAt": "2024-01-23T05:08:03Z",
+                  "publishedAt": "2021-07-21T05:20:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "travismui"
+                          },
+                          "bodyText": "@rtaylo45 To add onto this\u2013 if you are using the mesh generated from SAM ex01, were you attempting to set a BC at the inlet? The inlet/outlet sidesets may not actually be named for 1D fluid components, you can try using boundary = 0 for the inlet but I haven't tried this myself.",
+                          "url": "https://github.com/idaholab/moose/discussions/18399#discussioncomment-1030361",
+                          "updatedAt": "2024-01-23T05:08:03Z",
+                          "publishedAt": "2021-07-21T05:23:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rtaylo45"
+                          },
+                          "bodyText": "@travismui yes i am using ex01 to generate this mesh. Adding boundary = 0 for the inlet and boundary = 1 for the outlet fixed my problem.",
+                          "url": "https://github.com/idaholab/moose/discussions/18399#discussioncomment-1032686",
+                          "updatedAt": "2024-01-23T05:08:03Z",
+                          "publishedAt": "2021-07-21T14:01:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to push to large_media",
+          "author": {
+            "login": "reverendbedford"
+          },
+          "bodyText": "I have some large media files that belong in the large_media submodule as part of PR #17475 .  It's a submodule so don't I have to first update the large_media repository and then update my ref to it in moose?  If so how can I submit changes to large_media?",
+          "url": "https://github.com/idaholab/moose/discussions/18387",
+          "updatedAt": "2022-09-30T01:44:56Z",
+          "publishedAt": "2021-07-20T14:57:58Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Oh sorry I thought I replied to you in that PR but it turns out I never hit that \"comment\" button...\nAnyways, I think you should submit a PR to large_media. @aeslaughter or someone else with write access will merge it. Then you can update the large media commit in your moose PR.",
+                  "url": "https://github.com/idaholab/moose/discussions/18387#discussioncomment-1027021",
+                  "updatedAt": "2022-09-30T01:44:56Z",
+                  "publishedAt": "2021-07-20T15:40:35Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "reverendbedford"
+                          },
+                          "bodyText": "Thanks.  I don't see any PRs on github against large_media but maybe I'm just the first person in awhile to not have direct write access that wants to add something.",
+                          "url": "https://github.com/idaholab/moose/discussions/18387#discussioncomment-1027030",
+                          "updatedAt": "2022-09-30T01:44:56Z",
+                          "publishedAt": "2021-07-20T15:42:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "The repository is here: https://github.com/idaholab/large_media\nThere have been 16 closed PRs already.\nAt least I don't have write access to it either \ud83d\ude03",
+                          "url": "https://github.com/idaholab/moose/discussions/18387#discussioncomment-1027038",
+                          "updatedAt": "2022-09-30T01:44:56Z",
+                          "publishedAt": "2021-07-20T15:44:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "reverendbedford"
+                          },
+                          "bodyText": "Fair enough, I opened the PR.",
+                          "url": "https://github.com/idaholab/moose/discussions/18387#discussioncomment-1027044",
+                          "updatedAt": "2022-09-30T01:45:13Z",
+                          "publishedAt": "2021-07-20T15:45:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "*** ERROR *** Cannot allocate a NumericVector",
+          "author": {
+            "login": "ykvishal"
+          },
+          "bodyText": "I was trying to run a large 3D grain growth simulation  (3D_6000_gr.i)  and I am getting following error\n\n*** ERROR ***\nCannot allocate a NumericVector with 3224060050 degrees of freedom. The vector can only index up to 2147483647 entries.\n\n\n\nMPI_ABORT was invoked on rank 60 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n\nMy mesh block is shown here\n[Mesh]\n  [gmg]\n    type = DistributedRectilinearMeshGenerator\n    dim = 3\n    nx = 400\n    ny = 400\n    nz = 400\n    xmin = 0\n    xmax = 400\n    ymin = 0\n    ymax = 400\n    zmin = 0\n    zmax = 400\n    elem_type = HEX8\n  []\n   parallel_type = distributed\n[]\n\nI am using 50 order parameters and 20K grains. In the past #17422, I did not face this issue. (I was using different HPC for this case.)\nI tried following steps: 1) update Libmesh and MOOSE; 2) Install new MOOSE; and 3) Install new Moose with ./scripts/update_and_rebuild_petsc.sh option (our HPC has installed PETSc for us). I am getting same error.\nAny suggestions?\nThank you very much.\nKind regards\nVishal Yadav",
+          "url": "https://github.com/idaholab/moose/discussions/18386",
+          "updatedAt": "2021-07-25T20:55:53Z",
+          "publishedAt": "2021-07-20T02:50:53Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis should have worked..\nThis error should be linked to the petsc indexing scheme, and since you ran update_and_rebuild_petsc, this should have been using 64 bit indices.\nCould you please check that script, update_and_rebuild_petsc and see if the  --with-64-bit-indices is present in the ./configure call for petsc\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18386#discussioncomment-1024641",
+                  "updatedAt": "2021-07-20T03:26:11Z",
+                  "publishedAt": "2021-07-20T03:25:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ykvishal"
+                          },
+                          "bodyText": "Thank  you @GiudGiud !\nThis suggestion worked.  Now, I can start this simulation.",
+                          "url": "https://github.com/idaholab/moose/discussions/18386#discussioncomment-1027025",
+                          "updatedAt": "2021-07-20T15:40:55Z",
+                          "publishedAt": "2021-07-20T15:40:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Segmentation Fault when running input file from terminal",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Hi all,\nI'm getting the following segmentation fault error, I checked with gdb and this is what I got:\nProgram received signal SIGSEGV, Segmentation fault.\n0x00007ffff7ef9ff7 in xxxMaterial::validParams ()\nDoes it have to with my code, or is it something else? I can't seem to figure it out, as the fault is occurring before anything is even done (line 8). All my required material properties are initialized in the input file, so I don't have any idea what else could be causing this. I'm using Ubuntu 20.04 on Windows (WSL).",
+          "url": "https://github.com/idaholab/moose/discussions/18385",
+          "updatedAt": "2022-06-02T15:03:30Z",
+          "publishedAt": "2021-07-20T00:46:44Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nIf you using gdb could you please provide us with the backtrace then?\nIf you could build in debug mode (METHOD=dbg make) first, that would help since it ll give the exact line of the set fault.\nAlternatively, you could run valgrind and it ll point out where the memory error happened\nBest\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/18385#discussioncomment-1024327",
+                  "updatedAt": "2022-06-02T15:03:39Z",
+                  "publishedAt": "2021-07-20T01:00:24Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thanks, I was able to figure it out with the backtrace, I didn't know about that before. Also, a quick question: I'm automatically calculating the Jacobian instead of doing it manually, because it's a system of 4 coupled PDEs. It converged and it's pretty convenient, but I was wondering why I'm getting this output on the terminal\n\nI usually get \"neatly arranged\" tables while it's solving, but I guess it's fine since I still get a good result. This just threw me off at first.",
+                          "url": "https://github.com/idaholab/moose/discussions/18385#discussioncomment-1024603",
+                          "updatedAt": "2022-06-02T15:03:38Z",
+                          "publishedAt": "2021-07-20T03:03:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This looks like you have a print statement somewhere. Like in a kernel or a material property. And it s flooding the console output",
+                          "url": "https://github.com/idaholab/moose/discussions/18385#discussioncomment-1024628",
+                          "updatedAt": "2022-06-02T15:04:16Z",
+                          "publishedAt": "2021-07-20T03:15:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Look for \"std::cout\", \"std::cerr\" lines",
+                          "url": "https://github.com/idaholab/moose/discussions/18385#discussioncomment-1024670",
+                          "updatedAt": "2022-06-02T15:04:16Z",
+                          "publishedAt": "2021-07-20T03:42:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "WilkAndy"
+                  },
+                  "bodyText": "I'd hazard a guess that it's your \"xxxMaterial\": look in the validParams() function.",
+                  "url": "https://github.com/idaholab/moose/discussions/18385#discussioncomment-1024362",
+                  "updatedAt": "2022-06-02T15:04:28Z",
+                  "publishedAt": "2021-07-20T01:28:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

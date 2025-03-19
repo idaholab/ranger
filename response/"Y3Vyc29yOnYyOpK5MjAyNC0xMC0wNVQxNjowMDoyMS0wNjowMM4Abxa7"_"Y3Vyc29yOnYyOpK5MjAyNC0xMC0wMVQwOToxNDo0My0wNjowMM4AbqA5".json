@@ -1,0 +1,690 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0xMC0wMVQwOToxNDo0My0wNjowMM4AbqA5"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Difficulty Converging Nonlinear Residuals with Relative Permeability (Corey/FLAC) in Draining Pit Simulation",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi Porous Flow experts\nI'm facing a convergence issue when using relative permeability models (Corey or FLAC) in my porous flow simulation for draining pits or excavated drives, where low saturation is expected.\n\nbelow is my PC block (very simple)\n  [uobj_saturation_optionVG]\n    type = PorousFlowCapillaryPressureVG\n    log_extension = True\n    sat_lr = 0.05\n    alpha = 1e-5\n    m = 0.6\n  []\n\nPorous flow page suggested alpha = 1e-6 but S is still way to high for 'drained' area (not realistic), so i use 1e-5\nbelow is my Kr block (again, very simple)\n    type = PorousFlowRelativePermeabilityFLAC\n    phase = 0\n    m = 2\n\nand below is kr = 1 (for comparision)\n    type = PorousFlowRelativePermeabilityConst\n    phase = 0\n    kr = 1.0\n\nbelow is my Executioner block\n  type = Transient   # always use 'Transient' (not 'Steady'), see [Kernels]\n  solve_type = NEWTON\n  # line_search = 'default'\n  # line_search = 'none'\n  line_search = 'bt'\n  # line_search = 'basic'\n  ###\n  ### PETSc-options:\n  petsc_options = '-snes_converged_reason ' # -snes_linesearch_monitor\n  petsc_options_iname = '-pc_type -pc_hypre_type -pc_hypre_boomeramg_strong_threshold'\n  petsc_options_value = ' hypre    boomeramg      0.80  '\n  ###\n  ### tolerances:\n  nl_rel_tol = 1e-10\n  nl_abs_tol = 1e3\n  nl_max_its = 200\n  l_tol = 1e-6\n  l_max_its = 30\n\n****** PROBLEM IS HERE: ******\nWith constant relative permeability (kr = 1), my nonlinear residual |R| can reduce from 1e13 to around 1e2 to 1e3. However, with relative permeability activated, the residuals struggle to drop below 1e6 before line search breaks down. If I turn off the line search (line_search = 'none'), the residual doesn't improve, it just oscillates.\ndoes this also has anything to do with my drain surface? i'm not so sure, but i dont think so\n    [bc_drain_tet]\n      type = PorousFlowPiecewiseLinearSinkBEH\n      variable = porepressure_L1\n      boundary = 'moving_boundary_tet'\n      pt_vals = '0 1e9'\n      multipliers = '0 1e9'\n      flux_function = 100\n      charElLength = charElLength_M0\n      PT_shift = 0.\n      fluid_phase = 0\n      use_mobility = true    # default is false\n      use_relperm = false     # default is false\n    []\n\n@cpgr do you have any suggestion or do i just have to live with it? NL from 1e13 to 1e6 isnt so bad, but it would be nice to see it gets to 1e3 range\nThank you!\nTraiwit",
+          "url": "https://github.com/idaholab/moose/discussions/28711",
+          "updatedAt": "2024-10-04T11:00:34Z",
+          "publishedAt": "2024-09-26T12:21:13Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "I've been thinking about this and still haven't worked out what it might be...",
+                  "url": "https://github.com/idaholab/moose/discussions/28711#discussioncomment-10807642",
+                  "updatedAt": "2024-10-01T10:50:17Z",
+                  "publishedAt": "2024-10-01T10:50:17Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "I tried to just let line_search = 'none' run, it managed to converged at 96th NL (and this is one of the simpler mesh of all we got)\nI guess, I will have to live with nl_abs_tol = 1e6 + Line search, i wish it could deal with drained/dry area better",
+                          "url": "https://github.com/idaholab/moose/discussions/28711#discussioncomment-10827599",
+                          "updatedAt": "2024-10-03T04:58:59Z",
+                          "publishedAt": "2024-10-03T04:58:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "96th NL is excessive. What does the Jacobian debugger say?\nand what does the SVD monitor say about the condition number? (see troubleshooting instructions)",
+                          "url": "https://github.com/idaholab/moose/discussions/28711#discussioncomment-10827740",
+                          "updatedAt": "2024-10-03T05:21:38Z",
+                          "publishedAt": "2024-10-03T05:21:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Could it be not enough fluid can flow through the drain BC when saturation is low, which sends rel perm towards zero and makes it harder to flow? Should you set 'use_relperm = true' which I assume will scale the flux appropriately?",
+                          "url": "https://github.com/idaholab/moose/discussions/28711#discussioncomment-10843062",
+                          "updatedAt": "2024-10-04T11:00:34Z",
+                          "publishedAt": "2024-10-04T11:00:34Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can I add external C++ libraries to use in MOOSE?",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nFirst I want to know generally how I would add an external library and add it to the Makefile so I can compile. Whether autodiff (what I'm asking about) or any other library in general. Also curious if there is a way to write a python script which is called, does the calculations I want, and returns the results to the C++ source file.\nSecond, I want to know how to add autodiff (https://github.com/autodiff/autodiff) and wondering if it necessary since MOOSE already has some kind of AD system that is supposed to do the same thing? I'm not sure. In my custom Material file I am currently calculating derivatives manually with finite differencing, for example:\n// Compute the numerical derivative of a scalar function w.r.t a tensor_ij\n\nRankTwoTensor ComputeStrainEnergyNeoHookeanNearlyIncompressible::compute_dWdC(const Real &mu_0, const RankTwoTensor &C) \n{\n\t// Initialize perturbation\n\tReal epsilon = 1e-6;\n\t\n\t// Initialize derivative\n\tRankTwoTensor dWdC;\n\t\n    // Compute the scalar function for the original tensor\n    Real W = computeStrainEnergy(mu_0, C);\n\n    // Loop over all components of the tensor to compute the derivative\n    for (int i = 0; i < 3; i++) {\n        for (int j = 0; j < 3; j++) {\n            // Create a copy of the tensor to perturb\n            RankTwoTensor C_perturbed = C;\n\n            // Perturb the (i, j) component by epsilon\n            C_perturbed(i, j) += epsilon;\n\n            // Evaluate the scalar function at the perturbed tensor\n            Real W_perturbed = computeStrainEnergy(mu_0, C_perturbed);\n\n            // Compute the finite difference derivative and store it in the dfdT tensor\n            dWdC(i, j) = (W_perturbed - W) / epsilon;\n        }\n    }\n\n    // Return the tensor of derivatives\n    return dWdC;\n}\n\n\nAnd I am getting good results, but I am wondering if the convergence and accuracy is affected by this because it solves a bit slowly and my choice of epsilon is problem-dependent. I want to instead add autodiff (https://github.com/autodiff/autodiff) do something like (I used chatGPT for this sample but I want to do something similar):\nRankTwoTensor ComputeStrainEnergyNeoHookeanNearlyIncompressible::compute_dWdC(const Real &mu_0, const RankTwoTensor &C)\n{\n    using namespace autodiff;\n    using dual = dual2nd;\n\n    Eigen::Matrix<dual, 3, 3> C_dual;\n    for (int i = 0; i < 3; ++i)\n        for (int j = 0; j < 3; ++j)\n            C_dual(i, j) = C(i, j);\n\n    auto W = [&](const Eigen::Matrix<dual, 3, 3> & C_dual) {\n        dual J = std::pow(C_dual.determinant(), 1.0 / 2.0);\n        Eigen::Matrix<dual, 3, 3> C_iso = std::pow(J, -2.0 / 3.0) * C_dual;\n        dual I_1 = C_iso.trace();\n        return (mu_0 / 2.0) * (I_1 - 3);\n    };\n\n    Eigen::Matrix<dual, 3, 3> dWdC_dual = gradient(W, wrt(C_dual), at(C_dual));\n    RankTwoTensor dWdC;\n    for (int i = 0; i < 3; ++i)\n        for (int j = 0; j < 3; ++j)\n            dWdC(i, j) = val(dWdC_dual(i, j));  // Extract the value from dual\n\n    return dWdC;\n}\n\nHow can I do this? I have already tried https://mooseframework.inl.gov/source/materials/DerivativeMaterialInterface.html and it didn't work to calculate derivatives of scalars wrt tensors",
+          "url": "https://github.com/idaholab/moose/discussions/28769",
+          "updatedAt": "2024-10-04T03:10:59Z",
+          "publishedAt": "2024-10-03T18:40:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\nFirst I want to know generally how I would add an external library and add it to the Makefile so I can compile.\n\nIf the library is already compiled on your machine, you'll want to add to several environment variables in the Makefile.\nHowever, I dont think you need to do that here.\nWe have automatic differentiation in moose using MetaPhyscL through libmesh. Every single object in MOOSE prefaced with AD already uses this. And all you need to do to use it is:\n\ninherit from the ADMaterial class for your custom material\neverywhere you have Real, use ADReal, same for RealVectorValue, RealTensorValue etc",
+                  "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10835774",
+                  "updatedAt": "2024-10-03T19:54:28Z",
+                  "publishedAt": "2024-10-03T19:54:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "okay thanks. could you please clarify how to use these derivatives? for example, I say I updated my function to calculate W to be:\nADReal ComputeStrainEnergyNeoHookeanNearlyIncompressible::computeStrainEnergy(const ADReal &mu_0, const ADRankTwoTensor &C)\n{\n\tADReal J = std::pow(C.det(), 1.0 / 2.0);\n\t\n\t// Isochoric Right Cauchy-Green deformation tensor\n\tADRankTwoTensor C_iso = std::pow(J, -2.0 / 3.0) * C;\n\t\n\t// First invariant, equivalent to lambda_1^2 + lambda_2^2 + lambda_3^2\n\tADReal I_1 = C_iso.trace();\n\t\n\tADReal strain_energy = (mu_0/2.0) * (I_1 - 3);\n\t\n\treturn strain_energy;\n}\n\nNow I want to calculate dW/dC, and use it within the same material to calculate the PK2 stress (=dW/dC + some other term).\nThrough trial and error I found that there is some \"MetaPhyscL::gradient\" but I cannot find the documentation anywhere online. Would it be something like\nADReal W = computeStrainEnergy(mu_0, C);\n\nADRankTwoTensor dWdC = MetaPhyscL::gradient(W, C);\n\nOr how would I do this?",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10835818",
+                          "updatedAt": "2024-10-03T20:02:59Z",
+                          "publishedAt": "2024-10-03T20:02:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Now I want to calculate dW/dC, and use it within the same material to calculate the PK2 stress (=dW/dC + some other term).\n\nyou usually do not need to anymore. in the residual of your equation, if you needed dW/dC to compute the Jacobian, it would be retrieved automatically from the W term in the equation.\nBut if you do still need to compute it, then this can be done:\n    const auto dof_number = _current_elem->dof_number(_sys.number(), _C.number(), 0);\n    const auto d_W_d_C = W.derivatives()[dof_number];\n\n\nC must be the variable (a mooseVariableFE type, which can be obtained with getVar(\"name\")\nW is the ADReal property\n\ngradient is only for spatial derivatives",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10835868",
+                          "updatedAt": "2024-10-03T20:08:23Z",
+                          "publishedAt": "2024-10-03T20:08:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Okay so let me give a bit of background on what I'm trying to do because I'm still a little confused. C in this case is not a mooseVariableFE, it is not even declared as a material property. It's just a C++ RankTwoTensor within this Material file.\nWithin this Material file ComputeStrainEnergyNeoHookeanNearlyIncompressible I want to calculate and declare:\n-the PK2 stress, S\n-the Jacobian, dS/dE\nThen I have another Material file, ComputeStressNeoHookean that inherits from ComputeLagrangianStressPK2. It is in this file that I \"get\" the previous declared quantities and pass them for use in the stress divergence kernels. As I understand it, we are REQUIRED to provide MOOSE with both of these in the new solid mechanics module.\nMy since I am solving a nearly incompressible problem, I need to define my stress my way/a bit differently.\nIn the first Material file,  ComputeStrainEnergyNeoHookeanNearlyIncompressible I:\n-compute W\n-use finite difference to compute dWdC\n-compute the PK2 stress as 2 * dWdC - pJC_inverse\n-use finite difference calculate the Jacobian, dSdE\n-declare the 2nd order PK2 stress and the 4th order Jacobian dS/dE\nAgain E & C are just C++ RankTwoTensors within this Material,  ComputeStrainEnergyNeoHookeanNearlyIncompressible.\nThe issue I was having is that while the finite difference derivatives worked, the choice of epsilon is problem-dependent. Hence why I wanted to use autodiff (or some other library) where you can define some function, and then calculate the derivative wrt a variable the function depends on.\nI am not trying to define the residual or anything like that here right now, I just want to calculate S and dSdE for the new Solid Mechanics module (which is not AD if I understand correctly)",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10836001",
+                          "updatedAt": "2024-10-03T20:30:13Z",
+                          "publishedAt": "2024-10-03T20:23:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Instead of using autodiff to compute W, use our AD numbers.\nWhen you compute W, use AD-numbers. Any term that comes into play in W and depends on C, should be an AD number\nYou can seed derivatives, even if C is not one of the variables. Like this:\nADReal C;\nC.derivatives().resize(1);  // this one might take some refinement to get right\nC.derivatives()[0] = 1;\nauto W = 3 * C;\n\nthen you should see W.derivatives()[0] to be equal to 3, or dW/dC",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837263",
+                          "updatedAt": "2024-10-03T20:33:07Z",
+                          "publishedAt": "2024-10-03T20:33:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Though this is pretty uncommon. Usually we only care about the derivatives with regards to the nonlinear variables, not with regards to a tensor C.\nNote that my example was with a real C. For a tensor, you will want to see the derivatives of each component of the tensor",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837275",
+                          "updatedAt": "2024-10-03T20:34:36Z",
+                          "publishedAt": "2024-10-03T20:34:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "I'm still not fully clear on what seeding means, and the structure of the AD variables. Is there a documentation or something I can read through? For example, when you do\nC.derivatives().resize(1);  // this one might take some refinement to get right\nC.derivatives()[0] = 1;\n\nWhat are you resizing? And what is the format of the attribute .derivatives()? When you call\nW.derivatives()\nis it a vector of derivatives of as many seeded variables there are in the function that defines W?\nAnd for a tensor now, would that mean I would need to do something like\nC.derivatives().resize(3,3)\n\n\nfor (int i = 0; i < 3; i++) {\n        for (int j = 0; j < 3; j++) {\n            C.derivatives()[i, j] = 1.0;  // Seed each component's derivative\n        }\n}\n\nAnd yeah, the reason why I need to be able to calculate derivatives like these is because I will be trying several expressions for W, some of them hard to manually calculate the derivatives of.",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837475",
+                          "updatedAt": "2024-10-03T21:13:46Z",
+                          "publishedAt": "2024-10-03T20:58:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can look at the code there for our AD library.\nI m afraid we have a lot of examples but not a lot of documentation to teach you how to use it\nhttps://github.com/roystgnr/MetaPhysicL\n\nWhat are you resizing? And what is the format of the attribute .derivatives()? When you call\n\nThe array of derivatives. It keeps track of the derivatives of the AD number with regards to other values (usually nonlinear variables at a certain dof)\n\nis it a vector of derivatives of as many seeded variables there are in the function that defines W?\n\nBasically. There is the value of the derivatives, as well as the dof index. Here I am using 0 for the index. You might use more indices for each component of the tensor.\n\nAnd for a tensor now, would that mean I would need to do something like\n\nProbably closer to:\nC.derivatives().resize(3,3)\n\n\nfor (int i = 0; i < 3; i++) {\n        for (int j = 0; j < 3; j++) {\n            C(i,j).derivatives() = (1, i*3 + j);  // Seed each component's derivative\n            // 1 because the derivative of Cij wrt to Cij is 1\n            // and the index for the index of the component in the derivative vector\n        }\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837651",
+                          "updatedAt": "2024-10-03T21:26:29Z",
+                          "publishedAt": "2024-10-03T21:26:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Or would it be something like this?\nRankTwoTensor ComputeStrainEnergyNeoHookeanNearlyIncompressible::compute_dWdC(const ADReal &mu_0, const ADRankTwoTensor &C)\n{\n    // Create a seeded tensor\n    unsigned int size = 9; // This would be 9 for a 3x3 tensor (???)\n    ADRankTwoTensor C_seeded;\n\n    // Loop over each component to seed derivatives\n    for (unsigned int i = 0; i < 3; ++i) {\n        for (unsigned int j = 0; j < 3; ++j) {\n            C_seeded(i, j) = C(i, j);\n            C_seeded(i, j).derivatives().resize(size);\n            C_seeded(i, j).derivatives()[i * 3 + j] = 1;  // Seed each component's derivative\n        }\n    }\n\n    // Compute strain energy W using the seeded tensor\n    ADReal W = computeStrainEnergy(mu_0, C_seeded);\n\n    // Initialize a new tensor to store derivatives (dW/dC)\n    RankTwoTensor dWdC;\n\n    // Extract derivatives with respect to each component of C\n    for (unsigned int i = 0; i < 3; ++i) {\n        for (unsigned int j = 0; j < 3; ++j) {\n            dWdC(i, j) = W.derivatives()[i * 3 + j];  // Get the derivative of W with respect to C(i, j)\n        }\n    }\n\n    return dWdC;\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837674",
+                          "updatedAt": "2024-10-03T21:30:19Z",
+                          "publishedAt": "2024-10-03T21:30:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes this looks pretty good.\nI think you might need to specify the index as well.If it compiles like this you're good\nAD indexing is supposed to be global, which is why the derivatives contain both a value and an index",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10837687",
+                          "updatedAt": "2024-10-03T21:32:56Z",
+                          "publishedAt": "2024-10-03T21:32:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "it compiled but didn't converge unfortunately. I added a cout to see the size of W.derivatives() and it was extremely large, 12816. I don't think the way I set it up is correct.",
+                          "url": "https://github.com/idaholab/moose/discussions/28769#discussioncomment-10839204",
+                          "updatedAt": "2024-10-04T02:41:27Z",
+                          "publishedAt": "2024-10-04T02:41:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PeriodicBCAction Issue Detecting Paired Boundary",
+          "author": {
+            "login": "lkuna24"
+          },
+          "bodyText": "Hello,\nI am attempting to utilize a RVE mesh generated by DRAGen (https://github.com/ibf-RWTH/DRAGen), and it seems by all accounts to be a simple rectilinear cube mesh.  The surfaces are flat and the voxel spacing is uniform in all three principal directions.  I've included both the sample input and exodus file below.  The full output is also included (Sample_Mesh_Test_Out.txt).\nBased on the info provided by AllSideSetsByNormalGenerator, the sidesets are certainly there.  Why could the PeriodicBC be failing to detect them?\nAllSideSetsByNormalsGenerator 'Normal_SS':  Mesh Bounding Box:\nAllSideSetsByNormalsGenerator 'Normal_SS':   Minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Delta:   (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS': \nAllSideSetsByNormalsGenerator 'Normal_SS':  Mesh Element Type(s):\nAllSideSetsByNormalsGenerator 'Normal_SS':   HEX8\nAllSideSetsByNormalsGenerator 'Normal_SS': \nAllSideSetsByNormalsGenerator 'Normal_SS':  Mesh Nodesets:\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 0 (bottom), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,        0,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,        0,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 1 (top), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,    0.004,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,        0,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 2 (left), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(       0,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(       0,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 3 (right), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(   0.004,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(       0,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 4 (front), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Nodeset 5 (back), 484 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS': \nAllSideSetsByNormalsGenerator 'Normal_SS':  Mesh Sidesets:\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 6, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 7, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 8, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 9, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 10, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':   Sideset 11, 2646 sides (QUAD4), 2402 elems (HEX8), 2648 nodes\nAllSideSetsByNormalsGenerator 'Normal_SS':    Side volume: 9.6e-05\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box minimum: (x,y,z)=(       0,        0,        0)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box maximum: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS':    Bounding box delta: (x,y,z)=(   0.004,    0.004,    0.004)\nAllSideSetsByNormalsGenerator 'Normal_SS': \n\n\n...\n\n\n*** ERROR ***\n/Users/kuna138/projects/pfcp_for_drx/DRAGen_Mesh_Test.i:58.5:\nThe following error occurred in the Action 'all' of type AddPeriodicBCAction.\n\nCouldn't auto-detect a paired boundary for use with periodic boundary conditions\n\nDRAGen_Mesh_Test.txt\nDRAGen_RVE_16G.zip\nSample_Mesh_Test_Out.txt",
+          "url": "https://github.com/idaholab/moose/discussions/28766",
+          "updatedAt": "2024-10-03T17:04:31Z",
+          "publishedAt": "2024-10-03T15:29:30Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI checked the mesh and it looks fine. I wonder if it is because there are no sidesets on all ends.\nCould you please try to use this mesh generator to add these sidesets\nhttps://mooseframework.inl.gov/source/meshgenerators/SideSetsFromNodeSetsGenerator.html\nyou ll need to use your file mesh generator as the input to this other mesh generator",
+                  "url": "https://github.com/idaholab/moose/discussions/28766#discussioncomment-10834393",
+                  "updatedAt": "2024-10-03T16:56:49Z",
+                  "publishedAt": "2024-10-03T16:56:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lkuna24"
+                          },
+                          "bodyText": "That solved it!  Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/28766#discussioncomment-10834452",
+                          "updatedAt": "2024-10-03T17:04:32Z",
+                          "publishedAt": "2024-10-03T17:04:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Sublattice KKS Phase Field Model Example : Unable to find CrFe_sigma_out_var_0001.csv",
+          "author": {
+            "login": "ppandit95"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n I have consulted the Posting Guidelines.\n I have searched the Discussions Forum and MOOSE Framework Troubleshooting and have not found what I was looking for\n Q&A Getting Started is the most appropriate category for my question (trouble installing, beginner user, ...)\n\nIssue or question about MOOSE\nHi Developers\nI was trying to run sublattice KKS model which requires  CrFe_sigma_out_var_0001.csv file to generate the function requiredin the simulation but it seems that file is missing from the source code so could anyone direct me to desired location to get the file so that I can further work on utilizing this model for multi phase scenario.\nMany Thanks\nPushkar\n(Optional) code in question / simulation log / errors\nNo response\nEncountering Errors? Please include diagnostic output\nNo response",
+          "url": "https://github.com/idaholab/moose/discussions/28768",
+          "updatedAt": "2024-10-03T16:54:33Z",
+          "publishedAt": "2024-10-03T16:49:59Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@dschwen seems you contributed this example here\n\n  \n    \n      moose/modules/phase_field/examples/slkks/CrFe.i\n    \n    \n         Line 36\n      in\n      9fb4f87\n    \n  \n  \n    \n\n        \n          \n               data_file = CrFe_sigma_out_var_0001.csv \n        \n    \n  \n\n\ncan you please provide the missing csv file?",
+                  "url": "https://github.com/idaholab/moose/discussions/28768#discussioncomment-10834381",
+                  "updatedAt": "2024-10-03T16:54:34Z",
+                  "publishedAt": "2024-10-03T16:54:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "\"std::bad_cast\" error",
+          "author": {
+            "login": "EdSheltonUKAEA"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nUsually MOOSE gives fairily helpful or better information when a model won't run because of a bug, typo in the code or similar error, specifying the file and line of code where the problem is.\nBut trying to run what is admittedly a fairly complicated model split across 6 input files I've now got just this:\n\n*** ERROR ***\nstd::bad_cast\nAbort(1) on node 7 (rank 7 in comm 0): application called MPI_Abort(MPI_COMM_WORLD, 1) - process 7\n\nAny advice on how to locate and debug this?\nSearching for \"bad_cast\" on the website I can find several references to Framework requirements, etc.  How do I translate that into finding the bug that's stopping my code from running?",
+          "url": "https://github.com/idaholab/moose/discussions/28764",
+          "updatedAt": "2024-10-03T16:52:44Z",
+          "publishedAt": "2024-10-03T14:53:04Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou ll want to use a debugger to find out what \"cast\" is failing.\nA bad_cast error is (most likely here) a C++ error for casting a reference to an object to the wrong kind of object.\nIdeally, you would try to reproduce this in serial rather than debug in parallel\nhttps://mooseframework.inl.gov/application_development/debugging.html",
+                  "url": "https://github.com/idaholab/moose/discussions/28764#discussioncomment-10834348",
+                  "updatedAt": "2024-10-03T16:52:12Z",
+                  "publishedAt": "2024-10-03T16:51:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Usually we catch those errors and give more context. This must be in a loop that is not encapsulated",
+                          "url": "https://github.com/idaholab/moose/discussions/28764#discussioncomment-10834362",
+                          "updatedAt": "2024-10-03T16:52:45Z",
+                          "publishedAt": "2024-10-03T16:52:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Activating third block not working",
+          "author": {
+            "login": "fervaldies"
+          },
+          "bodyText": "Hello, I am trying to activate three blocks, each of them after a certain amount of time in the simulation. For the first 2 blocks everything is working and the heat conduction and heat source are correct, but when I try to activate the third block (after 640 seconds) the block does not activate its properties. This is part of the input file:\n[Kernels]\n  [./time]\n    type = ADHeatConductionTimeDerivative\n    variable = T\n    block = '1'\n  [../]\n  [./heat_conduct]\n    type = ADHeatConduction\n    variable = T\n    thermal_conductivity = thermal_conductivity\n    block = '1'\n  [../]\n  [./heat_source]\n    type = ADMatHeatSource\n    material_property = volumetric_heat\n    variable = T\n    block = '1'\n  [../]\n  [./time2]\n    type = ADHeatConductionTimeDerivative\n    variable = T\n    block = '2'\n  [../]\n  [./heat_conduct2]\n    type = ADHeatConduction\n    variable = T\n    thermal_conductivity = thermal_conductivity\n    block = '2'\n  [../]\n  [./heat_source2]\n    type = ADMatHeatSource\n    material_property = volumetric_heat\n    variable = T\n    block = '2'\n  [../]\n  [./time3]\n    type = ADHeatConductionTimeDerivative\n    variable = T\n    block = '3'\n  [../]\n  [./heat_conduct3]\n    type = ADHeatConduction\n    variable = T\n    thermal_conductivity = thermal_conductivity\n    block = '3'\n  [../]\n  [./heat_source3]\n    type = ADMatHeatSource\n    material_property = volumetric_heat\n    variable = T\n    block = '3'\n  [../]\n[]\n\n[Functions]\n  [./conditional_function]\n    type = ParsedFunction\n    expression = 't <= 120'\n  [../]\n  [./conditional_function2]\n    type = ParsedFunction\n    expression = 'if(t > 120,if(t <= 640,1,0),0)'\n  [../]\n  [./conditional_function3]\n    type = ParsedFunction\n    expression = 't > 640'\n  [../]\n[]\n\n[Controls]\n  [./u_threshold]\n    type = ConditionalFunctionEnableControl\n    conditional_function = conditional_function\n    disable_objects = 'Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2 Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\n    enable_objects = 'Kernels::time Kernels::heat_conduct Kernels::heat_source'\n  [../]\n  [./u_threshold2]\n    type = ConditionalFunctionEnableControl\n    conditional_function = conditional_function2\n    disable_objects = 'Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\n    enable_objects = 'Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2'\n  [../]\n  [./u_threshold3]\n    type = ConditionalFunctionEnableControl\n    conditional_function = conditional_function3\n    enable_objects = 'Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\n  [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/28740",
+          "updatedAt": "2024-10-03T03:52:31Z",
+          "publishedAt": "2024-10-01T05:16:54Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I wonder if the u_threshold_2 is executed after the _3 and disabling the kernels::xyz3 objects.\nLet's try to chain them.\nAdd the depends_on parameter. 3 depends on 2, which depends on 1",
+                  "url": "https://github.com/idaholab/moose/discussions/28740#discussioncomment-10808925",
+                  "updatedAt": "2024-10-01T13:00:20Z",
+                  "publishedAt": "2024-10-01T13:00:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fervaldies"
+                          },
+                          "bodyText": "Thank you for your answer. I have tried this, but no the first two conditions are not acting at all and it is only after 640s that the third one is activated:\n[Kernels]\n[./time]\ntype = ADHeatConductionTimeDerivative\nvariable = T\nblock = '1'\n[../]\n[./heat_conduct]\ntype = ADHeatConduction\nvariable = T\nthermal_conductivity = thermal_conductivity\nblock = '1'\n[../]\n[./heat_source]\ntype = ADMatHeatSource\nmaterial_property = volumetric_heat\nvariable = T\nblock = '1'\n[../]\n[./time2]\ntype = ADHeatConductionTimeDerivative\nvariable = T\nblock = '2'\n[../]\n[./heat_conduct2]\ntype = ADHeatConduction\nvariable = T\nthermal_conductivity = thermal_conductivity\nblock = '2'\n[../]\n[./heat_source2]\ntype = ADMatHeatSource\nmaterial_property = volumetric_heat\nvariable = T\nblock = '2'\n[../]\n[./time3]\ntype = ADHeatConductionTimeDerivative\nvariable = T\nblock = '3'\n[../]\n[./heat_conduct3]\ntype = ADHeatConduction\nvariable = T\nthermal_conductivity = thermal_conductivity\nblock = '3'\n[../]\n[./heat_source3]\ntype = ADMatHeatSource\nmaterial_property = volumetric_heat\nvariable = T\nblock = '3'\n[../]\n[]\n[Functions]\n[./conditional_function]\ntype = ParsedFunction\nexpression = 't <= 120'\n[../]\n[./conditional_function2]\ntype = ParsedFunction\nexpression = 'if(t > 120,if(t <= 640,1,0),0)'\n[../]\n[./conditional_function3]\ntype = ParsedFunction\nexpression = 't > 640'\n[../]\n[]\n[Controls]\n[./u_threshold]\ntype = ConditionalFunctionEnableControl\nconditional_function = conditional_function\ndisable_objects = 'Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2 Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\nenable_objects = 'Kernels::time Kernels::heat_conduct Kernels::heat_source'\n[../]\n[./u_threshold2]\ntype = ConditionalFunctionEnableControl\nconditional_function = conditional_function2\ndisable_objects = 'Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\nenable_objects = 'Kernels::time Kernels::heat_conduct Kernels::heat_source Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2'\ndepends_on = u_threshold\n[../]\n[./u_threshold3]\ntype = ConditionalFunctionEnableControl\nconditional_function = conditional_function3\n#disable_objects = 'Kernels::time Kernels::heat_conduct Kernels::heat_source Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2'\nenable_objects = 'Kernels::time Kernels::heat_conduct Kernels::heat_source Kernels::time2 Kernels::heat_conduct2 Kernels::heat_source2 Kernels::time3 Kernels::heat_conduct3 Kernels::heat_source3'\ndepends_on = u_threshold2\n[../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/28740#discussioncomment-10826717",
+                          "updatedAt": "2024-10-03T01:47:22Z",
+                          "publishedAt": "2024-10-03T01:47:22Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "fervaldies"
+                  },
+                  "bodyText": "Okay I think it is working now. I just disabled the previous conditions and created new kernels that are activating the 2 or 3 blocks for each time, rather than having different kernels that only activate one block each. Thanks!",
+                  "url": "https://github.com/idaholab/moose/discussions/28740#discussioncomment-10827276",
+                  "updatedAt": "2024-10-03T03:52:32Z",
+                  "publishedAt": "2024-10-03T03:52:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "gtest.h include error",
+          "author": {
+            "login": "Flolaffel"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello,\nwhile using VSCode after updating I get an include error for \"gtest/gtest.h\". How can I fix that?",
+          "url": "https://github.com/idaholab/moose/discussions/28750",
+          "updatedAt": "2024-10-02T08:05:27Z",
+          "publishedAt": "2024-10-02T07:36:35Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Flolaffel"
+                  },
+                  "bodyText": "Found the fix. Had to add\n\"${workspaceFolder}/../moose/framework/contrib/gtest\"\nto my includePath in the c_cpp_properties.json.",
+                  "url": "https://github.com/idaholab/moose/discussions/28750#discussioncomment-10817296",
+                  "updatedAt": "2024-10-02T08:05:25Z",
+                  "publishedAt": "2024-10-02T08:05:25Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Python script for extracting images from output",
+          "author": {
+            "login": "rnpratoori"
+          },
+          "bodyText": "I have run ~500 simulations and have the corresponding output files. I want to extract the images of the last timesteps of each of the files. I know how to do it with *vtu format using Python. I am not familiar with the MultiBlock type of writing output with Exodus. Can anyone tell me how to handle this data?\nI am not sure if this is the right place to ask this question, but it would be great if someone could point me to a proper source on this.",
+          "url": "https://github.com/idaholab/moose/discussions/28746",
+          "updatedAt": "2024-10-03T18:59:54Z",
+          "publishedAt": "2024-10-01T20:41:32Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "I think whichever python package you are working with for extracting the data from vtu files is a better place to start from.\nNote that you can use VTK output in moose, exodus is not the only option\nhttps://mooseframework.inl.gov/source/outputs/VTKOutput.html",
+                  "url": "https://github.com/idaholab/moose/discussions/28746#discussioncomment-10813579",
+                  "updatedAt": "2024-10-01T20:53:20Z",
+                  "publishedAt": "2024-10-01T20:53:19Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to Compute Directional Derivatives or Derivatives with Respect to Coordinates x and y of a Field in MOOSE ?",
+          "author": {
+            "login": "mahdipasaie"
+          },
+          "bodyText": "Hi,\nI am working on implementing a phase field equation in MOOSE that involves directional derivatives of a field $\\phi$. Specifically, I need to compute the derivatives of  $\\phi$  with respect to the ( x )- and ( y )-coordinates (i.e., $\\frac{\\partial \\phi}{\\partial x}$ and $\\frac{\\partial \\phi}{\\partial y}$).\nThese derivatives are required to calculate an angular-dependent function, $\\theta$, defined as:\n$$\n\\theta = \\arctan \\left( \\frac{\\frac{\\partial \\phi}{\\partial y}}{\\frac{\\partial \\phi}{\\partial x}} \\right)\n$$\nI need to define $\\theta$ as a material property in MOOSE, but I'm not sure how to compute the directional derivatives in this framework. Could someone guide me on how to obtain these derivatives and use them in the material property definition?\nHere is the full equation if anyone is interested:\n$$\n\\tau_0 a(\\theta)^2 \\frac{\\partial \\phi}{\\partial t} = W_0^2 \\nabla \\cdot \\left[a(\\theta)^2 \\nabla \\phi\\right] - \\frac{\\partial}{\\partial x}\\left[a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial y}\\right] + \\frac{\\partial}{\\partial y}\\left[a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial x}\\right] + \\left[\\phi - \\lambda u(1 - \\phi^2)\\right]\\left(1 - \\phi^2\\right)\n$$\nwhere:\n\n$\\ a(\\theta) = 1 + \\epsilon \\cos(4 \\theta) $\n$\\ \\theta = \\arctan\\left(\\frac{\\frac{\\partial \\phi}{\\partial y}}{\\frac{\\partial \\phi}{\\partial x}}\\right) $\n\nThe coupled equation:\n$$\n\\frac{\\partial u}{\\partial t} = D \\nabla^2 u + \\frac{1}{2} \\frac{\\partial h(\\psi)}{\\partial t}\n$$\nAny examples or pointers would be greatly appreciated. Thanks in advance!\nFor reference, the equations I'm working with are Equations 87 and 88 from \"Quantitative Phase-field Modeling of Dendritic Growth in Two and Three Dimensions\" by Alain Karma. You can find the article here\nMahdi.",
+          "url": "https://github.com/idaholab/moose/discussions/28637",
+          "updatedAt": "2024-10-01T16:57:00Z",
+          "publishedAt": "2024-09-16T22:13:00Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDirectional derivatives are computed using a chain rule.\nso\nda/dtheta = da/dx dx/dtheta + da/dy dy/theta\n\ndx/dtheta = 1 / dtheta/dx\n\nhere",
+                  "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10664672",
+                  "updatedAt": "2024-09-16T22:47:32Z",
+                  "publishedAt": "2024-09-16T22:47:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mahdipasaie"
+                          },
+                          "bodyText": "thank you for your reply. To define theta, is it possible that I extract the x and y components of the phi as _grad_u [_qp](0) and _grad_u[_qp](1) then define these as material properties and use them to define theta?\nand my second question is for the terms $\\frac{\\partial}{\\partial x}\\left[a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial y}\\right]$  and $\\frac{\\partial}{\\partial y}\\left[a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial x}\\right]$ :\n$a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial x}\\ = term1$\n$a(\\theta) a^{\\prime}(\\theta) \\frac{\\partial \\phi}{\\partial y}\\ = term2$\nwhen I get the weak forms of these terms the partial derivative would go on the test function I mean the weak form is:\n$&lt; term1 , \\frac{\\partial \\ Testfunction}{\\partial y}\\ &gt;$\nand\n$&lt; term2 , \\frac{\\partial \\ Testfunction}{\\partial x}\\ &gt;$\nso is it possible to multiply ( inner product )  the x and y components of the test function in moose? is it  _grad_test[_i][_qp](0) and  _grad_test[_i][_qp](1).\nThanks again.",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10665668",
+                          "updatedAt": "2024-09-17T02:51:05Z",
+                          "publishedAt": "2024-09-17T02:51:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if u is a variable,\nyou should be able to compute grad_u directly in any material property using the coupledGradient routine from the Coupleable API, no need to save them as material properties\n\nso is it possible to multiply ( inner product ) the x and y components of the test function in moose?\n\nyes. You can index into grad_test[_i][_qp] like you did",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10665813",
+                          "updatedAt": "2024-09-17T03:13:04Z",
+                          "publishedAt": "2024-09-17T03:13:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mahdipasaie"
+                  },
+                  "bodyText": "So this is how I define Theta in FEM:\n\n$\\ a(\\theta) = 1 + \\epsilon \\cos(4 \\theta) $\n\n#include \"ADtheta.h\"\n#include \"MooseMesh.h\"\n#include \"MathUtils.h\"\n\nregisterMooseObject(\"diffApp\", ADtheta);\n\nInputParameters\nADtheta::validParams()\n{\n    InputParameters params = Material::validParams();\n    params.addClassDescription(\"2D interfacial anisotropy\");\n    params.addParam<Real>(\n        \"epsilon\", 0.02, \"Strength of the anisotropy\");\n    params.addParam<Real>(\n        \"w0\", 1.0, \"Interface width\");\n    params.addRequiredCoupledVar(\"op\", \"Order parameter defining the solid phase\");\n    \n  return params;\n}\n\nADtheta::ADtheta(const InputParameters & parameters)\n  : Material(parameters),\n    _epsilon(getParam<Real>(\"epsilon\")),\n    _w0(getParam<Real>(\"w0\")),\n    _eps(declareADProperty<Real>(\"eps\")),\n    _deps(declareADProperty<Real>(\"deps\")),\n    _op(adCoupledValue(\"op\")),\n    _grad_op(adCoupledGradient(\"op\"))\n{\n  // this currently only works in 2D simulations\n  if (_mesh.dimension() != 2)\n    mooseError(\"ADInterfaceOrientationMaterial requires a two-dimensional mesh.\");\n}\n\n\nvoid\nADtheta::computeQpProperties()\n{\n    const ADReal grad_x_phi = _grad_op[_qp](0);  // \u2202x \u03c6\n    const ADReal grad_y_phi = _grad_op[_qp](1);  // \u2202y \u03c6\n\n    // Compute the magnitude of the gradient\n    const ADReal grad_norm = std::sqrt(grad_x_phi * grad_x_phi + grad_y_phi * grad_y_phi);\n\n    // Initialize theta\n    ADReal theta = 0.0;\n\n    // Avoid undefined atan2 when gradient is zero\n    if (grad_norm > 1e-14) // Use a small tolerance to avoid division by zero\n    {\n        theta = std::atan2(grad_y_phi, grad_x_phi);\n    }\n\n    // Compute anisotropy functions\n    _eps[_qp] = _w0 * (1.0 + _epsilon * std::cos(4.0 * theta));\n    _deps[_qp] = _w0 * (- _epsilon * 4.0 * std::sin(4.0 * theta));\n}\nand in the input file:\n[Materials]\n[./Theta]\ntype = ADtheta\nop = phi\n[../]\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10800427",
+                  "updatedAt": "2024-09-30T16:42:26Z",
+                  "publishedAt": "2024-09-30T16:42:26Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what is deps again? deps/d_theta?\nfor this line\n   if (grad_norm > 1e-14) // Use a small tolerance to avoid division by zero\n    {\n        theta = std::atan2(grad_y_phi, grad_x_phi);\n\njust make sure you are ok with the limit behaviors listed here\nhttps://en.cppreference.com/w/cpp/numeric/math/atan2",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10800501",
+                          "updatedAt": "2024-09-30T16:49:41Z",
+                          "publishedAt": "2024-09-30T16:49:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mahdipasaie"
+                          },
+                          "bodyText": "Yes, deps represents the derivative of $a(\\theta)$ with respect to $\\theta$. I should also mention that I reviewed the pahse filed source code on MOOSE's GitHub, which gave me some insights. However, I found it overly complex for my specific needs, so I opted to write my own implementation. That said, there might still be some details that I didn't fully grasp.\nRegarding the tolerance check, I initially expected the code to work without the if statement. However, without it, the simulation wasn't converging. That said, I made several parameter changes afterward to get the simulation working, so I\u2019ll need to revisit this check to see if it's still necessary under the updated configuration",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10800678",
+                          "updatedAt": "2024-09-30T17:10:59Z",
+                          "publishedAt": "2024-09-30T17:07:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mahdipasaie"
+                          },
+                          "bodyText": "I'd like to also test the Finite Volume Method (FVM) kernel in MOOSE by implementing the same physics, but this time using FVM. Could you help me with defining $a(\\theta)$ in an FVM kernel, similar to how it's defined in the current setup?",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10801194",
+                          "updatedAt": "2024-09-30T18:06:14Z",
+                          "publishedAt": "2024-09-30T18:06:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can use the same material properties in finite volume simulations\nThe kernels are a little different, as in FV you implement the strong form rather than the weak form in the kernels\nsee\nhttps://mooseframework.inl.gov/moose/finite_volumes/fv_design.html\nhttps://mooseframework.inl.gov/moose/syntax/FVKernels/",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10801505",
+                          "updatedAt": "2024-09-30T18:40:56Z",
+                          "publishedAt": "2024-09-30T18:40:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mahdipasaie"
+                          },
+                          "bodyText": "It seems that $a(\\theta)$ should now be a FunctorMaterial in order to be used within a kernel for a term like the one shown below in the Finite Volume Method (FVM):\n$$\n\\nabla \\cdot \\left[a(\\theta)^2 \\nabla \\phi\\right]\n$$\nThis term in my PDE behaves similarly to the FVDiffusion.C kernel in MOOSE, where $a(\\theta)$ plays a role analogous to the coeff in that kernel. In FVDiffusion.C, the coefficient is interpolated to the faces of the elements. This interpolation process can be handled if Coeff is a FunctorMaterial object in MOOSE, correct?\nHere\u2019s the relevant part of the kernel implementation for reference:\nADReal\nFVDiffusion::computeQpResidual()\n{\n  using namespace Moose::FV;\n  const auto state = determineState();\n\n  auto dudn = gradUDotNormal(state);\n  ADReal coeff;\n\n  // If we are on internal faces, we interpolate the diffusivity as usual\n  if (_var.isInternalFace(*_face_info))\n  {\n    const ADReal coeff_elem = _coeff(elemArg(), state);\n    const ADReal coeff_neighbor = _coeff(neighborArg(), state);\n    // If the diffusion coefficients are zero, then we can early return 0 (and avoid warnings if we\n    // have a harmonic interpolation)\n    if (!coeff_elem.value() && !coeff_neighbor.value())\n      return 0;\n\n    interpolate(_coeff_interp_method, coeff, coeff_elem, coeff_neighbor, *_face_info, true);\n  }\n  // Else we just use the boundary values (which depend on how the diffusion\n  // coefficient is constructed)\n  else\n  {\n    const auto face = singleSidedFaceArg();\n    coeff = _coeff(face, state);\n  }\n\n  return -1 * coeff * dudn;\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10811466",
+                          "updatedAt": "2024-10-01T16:49:56Z",
+                          "publishedAt": "2024-10-01T16:49:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "some of the FVKernels do use functor materials. there are still a few using regular material properties. It's as you want",
+                          "url": "https://github.com/idaholab/moose/discussions/28637#discussioncomment-10811550",
+                          "updatedAt": "2024-10-01T16:57:01Z",
+                          "publishedAt": "2024-10-01T16:57:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Doubts Regarding Solution of Cahn Hillard Equation Using Moose and in Reference Moose Example",
+          "author": {
+            "login": "vikramroybarc"
+          },
+          "bodyText": "Dear Moose Team,\nI am a new user of Moose and currently learning how to utilize it effectively.\nI have some questions regarding the following Moose example: ~/projects/moose/modules/combined/test/tests/DiffuseCreep/stress.i.\nThe contents of the example script are reproduced below:\n[Mesh]\n  type = GeneratedMesh\n  dim = 2\n  nx = 50\n  ny = 2\n  xmin = 0\n  xmax = 10\n  ymin = 0\n  ymax = 2\n[]\n\n[Variables]\n  [./c]\n    [./InitialCondition]\n      type = FunctionIC\n      function = 'x0:=5.0;thk:=0.5;m:=2;r:=abs(x-x0);v:=exp(-(r/thk)^m);0.1+0.1*v'\n    [../]\n  [../]\n  [./mu]\n  [../]\n  [./jx]\n  [../]\n  [./jy]\n  [../]\n[]\n\n[AuxVariables]\n  [./gb]\n    family = LAGRANGE\n    order  = FIRST\n  [../]\n  [./creep_strain_xx]\n    family = MONOMIAL\n    order  = CONSTANT\n  [../]\n  [./creep_strain_yy]\n    family = MONOMIAL\n    order  = CONSTANT\n  [../]\n  [./creep_strain_xy]\n    family = MONOMIAL\n    order  = CONSTANT\n  [../]\n[]\n\n[Kernels]\n  [./conc]\n    type = CHSplitConcentration\n    variable = c\n    mobility = mobility_prop\n    chemical_potential_var = mu\n  [../]\n  [./chempot]\n    type = CHSplitChemicalPotential\n    variable = mu\n    chemical_potential_prop = mu_prop\n    c = c\n  [../]\n  [./flux_x]\n    type = CHSplitFlux\n    variable = jx\n    component = 0\n    mobility_name = mobility_prop\n    mu = mu\n    c = c\n  [../]\n  [./flux_y]\n    type = CHSplitFlux\n    variable = jy\n    component = 1\n    mobility_name = mobility_prop\n    mu = mu\n    c = c\n  [../]\n  [./time]\n    type = TimeDerivative\n    variable = c\n  [../]\n[]\n\n[AuxKernels]\n  [./gb]\n    type = FunctionAux\n    variable = gb\n    function = 'x0:=5.0;thk:=0.5;m:=2;r:=abs(x-x0);v:=exp(-(r/thk)^m);v'\n  [../]\n  [./creep_strain_xx]\n    type = RankTwoAux\n    variable = creep_strain_xx\n    rank_two_tensor = creep_strain\n    index_i = 0\n    index_j = 0\n  [../]\n  [./creep_strain_yy]\n    type = RankTwoAux\n    variable = creep_strain_yy\n    rank_two_tensor = creep_strain\n    index_i = 1\n    index_j = 1\n  [../]\n  [./creep_strain_xy]\n    type = RankTwoAux\n    variable = creep_strain_xy\n    rank_two_tensor = creep_strain\n    index_i = 0\n    index_j = 1\n  [../]\n[]\n\n[Materials]\n  [./chemical_potential]\n    type = DerivativeParsedMaterial\n    block = 0\n    property_name = mu_prop\n    coupled_variables = c\n    expression = 'c'\n    derivative_order = 1\n  [../]\n  [./var_dependence]\n    type = DerivativeParsedMaterial\n    block = 0\n    expression = 'c*(1.0-c)'\n    coupled_variables = c\n    property_name = var_dep\n    derivative_order = 1\n  [../]\n  [./mobility]\n    type = CompositeMobilityTensor\n    block = 0\n    M_name = mobility_prop\n    tensors = diffusivity\n    weights = var_dep\n    args = c\n  [../]\n  [./phase_normal]\n    type = PhaseNormalTensor\n    phase = gb\n    normal_tensor_name = gb_normal\n  [../]\n  [./aniso_tensor]\n    type = GBDependentAnisotropicTensor\n    gb = gb\n    bulk_parameter = 0.1\n    gb_parameter = 1\n    gb_normal_tensor_name = gb_normal\n    gb_tensor_prop_name = aniso_tensor\n  [../]\n  [./diffusivity]\n    type = GBDependentDiffusivity\n    gb = gb\n    bulk_parameter = 0.1\n    gb_parameter = 1\n    gb_normal_tensor_name = gb_normal\n    gb_tensor_prop_name = diffusivity\n  [../]\n  [./diffuse_strain_increment]\n    type = FluxBasedStrainIncrement\n    xflux = jx\n    yflux = jy\n    gb = gb\n    property_name = diffuse\n  [../]\n  [./diffuse_creep_strain]\n    type = SumTensorIncrements\n    tensor_name = creep_strain\n    coupled_tensor_increment_names = diffuse\n  [../]\n[]\n\n[BCs]\n  [./Periodic]\n    [./all]\n      auto_direction = 'x y'\n    [../]\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = PJFNK\n\n  petsc_options_iname = '-pc_type -ksp_grmres_restart -sub_ksp_type -sub_pc_type -pc_asm_overlap'\n  petsc_options_value = 'asm      31                  preonly       lu           1'\n\n  nl_max_its = 5\n  dt = 20\n  num_steps = 5\n[]\n\n[Preconditioning]\n  [./smp]\n     type = SMP\n     full = true\n  [../]\n[]\n\n[Outputs]\n  exodus = true\n[]\n\n\nI have following doubts regarding this example:\n\nConsidering the Cahn Hillard equation written as :\n\n\nThe Weak Form of this equation will be :\n\nWhen I reffered the return value of all the kernals Mentioned in the example script I am getting the following:\nCHSplitConcentration::computeQpResidual()\n{\n  const RealVectorValue a = _mobility[_qp] * _grad_mu[_qp];\n  return _grad_test[_i][_qp] * a;\n}\nReal\nCHSplitChemicalPotential::computeQpResidual()\n{\n  return _test[_i][_qp] * (_u[_qp] - _chemical_potential[_qp]);\n}\nReal\nCHSplitFlux::computeQpResidual()\n{\n  return _test[_i][_qp] * (_u[_qp] + _mobility[_qp].row(_component) * _grad_mu[_qp]);\n}\nReal\nTimeDerivative::computeQpResidual()\n{\n  return _test[_i][_qp] * _u_dot[_qp];\n}\nAdding All Residual components of all the kernals I am getting the following:\nR = _test[_i][_qp] * _u_dot[_qp] +  _test[_i][_qp] * (_u[_qp] + _mobility[_qp].row(_component) * _grad_mu[_qp]) + _test[_i][_qp] * (_u[_qp] - _chemical_potential[_qp]) +  _grad_test[_i][_qp] * _mobility[_qp] * _grad_mu[_qp]\n\nand this results in following:\n\nAs a result, I am not obtaining the residuals of the standard Cahn-Hilliard equation, which I believe is due to the second and third terms. Specifically, this issue arises from the kernels CHSplitFlux (second term) and CHSplitChemicalPotential (third term).\nCould you help me understand the logic behind this?\n\n\nIn the script Chemical Potential has been taken as equal to c. So Why in Kernal  CHSplitChemicalPotential c - u is calculated. u being the chemical potential\n\n\nRegarding CHSplitFlux, in the documentation it is written that this Kernal computes j\n\n\n\nso why this is a kernal in the first place as it should be auxkernal\nKindly help me in understanding these doubts.\nThankyou",
+          "url": "https://github.com/idaholab/moose/discussions/28726",
+          "updatedAt": "2024-10-01T15:14:43Z",
+          "publishedAt": "2024-09-29T11:59:13Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@laagesen",
+                  "url": "https://github.com/idaholab/moose/discussions/28726#discussioncomment-10788983",
+                  "updatedAt": "2024-09-29T13:02:06Z",
+                  "publishedAt": "2024-09-29T13:02:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "laagesen"
+                  },
+                  "bodyText": "Hi, welcome to the MOOSE framework! I think the confusion is resulting from the fact that in this split formulation, there is more than one nonlinear variable, more than just c. So, when you see _u[_qp] it is not always going to be c. You have to look at what is specified in variable =  in each block. For example, in the third term, for the kernel CHSplitChemicalPotential, we have variable = mu which means when you see _u[_qp] that means chemical potential (mu), not c. So what you are solving for in that term is that the nonlinear variable mu needs to be equal to the material property mu_prop\nThe following will be helpful to understand all the MOOSE framework phase-field module better:\nhttps://mooseframework.inl.gov/moose/modules/phase_field/index.html",
+                  "url": "https://github.com/idaholab/moose/discussions/28726#discussioncomment-10810464",
+                  "updatedAt": "2024-10-01T15:14:44Z",
+                  "publishedAt": "2024-10-01T15:14:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

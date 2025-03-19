@@ -1,0 +1,1078 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0wMy0xMlQwMToyODowNi0wNzowMM4AMc6e"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Navier-Stokes Preconditioning for a large problem - move across from mailing list",
+          "author": {
+            "login": "makeclean"
+          },
+          "bodyText": "Hi\nSo quick reminder I'm trying to solve a big (by my standards) fluid problem - its 2.4e6 elements - 16.6e6 DOF on 1280 cores, with a pre split mesh. Here is the run dump\nBuilding mesh .                                                                            [  2.22 s]\nInitializing equation system .............................                                 [ 30.02 s]\n\nFramework Information:\nMOOSE Version:           git commit 95fb74e5fe on 2020-10-01\nLibMesh Version:         b51a1fac743ce11a1e65018f25a478241c24ed44\nPETSc Version:           3.13.3\nSLEPc Version:           3.13.3\nCurrent Time:            Fri Nov  6 12:44:48 2020\nExecutable Timestamp:    Thu Oct  1 18:19:58 2020\n\nParallelism:\n  Num Processors:          1280\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           distributed (pre-split)\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:                   \n    Total:                 3336156\n    Local:                 3176\n  Elems:                   \n    Total:                 2406640\n    Local:                 1935\n  Num Subdomains:          1\n  Num Partitions:          1\n  Partitioner:             parmetis\n\nNonlinear System:\n  AD size required:        90\n  Num DOFs:                16680780\n  Num Local DOFs:          15880\n  Variables:               \"velocity\" { \"p\" \"temp_fluid\" } \n  Finite Element Types:    \"LAGRANGE_VEC\" \"LAGRANGE\" \n  Approximation Orders:    \"SECOND\" \"SECOND\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             PostprocessorDT\n  Solver Mode:             NEWTON\n  MOOSE Preconditioner:    FSP\n\nProjecting initial condition .............................................................\n........................................                                                   [102.88 s]\nComputing initial stateful property values ......................                          [ 23.01 s]\nCopying soultions back ...................................................................\n..........................................................................................\n........................                                                                   [182.53 s]\n\nTime Step 0, time = 0\nWarning:  This MeshOutput subclass only supports meshes which have been serialized!\nWarning:  This MeshOutput subclass only supports meshes which have been serialized!\n\nPostprocessor Values:\n+----------------+----------------+\n| time           | cfl            |\n+----------------+----------------+\n|   0.000000e+00 |   6.165143e+11 |\n+----------------+----------------+\n\nOutputting out \n..........................................................................................\n..........................................................................................\n..........................................................................................\n..........................................................................................\n..........................................................................................\n..........................                                                                 [477.73 s]\n\nTime Step 1, time = 0.01, dt = 0.01\nComputing initial residual .....                                                           [  6.41 s]\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 1.948466e+04\nBuilding node to element map .....................................................         [ 54.57 s]\n      0 Linear |R| = 1.948466e+04\n\nIt's been at that stage for about 10 hours now, maybe even more like 15. When I ran this problem on 640 cores I got an error from petsc (error 9) suggesting a memory problem.\nSo my question is, any advice, different preconditioners?\nThanks\nSee input attached - hmm downside of GH Discussion, can't attach arbitrary files. But here is the input as a txt, also some screens of the geometry.\nfluid_sim-pc-no-t.txt",
+          "url": "https://github.com/idaholab/moose/discussions/16113",
+          "updatedAt": "2022-06-21T16:48:03Z",
+          "publishedAt": "2020-11-07T12:04:37Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "So one thing straightaway that\u2019s not related to your question... please see #16091 and #16089. You should \u2018./configure \u2014with-ad-indexing-type=global\u2019 to avoid all that time spent in initial condition and \u201cstateful property\u201d computation.\nTo your question: I have seen the FSP options that you\u2019re using be fairly expensive in terms of memory and even CPU for large enough problems. I\u2019ve found asm or block Jacobi with sub block LU to be the most effective preconditioner for large INS problems. But I do believe that with some investigation, working with @fdkong , we can get FSP to be successful",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123776",
+                  "updatedAt": "2022-06-21T16:48:06Z",
+                  "publishedAt": "2020-11-07T16:13:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "Yes, we will keep exploring FSP options. We might eventually come up with some good built-in options at the end.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-126994",
+                          "updatedAt": "2022-06-21T16:48:09Z",
+                          "publishedAt": "2020-11-11T15:32:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "Ah thats useful, I'll rebuild - there a whole bunch of options that are really useful, I wonder if they should be default?\nSo I'm now on;\n  petsc_options_iname = '-pc_type -pc_asm_overlap -sub_pc_type -sub_pc_factor_levels  -ksp_gmres_restart'\n  petsc_options_value = 'asm      2               ilu          4       200'\n\nThat fails with out of memory,\nTime Step 1, time = 0.01, dt = 0.01\nComputing initial residual .....                                                           [  6.28 s]\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 1.948466e+04\n\n===================================================================================\n=   BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES\n=   PID 27176 RUNNING AT arm02.ib0.diracarm.le.ac.uk\n=   EXIT CODE: 9\n=   CLEANING UP REMAINING PROCESSES\n=   YOU CAN IGNORE THE BELOW CLEANUP MESSAGES\n===================================================================================\n\nIm going to try Jacobi next",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123804",
+                  "updatedAt": "2022-06-21T16:48:13Z",
+                  "publishedAt": "2020-11-07T18:07:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "This actually looks like it could be running out of memory during Jacobian assembly since we haven\u2019t yet printed the first linear residual to the screen. I really want to get parallel heap profiling going (#15990). How big of a derivative vector did you configure with?\nSomething I can say is that you\u2019re doing yourself no favors memory-wise by using second order basis. At least it looks like you\u2019re using tets. Still, you will have rows with 50 coupled dofs (5 vars * 10 dofs per elem) instead of potentially 20 coupled dofs (4 dofs per elem). So that has the potential to reduce your memory footprint if you go to first order (you are already using PSPG). If you have significant curvature I would suggest just adding more elements to try and capture it unless that\u2019s untenable for some reason.\nIf you do go to first order you can reconfigure \u2018\u2014with-derivative-size=20\u2019 to try and speed up your calculations just a bit (and potentially further reduce your memory footprint a smidge).",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123820",
+                          "updatedAt": "2022-06-21T16:48:10Z",
+                          "publishedAt": "2020-11-07T18:59:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "I'm pretty sure I have derivative-size=180 currently I had a big structural problem which warranted it earlier and I've stuck with it since.\nI can try first order, and I have no issue with adding more elements I'll give that a bash too. Thus far (perhaps for historical reasons) I've tended to use 2nd order for velocity and 1st for pressure, perhaps with the ADINS stuff its no-longer necessary.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123824",
+                          "updatedAt": "2022-06-21T16:48:10Z",
+                          "publishedAt": "2020-11-07T19:10:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "The mixed order basis is required for LBB stability if you are not using PSPG. PSPG makes equal-order basis stable. If you ever see a mixed-order basis do better with nonlinear/linear convergence than a PSPG equal-order basis, however, then I would be very interested to hear about it.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123833",
+                          "updatedAt": "2022-06-21T16:48:10Z",
+                          "publishedAt": "2020-11-07T19:53:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "I think you should use sparse AD that uses much less memory and also way faster (at least for one project I have done last month).",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-126999",
+                          "updatedAt": "2022-07-12T13:17:44Z",
+                          "publishedAt": "2020-11-11T15:35:31Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "Ok, with 2nd order as before but with\n  petsc_options_iname = '-pc_type -pc_asm_overlap -sub_pc_type -sub_pc_factor_levels  -ksp_gmres_restart'\n  petsc_options_value = 'bjacobi      2               ilu          4       200'\n\nWe now have lift off, well its running at least ;)\n    300 Linear |R| = 1.091458e+02\n  Linear solve did not converge due to DIVERGED_ITS iterations 300\n 1 Nonlinear |R| = 2.581837e+06\n      0 Linear |R| = 2.581837e+06\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC_FAILED due to FACTOR_NOERROR \nNonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 1\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nTime Step 1, time = 0.005, dt = 0.005\nComputing initial residual .....                                                           [  6.79 s]\n 0 Nonlinear |R| = 3.913081e+04\n\nWe'll see in the morning if it gets anywhere - thanks for the help so far",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-123876",
+                  "updatedAt": "2022-06-21T16:48:09Z",
+                  "publishedAt": "2020-11-07T23:15:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Ok, so over night much more progress was made, we're getting through some linear and non-linear iterations now and we're failing to converge, but ive got the timestep set pretty high. I've seen the in past that it needs to take a very small timestep, say 1e-6 seconds, then its happy to take great big 1e-2 size time steps, so this is great progress!",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-124401",
+                          "updatedAt": "2022-06-21T16:48:14Z",
+                          "publishedAt": "2020-11-08T22:04:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "ILU(4) is quite expensive, and it might already very close to LU. I was wondering if the algorithm will still converge if you switch to use  ILU(3).\nASM uses more memory than bjacobi because of overlapping elements and also duplicated local submatrices",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-127007",
+                          "updatedAt": "2022-06-21T16:48:16Z",
+                          "publishedAt": "2020-11-11T15:38:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "So good news, I changed 1st order, and its flying now :) Taking great big honking time steps which is great, but im wondering if i should tighten up my tolerances?\nIn terms of iterations im seeing a decent drop in linear residuals and in around 3 or 4 non-linear steps which is great, however... im seeing some weird velocity and temperature excursions,\n\nSo this one shows temp which should be between 300 and 673 K, the walls are at 673 and its injected at 573, but the IC is 300, is this a question of more elements, but the temp should definitely not be greater than 637 or lower than 300 (given some interpolation between nodes) but certainly not in the -1e6 to 1e6 range.\n\nVelocity has some similar problems, we're ramping with time (max(1,t)) and I can forgive velocities in the range 1,4 probably, but there are local excursions to 5e3 m/s\nDoes that indicate that I should lengthen up tolerances or mesh resolution?",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-124955",
+                  "updatedAt": "2022-06-21T16:48:14Z",
+                  "publishedAt": "2020-11-09T12:10:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I would try to avoid using nl_abs_tol unless you're stepping towards a steady-state. You may try using nl_rel_tol = 1e-8. But I think the more important part is probably to increase the mesh resolution to try to avoid oscillations in the fields (overshoots and undershoots). What is your Reynolds number? Also I can't quite tell in the temperature visualization with the red patch...is the majority of the domain at 300K? Or is most of the domain below 300 K? I would be much more concerned if we are seeing a majority of the domain go below a physical value as opposed to in some small regions near sharp discontinuities, which continuous FEM is notoriously bad at resolving. SUPG helps, but it's not a silver bullet.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-125168",
+                          "updatedAt": "2022-06-21T16:48:35Z",
+                          "publishedAt": "2020-11-09T17:26:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "fdkong"
+                  },
+                  "bodyText": "In general, adaptive time stepper may be helpful here\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 0.5\n    growth_factor = 1.2\n    cutback_factor = 0.8\n  [../]",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-127012",
+                  "updatedAt": "2022-06-21T16:48:31Z",
+                  "publishedAt": "2020-11-11T15:41:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "mlesueur"
+                  },
+                  "bodyText": "Hi @makeclean,\nI have just seen your post as I was doing my annual errand on moose-users about: \"is there a better preconditioner for my large simulations of Stokes flow\" \ud83d\ude01 So I'm jumping on the post.\nTo give you some context, I am simulating pressure-driven Stokes flow through complex structures (rock microCT-scans) and I am often dealing with DOFs >1e7.\nI have already discussed preconditioning with @fdkong and the one I am using right now is:\n[FSP]\n    type = FSP\n    petsc_options_iname = '-snes_type -ksp_type -ksp_rtol -ksp_atol -ksp_max_it -snes_atol -snes_rtol -snes_max_it -snes_max_funcs'\n    petsc_options_value = 'newtonls     fgmres     1e-2     1e-15       200       1e-10        1e-15       200           100000'\n    topsplit = 'uv'\n    [uv]\n      petsc_options_iname = '-pc_fieldsplit_schur_fact_type -pc_fieldsplit_schur_precondition'\n      petsc_options_value = 'upper selfp'\n      splitting = 'u v'\n      splitting_type = schur\n    []\n    [u]\n      vars = 'vel_x vel_y vel_z'\n      petsc_options_iname = '-pc_type -ksp_type -pc_hypre_type'\n      petsc_options_value = '  hypre    preonly     boomeramg '\n    []\n    [v]\n      vars = 'p'\n      petsc_options_iname = '-pc_type -ksp_type -sub_pc_type -sub_pc_factor_levels'\n      petsc_options_value = '  jacobi  preonly        ilu            3'\n    []\n  []\nIt shows great performance and I am able to solve 1e7+ DOFs within an hour on 50 processors (also I'm using PSPG with first order elements). Let me know if this works for you!\nStill for me the problem I am facing was mentioned by @lindsayad and @fdkong: the memory usage is off the charts! For example for 1e7 DOFs, it needs 64Gb (even with mesh splitting).\nI would love to have any feedback on whether I can improve this FSP.\nOtherwise I tested also the solutions mentioned here. It is the asm ilu that seemed to give me some good convergence with a low memory usage. HOWEVER, I have a a DIVERGED_LINE_SEARCH error after the second nonlinear iteration, see below. I have tried all the different line search options, or disabling it, but it does not work. Is it maybe because of the 0 in the diagonal of the stokes matrix? Do you think there is a solution to still have the asm ilu working?\nThank you in advance for your help,\nCheers,\nMartin\nComputing initial residual                                                                 [  1.29 s]\n 0 Nonlinear |R| = 1.976305e-04\n      0 Linear |R| = 1.976305e-04\n...\n     26 Linear |R| = 1.017750e-07\n 1 Nonlinear |R| = 9.125860e-05\n      0 Linear |R| = 9.125860e-05\n      1 Linear |R| = 9.125821e-05\n      2 Linear |R| = 9.125519e-05\n      3 Linear |R| = 9.125061e-05\n      4 Linear |R| = 9.123911e-05\n      5 Linear |R| = 9.122871e-05\n      6 Linear |R| = 9.115078e-05\n      7 Linear |R| = 9.111489e-05\n      8 Linear |R| = 9.091965e-05\n      9 Linear |R| = 9.079105e-05\n     10 Linear |R| = 8.967217e-05\n     11 Linear |R| = 8.818694e-05\n     12 Linear |R| = 7.786348e-05\n     13 Linear |R| = 6.424927e-05\n     14 Linear |R| = 3.950608e-05\n     15 Linear |R| = 2.839524e-05\n     16 Linear |R| = 1.836606e-05\n     17 Linear |R| = 1.196996e-05\n     18 Linear |R| = 6.749037e-06\n     19 Linear |R| = 3.362408e-06\n     20 Linear |R| = 1.857514e-06\n     21 Linear |R| = 1.028440e-06\n     22 Linear |R| = 6.480960e-07\n     23 Linear |R| = 3.930797e-07\n     24 Linear |R| = 2.569072e-07\n     25 Linear |R| = 1.634042e-07\n     26 Linear |R| = 1.104569e-07\n     27 Linear |R| = 6.666340e-08\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nOutlier Variable Residual Norms:\n  vel_x: 8.300333e-05",
+                  "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451036",
+                  "updatedAt": "2022-06-21T16:48:44Z",
+                  "publishedAt": "2021-03-08T17:46:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "High memory use with FSP...I do not see lu anywhere. @fdkong why would it be taking so much memory relative to asm + ilu?\nAre you using PJFNK or NEWTON? could you run with -ksp_monitor_true_residual and paste in that same solve history? Also are you using the INSAD or INS kernels? Finally, you should not have a zero for any of the diagonals if you are using PSPG.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451123",
+                          "updatedAt": "2022-06-21T16:49:16Z",
+                          "publishedAt": "2021-03-08T18:10:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "In general, I do not expect the FSP memory usage is way more than  that of ASM+ILU.\nIt would be really helpful if @mlesueur   would like to do a heap profiling. With a profiling result, we might have an idea if we are able to improve anything.\nHere are some profiling instructions:  https://mooseframework.inl.gov/application_development/profiling.html",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451159",
+                          "updatedAt": "2022-06-21T16:49:16Z",
+                          "publishedAt": "2021-03-08T18:21:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "Nonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\nSolve Did NOT Converge!\nAborting as solve did not converge\n\n@mlesueur You could turn off line search, and try it again. Add line_search = none into executioner block",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451165",
+                          "updatedAt": "2022-06-21T16:49:15Z",
+                          "publishedAt": "2021-03-08T18:22:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I think @fdkong means to be tagging @mlesueur here. It would be great to see a heap profile for the FSP case (and also for the asm-ilu case for comparison).",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451197",
+                          "updatedAt": "2022-06-21T16:49:36Z",
+                          "publishedAt": "2021-03-08T18:34:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "either way I appreciate the ping to remind me of my old problem :)",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-451764",
+                          "updatedAt": "2022-06-21T16:49:37Z",
+                          "publishedAt": "2021-03-08T21:16:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mlesueur"
+                          },
+                          "bodyText": "Thank you for your answers, I will update MOOSE and try to do a heap profiling. @lindsayad I use INS kernels and solve with NEWTON. I thought this was the way to use as little memory as possible and reduce CPU time. Is that correct?",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-452816",
+                          "updatedAt": "2022-06-21T16:49:37Z",
+                          "publishedAt": "2021-03-09T08:09:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mlesueur"
+                          },
+                          "bodyText": "I have updated moos. Now asm-ilu seems to be working, with a similar memory usage than FSP, at least at 1e6 DOFS. I haven't pushed it further yet.\nFor the profiling, I haven't been able to use gperftools... Is it available with the latest moose version? So I got out the allocations from instruments instead, for both asm-ilu and fsp (https://we.tl/t-y8ndLzbOIv), for a small problem, 72488 DOFS. I don't really know how to read this type of files, but is this comprehensible for you?\nPlease let me know if I can do something else",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-455874",
+                          "updatedAt": "2022-06-21T16:49:37Z",
+                          "publishedAt": "2021-03-09T15:49:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I use INS kernels and solve with NEWTON. I thought this was the way to use as little memory as possible and reduce CPU time. Is that correct?\n\nThat is correct\n\nNow asm-ilu seems to be working\n\nSo it's converging now without you making any other changes other than updating moose? Did you update your PETSc version?\n\nFor the profiling, I haven't been able to use gperftools... Is it available with the latest moose version?\n\nNo. We used to distribute a package for it, but unfortunately we no longer do that. You would have to build that as well as libunwind most likely. If you are on Mac, it's my experience that gperftools doesn't work that well (maybe @fdkong has experienced otherwise), so instruments may be your best bet. I'll try looking at the traces next time I'm on my laptop",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-456089",
+                          "updatedAt": "2022-06-21T16:49:46Z",
+                          "publishedAt": "2021-03-09T16:39:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fdkong"
+                          },
+                          "bodyText": "I have updated moos. Now asm-ilu seems to be working, with a similar memory usage than FSP, at least at 1e6 DOFS. I haven't pushed it further yet.\nFor the profiling, I haven't been able to use gperftools... Is it available with the latest moose version? So I got out the allocations from instruments instead, for both asm-ilu and fsp (https://we.tl/t-y8ndLzbOIv), for a small problem, 72488 DOFS. I don't really know how to read this type of files, but is this comprehensible for you?\nPlease let me know if I can do something else\n\n@mlesueur Thanks for your results. In your test cases, FSP is better than ASM in terms of memory and compute time.\nFSP, simulation time 42.562 s, memory 359 MB\nASM: simulation time 69.562 s,  memory 1030MB.\nThe reason is that you run simulations in serial and ASM is an ILU. ASM is competitive when running in parallel. But you should pick up whatever work better for you.\nI did not see unexpected memory allocations from your profiling results.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-456336",
+                          "updatedAt": "2022-06-21T16:50:04Z",
+                          "publishedAt": "2021-03-09T17:43:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mlesueur"
+                          },
+                          "bodyText": "Thank you @fdkong for the feedback. Happy to know that the FSP looks like my best option. I guess the large memory usage is just normal when you are dealing with large meshes.",
+                          "url": "https://github.com/idaholab/moose/discussions/16113#discussioncomment-487734",
+                          "updatedAt": "2022-06-21T16:50:05Z",
+                          "publishedAt": "2021-03-16T09:38:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Initial conditions questions - (doesn't take second order data, simulation speed)",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Hi all,\nI have 2 questions regarding MOOSE initial conditions\nFirst question is does 'initial conditions' work as the initial guess forthe solver?  if so, I don't really see much of an imporvement at all, maybe I did something wrong?\nHere is a rough workflow of my simulation: solve a steady state problem > upload file to the next simulation > change the material property (young's modulus/density/possion) of some block IDs > solve a steady state problem > repeat.\nSecond question: I tried to load the 2nd order Auxvariable from .e file\n\n[Mesh]\n[./gen]\n   type = FileMeshGenerator\n     file = gravz_later_step1_Pre_backfilltest.e\n     show_info = true\n     use_for_exodus_restart = true\n     # parallel_type = distributed\n  []\n[]\n\n[AuxVariables]\n  [./s11_aux]\n    order = SECOND\n    family = MONOMIAL\n   initial_from_file_var = s11_aux\n  [../]\n  [./s22_aux]\n    order = SECOND\n    family = MONOMIAL\n   initial_from_file_var = s22_aux\n  [../]\n  [./s33_aux]\n    order = SECOND\n    family = MONOMIAL\n   initial_from_file_var = s33_aux\n  [../]\n[]\n\nand I received this error\nError! Trying to copy elemental solution into a variable that is not of CONSTANT MONOMIAL type.\nIt has no error taking 2nd order variable\n[Variables]\n    [./disp_x]\n      order = SECOND\n      family = LAGRANGE\n       initial_from_file_var = disp_x\n    [../]\n    [./disp_y]\n      order = SECOND\n      family = LAGRANGE\n      initial_from_file_var = disp_y\n    [../]\n    [./disp_z]\n      order = SECOND\n      family = LAGRANGE\n       initial_from_file_var = disp_z\n    [../]\n[]\n\nis there any way to work around this? can I calculate Auxvariable pre and post simulation?\nThank you guys!\nRegards,\nTraiwit",
+          "url": "https://github.com/idaholab/moose/discussions/17314",
+          "updatedAt": "2022-07-01T11:25:22Z",
+          "publishedAt": "2021-03-15T04:30:23Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @Traiwit\n\n\nFor time dependent problems, the initial conditions should be the initial guess of the solver.\nNot sure about steady state problems. Initial conditions may not have any effect in that case.\n\n\nNot sure if that is possible. Were the AuxVariables in the imported file also second order monomial?\n\n\nNicol\u00f2",
+                  "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-482823",
+                  "updatedAt": "2022-07-01T11:25:34Z",
+                  "publishedAt": "2021-03-15T08:34:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Hang on, although i'm sure you know about initial conditions, @ngrilli , i think your wording is confusing, so for posterity i'll write:\n\nFor Variables, initial conditions are the physical initial conditions of your system.   They are usually well-known.  For instance, displacement = 0, or pressure = atmospheric, or temperature = room_temperature, etc.  For steady simulations, the initial conditions don't matter in principal, because MOOSE will find the solution no-matter what the initial conditions you set (assuming there is a unique solution) but in practice initial conditions are extremely important, since if your ICs are close to the final steady-state solution MOOSE will find it easy to converge, while if you just set random ICs MOOSE will take ages to converge.  In this sense, for steady problems, the ICs can be thought of as \"initial guess\".\nFor AuxVariables, initial conditions can be more complicated.  Firstly, they could be over-written by your AuxKernels so the initial may have no impact.  Secondly, some AuxVariables are simply stores of information and aren't actually used in Kernels/Materials/etc, so have no impact on the solution process, and setting an initial is just for visualisation, etc.  On the other hand, some AuxVariables feed into Kernels/etc, so their initial may be very important, and you should choose something physical (for time-dep problems) or reasonable (for steady problems).",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-483029",
+                          "updatedAt": "2022-07-01T11:25:34Z",
+                          "publishedAt": "2021-03-15T09:42:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "@WilkAndy may I ask a really dumb question,\nIn Tensormechanic, seem like the only variable that goes into the solver is 'disp_', would importing the variable from a file as follow (below) enough to let MOOSE know that I want to use these disp_ as ICs?\nThank you!\n[Variables]\n    [./disp_x]\n      order = SECOND\n      family = LAGRANGE\n       initial_from_file_var = disp_x\n    [../]\n    [./disp_y]\n      order = SECOND\n      family = LAGRANGE\n      initial_from_file_var = disp_y\n    [../]\n    [./disp_z]\n      order = SECOND\n      family = LAGRANGE\n       initial_from_file_var = disp_z\n    [../]\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-483070",
+                          "updatedAt": "2022-07-01T11:25:35Z",
+                          "publishedAt": "2021-03-15T09:53:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Yes, that is the syntax you should use to set your displacement ICs.",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-483151",
+                          "updatedAt": "2022-07-01T11:25:35Z",
+                          "publishedAt": "2021-03-15T10:12:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Thank you @WilkAndy ,\nFor the 2nd question: Yes @ngrilli, the input file contains the second order monomial data.",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-483602",
+                          "updatedAt": "2023-04-10T19:13:00Z",
+                          "publishedAt": "2021-03-15T12:30:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Hey @Traiwit, i just want to highlight the phrase \"assuming there is a unique solution\" in my post above.  Just remember that when you start using plasticity, your solution will be path dependent, eg, will depend on your excavation schedule (and any damping parameters you include).  Eg, if you excavate the entire mine in one big chunk, the overburden will tend to fall down in one big chunk (with failure only above the boundary of your excavation), whereas if you excavate in many small steps, the rock will tend to fail and bulk-up throughout the entire overburden.",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-485877",
+                          "updatedAt": "2023-04-10T19:13:00Z",
+                          "publishedAt": "2021-03-15T20:47:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "@WilkAndy thanks I will keep that in mind, i'm still not happy with my elastic model, might be some time until I can move to plastic model.\nI've been reading the coal-mine example too, I hope everything makes sense eventually :)",
+                          "url": "https://github.com/idaholab/moose/discussions/17314#discussioncomment-486988",
+                          "updatedAt": "2023-04-10T19:13:04Z",
+                          "publishedAt": "2021-03-16T04:44:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about convergence with decreasing residuals",
+          "author": {
+            "login": "Bala-1005"
+          },
+          "bodyText": "Hello everyone,\nI have noticed a very weird convergence issue while running my phasefield-mechanics problem on moose. Attached are two parts of the same output file.\nEven though the linear and nonlinear residuals drop in a similar way, one of the time steps returns a message saying the solution has converged but the other returns saying solve has not converged. Why would it happen that way?\nThanks,\nBala\nconverged.txt\nnonconverged.txt",
+          "url": "https://github.com/idaholab/moose/discussions/17322",
+          "updatedAt": "2022-10-25T02:30:46Z",
+          "publishedAt": "2021-03-15T19:11:06Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Looks like you have the maximum number of nonlinear iterations (nl_max_its) set to 10. Try increasing that value. The other solve probably converged because the default nonlinear tolerance (nl_rel_tol) of 1e-8 was met. The nonconverged solution was just slightly above that value (comparing the last nonlinear residual to the first) as it hit the 10th iteration so it aborted.",
+                  "url": "https://github.com/idaholab/moose/discussions/17322#discussioncomment-485670",
+                  "updatedAt": "2022-10-25T02:30:51Z",
+                  "publishedAt": "2021-03-15T19:41:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jessecarterMOOSE"
+                  },
+                  "bodyText": "Check out this page:\nhttps://mooseframework.inl.gov/application_usage/failed_solves.html",
+                  "url": "https://github.com/idaholab/moose/discussions/17322#discussioncomment-485678",
+                  "updatedAt": "2022-10-25T02:31:00Z",
+                  "publishedAt": "2021-03-15T19:42:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Bala-1005"
+                          },
+                          "bodyText": "Thank you @jessecarterMOOSE . That solved the issue. Just to understand better, when you say the nonlinear relative tolerance was not met in the non converged solution do you mean to say that the difference between the final nonlinear tolerance and the previous nonlinear tolerance?\nAlso, this may be unrelated but I see the letter 'm' in my output file between numbers when it displays the residuals? What does this mean and how do I remove this?\nThanks,\nBala",
+                          "url": "https://github.com/idaholab/moose/discussions/17322#discussioncomment-486190",
+                          "updatedAt": "2022-10-25T02:31:00Z",
+                          "publishedAt": "2021-03-15T22:21:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jessecarterMOOSE"
+                          },
+                          "bodyText": "It is the ratio of the final nonlinear residual to the first, or rather the 0th, nonlinear residual of the particular step.\nAll that extra junk is color code information that a simple text editor doesn't understand. You can run moose with --no-color to disable color output.",
+                          "url": "https://github.com/idaholab/moose/discussions/17322#discussioncomment-486378",
+                          "updatedAt": "2022-11-15T13:10:00Z",
+                          "publishedAt": "2021-03-15T23:19:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Bala-1005"
+                          },
+                          "bodyText": "Thank you so much @jessecarterMOOSE .",
+                          "url": "https://github.com/idaholab/moose/discussions/17322#discussioncomment-486857",
+                          "updatedAt": "2022-11-15T13:11:09Z",
+                          "publishedAt": "2021-03-16T03:07:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "AuxKernels and ADMaterialPropertiy",
+          "author": {
+            "login": "joe61vette"
+          },
+          "bodyText": "Hi:\nTrying to code an AuxKernel for a Finite Volume based app that consumes material properties that are \"AD\".  As I understand it, AuxVars are not supported by the AD system.  So, there is no point in doing computations with AD properties inside an AuxKernel.\nThe return type for the AuxKernel is simply \"Real\".  But I want to use an AD Property inside it.  For example, the initialization has the line:\n_rho(getADMaterialProperty(\"density\")\nwith the above, I get a compile time error because it can't convert the return type to a double.  If I try to initialize with:\n_rho(getMaterialProperty(\"density\")\nI get a run time error of symbol not found.\nSo, how can I use an ADMaterialProperty inside an AuxKernel?\nThanks,\nJoe Kelly",
+          "url": "https://github.com/idaholab/moose/discussions/17283",
+          "updatedAt": "2022-09-19T04:08:09Z",
+          "publishedAt": "2021-03-10T23:12:02Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ajacquey"
+                  },
+                  "bodyText": "Hi Joe,\nYou should add the following include to your AuxKernel src file:\n#include \"metaphysicl/raw_type.h\"\nand you can access the raw value of your AD material property via:\nMetaPhysicL::raw_value(_rho[_qp])\nI suppose you could also use directly _rho[_qp].value() but to be confirmed.\nAntoine",
+                  "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-471777",
+                  "updatedAt": "2022-09-19T04:08:11Z",
+                  "publishedAt": "2021-03-11T22:18:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "Thanks Antoine.  The _rho[_qp].value() works great.",
+                          "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-484147",
+                          "updatedAt": "2022-09-19T04:08:11Z",
+                          "publishedAt": "2021-03-15T14:17:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "srinath-chakravarthy"
+                  },
+                  "bodyText": "You are missing a template parameter for the property\n_rho(getADMaterialProperty(\"density\")) should work if it is declared as ADReal\nSame template is required for the non-AD property as well",
+                  "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-471813",
+                  "updatedAt": "2022-10-23T21:09:08Z",
+                  "publishedAt": "2021-03-11T22:28:56Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "srinath-chakravarthy"
+                  },
+                  "bodyText": "oops _rho(getADMaterialProperty(\"density\"))",
+                  "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-471814",
+                  "updatedAt": "2022-10-23T21:09:10Z",
+                  "publishedAt": "2021-03-11T22:29:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "srinath-chakravarthy"
+                  },
+                  "bodyText": "_rho(getADMaterialProperty<Real>(\"density\"))",
+                  "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-471822",
+                  "updatedAt": "2022-12-28T06:10:26Z",
+                  "publishedAt": "2021-03-11T22:31:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joe61vette"
+                  },
+                  "bodyText": "Thanks everyone.  Making sure that I had the template right and using _rho[_qp].value() was the answer.",
+                  "url": "https://github.com/idaholab/moose/discussions/17283#discussioncomment-484154",
+                  "updatedAt": "2022-12-28T06:10:25Z",
+                  "publishedAt": "2021-03-15T14:19:23Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Changing the Cahn-Hilliard kernel",
+          "author": {
+            "login": "souzanha"
+          },
+          "bodyText": "Hi moose-team,\nI want to couple a variable (concentration) into the Cahn-Hilliard kernel, c(1-c)Mgrad(mu). I'm not entirely sure I'm doing it correctly though. For example, the section where you iterate over all coupled variables:\n_// Iterate over all coupled variables\nfor (unsigned int i = 0; i < _n_args; ++i)\n_dmobdarg[i] = &getMaterialPropertyDerivative(mob_name, i);\n}\nIs it enough to do it this way and only include _c[_qp] in the residual and jacobian expressions? What am I missing? :\ninput file:\n[./wres]\ntype=SplitCHWResT\nvariable = mu\nmob_name = 1.76e-23\ncoupled_conc = c\n[../]\nSplitCHWResBaseT-file:\nprivate:\nconst VariableValue & _c;\n_c(coupledValue(\"coupled_conc\"))\nRESIDUAL\ntemplate \nReal\nSplitCHWResBaseT::computeQpResidual()\n{\nreturn _c[_qp] * (1-_c[_qp]) * _mob[_qp] * _grad_w[_qp] * _grad_test[_i][_qp];\n}\nJACOBIAN\ntemplate \nReal\nSplitCHWResBaseT::computeQpWJacobian()\n{\nreturn _c[_qp] * (1-_c[_qp]) * _mob[_qp] * _grad_phi[_j][_qp] * _grad_test[_i][_qp];\n}\nparams.addCoupledVar(\n\"coupled_conc\", \"Coupled concentration (if not specified kernel variable will be used)\");\nreturn params;",
+          "url": "https://github.com/idaholab/moose/discussions/17302",
+          "updatedAt": "2022-06-22T07:33:43Z",
+          "publishedAt": "2021-03-12T10:43:07Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "yucoutinho"
+                  },
+                  "bodyText": "hi @souzanha,\nIf I understood correctly, you are trying to make the mobility composition dependent as\nM(c) = c(1-c)Mconst\nInstead of modifying the Cahn-Hilliard kernel, you can create a material,\n[Materials]\n  [./mobility]\n    type = DerivativeParsedMaterial\n    f_name = mob\n    function = 'c*(1-c)*M'\n    args = c\n    constant_names =  M\n    constant_expressions = 1.76e-23\n    derivative_order = 1\n  [../]\n[]\n\nand then use the standard kernel\n[Kernels]\n  [./chw_res]\n    variable = w\n    type = SplitCHWRes\n    mob_name = mob\n  [../]\n[]\n\nCheck this example.\nCheers",
+                  "url": "https://github.com/idaholab/moose/discussions/17302#discussioncomment-478006",
+                  "updatedAt": "2022-06-22T12:35:31Z",
+                  "publishedAt": "2021-03-13T14:19:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "souzanha"
+                          },
+                          "bodyText": "Hi @yucoutinho!\nThank you for the suggestion. That is definitely a much better approach.",
+                          "url": "https://github.com/idaholab/moose/discussions/17302#discussioncomment-482732",
+                          "updatedAt": "2022-06-22T12:36:33Z",
+                          "publishedAt": "2021-03-15T08:05:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to implement a *.C file including a numerical integral function",
+          "author": {
+            "login": "sSajjad90"
+          },
+          "bodyText": "Hi everyone,\nI will define an integral to calculate the project's material properties, and I want to develop a customized *.C file.\nWhen I was exploring the available source files to find a sample, I found below user objects.\n\"ElementIntegralVariableUserObject\", \"ElementIntegralUserObject\" but I do not know how these file  could be taken part in or even useful or not...\nWould you please let me how I can implement the below integral? Somehow, with Or without using these user objects.\n\nI will solve the following equation at each time step to update \"a1\" for the other calculation. I got stock to how to figure out the integral.\nAny suggestion?",
+          "url": "https://github.com/idaholab/moose/discussions/17258",
+          "updatedAt": "2022-06-17T17:32:47Z",
+          "publishedAt": "2021-03-09T16:13:00Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @sSajjad90\nThe ElementIntegralVariableUserObject integrates a variable over the volume.\nI think what you want to do is to integrate over the variable \\rho; it is a one dimensional integral.\nYou could write your own custom material that calculates the integral using the coupled variable a_1\nThen you store the integral in a material property\nand you use the material property to implement a kernel for the second term in your last equation.\nI think the most difficult part is calculating the integral, c++ probably does not have a function for that.\nOtherwise, you will need to write your own .C code to integrate your function using an iterative method to check for convergence\nbecause your integral goes to infinity.\nAlso, you can check if wolfram alpha gives you an analytical expression for your integral.\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                  "url": "https://github.com/idaholab/moose/discussions/17258#discussioncomment-480369",
+                  "updatedAt": "2022-06-17T17:33:02Z",
+                  "publishedAt": "2021-03-14T12:32:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Failing TestHarness test - libquadmath",
+          "author": {
+            "login": "cyshi17"
+          },
+          "bodyText": "Hello,\nI'm running into an error with make -j 8, following the instructions for troubleshooting. I've tried updating and reinstalling moose, and the \"hello world\" example in the build troubleshooting runs fine. I've included a screenshot of the error I'm getting.\n\nAny help would be greatly appreciated. Thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/16800",
+          "updatedAt": "2023-07-03T16:48:14Z",
+          "publishedAt": "2021-01-23T20:13:31Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt looks like you're missing libquadmath.\nPlease install it with \"conda install libquadmath\" or with your preferred package manager.\nBest,\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-305205",
+                  "updatedAt": "2023-07-03T16:48:14Z",
+                  "publishedAt": "2021-01-23T20:23:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cyshi17"
+                          },
+                          "bodyText": "Hi Guillaume,\nThank you for your suggestion! Unfortunately I can't seem to install it, as I get the error below. I've looked on anaconda.org as the printout suggests but it does not seem to exist in the cloud. I am using Conda to install this.",
+                          "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-305222",
+                          "updatedAt": "2023-07-03T16:48:14Z",
+                          "publishedAt": "2021-01-23T20:38:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "sudo apt install libquadmath0 should work",
+                  "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-305228",
+                  "updatedAt": "2023-07-03T16:48:22Z",
+                  "publishedAt": "2021-01-23T20:43:30Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "not sure why I thought conda had it",
+                          "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-305229",
+                          "updatedAt": "2023-07-03T16:48:23Z",
+                          "publishedAt": "2021-01-23T20:44:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cyshi17"
+                          },
+                          "bodyText": "It worked! Thank you so much",
+                          "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-305485",
+                          "updatedAt": "2023-07-03T16:48:25Z",
+                          "publishedAt": "2021-01-23T23:10:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "KaijieNing"
+                  },
+                  "bodyText": "I came across the same problem, and did it like this in the root account of Fedora Linux:\nsudo yum install libquadmath      #note: not using libquadmath0\nIt worked.",
+                  "url": "https://github.com/idaholab/moose/discussions/16800#discussioncomment-479145",
+                  "updatedAt": "2023-07-03T16:48:25Z",
+                  "publishedAt": "2021-03-13T21:45:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Python3 error while compiling on cluster",
+          "author": {
+            "login": "favinom"
+          },
+          "bodyText": "Hi all,\nI am compiling moose on my cluster, it worked to quite some versions ago.\nNow, when I go in test and make, I get\n/usr/bin/env: python3: No such file or directory\n[]/moose/framework/moose.mk:15: *** Build failed.  Stop.\nDoes it mean that I need python3?\nWe don't have it on the cluster and it always worked.\nMoreover, if I look at the line 15 of moose.mk, there is nothing concerning pyhton, but it is the part concerning CONDA.\nMany thanks\nMarco",
+          "url": "https://github.com/idaholab/moose/discussions/17300",
+          "updatedAt": "2021-03-17T19:42:43Z",
+          "publishedAt": "2021-03-12T09:03:21Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @favinom\nAre you using the installation procedure with conda or manual installation gcc/mpich?\nI believe if you use the manual installation, python3 on the cluster is not necessary for compiling moose.\nThere will be a python3 inside the miniconda installation.\nTrust this helps.\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                  "url": "https://github.com/idaholab/moose/discussions/17300#discussioncomment-474312",
+                  "updatedAt": "2021-03-12T13:05:47Z",
+                  "publishedAt": "2021-03-12T13:05:27Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "favinom"
+                  },
+                  "bodyText": "I am doing a manual installation.\n\nActually python3 is now on the cluster and I managed to compile moose.\nIt still gives problems but they will be object of another thread.\n\nGrazie\n\u2026\nOn Fri, Mar 12, 2021 at 2:05 PM Nicol\u00f2 Grilli ***@***.***> wrote:\n Dear @favinom <https://github.com/favinom>\n\n Are you using the installation procedure with conda or manual installation\n gcc/mpich?\n I believe if you use the manual installation, python3 on the cluster is\n not necessary for compiling moose.\n There will be a python3 inside the miniconda installation.\n\n Trust this helps.\n\n Best Regards,\n Nicol\u00f2 Grilli\n National University of Singapore\n\n \u2014\n You are receiving this because you were mentioned.\n Reply to this email directly, view it on GitHub\n <#17300 (comment)>,\n or unsubscribe\n <https://github.com/notifications/unsubscribe-auth/ACUELB66GFSLMNUBCCMVW5DTDIGSXANCNFSM4ZB4BWYA>\n .",
+                  "url": "https://github.com/idaholab/moose/discussions/17300#discussioncomment-479020",
+                  "updatedAt": "2021-03-13T20:51:50Z",
+                  "publishedAt": "2021-03-13T20:51:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "defining multiple blocks (block IDs) based on an image file",
+          "author": {
+            "login": "Ali-toghraee"
+          },
+          "bodyText": "Dear moose users,\nI am trying to create a semi poly-crystalline (multiphase) domain. Such that each I can assign each color a block id and that later I can use those IDs for my initial conditions. Some thing like the pic below.\n\nI am trying to use the \"ImageSubdomainGenerator\" . But I have a problem in assigning IDs to different colors and I only get 2 ids (high and low) as below\n\nCould any body help me how to do that. I have also included some part of the code below:\n[Mesh]\n[gen]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 200\nny = 100\nxmax = 200\nxmin = 0\n\nymax = 100\nymin = 0\n\nelem_type = QUAD4\n\n[]\n[./im1]\ninput = gen\ntype = ImageSubdomainGenerator\nfile = mesh00.png\nthreshold = 90\nlower_value = 6\nupper_value = 7\n[../]\n[./im2]\ninput = im1\ntype = ImageSubdomainGenerator\nfile = mesh00.png\nthreshold = 70\nlower_value = 4\nupper_value = 5\n[../]\n[./im3]\ninput = im2\ntype = ImageSubdomainGenerator\nfile = mesh00.png\nthreshold = 25\nlower_value = 2\nupper_value = 3\n[../]\n[]\n[Variables]\n[u]\n[]\n[]\n[Problem]\ntype = FEProblem\nsolve = false\n[]\n[Executioner]\ntype = Steady\n[]\n[Outputs]\nexecute_on = 'timestep_end'\nexodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/17298",
+          "updatedAt": "2022-08-27T06:45:22Z",
+          "publishedAt": "2021-03-12T00:45:24Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Ali-toghraee"
+                  },
+                  "bodyText": "@WilkAndy",
+                  "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-472179",
+                  "updatedAt": "2022-08-27T06:45:39Z",
+                  "publishedAt": "2021-03-12T00:46:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Hey @Ali-toghraee , i'm not really an expert in this.  did you tag me for a particular reason?",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-472334",
+                          "updatedAt": "2022-08-27T06:45:39Z",
+                          "publishedAt": "2021-03-12T01:58:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ali-toghraee"
+                          },
+                          "bodyText": "Hi Andy,\nSorry to tag you. Since you helped me last time on \"modeling a multi phase multi-shape initial condition\" , I thought you could help me on this. Do you know who can help on this matter?\nBest",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-472359",
+                          "updatedAt": "2022-08-27T06:45:41Z",
+                          "publishedAt": "2021-03-12T02:02:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Let's just see who answers....",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-472374",
+                          "updatedAt": "2022-08-27T06:45:41Z",
+                          "publishedAt": "2021-03-12T02:07:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @Ali-toghraee\nI believe your ImageSubdomainGenerator blocks are cancelling each other, therefore you\nonly see the effect of the last one: so block IDs are only 2 and 3.\nIf you check the code MeshBaseImageSampler,\nyou will see that \"upper_value\" is the value set if the corresponding grayscale is higher than \"threshold\"\nwhile \"lower_value\" is the value set if the grayscale color is lower than \"threshold\".\nThe way you define your blocks is such that the next block always cancel the previous one\nbecause only two block IDs are assigned to the entire geometry each time.\nYou could try to restrict the ImageSubdomainGenerator objects to one of the block that is created by the\nprevious ImageSubdomainGenerator object and see if that works.\nI mean you can try to add\nblock = 7 (or block = 6)\nto [./im2]\nblock = 5 (or block = 4)\nto [./im3]\net cetera\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                  "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-474601",
+                  "updatedAt": "2022-08-27T06:45:41Z",
+                  "publishedAt": "2021-03-12T14:20:11Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ali-toghraee"
+                          },
+                          "bodyText": "Hello @ngrilli\nYour are exactly right about my ImageSubdomainGenerator blocks  cancelling each other. But I am not sure how to restrict them.\nBecause ,as you mentioned, each time they assign only 2 values ( high and low). I think we need to  define the input for the [./im2] be  \" block 6\"  instead of the whole [./im1] , but I dont know how to do that.\nCould you explain more on how to add \"block = x\" inside the  ImageSubdomainGenerator?\nwhen I add \"block = x\" , I see the error:\n*** ERROR ***\n/home/atoghraee/projects02/ox_poly/poly/mesh.i:40: unused parameter 'Mesh/im2/block'\n/home/atoghraee/projects02/ox_poly/poly/mesh.i:52: unused parameter 'Mesh/im3/block'",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-476173",
+                          "updatedAt": "2022-08-27T06:45:41Z",
+                          "publishedAt": "2021-03-12T20:23:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ali-toghraee"
+                          },
+                          "bodyText": "Update:\nI changed my input file to:\n[Mesh]\n[gen]\ntype = GeneratedMeshGenerator\ndim = 2\nnx = 200\nny = 100\n\nxmax = 200\nxmin = 0\n\nymax = 100\nymin = 0\n\nelem_type = QUAD4\n\n[]\n[./im1]\ninput = gen\ntype = ImageSubdomainGenerator\nfile = mesh_gray.png\n# threshold = 20\nlower_value = 1\nupper_value = 6\n[../]\n\n[./im2]\ninput = im1\ntype = ImageSubdomainGenerator\nfile = mesh_gray.png\n# threshold = 50\n# block = 6\n# lower_value = 4\n# upper_value = 5\n[../]\n\n[./im3]\ninput = im2\ntype = ImageSubdomainGenerator\nfile = mesh_gray.png\n#  threshold = 25\n#  lower_value = 2\n#   upper_value = 3\n# block = 5\n[../]\n[]\n[Variables]\n[u]\n[]\n[]\n[Problem]\ntype = FEProblem\nsolve = false\n[]\n[Executioner]\ntype = Steady\n[]\n[Outputs]\nexecute_on = 'timestep_end'\nexodus = true\n[]\nnow for the input picture of:\n\nI get the result of:\n\n\nThe question is how to map 0-225 to the 1-6 block numbers\nAnd why the numbering is not consistent  with the gray scale! (darker=> lower , lighter => higher or vise versa)",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-476200",
+                          "updatedAt": "2022-08-27T06:45:47Z",
+                          "publishedAt": "2021-03-12T20:30:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ngrilli"
+                          },
+                          "bodyText": "Dear @Ali-toghraee\nApologies, I did not know that \"block\" cannot be used in ImageSubdomainGenerator.\nIn the base class MeshBaseImageSampler, there is the option \"component\", which means the RGB component.\nIf this is not set, the greyscale value is used, but I don't know how RGB is converted to greyscale.\nI suggest you try setting \"component = 0\" inside your ImageSubdomainGenerator blocks,\nso the red colour will be read. Then you can assign increasing values of the red colour to your different domains\nby modifying the image.\nBest Regards,\nNicol\u00f2 Grilli\nNational University of Singapore",
+                          "url": "https://github.com/idaholab/moose/discussions/17298#discussioncomment-478594",
+                          "updatedAt": "2022-08-27T06:46:12Z",
+                          "publishedAt": "2021-03-13T17:43:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Compilation problem",
+          "author": {
+            "login": "makeclean"
+          },
+          "bodyText": "Hi All\nIve not had this problem before, so perhaps its time for a module switch for me. Im compiling on an HPC system with openmpi-3.1.3 and gcc-7.2, PETSC builds fine, but libmesh isnt happy\nIn file included from /home/dc-davi4/moose/moose/scripts/../libmesh/src/systems/system_projection.C:110:0:\n./include/libmesh/generic_projector.h: In instantiation of \u2018libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const::<lambda(libMesh::processor_id_type, const std::vector<long unsigned int>&)> [with Value = double; FFunctor = libMesh::OldSolutionValue<double, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::processor_id_type = unsigned int]\u2019:\n./include/libmesh/generic_projector.h:2853:35:   required from \u2018struct libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::OldSolutionValue<double, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>]::<lambda(libMesh::processor_id_type, const class std::vector<long unsigned int>&)>\u2019\n./include/libmesh/generic_projector.h:2852:8:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::OldSolutionValue<double, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>]\u2019\n./include/libmesh/generic_projector.h:1215:3:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::project(const ConstElemRange&) [with FFunctor = libMesh::OldSolutionValue<double, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::ConstElemRange = libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, const libMesh::Elem*>]\u2019\n/home/dc-davi4/moose/moose/scripts/../libmesh/src/systems/system_projection.C:393:48:   required from here\n./include/libmesh/generic_projector.h:2871:21: error: uninitialized variable \u2018val\u2019 in \u2018constexpr\u2019 function\n               Value val;\n                     ^~~\n./include/libmesh/generic_projector.h: In instantiation of \u2018libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const::<lambda(libMesh::processor_id_type, const std::vector<long unsigned int>&)> [with Value = double; FFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::TensorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = libMesh::VectorValue<double>; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::processor_id_type = unsigned int]\u2019:\n./include/libmesh/generic_projector.h:2853:35:   required from \u2018struct libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::TensorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = libMesh::VectorValue<double>; ProjectionAction = libMesh::VectorSetAction<double>]::<lambda(libMesh::processor_id_type, const class std::vector<long unsigned int>&)>\u2019\n./include/libmesh/generic_projector.h:2852:8:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::TensorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = libMesh::VectorValue<double>; ProjectionAction = libMesh::VectorSetAction<double>]\u2019\n./include/libmesh/generic_projector.h:1215:3:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::project(const ConstElemRange&) [with FFunctor = libMesh::OldSolutionValue<libMesh::VectorValue<double>, &libMesh::FEMContext::point_value>; GFunctor = libMesh::OldSolutionValue<libMesh::TensorValue<double>, &libMesh::FEMContext::point_gradient>; FValue = libMesh::VectorValue<double>; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::ConstElemRange = libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, const libMesh::Elem*>]\u2019\n/home/dc-davi4/moose/moose/scripts/../libmesh/src/systems/system_projection.C:404:55:   required from here\n./include/libmesh/generic_projector.h:2871:21: error: uninitialized variable \u2018val\u2019 in \u2018constexpr\u2019 function\n./include/libmesh/generic_projector.h: In instantiation of \u2018libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const::<lambda(libMesh::processor_id_type, const std::vector<long unsigned int>&)> [with Value = double; FFunctor = libMesh::FEMFunctionWrapper<double>; GFunctor = libMesh::FEMFunctionWrapper<libMesh::VectorValue<double> >; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::processor_id_type = unsigned int]\u2019:\n./include/libmesh/generic_projector.h:2853:35:   required from \u2018struct libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::FEMFunctionWrapper<double>; GFunctor = libMesh::FEMFunctionWrapper<libMesh::VectorValue<double> >; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>]::<lambda(libMesh::processor_id_type, const class std::vector<long unsigned int>&)>\u2019\n./include/libmesh/generic_projector.h:2852:8:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::send_and_insert_dof_values(std::unordered_map<long unsigned int, std::pair<Value, unsigned int> >&, ProjectionAction&) const [with Value = double; FFunctor = libMesh::FEMFunctionWrapper<double>; GFunctor = libMesh::FEMFunctionWrapper<libMesh::VectorValue<double> >; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>]\u2019\n./include/libmesh/generic_projector.h:1215:3:   required from \u2018void libMesh::GenericProjector<FFunctor, GFunctor, FValue, ProjectionAction>::project(const ConstElemRange&) [with FFunctor = libMesh::FEMFunctionWrapper<double>; GFunctor = libMesh::FEMFunctionWrapper<libMesh::VectorValue<double> >; FValue = double; ProjectionAction = libMesh::VectorSetAction<double>; libMesh::ConstElemRange = libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, const libMesh::Elem*>]\u2019\n/home/dc-davi4/moose/moose/scripts/../libmesh/src/systems/system_projection.C:1131:43:   required from here\n./include/libmesh/generic_projector.h:2871:21: error: uninitialized variable \u2018val\u2019 in \u2018constexpr\u2019 function\n\n\nI have previously compiled on this system using those compilers, but I've since deleted the repo, so I couldnt tell you what the sha was.",
+          "url": "https://github.com/idaholab/moose/discussions/17282",
+          "updatedAt": "2022-06-29T09:29:25Z",
+          "publishedAt": "2021-03-10T21:15:55Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "makeclean"
+                  },
+                  "bodyText": "Heres more if this helps\nchecking for git... (cached) /usr/local/software/global/bin/git\n\n----------------------------------- SUMMARY -----------------------------------\n\nPackage version............... : metaphysicl-1.2.1\n\nC++ compiler.................. : mpicxx -std=gnu++17\nC++ compiler flags............ : -g -O2 -Wall\nInstall dir................... : /home/dc-davi4/moose/moose/scripts/../libmesh/installed\nBuild user.................... : dc-davi4\nBuild host.................... : login-e-11\nConfigure date................ : 2021-03-11 09:10\nBuild architecture............ : x86_64-pc-linux-gnu\nGit revision number........... : external\n\nOptional Packages for Testing:\n  MASA........................ : no\n  VEXCL....................... : no\n  TIMPI....................... : no\n\n-------------------------------------------------------------------------------",
+                  "url": "https://github.com/idaholab/moose/discussions/17282#discussioncomment-467733",
+                  "updatedAt": "2022-06-29T09:29:26Z",
+                  "publishedAt": "2021-03-11T09:11:16Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "@lindsayad @roystgnr any ideas on this one?",
+                          "url": "https://github.com/idaholab/moose/discussions/17282#discussioncomment-469562",
+                          "updatedAt": "2022-06-29T09:29:34Z",
+                          "publishedAt": "2021-03-11T14:21:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "I'm a bit dumbfounded.  That's certainly not a constexpr function, and it's okay to have an uninitialized value that later gets written before it's read.  I'd be sure this was a compiler bug except that I could swear I used to use gcc 7.2 all the time and never ran into anything like this.\nOh ... wait a minute.  I used to use gcc 7.2 all the time, with its default (C++11?) C++ standard settings.  What seems to be happening to @makeclean (love the username BTW) is that we're now requesting higher standards by default from compilers that provide them, and gcc 7.2 is probably right at that point where it's trying to support higher standards but not yet doing so reliably.  (in fact, ISTR it even having a couple bugs that forced me to upgrade to gcc 8 for an application that needed solid C++14 support; forget about C++17!)\nSo I think your easiest workaround in this case is to configure libMesh --with-cxx-std=2011 and don't let the compiler try to get fancy on you.",
+                          "url": "https://github.com/idaholab/moose/discussions/17282#discussioncomment-469695",
+                          "updatedAt": "2022-06-29T09:29:30Z",
+                          "publishedAt": "2021-03-11T14:46:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "roystgnr"
+                          },
+                          "bodyText": "Let us know if that works or not.  If not, then I certainly wouldn't try to talk you out of simply switching modules to use a newer compiler, but there are other possible workarounds you could try if you wanted to avoid that.\nI'm not sure what the best solution here is.  I don't want to turn down the default --with-cxx-std-max= setting, but perhaps that's the safest way to go.  I'd love to add more tests that could catch problems like this and back off to lower standards at configure time only when necessary, but I can't even imagine how to detect a problem like this.  What triggers a level of confusion so deep that it leaves gcc 7.2 unable to tell whether a constexpr keyword is there or not?",
+                          "url": "https://github.com/idaholab/moose/discussions/17282#discussioncomment-469713",
+                          "updatedAt": "2022-06-29T09:29:32Z",
+                          "publishedAt": "2021-03-11T14:50:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "makeclean"
+                          },
+                          "bodyText": "Thanks @roystgnr --with-cxx-std=2011 worked great, in the mean time i built a singularity image, but its always nice to have the bare metal version :)",
+                          "url": "https://github.com/idaholab/moose/discussions/17282#discussioncomment-473308",
+                          "updatedAt": "2022-06-29T10:09:52Z",
+                          "publishedAt": "2021-03-12T08:28:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

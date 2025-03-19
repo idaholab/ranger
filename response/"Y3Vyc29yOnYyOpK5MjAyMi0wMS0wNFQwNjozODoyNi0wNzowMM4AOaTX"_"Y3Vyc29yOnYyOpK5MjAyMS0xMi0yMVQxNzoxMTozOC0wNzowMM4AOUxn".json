@@ -1,0 +1,716 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0xMi0yMVQxNzoxMTozOC0wNzowMM4AOUxn"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "extend createMinimalApp(), BC problem",
+          "author": {
+            "login": "friedrichgs"
+          },
+          "bodyText": "Hello,\nI am trying to extend MooseApp::createMinimalApp() so that it solves a simple diffusion equation. The purpose is that I want to find out how to construct and solve problems from scratch without using an input file.\nIn createMinimalApp(), I have\n\nset the CreateProblemDefaultAction's _solve parameter to true\nset a Steady Executioner\nadded a Variable\nadded a Diffusion kernel.\n\nThen I added a section for a Dirichlet BC (on the boundary named \"right\"):\n{\n   // Build the Action parameters\n   InputParameters action_params = _action_factory.getValidParams(\"AddBCAction\");\n   action_params.set<std::string>(\"type\") = \"DirichletBC\";\n   \n   // Create the action\n   std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n       _action_factory.create(\"AddBCAction\", \"right\", action_params));\n\n   // Set the object parameters\n   InputParameters & params = action->getObjectParams();\n   std::vector<BoundaryName> boundary(1,\"boundary\");\n   params.set<std::vector<BoundaryName>>(\"boundary\") = boundary;      \n   params.set<NonlinearVariableName>(\"variable\") = \"u\";\n   params.set<Real>(\"value\") = 1.0;\n\n   // Add Action to the warehouse\n   _action_warehouse.addActionBlock(action);\n }\n\nThis causes the following error:\n*** ERROR ***\n: missing required parameter 'right/boundary'\n\tDoc String: \"The list of boundary IDs from the mesh where this boundary condition applies\"\n: missing required parameter 'right/variable'\n\tDoc String: \"The name of the variable that this residual object operates on\"\n\nCan somebody explain how to get rid of this error? I have already tried to replace the strings \"boundary\" in my snippet above with \"right/boundary\", but I get the same error.\nThanks,\nFriedrich",
+          "url": "https://github.com/idaholab/moose/discussions/19929",
+          "updatedAt": "2022-06-24T20:35:14Z",
+          "publishedAt": "2021-12-29T10:18:47Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nModifying the minimal app is one way to skip the input file. I think you should have a look at unit tests too, they do exactly that.\nThis one is pretty good at defining a few things at the beginning (then it gets deep into something technical):\nhttps://github.com/idaholab/moose/blob/31cb58e674a9b60d39a8f9bb82a6ad54890a34d7/unit/src/TestReconstruction.C\n For you particular case:\nI think you can skip using the AddBCAction here. See the code for this action:\nhttps://github.com/idaholab/moose/blob/next/framework/src/actions/AddBCAction.C\nit does something very simple. You can just add the boundary condition to the problem the same way, as the unit tests do. \nnevermind you need access to the _problem\nTo help you hack the action system, you should set (in an input file, see the debug action https://github.com/idaholab/moose/blob/next/framework/src/actions/SetupDebugAction.C to do it in your case)\n[Debug]\n  show_actions = true\n  show_parser = true\n[]\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19929#discussioncomment-1889335",
+                  "updatedAt": "2022-06-24T20:35:39Z",
+                  "publishedAt": "2021-12-30T21:22:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedrichgs"
+                  },
+                  "bodyText": "Hello Guilaume,\nthank you for your explanations. I had searched the unit tests already, but I didn't find any that solves a diffusion equation or something similar. I don't see, how the TestReconstruction.C shows how to add the boundary conditions?\nThe Debug actions will certainly be useful in the future, but they don't show the parameters of the actions, so that they don't help me either.\nI hope that somebody may be able to fix my example below.\nI have created a simple \"testbc\" application using stork.sh, replaced the call app->run() with my extended version of createMinimalApp(), then _action_warehouse.executeAllActions();  app->executeExecutioner();.\nI attach the full testbc app dir: testbc.zip\nAnd I paste the main.C below. Maybe my mistake, which causes the same error as mentioned initially:\n*** ERROR ***\n: missing required parameter 'right/boundary'\n\tDoc String: \"The list of boundary IDs from the mesh where this boundary condition applies\"\n: missing required parameter 'right/variable'\n\tDoc String: \"The name of the variable that this residual object operates on\"\n\nis obvious to somebody. ( If I remove the block under \"//AddBCAction\", to code runs without error an shows \"Solve Converged!\", probably because the initial zero solution is correct in that case.)\nThank you and a Happy New Year to everyone!\nFriedrich\nmain.C:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"testbcTestApp.h\"\n#include \"MooseInit.h\"\n#include \"Moose.h\"\n#include \"MooseApp.h\"\n#include \"AppFactory.h\"\n#include \"MooseObjectAction.h\"\n\n// Create a performance log\nPerfLog Moose::perf_log(\"testbc\");\n\n// Begin the main program.\nint\nmain(int argc, char * argv[])\n{\n  // Initialize MPI, solvers and MOOSE\n  MooseInit init(argc, argv);\n\n  // Register this application's MooseApp and any it depends on\n  testbcTestApp::registerApps();\n\n  // Create an instance of the application and store it in a smart pointer for easy cleanup\n  std::shared_ptr<MooseApp> app = AppFactory::createAppShared(\"testbcTestApp\", argc, argv);\n\n  // Execute the application\n  //app->run();\n  auto & _action_factory = app->getActionFactory();\n  auto & _action_warehouse = app->actionWarehouse();\n  // SetupMeshAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"SetupMeshAction\");\n    action_params.set<std::string>(\"type\") = \"GeneratedMesh\";\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"SetupMeshAction\", \"Mesh\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<MooseEnum>(\"dim\") = \"2\";\n    params.set<unsigned int>(\"nx\") = 10;\n    params.set<unsigned int>(\"ny\") = 10;\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddVariableAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddVariableAction\");\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddVariableAction\", \"u\", action_params));\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddKernelAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddKernelAction\");\n    action_params.set<std::string>(\"type\") = \"Diffusion\";\t\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddKernelAction\", \"diff\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<NonlinearVariableName>(\"variable\") = \"u\";\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddBCAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddBCAction\");\n    action_params.set<std::string>(\"type\") = \"DirichletBC\";\t\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddBCAction\", \"right\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<std::vector<BoundaryName>>(\"boundary\") = {\"right\"};\n    params.set<NonlinearVariableName>(\"variable\") = \"u\";\n    params.set<Real>(\"value\") = 1.0;\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Executioner\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CreateExecutionerAction\");\n    action_params.set<std::string>(\"type\") = \"Steady\";\n\n    // Create the action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"CreateExecutionerAction\", \"Executioner\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<MooseEnum>(\"solve_type\") = Moose::ST_PJFNK;\n    //params.set<std::vector<std::string>>(\"petsc_options_iname\") = {\"-pc_type\", \"-pc_hypre_type\"};\n    //params.set<std::vector<std::string>>(\"petsc_options_value\") = {\"hypre\", \"boomeramg\"};\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Problem\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CreateProblemDefaultAction\");\n    action_params.set<bool>(\"_solve\") = true;\n\n    // Create the action\n    std::shared_ptr<Action> action = std::static_pointer_cast<Action>(\n        _action_factory.create(\"CreateProblemDefaultAction\", \"Problem\", action_params));\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Outputs\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CommonOutputAction\");\n    action_params.set<bool>(\"console\") = false;\n\n    // Create action\n    std::shared_ptr<Action> action =\n        _action_factory.create(\"CommonOutputAction\", \"Outputs\", action_params);\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  _action_warehouse.build();\n\n  _action_warehouse.executeAllActions();\n  app->executeExecutioner();\n\n  return 0;\n}",
+                  "url": "https://github.com/idaholab/moose/discussions/19929#discussioncomment-1893437",
+                  "updatedAt": "2022-06-24T20:35:49Z",
+                  "publishedAt": "2022-01-01T13:07:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "TestReconstruction.C does not add BCs, it's just one, among other unit tests, example of setting up a small test without an input file.\nYeah you're right, the Debug options wont help you here.\nI wonder if it's because the AddBCAction adds the BoundaryCondition parameters (which seems very odd)\nhttps://github.com/idaholab/moose/blob/next/framework/src/actions/AddBCAction.C\nI ll run some tests and get back to you",
+                          "url": "https://github.com/idaholab/moose/discussions/19929#discussioncomment-1895426",
+                          "updatedAt": "2023-07-12T08:57:05Z",
+                          "publishedAt": "2022-01-02T10:41:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Ok I think that having the BC parameters in the AddBCAction was the problem. The action only needs the MooseObjectAction parameters, the BC parameters are added by the object being constructed's parameter.\nRemoving them fixed it on my side and I was able to run your test app. (though there is no output so I wouldnt know if the result is correct)\nThe PR if you want to add the fix manually:\n#19937\nIn general, I dont recommend trying to bypass the input file like this. I think you will run into more trouble than it is worth. But if you do we are happy to assist.",
+                  "url": "https://github.com/idaholab/moose/discussions/19929#discussioncomment-1895872",
+                  "updatedAt": "2023-07-12T08:57:06Z",
+                  "publishedAt": "2022-01-02T14:12:55Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedrichgs"
+                  },
+                  "bodyText": "Thank you. Your PR solves the problem as far as I can see.\nI try to avoid the input file, because I will be generating and solving thousands of small PDEs programmatically using genetic algorithms. The overhead from writing and parsing the input files is probably not very significant, but it feels like an unnecessary detour.\nFor completeness, below is the main.C from above with small modifications to generate console and exodus output. I have not yet found out how to pass the petsc options to the executioner action, but the following app succeeds as expected.\nThank you\nFriedrich\nmain.C:\n#include \"testbcTestApp.h\"\n#include \"MooseInit.h\"\n#include \"Moose.h\"\n#include \"MooseApp.h\"\n#include \"AppFactory.h\"\n#include \"MooseObjectAction.h\"\n\n// Create a performance log\nPerfLog Moose::perf_log(\"testbc\");\n\n// Begin the main program.\nint\nmain(int argc, char * argv[])\n{\n  // Initialize MPI, solvers and MOOSE\n  MooseInit init(argc, argv);\n\n  // Register this application's MooseApp and any it depends on\n  testbcTestApp::registerApps();\n\n  // Create an instance of the application and store it in a smart pointer for easy cleanup\n  std::shared_ptr<MooseApp> app = AppFactory::createAppShared(\"testbcTestApp\", argc, argv);\n\n  // Execute the application\n  //app->run();\n  auto & _action_factory = app->getActionFactory();\n  auto & _action_warehouse = app->actionWarehouse();\n  // SetupMeshAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"SetupMeshAction\");\n    action_params.set<std::string>(\"type\") = \"GeneratedMesh\";\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"SetupMeshAction\", \"Mesh\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<MooseEnum>(\"dim\") = \"2\";\n    params.set<unsigned int>(\"nx\") = 10;\n    params.set<unsigned int>(\"ny\") = 10;\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddVariableAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddVariableAction\");\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddVariableAction\", \"u\", action_params));\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddKernelAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddKernelAction\");\n    action_params.set<std::string>(\"type\") = \"Diffusion\";\t\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddKernelAction\", \"diff\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<NonlinearVariableName>(\"variable\") = \"u\";\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddBCAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddBCAction\");\n    action_params.set<std::string>(\"type\") = \"DirichletBC\";\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddBCAction\", \"right\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<std::vector<BoundaryName>>(\"boundary\") = {\"right\"};\n    params.set<NonlinearVariableName>(\"variable\") = \"u\";\n    params.set<Real>(\"value\") = 1.0;\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // AddBCAction\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"AddBCAction\");\n    action_params.set<std::string>(\"type\") = \"DirichletBC\";\n\n    // Create The Action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"AddBCAction\", \"left\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<std::vector<BoundaryName>>(\"boundary\") = {\"left\"};\n    params.set<NonlinearVariableName>(\"variable\") = \"u\";\n    params.set<Real>(\"value\") = 0.0;\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Executioner\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CreateExecutionerAction\");\n    action_params.set<std::string>(\"type\") = \"Steady\";\n\n    // Create the action\n    std::shared_ptr<MooseObjectAction> action = std::static_pointer_cast<MooseObjectAction>(\n        _action_factory.create(\"CreateExecutionerAction\", \"Executioner\", action_params));\n\n    // Set the object parameters\n    InputParameters & params = action->getObjectParams();\n    params.set<MooseEnum>(\"solve_type\") = Moose::ST_PJFNK;\n    //params.set<std::vector<std::string>>(\"petsc_options_iname\") = {\"-pc_type\", \"-pc_hypre_type\"};\n    //params.set<std::vector<std::string>>(\"petsc_options_value\") = {\"hypre\", \"boomeramg\"};\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Problem\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CreateProblemDefaultAction\");\n    action_params.set<bool>(\"_solve\") = true;\n\n    // Create the action\n    std::shared_ptr<Action> action = std::static_pointer_cast<Action>(\n        _action_factory.create(\"CreateProblemDefaultAction\", \"Problem\", action_params));\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  // Outputs\n  {\n    // Build the Action parameters\n    InputParameters action_params = _action_factory.getValidParams(\"CommonOutputAction\");\n    action_params.set<bool>(\"console\") = true;\n    action_params.set<bool>(\"exodus\") = true;\n\n    // Create action\n    std::shared_ptr<Action> action =\n        _action_factory.create(\"CommonOutputAction\", \"Outputs\", action_params);\n\n    // Add Action to the warehouse\n    _action_warehouse.addActionBlock(action);\n  }\n\n  _action_warehouse.build();\n\n  _action_warehouse.executeAllActions();\n  app->executeExecutioner();\n\n  return 0;\n}",
+                  "url": "https://github.com/idaholab/moose/discussions/19929#discussioncomment-1901705",
+                  "updatedAt": "2023-07-12T08:57:06Z",
+                  "publishedAt": "2022-01-03T18:54:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Unused lambda warning when adding a functor material property",
+          "author": {
+            "login": "joe61vette"
+          },
+          "bodyText": "Hello:\nI get the following compile time warning:\nCompiling C++ (in opt mode) /Users/joe/projects/ASP/build/unity_src/materials_Unity.C...\nIn file included from /Users/joe/projects/ASP/build/unity_src/materials_Unity.C:2:\n/Users/joe/projects/ASP/src/materials/SPFluidMaterial.C:90:8: warning: lambda capture 'this' is not used [-Wunused-lambda-capture]\n      [this, &velocity](const auto & r, const auto & t) -> ADReal {\n       ^~~~~\n1 warning generated.\n\nThe actual functor does work and creates the property with the correct value.  Inside the constructor for the material, I have:\n// Magnitude of velocity vector (aka speed)\n  const auto & vel_mag =\n    addFunctorProperty<ADReal>(ASP::speed + getFieldSuffix(_field),\n      [this, &velocity](const auto & r, const auto & t) -> ADReal {\n        //\n        // If the velocity is zero, then the norm function call fails because AD\n        //   tries to calculate the derivatives which causes a divide by zero\n        //   because d/dx(sqrt(f(x))) = 1/2/sqrt(f(x))*df/dx.\n        //    -> Add a bit of noise to avoid this failure mode.\n        ADReal vel_mag;\n\n        if ((MooseUtils::absoluteFuzzyEqual(velocity(r, t)(0), 0)) &&\n          (MooseUtils::absoluteFuzzyEqual(velocity(r, t)(1), 0)) &&\n          (MooseUtils::absoluteFuzzyEqual(velocity(r, t)(2), 0)))\n          vel_mag = 1e-42;\n        else\n          vel_mag = velocity(r, t).norm();\n\n        return vel_mag;\n    });\n\nJust above this I add the velocity vector as:\n  // Superficial velocity as a vector\n  const auto & velocity =\n    addFunctorProperty<ADRealVectorValue>(ASP::velocity + getFieldSuffix(_field),\n      [this](const auto & r, const auto & t) -> ADRealVectorValue {\n        ADRealVectorValue velocity(_vel_x(r, t));\n        velocity(1) = _vel_y ? (*_vel_y)(r, t) : ADReal(0);\n        velocity(2) = _vel_z ? (*_vel_z)(r, t) : ADReal(0);\n        return velocity;\n    });\n\nAny idea what causes the compile warning?\nThanks,\nJoe Kelly",
+          "url": "https://github.com/idaholab/moose/discussions/19940",
+          "updatedAt": "2024-01-15T23:33:35Z",
+          "publishedAt": "2022-01-03T17:25:38Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Joe\nIt's because you are not using any of the class' attributes in the functor. Passing this gives you access to those when defining the functor. Since you are only using velocity in the functor, which you are correctly passing in the list of 'captures' (in [ ]), it's asking you why you are providing a pointer to the class and not using its attributes.\nHappy New Year!\nGuillaume\nPS: triple quotes work better than single quotes for paragraph of codes formatting in posts btw.",
+                  "url": "https://github.com/idaholab/moose/discussions/19940#discussioncomment-1901513",
+                  "updatedAt": "2024-01-17T13:10:46Z",
+                  "publishedAt": "2022-01-03T18:15:34Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joe61vette"
+                          },
+                          "bodyText": "THANKS Guillaume.  I greatly appreciate the explanation.\nHave a great New Year,\nJoe",
+                          "url": "https://github.com/idaholab/moose/discussions/19940#discussioncomment-1901536",
+                          "updatedAt": "2024-01-17T13:10:52Z",
+                          "publishedAt": "2022-01-03T18:19:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Anisotropic thermal expansion",
+          "author": {
+            "login": "avtarsinghh1991"
+          },
+          "bodyText": "Hello MOOSE experts\nI am solving a coupled chemo-mechanical problem for an anisotropic material. I am using the finite strain tensor mechanics module.  Can you please let me know the procedure to add the anisotropic thermal expansion? Please suggest any related examples as well. Thank you very much.\nMaterial section in the input file is as follows:\n[Materials]\n  [./elasticity_tensor_with_Euler]\n    type = ComputeElasticityTensorCP\n    fill_method = symmetric9\n    C_ijkl = '1.984e9 0.196e9 0.176e9 1.684e9 0.176e9 1.584e9 0.754e9 0.754e9 0.754e9'\n    read_prop_user_object = euler_angle_read\n  [../]\n\n [thermalexpansion]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = diffused\n    thermal_expansion_coeff = 3.496e-6\n    stress_free_temperature = 0.0\n    eigenstrain_name = thermal_strain\n  []\n\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/19931",
+          "updatedAt": "2022-06-08T01:47:42Z",
+          "publishedAt": "2021-12-30T05:40:27Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "ngrilli"
+                  },
+                  "bodyText": "Dear @asingh-mit\nI am not sure if there is ready code in moose for that.\nThe way I do is by introducing the thermal eigenstrain in the stress calculation, see example here:\nhttps://github.com/ngrilli/c_pfor_am/blob/main/src/materials/FiniteStrainCrystalPlasticityThermal.C\nI modify the function calcResidual by introducing thermal_eigenstrain\nin my case it is isotropic but you can make it anisotropic.\nBeware that if you express it in the lattice reference frame, then you will need to transform it using _crysrot\nbefore using because the calculations in calcResidual are done in the global reference frame.\nBest Regards,\nNicol\u00f2",
+                  "url": "https://github.com/idaholab/moose/discussions/19931#discussioncomment-1887394",
+                  "updatedAt": "2022-06-08T01:47:58Z",
+                  "publishedAt": "2021-12-30T13:28:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hello Nicolo\nThank you very much. Actually, I sorted this out using \"ComputeVariableEigenstrain\" material module.\nhttps://mooseframework.inl.gov/source/materials/ComputeVariableEigenstrain.html\n\u03f5=pT\nwith p defines the prefactor which I assumed as (c-c_ref) and T is the rank 2 tensor which I used as an anisotropic type.\nIn input file\n[./eigen_strain_prefactor]\ntype = DerivativeParsedMaterial\nargs = c\nf_name = eigen_strain_prefactor\nconstant_names = 'c_ref'\nconstant_expressions = '0.0'\nfunction = (c-c_ref)/3.0\n[../]\n[./eigenstrain]\ntype = ComputeVariableEigenstrain\nargs = c\neigen_base = '3.496e-6 0 0 0 3.496e-6 0 0 0 3.496e-6'\nprefactor = eigen_strain_prefactor\neigenstrain_name = eigenstrain\n[../]\nPlease let me know if I am doing anything wrong. I shall be very thankful.\nBest\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/19931#discussioncomment-1901271",
+                          "updatedAt": "2022-06-08T01:48:00Z",
+                          "publishedAt": "2022-01-03T17:27:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Single node generator",
+          "author": {
+            "login": "Nuriacor"
+          },
+          "bodyText": "Hi MOOSE,\nI have a simple question. I would like to add a new boundary to a node using ExtraNodesetGenerator. However, in the original mesh there is no node in the coordinates I want to add my boundary. Is it possible to generate a single node with the mesh modifiers of MOOSE?\nCheers and thanks!\nNuria",
+          "url": "https://github.com/idaholab/moose/discussions/19924",
+          "updatedAt": "2023-03-10T21:13:28Z",
+          "publishedAt": "2021-12-27T17:05:22Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "You are trying to add a new node at a given point and also assign it to a nodeset. Is that correct?",
+                  "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876184",
+                  "updatedAt": "2023-03-10T21:13:28Z",
+                  "publishedAt": "2021-12-27T19:11:31Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Nuriacor"
+                          },
+                          "bodyText": "yes!",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876400",
+                          "updatedAt": "2023-03-10T21:13:52Z",
+                          "publishedAt": "2021-12-27T19:57:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "What are you trying to achieve exactly? If you're adding a single node without connectivity, I suspect that you would be better off using a scalar variable with a scalar kernel",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876475",
+                          "updatedAt": "2023-03-10T21:13:52Z",
+                          "publishedAt": "2021-12-27T20:20:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Nuriacor"
+                          },
+                          "bodyText": "I want to add that node and nodeset to an exciting mesh. Ultimately, I want to use that node as a sink.",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876482",
+                          "updatedAt": "2023-03-10T21:13:52Z",
+                          "publishedAt": "2021-12-27T20:22:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "What action do you plan on doing on the node (kernel, BC, etc)?",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876491",
+                          "updatedAt": "2023-03-10T21:13:29Z",
+                          "publishedAt": "2021-12-27T20:26:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Nuriacor"
+                          },
+                          "bodyText": "PorousFlow\nhttps://mooseframework.inl.gov/source/dirackernels/PorousFlowSquarePulsePointSource.html",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876502",
+                          "updatedAt": "2023-03-10T21:13:29Z",
+                          "publishedAt": "2021-12-27T20:29:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Nuriacor"
+                          },
+                          "bodyText": "But I want to add a nodeset where the PorousFlowSquarePulsePointSource is because I want to change the temperature of the node.",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876513",
+                          "updatedAt": "2023-03-10T21:13:31Z",
+                          "publishedAt": "2021-12-27T20:35:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThere are a few options:\n\nwould the node you want be added automatically if you refine that part of the mesh? If so the refineBlockGenerator or refineBoundaryGenerator could help you create that node before reassigning it to a nodeset\nAre you ok with moving another node to the position you want the node to be at? If so then you can use move(or modify)NodeGenerator\n\nWhere is the node you want to add? Is it inside the existing mesh or is it outside?\nguillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1876904",
+                          "updatedAt": "2023-03-10T21:13:31Z",
+                          "publishedAt": "2021-12-27T22:45:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Nuriacor"
+                          },
+                          "bodyText": "Hi,\nThanks for your help! MoveNodeGenerator made the trick. Thanks a lot!",
+                          "url": "https://github.com/idaholab/moose/discussions/19924#discussioncomment-1898937",
+                          "updatedAt": "2023-03-10T21:13:31Z",
+                          "publishedAt": "2022-01-03T09:40:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Concentration dependent anisotropic elastic modulus",
+          "author": {
+            "login": "avtarsinghh1991"
+          },
+          "bodyText": "Hello MOOSE experts\nI am solving a coupled chemo-mechanical problem for an anisotropic material. In my material system, the elastic modulus tensor needs to be concentration-dependent. Can you please suggest the procedure to do it? Kindly suggest some useful examples as well?\nI want to make linear variation of elastic tensor with concentration.\nC(c) = (1-c)C0\n[Materials]\n  [./elasticity_tensor_with_Euler]\n    type = ComputeElasticityTensorCP\n    fill_method = symmetric9\n    C_ijkl = '1.984e9 0.196e9 0.176e9 1.684e9 0.176e9 1.584e9 0.754e9 0.754e9 0.754e9'\n    read_prop_user_object = euler_angle_read\n  [../]\n  [thermalexpansion]\n    type = ComputeThermalExpansionEigenstrain\n    temperature = diffused\n    thermal_expansion_coeff = 3.496e-6\n    stress_free_temperature = 0.0\n    eigenstrain_name = thermal_strain\n  []\n  [stress]\n    type = ComputeFiniteStrainElasticStress\n  []\n[]\n\nPlease help.\nThank you very much.",
+          "url": "https://github.com/idaholab/moose/discussions/19932",
+          "updatedAt": "2022-06-08T01:45:39Z",
+          "publishedAt": "2021-12-30T05:52:19Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSeems like this is what you want to use:\nhttps://mooseframework.inl.gov/source/materials/ComputeConcentrationDependentElasticityTensor.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19932#discussioncomment-1889114",
+                  "updatedAt": "2022-06-08T01:46:14Z",
+                  "publishedAt": "2021-12-30T20:26:17Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hello Guillaume\nThank you very much. This is exactly what I was looking for.\nJust one query. Can I read the Euler angles from the data file, the same way I was doing earlier to rotate the Elastic tensor?\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/19932#discussioncomment-1890098",
+                          "updatedAt": "2022-06-08T01:46:15Z",
+                          "publishedAt": "2021-12-31T02:23:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "No, looks like this one only does constant euler angles.\nYou could create a new class and blend the two functionalities?",
+                          "url": "https://github.com/idaholab/moose/discussions/19932#discussioncomment-1890831",
+                          "updatedAt": "2022-06-08T01:46:19Z",
+                          "publishedAt": "2021-12-31T09:11:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "avtarsinghh1991"
+                          },
+                          "bodyText": "Hello Guillaume\nThank you very much. I will merge the two functionalities.\nBest\nAvtar",
+                          "url": "https://github.com/idaholab/moose/discussions/19932#discussioncomment-1891898",
+                          "updatedAt": "2022-06-08T01:46:27Z",
+                          "publishedAt": "2021-12-31T16:36:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "TIMEOUT error when ./run_tests -j n",
+          "author": {
+            "login": "bylore"
+          },
+          "bodyText": "Dear all,\nI have installed moose by the offline way on my workstation with Centos 7. When run ./run_tests -j n,  all the failed tests show [FINISHED] FAILED (TIMEOUT). I have tried to increase the timeout limit, but still failed.  When i just ./moose_test-opt, the program hangs without any output.\nwhich mpi* shows correct returns.\nI found a similar issue #16788. The author solved the issue by commenting lines loading some modules for intel fortran that insludes openmpi in  bash_profile. But my bash_profile and .bashrc do not contain any lines relavant to openmpi.\nAny suggestions?\nBest regards,",
+          "url": "https://github.com/idaholab/moose/discussions/19922",
+          "updatedAt": "2023-02-12T11:19:32Z",
+          "publishedAt": "2021-12-26T06:12:57Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nCould you please run the program in gdb, interrupt it then get us a backtrace?\nhttps://stackoverflow.com/questions/11616364/getting-a-stack-trace-of-a-hung-process-running-in-gdb\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1871473",
+                  "updatedAt": "2023-06-01T00:19:33Z",
+                  "publishedAt": "2021-12-26T10:22:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bylore"
+                          },
+                          "bodyText": "I ran moose_test-opt in gdb, after i interrupted it by Ctrl+C, i got the following message.\nStarting program: /home/xxx/offline/moose/test/moose_test-opt moose_test-opt\nwarning: no loadable sections found in added symbol-file system-supplied DSO at 0x7ffff7ffd000\n[Thread debugging using libthread_db enabled]\nwarning: File \"/home/xxx/gcc/lib64/libstdc++.so.6.0.26-gdb.py\" auto-loading has been declined by your `auto-load safe-path' set to \"/usr/share/gdb/auto-load:/usr/lib/debug:/usr/bin/mono-gdb.py\".\nTo enable execution of this file add\nadd-auto-load-safe-path /home/xxx/gcc/lib64/libstdc++.so.6.0.26-gdb.py\nline to your configuration file \"/home/xxx/.gdbinit\".\nTo completely disable this security protection add\nset auto-load safe-path /\nline to your configuration file \"/home/xxx/.gdbinit\".\nFor more information about this security protection see the\n\"Auto-loading safe path\" section in the GDB manual.  E.g., run from the shell:\ninfo \"(gdb)Auto-loading safe path\"\n^C\nProgram received signal SIGINT, Interrupt.\n0x0000003f9d80c465 in ?? () from /lib64/libpthread.so.0\nMissing separate debuginfos, use: debuginfo-install glibc-2.12-1.107.el6.x86_64 glibc-2.12-1.192.el6.x86_64 libX11-1.6.3-2.el6.x86_64 libXau-1.0.6-4.el6.x86_64 libudev-147-2.46.el6.x86_64 libudev-147-2.73.el6_8.2.x86_64 libxcb-1.11-2.el6.x86_64 libxml2-2.7.6-21.el6_8.1.x86_64 libxml2-2.7.6-8.el6_3.4.x86_64 zlib-1.2.3-29.el6.x86_64",
+                          "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1871977",
+                          "updatedAt": "2023-06-01T00:19:34Z",
+                          "publishedAt": "2021-12-26T12:48:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bylore"
+                          },
+                          "bodyText": "using backtrace command, i got\n#0  0x0000003f9d80c465 in ?? () from /lib64/libpthread.so.\n#1  0x00007ffff3aa8cd3 in libMesh::Singleton::Setup::Setup() () from /home/xxx/offline/moose/libmesh/installed/lib/libmesh_opt.so.0\n#2  0x00007ffff3e2cdc6 in _GLOBAL__sub_I_remote_elem.C () from /home/xxx/offline/moose/libmesh/installed/lib/libmesh_opt.so.0\n#3  0x00007ffff482c772 in __do_global_ctors_aux () from /home/xxx/offline/moose/libmesh/installed/lib/libmesh_opt.so.0\n#4  0x00007fffffffca68 in ?? ()\n#5  0x0000000000000002 in ?? ()\n#6  0x00007fffffffca68 in ?? ()\n#7  0x00007ffff392959b in _init () from /home/xxx/offline/moose/libmesh/installed/lib/libmesh_opt.so.0\n#8  0x00007fffee4299c0 in ?? ()\n#9  0x0000003f9cc0e705 in _dl_init_internal () from /lib64/ld-linux-x86-64.so.2\n#10 0x0000003f9cc00b3a in _dl_start_user () from /lib64/ld-linux-x86-64.so.2\n#11 0x0000000000000002 in ?? ()\n#12 0x00007fffffffcda5 in ?? ()\n#13 0x00007fffffffcde7 in ?? ()\n#14 0x0000000000000000 in ?? ()",
+                          "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1872031",
+                          "updatedAt": "2023-06-01T00:19:44Z",
+                          "publishedAt": "2021-12-26T13:20:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bylore"
+                          },
+                          "bodyText": "To use moose, i added\nexport LD_LIBRARY_PATH=/home/xxx/offline/moose/libmesh/installed/lib:$LD_LIBRARY_PATH to my .bashrc file.\nAfter doing this, my previous program built on external libmesh showed the similar hanging behavior.\nAnd then i commented the above LD_LIBRARY_PATH line, my program built on externally installed libmesh worked well again.\nSo, the problem may be related to the libmesh installed asscociated with moose.\nI installed moose on another machine through the same way and the TIMEOUT error did not occur and most tests passed.",
+                          "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1873762",
+                          "updatedAt": "2023-06-01T00:19:51Z",
+                          "publishedAt": "2021-12-27T05:50:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What do you get by running ldd ./executable-opt ?\nDo you get a different result when LD_LIBRARY_PATH is set to include libmesh/installed and when it is not?",
+                          "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1889633",
+                          "updatedAt": "2023-06-01T00:19:51Z",
+                          "publishedAt": "2021-12-30T22:59:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "and just to make sure, you have only installed a single copy of libmesh on the entire system ?",
+                          "url": "https://github.com/idaholab/moose/discussions/19922#discussioncomment-1889634",
+                          "updatedAt": "2023-06-01T00:20:00Z",
+                          "publishedAt": "2021-12-30T22:59:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to generate a two-dimensional boundary",
+          "author": {
+            "login": "amosaha"
+          },
+          "bodyText": "Hello,\nThe meshes I generated with trelis cannot be used, so I tried to use the mesh generator that comes with moose.I have created a 3D model. If I want to specify a specific 2D plane, which function should I use\uff1f\nThanks.",
+          "url": "https://github.com/idaholab/moose/discussions/19920",
+          "updatedAt": "2024-01-15T23:34:12Z",
+          "publishedAt": "2021-12-25T09:32:28Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDo you want to use this plane as a sideset in a 3D solve (for a boundary condition for example) or do you want to use this plane as a 2D mesh for the solve?\nEither way, you'll want to work with one of those to define the plane\nhttps://mooseframework.inl.gov/source/meshgenerators/ParsedGenerateSideset.html\nor if the plane is on the outer boundary of the mesh:\nhttps://mooseframework.inl.gov/source/meshgenerators/SideSetsAroundSubdomainGenerator.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19920#discussioncomment-1869518",
+                  "updatedAt": "2024-01-15T23:34:12Z",
+                  "publishedAt": "2021-12-25T11:50:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "InterfaceUserObject not getting material in DG kernel",
+          "author": {
+            "login": "lynnmunday"
+          },
+          "bodyText": "@AhmedAlmetwally posted this as an issue but maybe there is simple fix that someone here might know of.  The Issue is #19735\nI pasted in his error below:\nWe are trying to couple the DG and CG schemes for diffusion problems to enforce mass conservation. We started with adding a DG kernel to the diffusion CG kernel and ran the same input file of issue #11766 and got the following error:\nAssertion `i < _size' failed\n\nAccess out of bounds in MooseArray (i: 0 size: 0)\n\nat /Users/aalmetwally/projects/moose/framework/build/header_symlinks/MooseArray.h, line 276\n\nStack frames: 16\n\n0: 0 libmesh_dbg.0.dylib 0x000000010b6d8232 libMesh::print_trace(std::__1::basic_ostream<char, std::__1::char_traits >&) + 626\n\n1: 1 libporous_flow-dbg.0.dylib 0x0000000100281b4d MooseArray::operator[](unsigned int) const + 941\n\n2: 2 libporous_flow-dbg.0.dylib 0x000000010037d586 PorousFlow1PhaseFullySaturated::buildQpPPSS() + 38\n\n3: 3 libporous_flow-dbg.0.dylib 0x0000000100391858 PorousFlow1PhaseFullySaturated::initQpStatefulProperties() + 40\n\n4: 4 libmoose-dbg.0.dylib 0x0000000103bfcdae MaterialBase::initStatefulProperties(unsigned int) + 94\n\n5: 5 libporous_flow-dbg.0.dylib 0x0000000100390d8b PorousFlowMaterial::initStatefulProperties(unsigned int) + 107\n\n6: 6 libmoose-dbg.0.dylib 0x0000000103d25487 MaterialPropertyStorage::initStatefulProps(MaterialData&, std::__1::vector<std::__1::shared_ptr, std::__1::allocator<std::__1::shared_ptr > > const&, unsigned int, libMesh::Elem const&, unsigned int) + 199\n\n7: 7 libmoose-dbg.0.dylib 0x0000000104a01305 ComputeMaterialsObjectThread::onInternalSide(libMesh::Elem const*, unsigned int) + 1285\n\n8: 8 libmoose-dbg.0.dylib 0x000000010408c4d4 ThreadedElementLoopBase<libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> >::operator()(libMesh::StoredRange<libMesh::MeshBase::const_element_iterator, libMesh::Elem const*> const&, bool) + 1412\n\n9: 9 libmoose-dbg.0.dylib 0x00000001042326f1 FEProblemBase::initialSetup() + 21329\n\n10: 10 libmoose-dbg.0.dylib 0x0000000103b503ef Transient::init() + 2415\n\n11: 11 libmoose-dbg.0.dylib 0x0000000105251516 MooseApp::executeExecutioner() + 1350\n\n12: 12 libmoose-dbg.0.dylib 0x000000010524b44f MooseApp::run() + 8415\n\n13: 13 porous_flow-dbg 0x000000010000cfb5 main + 149\n\n14: 14 libdyld.dylib 0x00007fff20438f3d start + 1\n\n15: 15 ??? 0x0000000000000003 0x0 + 3\n\n[0] /Users/aalmetwally/projects/moose/framework/build/header_symlinks/MooseArray.h, line 276, compiled Dec 10 2021 at 11:50:32\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n\n:\n\nsystem msg for write_line failure : Bad file descriptor\n\nProcess 14528 exited with status = 1 (0x00000001)",
+          "url": "https://github.com/idaholab/moose/discussions/19887",
+          "updatedAt": "2022-08-16T10:49:12Z",
+          "publishedAt": "2021-12-22T20:13:14Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "lynnmunday"
+                  },
+                  "bodyText": "@lindsayad  fixed issue #19735 with pr #19918",
+                  "url": "https://github.com/idaholab/moose/discussions/19887#discussioncomment-1864194",
+                  "updatedAt": "2022-08-16T10:49:14Z",
+                  "publishedAt": "2021-12-23T16:13:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "I would have deleted the disucssion topic but I don't know how.",
+                          "url": "https://github.com/idaholab/moose/discussions/19887#discussioncomment-1864200",
+                          "updatedAt": "2022-08-16T10:49:15Z",
+                          "publishedAt": "2021-12-23T16:13:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "No need to delete! This is appropriate.",
+                          "url": "https://github.com/idaholab/moose/discussions/19887#discussioncomment-1864389",
+                          "updatedAt": "2022-08-16T10:49:15Z",
+                          "publishedAt": "2021-12-23T16:47:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to get the node value of coupled variable in current element for 1D mesh?",
+          "author": {
+            "login": "YuhangNIU"
+          },
+          "bodyText": "Hi all,\nI know the node value of mainly variable in the current element (in ADKernel) can be defined as \"_u_nodal(_var.dofValues())\" and can be used as _u_nodal[0] in 1D mesh. But how to define and get the node value of the coupled variable in the current element?\nCould anyone kindly teach me?\nBest regards,\nYuhang",
+          "url": "https://github.com/idaholab/moose/discussions/19673",
+          "updatedAt": "2022-06-21T20:24:50Z",
+          "publishedAt": "2021-12-21T02:45:47Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAre you talking about a coupled auxiliary variable?\nYou cant define directly the nodal (or any) value of a main (non-linear) variable, these have to be solved for.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19673#discussioncomment-1853653",
+                  "updatedAt": "2022-06-21T20:25:06Z",
+                  "publishedAt": "2021-12-21T16:08:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YuhangNIU"
+                          },
+                          "bodyText": "Thank you for your reply!\nI have solved this problem in another way. In this problem, we could define the coupled variable as _coupled_var_nodal(getVar(\"coupled_var\", 0)->dofValues()). So the node value of the coupled variable in the current element can be expressed as _coupled_var_nodal[0] or _coupled_var_nodal[1] in 1D mesh.\nMuch appreciate!\nYuhang",
+                          "url": "https://github.com/idaholab/moose/discussions/19673#discussioncomment-1855805",
+                          "updatedAt": "2022-06-21T20:25:08Z",
+                          "publishedAt": "2021-12-22T01:22:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "sounds good.\nYou can indeed access a coupled variable dof that way. The preferred way is to use _coupled_var_nodal(coupledValue(\"coupled_var\", 0))    (adCoupledValue for ADKernels)\nPlease see the function definition in interface/Coupleable.C and see if you want to use that instead:\nconst VariableValue &\nCoupleable::coupledValue(const std::string & var_name, unsigned int comp) const\n{\n  const auto * const var = getVarHelper<MooseVariableField<Real>>(var_name, comp);\n  if (!var)\n    return *getDefaultValue(var_name, comp);\n  checkFuncType(var_name, VarType::Ignore, FuncAge::Curr);\n\n  if (!_coupleable_neighbor)\n  {\n    if (_c_nodal)\n      return (_c_is_implicit) ? var->dofValues() : var->dofValuesOld();\n    else\n      return (_c_is_implicit) ? var->sln() : var->slnOld();\n  }\n  else\n  {\n    if (_c_nodal)\n      return (_c_is_implicit) ? var->dofValuesNeighbor() : var->dofValuesOldNeighbor();\n    else\n      return (_c_is_implicit) ? var->slnNeighbor() : var->slnOldNeighbor();\n  }\n}\n\n_coupled_var_nodal is of the VariableValue type.  (ADVariableValue for AD)\nIt can be accessed at a quadrature point with [_qp]",
+                          "url": "https://github.com/idaholab/moose/discussions/19673#discussioncomment-1855885",
+                          "updatedAt": "2022-06-21T20:25:15Z",
+                          "publishedAt": "2021-12-22T01:53:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "YuhangNIU"
+                          },
+                          "bodyText": "Thank you! It looks better. I will have a try in this way.\nBest regards,\nYuhang",
+                          "url": "https://github.com/idaholab/moose/discussions/19673#discussioncomment-1856578",
+                          "updatedAt": "2022-06-21T20:31:06Z",
+                          "publishedAt": "2021-12-22T06:47:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "error message for installation",
+          "author": {
+            "login": "snugook1108"
+          },
+          "bodyText": "/home/1ox/anaconda3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/9.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/1ox/project_mole_test/mole/src/.libs/main.x86_64-conda-linux-gnu.opt.o: in function `main':\nmain.C:(.text.startup.main+0x3b): undefined reference to `XXXTestApp::registerApps()'\ncollect2: error: ld returned 1 exit status\n\nThe undefined reference is there. I don't know how to solve this problem.",
+          "url": "https://github.com/idaholab/moose/discussions/19667",
+          "updatedAt": "2022-08-29T20:35:56Z",
+          "publishedAt": "2021-12-19T06:28:44Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "This looks like remains from a previous compilation. Try to make clobberall then if that fails, commit/save all your work and use git clean -xfd. You may want to do this for every submodule with this: git submodule foreach --recursive git clean -xfd",
+                  "url": "https://github.com/idaholab/moose/discussions/19667#discussioncomment-1844220",
+                  "updatedAt": "2022-08-29T20:35:56Z",
+                  "publishedAt": "2021-12-19T21:34:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "snugook1108"
+                          },
+                          "bodyText": "I tried to use git clean -xfd and git submodule foreach --recursive git clean -xfd , and make clobberall but the same message, main.C:(.text.startup.main+0x3b): undefined reference to `XXXTestApp::registerApps()' collect2: error: ld returned 1 exit status.",
+                          "url": "https://github.com/idaholab/moose/discussions/19667#discussioncomment-1854743",
+                          "updatedAt": "2022-08-29T20:35:56Z",
+                          "publishedAt": "2021-12-21T20:14:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Can you grep for XXXTestApp in the head of the directory?\nWe have to find what s referring to this app in your files. This really looks like a test object.",
+                          "url": "https://github.com/idaholab/moose/discussions/19667#discussioncomment-1855597",
+                          "updatedAt": "2022-08-29T20:35:57Z",
+                          "publishedAt": "2021-12-22T00:11:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

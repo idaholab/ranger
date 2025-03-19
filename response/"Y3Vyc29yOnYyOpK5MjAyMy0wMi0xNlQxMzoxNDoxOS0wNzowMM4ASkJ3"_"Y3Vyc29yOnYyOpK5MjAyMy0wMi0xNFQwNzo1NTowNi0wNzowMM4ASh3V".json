@@ -1,0 +1,1030 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMi0xNFQwNzo1NTowNi0wNzowMM4ASh3V"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Error: The component setup status (1) is less than the required status (2)",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "Hey. @joshuahansel I think there're are unknown bugs in the new Component I've created. The general structure is like HeatTransferFromHeatStructure1Phase. But I don't know where is the bug. My present purpose is to calculate the lateral flow between two FlowChannel1Phases. I only add the lateral equation in the new Component.(Should I rewrite the basic fluid equations in my new Component?). The input file is:\nT_in = 300.         # K\nm_dot_in = 1e-4     # kg/s\npress = 1e5         # Pa\n\n[GlobalParams]\n  initial_p = ${press}\n  initial_vel = 0\n  initial_T = ${T_in}\n\n  rdg_slope_reconstruction = full\n  closures = simple_closures\n  fp = he\n[]\n\n[Modules/FluidProperties]\n  [./he]\n    type = IdealGasFluidProperties\n    molar_mass = 4e-3\n    gamma = 1.67\n    k = 0.2556\n    mu = 3.22639e-5\n  [../]\n[]\n\n[Closures]\n  [simple_closures]\n    type = Closures1PhaseSimple\n  []\n[]\n\n[Components]\n  [./inlet1]\n    type = InletMassFlowRateTemperature1Phase\n    input = 'core_chan1:in'\n    m_dot = 0.6\n    T = 300\n  [../]\n  [core_chan1]\n    type = FlowChannel1Phase\n    position = '0 0 0'\n    orientation = '0 0 1'\n    length = 10\n    n_elems = 50\n    A = 0.001\n    D_h = 0.1333\n    f = 1.6\n  [../]\n  [outlet1]\n    type = Outlet1Phase\n    input = 'core_chan1:out'\n    p = 1e5\n  [../]\n  [./inlet2]\n    type = InletMassFlowRateTemperature1Phase\n    input = 'core_chan2:in'\n    m_dot = 1.2\n    T = 300\n  [../]\n  [core_chan2]\n    type = FlowChannel1Phase\n    position = '0 0.5 0'\n    orientation = '0 0 1'\n    length = 10\n    n_elems = 50\n    A = 0.002\n    D_h = 0.2667\n    f = 1.6\n  [../]\n  [outlet2]\n    type = Outlet1Phase\n    input = 'core_chan2:out'\n    p = 1e5\n  [../]\n  [Gap]\n    type = TwoChannelsModel\n    current_flow_channel = core_chan1\n    adjacent_flow_channel = core_chan2\n    fp = he\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n  start_time = 0\n  end_time = 2\n  dt = 0.1\n\n  line_search = basic\n  solve_type = NEWTON\n\n  nl_rel_tol = 1e-5\n  nl_abs_tol = 1e-5\n  nl_max_its = 5\n[]\n\n[Outputs]\n  exodus = true\n[]\n\n\nAnd the error says:\n*** ERROR ***\nThe following error occurred in the object \"core_chan2\", of type \"FlowChannel1Phase\".\n\ncore_chan2: The component setup status (1) is less than the required status (2)\n\nI don't know why there's something wrong with the core_chan2. I didn't change anything about the FlowChannel1Phase\nI can show the source code if necessary.\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/23433",
+          "updatedAt": "2023-06-24T19:45:56Z",
+          "publishedAt": "2023-02-15T13:01:22Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Hi Ethan,\nThis error message isn't very useful - it needs to tell you what those numbers (1 and 2) mean \ud83e\udd26\nSo components have a number of methods that get called in order; see https://mooseframework.inl.gov/syntax/Components/index.html. This \"setup status\" indicates which of these methods have already been called. Sometimes we want to check that we've already called some of these methods before doing something (else we could get garbage or segfaults, etc.). The error comes from lines like\ncheckSetupStatus(MESH_PREPARED);\n\nCan you get a stacktrace (run in debug mode)?\nAnd I'm happy to look at your component code too, though it appears the error message must be indirect from your component, since it comes from a FlowChannel1Phase.",
+                  "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4983934",
+                  "updatedAt": "2023-02-15T14:19:08Z",
+                  "publishedAt": "2023-02-15T14:19:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "It's interesting that I run in debug mode and get the same error info.\nThe Component code is here:\n//* This file is part of the MOOSE framework\n//* https://www.mooseframework.org\n//*\n//* All rights reserved, see COPYRIGHT for full restrictions\n//* https://github.com/idaholab/moose/blob/master/COPYRIGHT\n//*\n//* Licensed under LGPL 2.1, please see LICENSE for details\n//* https://www.gnu.org/licenses/lgpl-2.1.html\n\n#include \"TwoChannelsModel.h\"\n#include \"FlowChannel1Phase.h\"\n#include \"FlowModelSinglePhase.h\"\n#include \"THMMesh.h\"\n\n\nconst std::string TwoChannelsModel::W = \"lateral velocity\";\n\nregisterMooseObject(\"ThermalHydraulicsApp\", TwoChannelsModel);\n\nInputParameters\nTwoChannelsModel::validParams()\n{\n  InputParameters params = Component::validParams();\n  params.addRequiredParam<std::string>(\"current_flow_channel\",\n                                       \"Name of flow channel component to connect to\");\n  params.addRequiredParam<std::string>(\"adjacent_flow_channel\",\n                                       \"Name of flow channel component to connect to\");\n  params.addRequiredParam<UserObjectName>(\n                    \"fp\", \"The name of the user object that defines fluid properties\");\n  params.addClassDescription(\"Calculate the lateral flow between 2 1-phase flow channels\");\n\n  return params;\n}\n\nTwoChannelsModel::TwoChannelsModel(\n    const InputParameters & parameters)\n  : Component(parameters),\n    _current_flow_channel_name(getParam<std::string>(\"current_flow_channel\")),\n    _adjacent_flow_channel_name(getParam<std::string>(\"adjacent_flow_channel\")),\n    _fe_type(_sim.getFlowFEType()),\n    _fp_name(getParam<UserObjectName>(\"fp\")),\n    _comp_name(name()),\n    _fch_alignment(_mesh)\n{\n}\n\nvoid\nTwoChannelsModel::setupMesh()\n{\n  if (hasComponentByName<FlowChannel1Phase>(_current_flow_channel_name) &&\n      hasComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name))\n  {\n    const FlowChannel1Phase & current_flow_channel = getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n    const FlowChannel1Phase & adjacent_flow_channel =\n        getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n\n    _fch_alignment.build(current_flow_channel.getElementIDs(),adjacent_flow_channel.getElementIDs());\n\n    for (auto & elem_id : adjacent_flow_channel.getElementIDs())\n    {\n      dof_id_type nearest_elem_id = _fch_alignment.getNearestElemID(elem_id);\n      if (nearest_elem_id != DofObject::invalid_id)\n        _sim.augmentSparsity(elem_id, nearest_elem_id);\n    }\n  }\n}\n\nvoid\nTwoChannelsModel::check() const\n{\n  Component::check();\n\n  if (hasComponentByName<FlowChannel1Phase>(_current_flow_channel_name) &&\n      hasComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name))\n  {\n    const FlowChannel1Phase & current_flow_channel = getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n    const FlowChannel1Phase & adjacent_flow_channel =\n        getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n\n    if (current_flow_channel.getNumElems() != adjacent_flow_channel.getNumElems())\n    {\n      logError(\"The number of elements in component '\",\n               _current_flow_channel_name,\n               \"' is \",\n               current_flow_channel.getNumElems(),\n               \", but the number of axial elements in component '\",\n               _adjacent_flow_channel_name,\n               \"' is \",\n               adjacent_flow_channel.getNumElems(),\n               \". They must be the same.\");\n    }\n    if (current_flow_channel.getLength() != adjacent_flow_channel.getLength())\n    {\n      logError(\"The length of component '\",\n               _current_flow_channel_name,\n               \"' is \",\n               current_flow_channel.getLength(),\n               \", but the length of component '\",\n               _adjacent_flow_channel_name,\n               \"' is \",\n               adjacent_flow_channel.getLength(),\n               \". They must be the same.\");\n    }\n      if (!_fch_alignment.check(adjacent_flow_channel.getElementIDs()))\n      {\n        logError(\"The centers of the elements of adjacent flow channel '\",\n                 _adjacent_flow_channel_name,\n                 \"' do not align with the centers of the current flow channel.\");\n       }\n  }\n}\n\nvoid\nTwoChannelsModel::addVariables()\n{\n  const FlowChannel1Phase & current_flow_channel = getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n//  const FlowChannel1Phase & adjacent_flow_channel =\n//      getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n\n  const std::vector<SubdomainName> & current_subdomains = current_flow_channel.getSubdomainNames();\n//  const std::vector<SubdomainName> & adjacent_subdomains = adjacent_flow_channel.getSubdomainNames();\n\n  _sim.addSimVariable(true, W,_fe_type, current_subdomains, 1);\n//  _sim.addSimVariable(true, W, _fe_type, adjacent_subdomains, 1);\n  // wall temperature initial condition\n//  if (!_sim.hasInitialConditionsFromFile() && !_app.isRestarting())\n//  {\n//    const HeatStructureBase & hs = getComponentByName<HeatStructureBase>(_hs_name);\n//    _sim.addFunctionIC(_T_wall_name, hs.getInitialT(), _flow_channel_subdomains);\n//  }\n}\n\nvoid\nTwoChannelsModel::addMooseObjects()\n{\n  ExecFlagEnum execute_on(MooseUtils::getDefaultExecFlagEnum());\n  execute_on = {EXEC_INITIAL, EXEC_LINEAR, EXEC_NONLINEAR};\n\n  const FlowChannel1Phase & current_flow_channel = getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n  const FlowChannel1Phase & adjacent_flow_channel =\n      getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n\n  const UserObjectName adjacent_uo_name = genName(name(), \"adjacent_uo\");\n  {\n    const std::string class_name = \"ADVariableTransferFromAdjacentChannelUO\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<ChannelMapping *>(\"_channel_mapping\") = &_fch_alignment;\n    params.set<MaterialPropertyName>(\"adjacent_a\") = \"_adjacent_a_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoa\") = \"_adjacent_rhoa_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoua\") = \"_adjacent_rhoua_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoea\") = \"_adjacent_rhoea_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_gradu\") = \"_adjacent_grad_vel_coupled\";\n    params.set<ExecFlagEnum>(\"execute_on\") = execute_on;\n    _sim.addUserObject(class_name, adjacent_uo_name, params);\n  }\n\n  {\n    const std::string class_name = \"ADLateralMomentum\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<NonlinearVariableName>(\"variable\") = W;\n    params.set<MaterialPropertyName>(\"rho\") = FlowModelSinglePhase::DENSITY;\n    params.set<MaterialPropertyName>(\"vel\") = FlowModelSinglePhase::VELOCITY;\n    params.set<MaterialPropertyName>(\"p\") = FlowModelSinglePhase::PRESSURE;\n    params.set<MaterialPropertyName>(\"grad_vel\") = \"grad_velocity\";\n    params.set<MaterialPropertyName>(\"adj_rho\") = \"adj_rho\";\n    params.set<MaterialPropertyName>(\"adj_vel\") = \"adj_vel\";\n    params.set<MaterialPropertyName>(\"adj_press\") = \"adj_press\";\n    params.set<MaterialPropertyName>(\"adj_grad_vel\") = \"adj_grad_vel\";\n    _sim.addKernel(class_name, genName(name(), \"laterar_momenutm_kernel\"), params);\n  }\n\n//  {\n//    const std::string class_name = \"ADHeatFlux3EqnBC\";\n//    InputParameters params = _factory.getValidParams(class_name);\n//    params.set<std::vector<BoundaryName>>(\"boundary\") = {getMasterSideName()};\n//    params.set<NonlinearVariableName>(\"variable\") = HeatConductionModel::TEMPERATURE;\n//    params.set<UserObjectName>(\"q_uo\") = heat_flux_uo_name;\n//    params.set<Real>(\"P_hs_unit\") = hs.getUnitPerimeter(_hs_side);\n//    params.set<unsigned int>(\"n_unit\") = hs.getNumberOfUnits();\n//    params.set<bool>(\"hs_coord_system_is_cylindrical\") = is_cylindrical;\n//    _sim.addBoundaryCondition(class_name, genName(name(), \"heat_flux_bc\"), params);\n//  }\n\n  // Transfer the temperature of the solid onto the flow channel\n//  {\n//    std::string class_name = \"VariableValueTransferMaterial\";\n//    InputParameters params = _factory.getValidParams(class_name);\n//    params.set<std::vector<SubdomainName>>(\"block\") = flow_channel.getSubdomainNames();\n//    params.set<MaterialPropertyName>(\"property_name\") = _T_wall_name + \"_coupled\";\n//    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n//    params.set<BoundaryName>(\"primary_boundary\") = getMasterSideName();\n//    params.set<std::string>(\"paired_variable\") = HeatConductionModel::TEMPERATURE;\n//    _sim.addMaterial(class_name, genName(name(), \"T_wall_transfer_mat\"), params);\n//  }\n\n  // Transfer the density of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableValueTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_a_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModel::AREA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_a_transfer_mat\"), params);\n  }\n  // Transfer the pressure of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableValueTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_rhoa_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::RHOA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_rhoa_transfer_mat\"), params);\n  }\n  // Transfer the velocity of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableValueTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_rhoua_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::RHOUA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_rhoua_transfer_mat\"), params);\n  }\n  // Transfer the velocity of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableValueTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_rhoea_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::RHOEA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_rhoea_transfer_mat\"), params);\n  }\n  // Transfer the velocity's gravity of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableGradientTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_grad_vel_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::VELOCITY;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_grad_vel_transfer_mat\"), params);\n  }\n  {\n    std::string class_name = \"GapMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<UserObjectName>(\"fp\") = _fp_name;\n    params.set<UserObjectName>(\"q_uo\") = adjacent_uo_name;\n    params.set<std::vector<VariableName>>(\"rhoA\") = {FlowModelSinglePhase::RHOA};\n    params.set<std::vector<VariableName>>(\"rhouA\") = {FlowModelSinglePhase::RHOUA};\n    params.set<std::vector<VariableName>>(\"rhoEA\") = {FlowModelSinglePhase::RHOEA};\n    params.set<std::vector<VariableName>>(\"A\") = {FlowModel::AREA};\n    _sim.addMaterial(class_name, genName(_comp_name, \"fp_mat\"), params);\n  }\n\n\n  // Transfer the temperature of the solid onto the flow channel as aux varaible for visualization\n//  {\n//    std::string class_name = \"VariableValueTransferAux\";\n//    InputParameters params = _factory.getValidParams(class_name);\n//    params.set<AuxVariableName>(\"variable\") = _T_wall_name;\n//    params.set<std::vector<BoundaryName>>(\"boundary\") = {getSlaveSideName()};\n//    params.set<BoundaryName>(\"paired_boundary\") = getMasterSideName();\n//    params.set<std::vector<VariableName>>(\"paired_variable\") =\n//        std::vector<VariableName>(1, HeatConductionModel::TEMPERATURE);\n//    _sim.addAuxKernel(class_name, genName(name(), \"T_wall_transfer\"), params);\n//  }\n}\n\nconst BoundaryName &\nTwoChannelsModel::getMasterSideName() const\n{\n  const FlowChannel1Phase & adjacent_flow_channel =\n      getComponentByName<FlowChannel1Phase>(_adjacent_flow_channel_name);\n  return adjacent_flow_channel.getNodesetName();\n}\n\nconst BoundaryName &\nTwoChannelsModel::getSlaveSideName() const\n{\n  const FlowChannel1Phase & current_flow_channel =\n      getComponentByName<FlowChannel1Phase>(_current_flow_channel_name);\n  return current_flow_channel.getNodesetName();\n}\n\nThe code involves the UO and Material code. They are all similar with the code in HeatTransferFromHeatStructure1Phase. I just wrote the code in my understanding of THM. Is there a big problem with the structure of the code?",
+                          "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4984427",
+                          "updatedAt": "2023-02-15T15:03:39Z",
+                          "publishedAt": "2023-02-15T15:03:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Oh ok, you may need to try running it in a debugger to get the stack trace. I forget under which conditions we get a stack trace outside of a debugger (it happens sometimes).\nIn the meantime, I suspect you need to add the following lines in your constructor:\naddDependency(_current_flow_channel_name);\naddDependency(_adjacent_flow_channel_name);\n\nWithin each of those \"setup\" steps, the components are sorted according to a dependency resolution. These two lines above signal for any of these setup methods, your component should run after the two flow channel components.",
+                          "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4985396",
+                          "updatedAt": "2023-02-15T16:28:28Z",
+                          "publishedAt": "2023-02-15T16:28:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "@joshuahansel I add the addDependency function and the error is gone.\nThe code here is wrong, I should transfer the gradient of rhoa and rhoua and calculate the gradient of velocity in the material class:\n {\n    std::string class_name = \"VariableGradientTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_grad_vel_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::VELOCITY;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_grad_vel_transfer_mat\"), params);\n  }\n\nI've fixed it. But I find a new problem. The new code is here:\n  // Transfer the rhoa's gradient of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableGradientTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_grad_rhoa_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::RHOA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_grad_rhoa_transfer_mat\"), params);\n  }\n  // Transfer the rhoua's gradient of the adjacent flow channel onto the current flow channel\n  {\n    std::string class_name = \"VariableGradientTransferMaterial\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<MaterialPropertyName>(\"property_name\") = \"_adjacent_grad_rhoua_coupled\";\n    params.set<BoundaryName>(\"secondary_boundary\") = {getSlaveSideName()};\n    params.set<BoundaryName>(\"primary_boundary\") = {getMasterSideName()};\n    params.set<std::string>(\"paired_variable\") = FlowModelSinglePhase::RHOUA;\n    _sim.addMaterial(class_name, genName(name(), \"adjacent_grad_rhoua_transfer_mat\"), params);\n  }\n\n\nAnd in UO, the code is:\n  const UserObjectName adjacent_uo_name = genName(name(), \"adjacent_uo\");\n  {\n    const std::string class_name = \"ADVariableTransferFromAdjacentChannelUO\";\n    InputParameters params = _factory.getValidParams(class_name);\n    params.set<std::vector<SubdomainName>>(\"block\") = current_flow_channel.getSubdomainNames();\n    params.set<ChannelMapping *>(\"_channel_mapping\") = &_fch_alignment;\n//    params.set<MaterialPropertyName>(\"adjacent_a\") = \"_adjacent_a_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoa\") = \"_adjacent_rhoa_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoua\") = \"_adjacent_rhoua_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_rhoea\") = \"_adjacent_rhoea_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_gradrhoa\") = \"_adjacent_grad_rhoa_coupled\";\n    params.set<MaterialPropertyName>(\"adjacent_gradrhoua\") = \"_adjacent_grad_rhoua_coupled\";\n    params.set<ExecFlagEnum>(\"execute_on\") = execute_on;\n    _sim.addUserObject(class_name, adjacent_uo_name, params);\n  }\n\nThe terminal shows:\n*** ERROR ***\nMaterial has no property named: _adjacent_grad_rhoa_coupled\n\nIs there a difference between the usage of VariableGradientTransferMaterial and VariableValueTransferMaterial? Is the material property's data type transfered by VariableGradientTransferMaterial Real? I don't know why there is such a problem.\nEthan.",
+                          "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4995116",
+                          "updatedAt": "2023-02-16T11:02:15Z",
+                          "publishedAt": "2023-02-16T11:02:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "In your UO's header, you should have:\nconst MaterialProperty<RealVectorValue> & _adjacent_grad_rhoa_coupled;\n\nand in your UO initializer list:\n_adjacent_grad_rhoa_coupled(getMaterialProperty<RealVectorValue>(\"_adjacent_grad_rhoa_coupled\")),\n\nDo you have this?",
+                          "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4996242",
+                          "updatedAt": "2023-02-16T13:16:47Z",
+                          "publishedAt": "2023-02-16T13:16:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "Oh, I got the data type wrong. Thank you. I know where the problem is.",
+                          "url": "https://github.com/idaholab/moose/discussions/23433#discussioncomment-4996633",
+                          "updatedAt": "2023-02-16T13:50:13Z",
+                          "publishedAt": "2023-02-16T13:50:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Surface Tension Force",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Hello everyone,\nHas anyone tried to add the surface tension force to the Navier-Stokes equation using Cahn-Hilliard equation? Is there any kernel for that which could be helpful?\nThanks,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/23382",
+          "updatedAt": "2023-04-07T16:34:38Z",
+          "publishedAt": "2023-02-08T18:15:50Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "liang-tech"
+                  },
+                  "bodyText": "hi, I am also studing this problem about coupling INS eqution with  CH equation.\nIn the terms of program , the moose module phase-field and navier-stokes has many C.file can be used. we can make a new app and then apply these program according to the eqution. But the surface tension term need to be written by yourself to add to the INS module.\nHowever, I found that when introducing the surface tension, the bubble in the liquid closed square cavity will shrinke rately. this is unphysical.",
+                  "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4913519",
+                  "updatedAt": "2023-02-09T02:47:46Z",
+                  "publishedAt": "2023-02-09T02:47:45Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Thank you for your reply. Shrinking is a common problem in these kind of simulations and it is not out of ordinary. Maybe you used non-conserved advection term for the CH equation. By the way, did you develop your custom kernel for the surface tension force in INS?",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4913573",
+                          "updatedAt": "2023-02-09T02:52:08Z",
+                          "publishedAt": "2023-02-09T02:52:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liang-tech"
+                          },
+                          "bodyText": "yes, i add surface tension term fs=\\mu\\nabla\\fai to the INS kernel like the moose file INSMomentumBase.C",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4913822",
+                          "updatedAt": "2023-02-09T03:13:22Z",
+                          "publishedAt": "2023-02-09T03:13:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Can you tell me the exact equations that you used for surface tension and free energy? By the way, did you add your custom kernel to your github?\nThanks,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4926490",
+                          "updatedAt": "2023-02-10T00:17:40Z",
+                          "publishedAt": "2023-02-10T00:17:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "hi, I am also studing this problem about coupling INS eqution with CH equation.\nIn the terms of program , the moose module phase-field and navier-stokes has many C.file can be used. we can make a new app and then apply these program according to the eqution. But the surface tension term need to be written by yourself to add to the INS module.\nHowever, I found that when introducing the surface tension, the bubble in the liquid closed square cavity will shrinke rately. this is unphysical.\n\nHello,\nDid you also implement the wetting boundary condition? I am also struggling in this and appreciate it if you can help me in it.\nRegards,\nAli",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4987257",
+                          "updatedAt": "2023-02-15T19:37:36Z",
+                          "publishedAt": "2023-02-15T19:37:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "liang-tech"
+                          },
+                          "bodyText": "This problem will be considered later. Now, I want to solve the surface tension firstly. In my current simulation, the NuumannBC of chemical potential is used\uff0c simply assuming that the contact angel is 90\u00b0.",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4989433",
+                          "updatedAt": "2023-02-16T01:12:39Z",
+                          "publishedAt": "2023-02-16T01:12:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "liang-tech"
+                  },
+                  "bodyText": "You can refer this article (doi:10.1103/PhysRevE.106.015111). In my study, the bulk free energy is f_{bulk}=W_d c^2(1-c)^2, then the surface tension is f_{st}=\\mu*\\nabla c + (the tangential part, also named marangoni effect). in the test, the tangential surface tnesion is neglected.\nHere is the .C file.\n#include \"NisosINSMomentumThermocapillary.h\"\n#include \"Function.h\"\n\nregisterMooseObject(\"nisosApp\", NisosINSMomentumThermocapillary);\n\ntemplate <>\nInputParameters\nvalidParams<NisosINSMomentumThermocapillary>()\n{\n  InputParameters params = validParams<INSBase>();\n  params.addClassDescription(\"This class computes various strong and weak components of the \"\n                             \"incompressible navier stokes equations about surface tension which can then be assembled \"\n                             \"together in child classes.\");\n  params.addCoupledVar(\"coupled_T\", \"Coupled temperature.\" );\n  params.addCoupledVar(\"coupled_cw\", \"Coupled chemical potential.\" );\n  params.addCoupledVar(\"coupled_c\", \"Coupled order parameter /rho.\" );\n  params.addParam<Real>(\"charac_thick\", 1, \"the characterization the thickness of the diffusive interface\");\n  params.addParam<MaterialPropertyName>(\n      \"surface_tension_cofficient_name\", \"SF_coefficient\", \"Property name of the  surface tension coefficient\");\n  params.addRequiredParam<unsigned>(\"component\", \"The velocity component that this is applied to.\");\n  params.addParam<bool>(\n      \"integrate_Marangoni\", true, \"Whether to integrate Marangoniy term.\");\n  params.addParam<bool>(\n      \"integrate_Thermocapillary\", true, \"Whether to integrate Thermocapillary term.\");\n  params.addParam<bool>(\n      \"supg\", false, \"Whether to perform SUPG stabilization of the momentum residuals\");\n  params.addParam<bool>(\n     \"use_interpolator\", false, \"Whether to use the indicator to limit the melting region.\");\n  params.addParam<MaterialPropertyName>(\n     \"interpolator_name\",\"idv\",\"Interpolation function (Default: idv).\");\n  return params;\n}\n\nNisosINSMomentumThermocapillary::NisosINSMomentumThermocapillary(const InputParameters & parameters)\n  : DerivativeMaterialInterface<JvarMapKernelInterface<INSBase>>(parameters),\n    _T_var(coupled(\"coupled_T\")),\n    _T(coupledValue(\"coupled_T\")),\n    _grad_T(coupledGradient(\"coupled_T\")),\n    _T_name(getVar(\"coupled_T\", 0)->name()),\n    _w_var(coupled(\"coupled_cw\")),\n    _w(coupledValue(\"coupled_cw\")),\n    _c_var(coupled(\"coupled_c\")),\n    _c(coupledValue(\"coupled_c\")),\n    _grad_c(coupledGradient(\"coupled_c\")),\n    _second_c(coupledSecond(\"coupled_c\")),\n    _xi(getParam<Real>(\"charac_thick\")),\n    _coef(getMaterialProperty<Real>(\"surface_tension_cofficient_name\")),\n    _dCoefdT(getMaterialPropertyDerivative<Real>(\"surface_tension_cofficient_name\", _T_name)),\n    _component(getParam<unsigned>(\"component\")),\n    _integrate_Ma(getParam<bool>(\"integrate_Marangoni\")),\n    _integrate_TC(getParam<bool>(\"integrate_Thermocapillary\")),\n    _supg(getParam<bool>(\"supg\")),\n    _interpolator(getParam<bool>(\"use_interpolator\")),\n    _idv(getMaterialProperty<Real>(\"interpolator_name\"))\n{\n\n}\n\n//void\n//NisosHCParsedTimeDerivativeScale::initialSetup()\n//{\n//  validateNonlinearCoupling<Real>(\"Coef_name\");\n//  validateDerivativeMaterialPropertyBase<Real>(\"Coef_name\");\n//}\n\nRealVectorValue\nNisosINSMomentumThermocapillary::Thermocapillary()\n{\n  RealVectorValue Tc(0, 0, 0);\n  Real _im = _integrate_Ma ? 1.0 : 0.0;\n  Real _ic = _integrate_TC ? 1.0 : 0.0;\n  Tc = -6*_xi*( _im * ( (_grad_c[_qp]*_grad_c[_qp])*_dCoefdT[_qp]*_grad_T[_qp] - _dCoefdT[_qp]*(_grad_T[_qp]*_grad_c[_qp])*_grad_c[_qp] ) ) - _ic*_w[_qp]*_grad_c[_qp] ;\n  return Tc;\n}\n\n\n\nReal\nNisosINSMomentumThermocapillary::computeQpResidual()\n{\n  Real r = 0;\n  Real _id = _interpolator ? _idv[_qp] : 1.0;\n  // Surface tension term  \n  r += _id * _test[_i][_qp] * Thermocapillary()(_component);\n\n  if (_supg)\n    r += computeQpPGResidual();\n\n  return r;\n}\n\nReal\nNisosINSMomentumThermocapillary::computeQpPGResidual()\n{\n  RealVectorValue U(_u_vel[_qp], _v_vel[_qp], _w_vel[_qp]);\n  Real _id = _interpolator ? _idv[_qp] : 1.0;\n  return  _id * tau() * U * _grad_test[_i][_qp] * Thermocapillary()(_component);\n}\n\nReal\nNisosINSMomentumThermocapillary::computeQpJacobian()\n{\n  Real jac=0;\n  if (_supg)\n    jac += computeQpPGJacobian(_component);\n  return jac;\n}\n\nReal\nNisosINSMomentumThermocapillary::computeQpPGJacobian(unsigned comp)\n{\n  Real _id = _interpolator ? _idv[_qp] : 1.0;\n  RealVectorValue U(_u_vel[_qp], _v_vel[_qp], _w_vel[_qp]);\n  RealVectorValue d_U_d_U_comp(0, 0, 0);\n  d_U_d_U_comp(comp) = _phi[_j][_qp];\n\n  return dTauDUComp(comp) * U * _grad_test[_i][_qp] * _id *\n             Thermocapillary()(_component) +\n         tau() * d_U_d_U_comp * _grad_test[_i][_qp] * _id *\n             Thermocapillary()(_component) ;\n}\n\n\n\nReal\nNisosINSMomentumThermocapillary::computeQpOffDiagJacobian(unsigned jvar)\n{\n  Real jac = 0;\n  RealVectorValue U(_u_vel[_qp], _v_vel[_qp], _w_vel[_qp]);\n  Real _id = _interpolator ? _idv[_qp] : 1.0;\n  Real _im = _integrate_Ma ? 1.0 : 0.0;\n  Real _ic = _integrate_TC ? 1.0 : 0.0;\n  if (jvar == _u_vel_var_number)\n  {\n    if (_supg)\n      jac += computeQpPGJacobian(0);\n\n    return jac;\n  }\n  else if (jvar == _v_vel_var_number)\n  {\n    if (_supg)\n      jac += computeQpPGJacobian(1);\n\n    return jac;\n  }\n  else if (jvar == _w_vel_var_number)\n  {\n    if (_supg)\n      jac += computeQpPGJacobian(2);\n\n    return jac;\n  }\n\n  else if (jvar == _w_var)\n  {\n    jac += -_id * _test[_i][_qp] *_ic * _phi[_j][_qp]*_grad_c[_qp](_component) ;\n\n    if (_supg)\n\n      jac += -_id *  tau() *  U * _grad_test[_i][_qp] * _ic * _phi[_j][_qp] * _grad_c[_qp](_component) ;\n\n    return jac;\n  }\n\n  else if (jvar == _T_var)\n  {\n    jac += _id * _test[_i][_qp] * (-6*_xi ) * ( _im * ( (_grad_c[_qp]*_grad_c[_qp])* _dCoefdT[_qp]*_grad_phi[_j][_qp](_component) - ( _dCoefdT[_qp]* _grad_phi[_j][_qp]*_grad_c[_qp])*_grad_c[_qp](_component) ) );\n    if (_supg)\n      jac +=  _id * tau() * U * _grad_test[_i][_qp] * (-6*_xi ) * (_im* ((_grad_c[_qp]*_grad_c[_qp])* _dCoefdT[_qp]*_grad_phi[_j][_qp](_component) - ( _dCoefdT[_qp]*_grad_phi[_j][_qp]*_grad_c[_qp])*_grad_c[_qp](_component) ) );\n    return jac;\n  }\n\n  else if (jvar == _c_var)\n  {\n\n    jac += _id * _test[_i][_qp] *( (-6*_xi ) * _im * ( 2*(_grad_c[_qp]*_grad_phi[_j][_qp])*_dCoefdT[_qp]*_grad_T[_qp](_component) - (_dCoefdT[_qp]*_grad_T[_qp]*_grad_phi[_j][_qp])*_grad_c[_qp](_component) -  (_dCoefdT[_qp]*_grad_T[_qp]*_grad_c[_qp])*_grad_phi[_j][_qp](_component) ) - _ic *_w[_qp]*_grad_phi[_j][_qp](_component) );\n    if (_supg)\n\n      jac +=  _id * tau() * U * _grad_test[_i][_qp] * ( (-6*_xi ) *  _im * ( 2*(_grad_c[_qp]*_grad_phi[_j][_qp])*_dCoefdT[_qp]*_grad_T[_qp](_component) - (_dCoefdT[_qp]*_grad_T[_qp]*_grad_phi[_j][_qp])*_grad_c[_qp](_component) -  (_dCoefdT[_qp]*_grad_T[_qp]*_grad_c[_qp])*_grad_phi[_j][_qp](_component) ) - _ic *_w[_qp]*_grad_phi[_j][_qp](_component) );\n    return jac;\n  }\n  \n  else\n    return 0;\n}",
+                  "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4927152",
+                  "updatedAt": "2023-04-07T16:32:32Z",
+                  "publishedAt": "2023-02-10T01:29:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "Thank you. Great job there!",
+                          "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4927952",
+                          "updatedAt": "2023-02-10T03:50:43Z",
+                          "publishedAt": "2023-02-10T03:50:41Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "liang-tech"
+                  },
+                  "bodyText": "In my project, the Navier-Stokes-Cahn-Hilliard Equations in MOOSE is based on  the following programs:\n\nhttps://mooseframework.inl.gov/modules/phase_field/Phase_Field_Equations.html\nPeterson, J. W., Lindsay, A. D., & Kong, F. (2018). Overview of the incompressible Navier\u2013Stokes simulation capabilities in the MOOSE framework. Advances in Engineering Software, 119(February), 68\u201392. https://doi.org/10.1016/j.advengsoft.2018.02.004",
+                  "url": "https://github.com/idaholab/moose/discussions/23382#discussioncomment-4989573",
+                  "updatedAt": "2023-02-16T01:37:19Z",
+                  "publishedAt": "2023-02-16T01:37:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to mix fluids in the TH Module Single-Phase-Flow tutorial?",
+          "author": {
+            "login": "yifanm4"
+          },
+          "bodyText": "Greetings All,\nI would like to use the 1-D single-phase-flow structure as the basic structure to implement graphite dust motion with the helium gas.\nI understand that it has been made clearly that the single-phase-flow doesn't support mixing fluids, so my questions are:\n\nIs there a way to manipulate the code to make it support the mix of the fluids? (The dust shall flow with the helium gas, thus it will still be a single phase flow)\nIs this a situation where the Multi-App functionalities jump in?\nIs there a better module to solve this issue without taking too much computational power?\n\nThank you so much!",
+          "url": "https://github.com/idaholab/moose/discussions/23132",
+          "updatedAt": "2023-02-15T22:17:31Z",
+          "publishedAt": "2023-01-11T19:42:30Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\nyes. This will become a scalar transport problem. We do not support this right now in THM (@joshuahansel for fact-checking me) but I m very confident it's not difficult to add.\nYou may elect to use MultiApps. The main reason for that is to limit the number of variables in a single solve, especially when the transported species does not influence the velocity distribution of the main fluid.\nwe have similar problematics with the Navier Stokes module (transporting neutron precursors in molten salt reactor) and  in the future in the scalar transport module (this module will serve, in the future, as a base for tritium transport in the open-source TMAP8). If your system is small you can try finite volume Navier Stokes.\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4660787",
+                  "updatedAt": "2023-01-11T20:56:26Z",
+                  "publishedAt": "2023-01-11T20:56:25Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Fact-check returns TRUE (No scalar transport currently in THM).",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4667847",
+                          "updatedAt": "2023-01-12T13:50:27Z",
+                          "publishedAt": "2023-01-12T13:50:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Note that we do have the following fluid properties formulation for arbitrary mixtures of gases: https://mooseframework.inl.gov/source/userobjects/IdealRealGasMixtureFluidProperties.html. There are alternative formulations out there.\nAfter this piece, you can decide on what PDEs you want to be solving. It's possible that maybe you'll just be able to add an equation or two alongside the ones in FlowChannel1Phase.",
+                  "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4667967",
+                  "updatedAt": "2023-01-12T14:02:36Z",
+                  "publishedAt": "2023-01-12T14:02:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yifanm4"
+                          },
+                          "bodyText": "Thank you so much for all these useful information! I am still new to Moose, how exactly do I add equations in FlowChannel1Phase?",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4670173",
+                          "updatedAt": "2023-01-12T17:41:28Z",
+                          "publishedAt": "2023-01-12T17:41:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "I'd just clarify that this wouldn't be \"in FlowChannel1Phase\", but would just be objects that you add in your input file alongside it.\nAs far as how to add equations, that's a pretty broad topic - you'll probably need to go through at least some tutorials: https://mooseframework.inl.gov/getting_started/examples_and_tutorials/index.html. But the residual objects that will be relevant will be\n\nKernels: https://mooseframework.inl.gov/syntax/Kernels/index.html\nDGKernels: https://mooseframework.inl.gov/syntax/DGKernels/index.html (depending on what spatial discretization you choose)\nBCs: https://mooseframework.inl.gov/syntax/BCs/index.html\n\nBut first, let us know which equations you want to solve so that we can check if there is something existing that you can use.",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4672055",
+                          "updatedAt": "2023-01-12T21:40:53Z",
+                          "publishedAt": "2023-01-12T21:40:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yifanm4"
+                          },
+                          "bodyText": "Hello Joshua,\nI might have gotten it wrong to begin with. Instead of mixing two types of fluids together, I actually want to use the calculated velocity (u) to couple with my source terms (graphite dust, fission products, and so on). By starting with the customized 1-D diffusion equation:\npartial_f(x,t) /partial_t = u* partial_f(x,t) /partial_x + source, where f(x,t) could be graphite dust or fission products and u is the calculated velocity from single-phase-flow.\nIs there something existing that can help me with this?\nYifan",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4698756",
+                          "updatedAt": "2023-01-16T15:56:17Z",
+                          "publishedAt": "2023-01-16T15:56:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "Ok, that seems like it shouldn't be too bad then. There's nothing in the TH module to solve this equation (and I don't think the scalar transport module would help you here yet), but I think it would be easy enough to implement - just need a kernel for a product of a variable and a gradient of another variable. There might be such a kernel already.",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4700414",
+                          "updatedAt": "2023-01-16T19:06:53Z",
+                          "publishedAt": "2023-01-16T19:06:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yifanm4"
+                          },
+                          "bodyText": "I tried to use the existing kernels (ConservativeAdvection) which seems to get the job done. However, since the velocity is not from the input parameters, but a calculated output instead. It gives me the error message that \"coupled variable 'vel' was not found\", what shall I do in this case?",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4729074",
+                          "updatedAt": "2023-01-19T15:47:15Z",
+                          "publishedAt": "2023-01-19T15:47:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "you can define an auxvariable vel and initialize it to the value you want.",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4729213",
+                          "updatedAt": "2023-01-19T16:01:06Z",
+                          "publishedAt": "2023-01-19T16:01:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "While FlowChannel1Phase should give you a variable called vel, I see that ConservativeAdvection is requesting a vector variable, whereas vel is scalar (since it's 1-D). So you would need an aux kernel that takes vel and multiplies it by a vector (your normalized orientation vector of FlowChannel1Phase. The caution here is that you will lose the automatic differentiation when involving aux kernels, so your convergence may suffer. I'd recommend a kernel that uses a scalar vel directly. If one does not exist, you could write one (for now, you could copy and paste ConservativeAdvection and then make the changes there):\n_velocity[_qp]\n\ngoes to\n_vel[_qp] * _orientation",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4729508",
+                          "updatedAt": "2023-01-19T16:30:05Z",
+                          "publishedAt": "2023-01-19T16:30:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yifanm4"
+                          },
+                          "bodyText": "I located the ConservativeAdvection. But once I clicked in, there are just some input files. How can I change the source file for ConservativeAdvection as you described above?",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4730255",
+                          "updatedAt": "2023-01-19T17:50:19Z",
+                          "publishedAt": "2023-01-19T17:50:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "joshuahansel"
+                          },
+                          "bodyText": "ConservativeAdvectionScalar_h.txt\nConservativeAdvectionScalar_C.txt\nRename these two files to ConservativeAdvectionScalar.h and ConservativeAdvectionScalar.C, respectively, and then put them into framework/include/kernels and framework/src/kernels, respectively. Recompile your executable and try it out.",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4730508",
+                          "updatedAt": "2023-01-19T18:13:29Z",
+                          "publishedAt": "2023-01-19T18:13:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yifanm4"
+                          },
+                          "bodyText": "I am trying to add my own AuxKernel object called DustConvectionAux to the TH tutorial.\nI create DustConvectionAux.h and DustConvectionAux.C, put them in ./modules/thermal_hydralics/include/auxkernel and ./modules/thermal_hydralics/src/auxkernel respectively. I register it to the ThermalHydraulicsApp as well, but it still complains that DustConvectionAux is not registered.\nI also tried to register it in my src/base/ThermalHydraulicsAppApp.C file, still not working.\nIt can be complied just fine.\nAny idea about how to fix this?",
+                          "url": "https://github.com/idaholab/moose/discussions/23132#discussioncomment-4767945",
+                          "updatedAt": "2023-01-24T15:32:14Z",
+                          "publishedAt": "2023-01-24T15:32:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Failed Installation of Libmesh on HPC Cluster",
+          "author": {
+            "login": "delinzha"
+          },
+          "bodyText": "For some reason, I have to install an old version of MOOSE on the HPC cluster (git checkout 34fb8fa). However, I met an error when running update_and_rebuild_libmesh.sh. The error is /usr/bin/ld: cannot find -ludev. I've checked similar discussions #18868 to run the command git submodule sync in the Libmesh submodule. However, it did not work on my end. Modules I loaded on HPC clusters are:\nmodule load gcc/9.2.0\nmodule load python/2.7.16\nmodule load openblas/0.3.7\nmodule load cmake/3.15.4\nmodule load libevent/2.1.8\nmodule load numactl/2.0.12\nmodule load openmpi/4.1.1-gdr\nI attached a snapshot of the error I met below:\n\nI would appreciate it if any experts could help me have a look at it. Thank you in advance.",
+          "url": "https://github.com/idaholab/moose/discussions/23434",
+          "updatedAt": "2023-04-07T16:34:48Z",
+          "publishedAt": "2023-02-15T17:34:43Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Does this fix it?\nhttps://forum.qt.io/topic/60107/cannot-find-ludev",
+                  "url": "https://github.com/idaholab/moose/discussions/23434#discussioncomment-4986553",
+                  "updatedAt": "2023-02-15T18:19:10Z",
+                  "publishedAt": "2023-02-15T18:19:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "delinzha"
+                          },
+                          "bodyText": "Thank you for your suggestion. I do not have permission to run sudo on the HPC cluster. I'll talk with the admin about it.",
+                          "url": "https://github.com/idaholab/moose/discussions/23434#discussioncomment-4987061",
+                          "updatedAt": "2023-02-15T19:17:57Z",
+                          "publishedAt": "2023-02-15T19:17:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to apply injection rate or flux to a domain instead of a boundary.",
+          "author": {
+            "login": "steam-simulator"
+          },
+          "bodyText": "Hello,\nInstead of applying an injection rate to a boundary/surface, I want to apply it to a small volume/domain within my model. Is this possible? How do I do it in MOOSE? I\u2019m asking because, usually, BCs act on a surface/boundary and not a domain. Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/23431",
+          "updatedAt": "2023-02-15T16:35:27Z",
+          "publishedAt": "2023-02-14T23:53:32Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou ll want to use a BodyForce or CoupledForce kernel to do that.\nIn what MOOSE type is the injection rate defined? A Function? A variable?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23431#discussioncomment-4976769",
+                  "updatedAt": "2023-02-15T00:08:51Z",
+                  "publishedAt": "2023-02-15T00:08:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "maxnezdyur"
+                          },
+                          "bodyText": "Is this an example of a use case for FunctionDiracSource https://mooseframework.inl.gov/source/dirackernels/FunctionDiracSource.html?",
+                          "url": "https://github.com/idaholab/moose/discussions/23431#discussioncomment-4982575",
+                          "updatedAt": "2023-02-15T16:25:57Z",
+                          "publishedAt": "2023-02-15T11:58:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For a point source this would work yes",
+                          "url": "https://github.com/idaholab/moose/discussions/23431#discussioncomment-4983435",
+                          "updatedAt": "2023-02-15T13:36:42Z",
+                          "publishedAt": "2023-02-15T13:36:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "steam-simulator"
+                          },
+                          "bodyText": "Hello Guillaume,\nThanks, and sorry for the late reply. I think both BodyForce and CoupledForce will work. In my case, the flux, hence the force term, is a function and is not proportional to the concentration of a variable, so the BodyForce Kernel did work.\n@maxnezdyur, the link you provided is not working (:",
+                          "url": "https://github.com/idaholab/moose/discussions/23431#discussioncomment-4985227",
+                          "updatedAt": "2023-02-15T16:12:54Z",
+                          "publishedAt": "2023-02-15T16:12:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "link is fixed now",
+                          "url": "https://github.com/idaholab/moose/discussions/23431#discussioncomment-4985367",
+                          "updatedAt": "2023-02-15T16:26:04Z",
+                          "publishedAt": "2023-02-15T16:26:04Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Steady Calculation in THM",
+          "author": {
+            "login": "Ethan-xj"
+          },
+          "bodyText": "@joshuahansel I didn't add time term in the adding equation. And I prepare to write a steady input file to test the new Component. When I change the type of the Excutioner into Steady in 1D_flow_channel.i.\nThe terminal says:\n*** ERROR ***\nThe following error occurred in the object \"THM:problem\", of type \"THMProblem\".\n\nVector tag 'TIME' does not exist.\n\nThis may occur if you have a TimeKernel in your problem but did not specify a transient executioner.\n\nSo does THM has the ability to perform steady-state calculation? If so, how can I run a steady test?\nEthan",
+          "url": "https://github.com/idaholab/moose/discussions/23432",
+          "updatedAt": "2023-02-15T14:23:07Z",
+          "publishedAt": "2023-02-15T08:06:28Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Hi Ethan,\nThis is because you have component(s) that add a time kernel (no matter what executioner you select). We find that actually doing a Steady calculation for flow equations is rarely successful due to nonlinear convergence difficulties; instead, we just run a transient to steady conditions. If you just have heat conduction, it should be fine though. If you really want to try, you can comment out the time kernels in the components that you use.",
+                  "url": "https://github.com/idaholab/moose/discussions/23432#discussioncomment-4983733",
+                  "updatedAt": "2023-02-15T14:04:22Z",
+                  "publishedAt": "2023-02-15T14:04:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Ethan-xj"
+                          },
+                          "bodyText": "I see. Thank you:D",
+                          "url": "https://github.com/idaholab/moose/discussions/23432#discussioncomment-4983978",
+                          "updatedAt": "2023-02-15T14:23:06Z",
+                          "publishedAt": "2023-02-15T14:23:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Mesh problem?",
+          "author": {
+            "login": "Joseph-0123"
+          },
+          "bodyText": "",
+          "url": "https://github.com/idaholab/moose/discussions/23403",
+          "updatedAt": "2023-02-15T08:46:59Z",
+          "publishedAt": "2023-02-13T00:56:24Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Joseph-0123"
+                  },
+                  "bodyText": "Hello @GiudGiud , do you have any idea? Thanks.",
+                  "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952142",
+                  "updatedAt": "2023-02-13T00:57:32Z",
+                  "publishedAt": "2023-02-13T00:57:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe mesh must be different in some way.\nCould you please upload the mesh in a github repo?\nDownloading zip files is frowned upon\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952145",
+                  "updatedAt": "2023-02-13T00:58:12Z",
+                  "publishedAt": "2023-02-13T00:58:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think the issue is that the mesh is being detected as a 3D mesh when it s really 1D.\nI m not sure what you can do in gmsh to make it more 1D.\nMaybe there's a number you can change in the .msh file??\nOtherwise, more hacky approaches:\nMaybe make X and Y equal to 0. Maybe use only the X axis instead of the Z axis for the 1D mesh.",
+                          "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952332",
+                          "updatedAt": "2023-02-13T01:47:09Z",
+                          "publishedAt": "2023-02-13T01:37:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Joseph-0123"
+                  },
+                  "bodyText": "",
+                  "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952479",
+                  "updatedAt": "2023-02-13T08:54:22Z",
+                  "publishedAt": "2023-02-13T02:11:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can transfer from a 1D mesh to a 3D model with no problem.\nYou dont need both meshes to be 3D.",
+                          "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952497",
+                          "updatedAt": "2023-02-13T02:15:27Z",
+                          "publishedAt": "2023-02-13T02:15:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Joseph-0123"
+                  },
+                  "bodyText": "",
+                  "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4952594",
+                  "updatedAt": "2023-02-13T08:54:34Z",
+                  "publishedAt": "2023-02-13T02:33:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For transfers? Any transfer will behave as expected. ShapeEvaluation or NearestNode are likely the best choices for it",
+                          "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4953324",
+                          "updatedAt": "2023-02-13T04:27:38Z",
+                          "publishedAt": "2023-02-13T04:27:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For making the mesh 1D I have no idea. You should try the options I offered. You can always translate the mesh in MOOSE using a TransformGenerator",
+                          "url": "https://github.com/idaholab/moose/discussions/23403#discussioncomment-4953327",
+                          "updatedAt": "2023-02-13T04:28:18Z",
+                          "publishedAt": "2023-02-13T04:28:18Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question about setting the specific initial condition in the MOOSE simulation",
+          "author": {
+            "login": "abc-hy"
+          },
+          "bodyText": "Hi everyone,\nI have a question about setting the initial condition in MOOSE simulation.\nI want to set the initial condition as the following shape, which is inside the red dotted line. How can I get its concentration from the files and put it in the new simulation? Can anyone give me some advice?\n\nThank you very much.\nBest,",
+          "url": "https://github.com/idaholab/moose/discussions/23393",
+          "updatedAt": "2023-06-24T19:44:09Z",
+          "publishedAt": "2023-02-09T21:09:54Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nso you have this profile in a file? What kind of file? Exodus or CSV we can use SolutionUserObject or PropertyReadFile respectively\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4926154",
+                  "updatedAt": "2023-02-09T23:24:53Z",
+                  "publishedAt": "2023-02-09T23:24:52Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "it is Exodus. But I also need to cut the model, only use the area inside the red-dotted line, how to realize it?",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4926299",
+                          "updatedAt": "2023-02-09T23:54:09Z",
+                          "publishedAt": "2023-02-09T23:54:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can use a ParsedSubdomainGenerator to set subdomains along straight lines like this\nThen you can block restrict the setting of the initial conditions",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4926584",
+                          "updatedAt": "2023-02-10T00:33:18Z",
+                          "publishedAt": "2023-02-10T00:33:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "So, do I need to change the [Mesh] block? I am a little bit confused....\nI attached my files here, could you have a look at it? How to load the data?\nAlso, I converted the Exodus file to cvs file, and I also attached here.\ndf_0d6_t_1_135.csv\ndf0d6_t_1_R_txt.txt",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4927975",
+                          "updatedAt": "2023-02-10T03:54:32Z",
+                          "publishedAt": "2023-02-10T03:54:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can add another generator in the Mesh block to create that new subdomain.\nIf you have an exodus file with the data please have a look at the SolutionUserObject.\nIf the element ids aren\u2019t exactly the same in your file and the new simulation this might not work btw. Please let us know once you\u2019ve set it up",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4928190",
+                          "updatedAt": "2023-02-10T04:37:13Z",
+                          "publishedAt": "2023-02-10T04:37:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "I did not load the shape successfully...\nSince what I want to do is to add a perturbation to my simulation at the beginning, can I instead use this 'noise' function as the perturbation in my simulation?",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4940369",
+                          "updatedAt": "2023-02-10T22:49:56Z",
+                          "publishedAt": "2023-02-10T22:49:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "Hi,\nDo you know what is source_nodal?\n\nAlso, If I have 2 variables, how should I use 'SolutionUserObject' to read them? I only find how to read one variable from the examples.\nThank you.\nBest,",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4972468",
+                          "updatedAt": "2023-02-14T15:53:12Z",
+                          "publishedAt": "2023-02-14T15:53:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nWhich input file is this from?\nAlso you should paste text instead of screenshots.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4972503",
+                          "updatedAt": "2023-02-14T15:56:47Z",
+                          "publishedAt": "2023-02-14T15:56:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "From SolutionUserObject website\nhttps://mooseframework.inl.gov/source/userobject/SolutionUserObject.html",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4972652",
+                          "updatedAt": "2023-02-14T16:10:08Z",
+                          "publishedAt": "2023-02-14T16:10:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "this is the name of the variable in the solution file. If you navigate to the test/tests/auxkernels/solution_aux folder and open the exodus file you ll see that variable.",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4972735",
+                          "updatedAt": "2023-02-14T16:16:47Z",
+                          "publishedAt": "2023-02-14T16:16:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abc-hy"
+                          },
+                          "bodyText": "Ok, so the source_nodal is only a name for one variable? How can I read two variables?",
+                          "url": "https://github.com/idaholab/moose/discussions/23393#discussioncomment-4972758",
+                          "updatedAt": "2023-02-14T16:18:47Z",
+                          "publishedAt": "2023-02-14T16:18:47Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "moose function",
+          "author": {
+            "login": "Oops-Qiao"
+          },
+          "bodyText": "Hi,\nMay I ask a general question about the moose.\nIf now considering a problem between a 1D model 2D model, what is the function for a point.\nThanks very much.\nRegards,\nJerry",
+          "url": "https://github.com/idaholab/moose/discussions/23415",
+          "updatedAt": "2023-04-07T16:34:59Z",
+          "publishedAt": "2023-02-14T14:51:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use the positions attribute of the MultiApp to translate the the app's frame of reference if they are not well aligned.\nIf you are transferring a field/ a variable's value I would just use a MultiAppNearestNodeTransfer\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23415#discussioncomment-4971743",
+                  "updatedAt": "2023-02-14T14:55:05Z",
+                  "publishedAt": "2023-02-14T14:54:54Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Oops-Qiao"
+                          },
+                          "bodyText": "",
+                          "url": "https://github.com/idaholab/moose/discussions/23415#discussioncomment-4971878",
+                          "updatedAt": "2023-02-14T16:58:48Z",
+                          "publishedAt": "2023-02-14T15:06:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You can use positions. This has nothing to do with the mesh\nPlease just try it\nno you cant ignore the relative positions of systems. They need to match for the transfer to understand how to map values. This is what the positions argument of multiapps is for.\nIt depends what you're doing. You can transfer a single variable value, an entire field, etc.\nYou just need to pick the right transfer.",
+                          "url": "https://github.com/idaholab/moose/discussions/23415#discussioncomment-4971927",
+                          "updatedAt": "2023-02-14T15:09:55Z",
+                          "publishedAt": "2023-02-14T15:09:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Please see this tutorial\nhttps://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial02_multiapps/presentation/index.html#/",
+                          "url": "https://github.com/idaholab/moose/discussions/23415#discussioncomment-4971938",
+                          "updatedAt": "2023-02-14T15:10:37Z",
+                          "publishedAt": "2023-02-14T15:10:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Auxkernel or Postprocessor to change TimeStepper",
+          "author": {
+            "login": "fervaldies"
+          },
+          "bodyText": "Hello, I would like to change the dt value back to the minimum when a certain auxkernel changes the x position in the function. I have the following auxkernel:\n[AuxKernels]\n  [./add_material_in_the_ellipsoid]\n    type = FunctionPathEllipsoidAux\n    variable = level_set_var\n    rx = 0.0018\n    ry = 0.0015\n    rz = 0.0015\n    init_x_coords = '0.010 0.190 0.010'\n    init_y_coords = '0.04175 0.04725 0.05275'\n    init_z_coords = '0.016 0.016 0.016'\n    temperature_pp = interpass_max_temp\n    single_scan_length = '0.015 0.180 0.180'\n    threshold_temperature = 320\n    velocity = '0.007 -0.007 0.007'\n  [../]\n[]\n\nand the following TimeStepper:\n\n  [./TimeStepper]\n    type = IterationAdaptiveDT\n    growth_factor = 30\n    cutback_factor = 0.03\n    linear_iteration_ratio = 45\n    optimal_iterations = 3 #12\n    iteration_window = 1\n    dt = 0.3\n  [../]\n\nso at some point the dt increases to 9 and I would like to reduce it to 0.3 when the 'init_x_coords' in the auxkernel changes from 0.010 to 0.190. Is there any way of doing this?\nMy problem is that when the dt is 9 and I want it to change to 0.3, it does one step more with dt=9 than desired and the whole simulation is wrong, as it needs to come back to 0.3 just the step before it changes to 0.190 the init_x_coords.\nAnother possibility that I was thinking is to change the dt when a certain postprocessor reaches a threshold temperature. Is this possible? I have a postprocessor that calculates the maximum temperature in the simulation and maybe I could use it to change the TimeStepper when it reaches 320K let's say. This is the postprocessor:\n[./interpass_max_temp]\ntype = NodalExtremeValue\nvariable = temp\nvalue_type = max\n[../]\nThank you in advance for your help",
+          "url": "https://github.com/idaholab/moose/discussions/23414",
+          "updatedAt": "2023-06-24T19:42:15Z",
+          "publishedAt": "2023-02-14T12:55:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou ll want to use the timestep_limiting_postprocessor option\nhttps://mooseframework.inl.gov/source/timesteppers/IterationAdaptiveDT.html\nThe postprocessor should be a class derived from ElementPostprocessor and it examines the value of the aux variable everywhere to determine its own value.\nThe value of the postprocessor is then the limiting time step\nOR\nYou use the NodalExtremeValue to get the max of the field, and a ParsedPostprocessor to have some logic like:\nif (interpass_max_temp > 0.019, 0.3, 100000)\nin the function parameter\nGuillaume\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23414#discussioncomment-4970531",
+                  "updatedAt": "2023-02-14T13:00:48Z",
+                  "publishedAt": "2023-02-14T13:00:47Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fervaldies"
+                          },
+                          "bodyText": "Thank you for your reply! I do not really understand the timestep_limiting_postprocessor option. Is it possible to tell to the TimeStepper that it has to be 0.3 when the max temperature in the simulation is less than 400K with this option?",
+                          "url": "https://github.com/idaholab/moose/discussions/23414#discussioncomment-4970870",
+                          "updatedAt": "2023-02-14T13:34:00Z",
+                          "publishedAt": "2023-02-14T13:33:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "yes.\nUse a ParsedPostprocessor as the limiting postprocessor and for the function to parse:\nif (interpass_max_temp <400, 0.3, 1e6) # 1e6 means no limit",
+                          "url": "https://github.com/idaholab/moose/discussions/23414#discussioncomment-4970886",
+                          "updatedAt": "2023-02-14T13:35:44Z",
+                          "publishedAt": "2023-02-14T13:35:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "fervaldies"
+                          },
+                          "bodyText": "Perfect, got it, thank you so much! :) Now it is working correctly",
+                          "url": "https://github.com/idaholab/moose/discussions/23414#discussioncomment-4971746",
+                          "updatedAt": "2023-02-14T14:55:06Z",
+                          "publishedAt": "2023-02-14T14:55:06Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

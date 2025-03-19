@@ -1,0 +1,869 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNC0wNi0yMVQwMzo0ODoxNS0wNjowMM4AYMJn"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Modelling a displacement controlled RVE",
+          "author": {
+            "login": "Flolaffel"
+          },
+          "bodyText": "Hello,\nI've been trying to model a displacement controlled RVE simulation in MOOSE for a while now but didn't really achieve a satisfying result yet.\nOne approach I got to work is using LinearNodalConstraint to impose two constraints (disp_x and disp_y) per node pair on opposing side sets.\nnx = 3\nny = 3\n\n[Mesh]\n  [domain]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    xmax = 3\n    ymin = 0\n    ymax = 3\n    nx = ${nx}\n    ny = ${ny}\n  []\n  [top_right]\n    type = ExtraNodesetGenerator\n    input = domain\n    new_boundary = top_right\n    coord = '${fparse nx} ${fparse ny} 0'\n  []\n  [bottom_right]\n    type = ExtraNodesetGenerator\n    input = top_right\n    new_boundary = bottom_right\n    coord = '${fparse nx} 0 0'\n  []\n  [top_left]\n    type = ExtraNodesetGenerator\n    input = bottom_right\n    new_boundary = top_left\n    coord = '0 ${fparse ny} 0'\n  []\n  [bottom_left]\n    type = ExtraNodesetGenerator\n    input = top_left\n    new_boundary = bottom_left\n    coord = '0 0 0'\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = SMALL\n    add_variables = true\n    incremental = false\n    generate_output = 'vonmises_stress'\n  []\n[]\n\n[BCs]\n  [no_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'bottom_left bottom_right top_left'\n    value = 0\n  []\n  [no_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'bottom_left'\n    value = 0\n  []\n  [disp]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'top_left'\n    value = 0.1\n  []\n[]\n\n[Constraints]\n  [lr1_x]\n    type = LinearNodalConstraint\n    variable = disp_x\n    primary = '3 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 7\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [lr1_y]\n    type = LinearNodalConstraint\n    variable = disp_y\n    primary = '3 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 7\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [lr2_x]\n    type = LinearNodalConstraint\n    variable = disp_x\n    primary = '9 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 11\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [lr2_y]\n    type = LinearNodalConstraint\n    variable = disp_y\n    primary = '9 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 11\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [lr3_x]\n    type = LinearNodalConstraint\n    variable = disp_x\n    primary = '13 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 15\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [lr3_y]\n    type = LinearNodalConstraint\n    variable = disp_y\n    primary = '13 6 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 15\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [tb1_x]\n    type = LinearNodalConstraint\n    variable = disp_x\n    primary = '1 13 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 12\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [tb1_y]\n    type = LinearNodalConstraint\n    variable = disp_y\n    primary = '1 13 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 12\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [tb2_x]\n    type = LinearNodalConstraint\n    variable = disp_x\n    primary = '4 13 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 14\n    penalty = 1e6\n    formulation = kinematic\n  []\n  [tb2_y]\n    type = LinearNodalConstraint\n    variable = disp_y\n    primary = '4 13 0'\n    weights = '1 1 -1'\n    secondary_node_ids = 12\n    penalty = 1e6\n    formulation = kinematic\n  []\n[]\n\n[Materials]\n  [elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 210000\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ComputeLinearElasticStress\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = 'PJFNK'\n  petsc_options_iname = '-pc_type -pc_factor_shift_type -pc_factor_shift_amount'\n  petsc_options_value = 'lu       NONZERO               1e-15'\n  nl_abs_tol = 1e-8\n  nl_rel_tol = 1e-12\n[]\n\n[Outputs]\n  exodus = true\n[]\n\nThe result is what I'm aiming for, so we can use that as a reference. The problem with this approach however is the convergence. I tried various PETsc settings, preconditioning and solve type combinations. This here is the best I could do which unfortunately is not good enough for the actual application I have in mind (convergence fails there).\nMy preferred approach would be just using the AddPeriodicBCAction like this:\n[BCs]\n  [Periodic]\n    [x]\n      variable = disp_x\n      auto_direction = 'x y'\n    []\n    [y]\n      variable = disp_y\n      auto_direction = 'x y'\n    []\n  []\n[]\n\nUnfortunately replacing the LinearNodalConstraints with this snippet doesn't have the desired result but rather delivers a non-displaced RVE.\nSo my questions are:\n\nAm I missing something with the AddPeriodicBCAction that keeps it from working?\nIs there another preferred approach for this type of problem that I'm missing? Keep in mind I need the simulation to be displacement controlled. So a global strain approach would not be possible since we apply a stress tensor instead of a deformation gradient, would it?\nIf there is no other way, how could I improve the convergence on my LinearNodalConstraint approach?",
+          "url": "https://github.com/idaholab/moose/discussions/27858",
+          "updatedAt": "2024-06-24T15:47:54Z",
+          "publishedAt": "2024-06-11T09:55:07Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nAddPeriodicBCAction can be pretty finicky in auto-mode as iirc it does not report when it does not figure out how to set up the periodicity. Did you try the manual mode?\nAnd did you check that output follows the periodicity as expected? Maybe use a simple diffusion problem to do so, instead of displacements\nCan you reduce the penalty on those constraints? Does it need to be so high? This affects the conditioning of the matrix usually. you can check the conditioning using the SVD preconditioner, see this page\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html\nDoes NEWTON method work for you? Is the Jacobian exact as far as you know or is there a known missing term?",
+                  "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9742089",
+                  "updatedAt": "2024-06-11T17:43:20Z",
+                  "publishedAt": "2024-06-11T17:42:31Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "The detection works fine. The only problem I'm facing is a over constrained model when using the AddPeriodicBCAction. I'd like to control the model deformation by only applying BCs to the corner nodes (which is what is happening in my attached input with LinearNodalConstraint). This works through coupling the displacement of each secondary node with the displacements of the corresponding corner nodes which is not the same as simply matching the x/y displacement of a node to the corresponding node on the opposite site. I'm guessing that's what the AddPeriodicBCAction is trying to do here. If I apply my displacement to a node inside my domain, all the corner nodes act fixed. So applying a displacement there essentially does nothing in this case.\n\nIs the Jacobian exact as far as you know or is there a known missing term?\n\nAFAIK the standard MOOSE mechanics kernel works with inexact Jacobians. I switched to the Lagrangian kernel system now to make sure everything is correct. But since I'm using small deformations anyway there souldn't be a difference I guess. I don't know how MOOSE handles the Jacobian contribution of the LinearNodalConstraints.\n\nDoes NEWTON method work for you?\n\nNewton converges worse than PJFNK, if at all\n\nyou can check the conditioning using the SVD preconditioner, see this page\n\nThe SVD reports several singular values. I can't track down the reason for that though. I reduced my input to the bare minimum and still receive singular values. What is happening here?\n[Mesh]\n  [domain]\n    type = GeneratedMeshGenerator\n    dim = 2\n    xmin = 0\n    xmax = 3\n    ymin = 0\n    ymax = 3\n    nx = 3\n    ny = 3\n  []\n[]\n\n[GlobalParams]\n  displacements = 'disp_x disp_y'\n[]\n\n[Modules/TensorMechanics/Master]\n  [all]\n    strain = SMALL\n    add_variables = true\n    incremental = false\n    new_system = true\n    formulation = TOTAL\n  []\n[]\n\n[BCs]\n  [no_y]\n    type = DirichletBC\n    variable = disp_y\n    boundary = 'bottom top'\n    value = 0\n  []\n  [no_x]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'bottom'\n    value = 0\n  []\n  [disp]\n    type = DirichletBC\n    variable = disp_x\n    boundary = 'top'\n    value = 0.5\n  []\n[]\n\n[Materials]\n  [elasticity]\n    type = ComputeIsotropicElasticityTensor\n    youngs_modulus = 210000\n    poissons_ratio = 0.3\n  []\n  [stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = PJFNK\n  petsc_options = '-pc_svd_monitor'\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'svd'\n  nl_abs_tol = 1e-8\n  nl_rel_tol = 1e-12\n[]\n\n[Outputs]\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9751503",
+                          "updatedAt": "2024-06-12T12:59:06Z",
+                          "publishedAt": "2024-06-12T12:59:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The SVD reports several singular values. I can't track down the reason for that though. I reduced my input to the bare minimum and still receive singular values. What is happening here?\n\nsomehow, the problem is not well-posed and can have multiple solutions.\nIn mechanics this is usually due to extra rotational or translational degrees of freedom. You can remove these by setting more dirichletBCs on displacements\nor by adding constraints (but this tends to hurt convergence too) on the integral values of displacement",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9751660",
+                          "updatedAt": "2024-06-12T13:11:05Z",
+                          "publishedAt": "2024-06-12T13:10:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "I have a feeling there may have been a misunderstanding.\nThe MOOSE documentation says\n\nIf the svd monitor reports ANY singular value, your problem is ill-posed.\n\nBut AFAIK every matrix has singular values (which can be retrieved through SVD) and problems only arise when the singular values are close to 0. So shouldn't the docs be along the lines of\n\nIf the svd monitor reports ANY singular value close to 0, your problem is ill-posed.\n\nMy setup doesn't have any singular values close to 0 so I don't think it's ill-posed. Am I wrong?",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9751824",
+                          "updatedAt": "2024-06-12T13:24:04Z",
+                          "publishedAt": "2024-06-12T13:22:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what does the svd monitor report?",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9752985",
+                          "updatedAt": "2024-06-12T14:51:08Z",
+                          "publishedAt": "2024-06-12T14:51:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "but yes you are right for the wording. I m not sure why I wrote that wrong",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9753828",
+                          "updatedAt": "2024-06-12T15:55:32Z",
+                          "publishedAt": "2024-06-12T15:55:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "SVD Monitor reports something like this:\nSVD: condition number 5.221156179857e+07, 0 of 32 singular values are (nearly) zero\nSVD: smallest singular values: 6.009961766392e-02 1.539427820447e-01 2.672794409233e-01 5.667418564167e-01 7.671714963266e-01\nSVD: largest singular values : 1.251704995744e+06 1.800887895077e+06 1.837366659253e+06 3.118666628197e+06 3.137894901730e+06\n\nI've also run the Jacobian debug script. I get\nKernel for variable 'disp_x':\n  (0,0) On-diagonal Jacobian is questionable (off by 10.87 %)\n  (0,1) Off-diagonal Jacobian for variable 'disp_y' is questionable (off by 10.56 %)\n\nKernel for variable 'disp_y':\n  (1,0) Off-diagonal Jacobian for variable 'disp_x' is questionable (off by 10.56 %)\n  (1,1) On-diagonal Jacobian is questionable (off by 10.87 %)\n\nfor the input I originally attached to my question. When I comment out the LinearNodalConstraints I get\nNo errors detected. :-)\nIs that a reason to believe LinearNodalConstraint has an incorrect contribution to the Jacobian?",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9759984",
+                          "updatedAt": "2024-06-13T09:59:33Z",
+                          "publishedAt": "2024-06-13T07:24:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nIt does seem so. I havent used that object much. @lindsayad may have more insights.\nFixing the Jacobian can improve convergence\nNo 0 singular value means the problem is well-posed (in a math sense).",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9765160",
+                          "updatedAt": "2024-06-13T15:45:39Z",
+                          "publishedAt": "2024-06-13T15:45:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I've never liked the analyze_jacobian.py script as much as printing the actual matrix. You can do this with -snes_test_jacobian -snes_test_jacobian_view. I can believe that the LinearNodalConstraint doesn't have the correct Jacobian especially under mesh deformation (mesh deformation makes it pretty tough to get the Jacobians perfect, even for some AD objects ... need to get that geometric AD proposal awarded @GiudGiud \ud83d\ude04 ). It would be good to verify the Jacobian is right/wrong with a -snes_test_jacobian test\nAs far modeling RVEs in general, I'm going to ping @dschwen @laagesen @sapitts to see if they have any thoughts",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9767599",
+                          "updatedAt": "2024-06-13T20:44:46Z",
+                          "publishedAt": "2024-06-13T20:43:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Flolaffel"
+                          },
+                          "bodyText": "@lindsayad  Okay so I've run it with -snes_test_jacobian which reports\n||J - Jfd||_F/||J||_F = 0.336482, ||J - Jfd||_F = 2.02017e+06\nI then tried switching to FDP which does improve convergence but no to the point where I can solve the problem with NEWTON. Result:\n||J - Jfd||_F/||J||_F = 0.0905084, ||J - Jfd||_F = 600700.\nI find it surprising that there is a difference between the two FD Jacobians. I guess MOOSE and PETsc slightly differ in the way it's calculated?",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9771600",
+                          "updatedAt": "2024-06-14T07:44:12Z",
+                          "publishedAt": "2024-06-14T07:43:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "With FDP we use \"coloring\" based on the mesh connectivity to remove unnecessary differencing operations. With -snes_test_jacobian the entire matrix structure is differenced, so it's very slow but there is no possibility for errors. In your case your constraints have no tie to the mesh connectivity (they can be totally across the mesh) so FDP will not work well",
+                          "url": "https://github.com/idaholab/moose/discussions/27858#discussioncomment-9797152",
+                          "updatedAt": "2024-06-17T17:09:04Z",
+                          "publishedAt": "2024-06-17T17:09:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Is there a detailed introduction to the coupling mechanism and parallel computing algorithms in MOOSE, as well as the theory of solving large sparse matrices",
+          "author": {
+            "login": "Ating24"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion",
+          "url": "https://github.com/idaholab/moose/discussions/27970",
+          "updatedAt": "2024-06-24T13:21:42Z",
+          "publishedAt": "2024-06-24T07:59:42Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nPETSc manual / intros will be your best reference for solving problems with sparse matrices in moose\nCoupling you can look at this tutorial for multiapps (e.g. not single-matrix approach)\nhttps://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial02_multiapps/presentation/index.html#/\nAnd this example for regular coupling\nhttps://mooseframework.inl.gov/getting_started/examples_and_tutorials/examples/ex03_coupling.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27970#discussioncomment-9860659",
+                  "updatedAt": "2024-06-24T13:21:43Z",
+                  "publishedAt": "2024-06-24T13:21:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Unable to start Peacock",
+          "author": {
+            "login": "shin-chan-cpu"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A Getting Started is the most appropriate category for my question (trouble installing, beginner user, ...)\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (avoid screenshots if possible, triple back quotes before/after pasted text, etc)\n\nIssue or question about MOOSE\nI installed Peacock under Ubuntu, and I added export PATH =  \"/home/wangyaofeng/projects/moose/python/peacock: $PATH\" to~/.bashrc,/bash_profile and/.profile .This command,peacock is also clearly in this directory, but the feedback from the end point is still peacock: command not found, I don't know where the problem occurs?\nDiagnostics for MOOSE installation issues\n[Optional] Output of the diagnostics scripts. To run the script: cd ~/projects/moose/scripts; ./diagnostics.sh",
+          "url": "https://github.com/idaholab/moose/discussions/27969",
+          "updatedAt": "2024-06-26T07:03:10Z",
+          "publishedAt": "2024-06-24T03:05:29Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nwhat does \"echo $PATH\" report?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9855416",
+                  "updatedAt": "2024-06-24T03:12:04Z",
+                  "publishedAt": "2024-06-24T03:12:04Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "it report these /home/wangyaofeng/miniforge/envs/peacock/bin:/home/wangyaofeng/miniforge/condabin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9855885",
+                          "updatedAt": "2024-06-24T04:43:35Z",
+                          "publishedAt": "2024-06-24T04:43:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "seems it did not work then. It should have /home/wangyaofeng/projects/moose/python/peacock in there\nso try:\nexport PATH=/home/wangyaofeng/projects/moose/python/peacock:$PATH",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9856024",
+                          "updatedAt": "2024-06-24T05:12:02Z",
+                          "publishedAt": "2024-06-24T05:12:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "It still doesn't work. Does this have a lot to do with my. bash_profile file being empty? I created this file",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9856086",
+                          "updatedAt": "2024-06-24T05:23:32Z",
+                          "publishedAt": "2024-06-24T05:23:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "which shell are you using?\nwhat does echo $0 return?\nis the PATH as expected now?",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9856128",
+                          "updatedAt": "2024-06-24T05:29:54Z",
+                          "publishedAt": "2024-06-24T05:29:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "shin-chan-cpu"
+                          },
+                          "bodyText": "it returns bash,but it doesn't exist .bash_profile, I just build it and expexted PATH",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9856340",
+                          "updatedAt": "2024-06-24T05:59:59Z",
+                          "publishedAt": "2024-06-24T05:59:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "explicitly, what does the following report:\ncat ~/.bash_profile\nAlso if you literally entered what you say you entered in your original post, it will not work (all these spaces need to go away):\nPATH = \"/home/wangyaofeng/projects/moose/python/peacock: $PATH\" \nneeds to be:\nexport PATH=\"/home/wangyaofeng/projects/moose/python/peacock:$PATH\"",
+                          "url": "https://github.com/idaholab/moose/discussions/27969#discussioncomment-9860518",
+                          "updatedAt": "2024-06-24T13:07:54Z",
+                          "publishedAt": "2024-06-24T13:07:53Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "New boundary creation at intersection of two boundaries",
+          "author": {
+            "login": "agniksr"
+          },
+          "bodyText": "So for the given mesh below, i want to create a new boundary called inlet at the intersection of the the top and rmin faces. Similarly, i want to create an outlet boundary at the intersection of the bottom and rmin faces. Could someone please guide me as to how that could be implemented.\n[Mesh]\n   [annular]\n     type = AnnularMeshGenerator\n     nr = 10\n     rmin = 7.5\n     rmax = 10.0\n     nt = 40\n   []\n   [make3D]\n     type = MeshExtruderGenerator\n     extrusion_vector = '0 0 40'\n     num_layers = 10\n     bottom_sideset = 'bottom'\n     top_sideset = 'top'\n     input = annular\n   []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/27961",
+          "updatedAt": "2024-07-14T17:11:53Z",
+          "publishedAt": "2024-06-21T14:55:45Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou'll want to use the AdvancedExtruderGenerator:\nhttps://mooseframework.inl.gov/source/meshgenerators/AdvancedExtruderGenerator.html\nYou can use the downward_boundary_ids and upward_boundary_ids to create these sidesets inside the extrusion\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27961#discussioncomment-9849941",
+                  "updatedAt": "2024-06-23T04:31:07Z",
+                  "publishedAt": "2024-06-23T04:31:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "agniksr"
+                          },
+                          "bodyText": "Thanks for the suggestion, however, when i try to use that as below\n[Mesh]\n   [annular]\n     type = AnnularMeshGenerator\n     nr = 10\n     rmin = 7.5\n     rmax = 10.0\n     nt = 40\n   []\n   [extrude]\n    type = AdvancedExtruderGenerator\n    input = annular\n    heights = '1'\n    num_layers = 10\n    direction = '0 0 40'\n    bottom_boundary = '100'\n    top_boundary = '200'\n    upward_boundary_source_blocks = '0'\n    upward_boundary_ids = '1001'\n    downward_boundary_source_blocks = '0'\n    downward_boundary_ids = '1501'\n  []\n[]\n\nit does not give me  the inner boundary, instead it just gives me the bottom of the lower boundary and the top of the lower bounadry. How exactly can i change it to give only the inner radial elements at the top and bottom boundaries.",
+                          "url": "https://github.com/idaholab/moose/discussions/27961#discussioncomment-9850584",
+                          "updatedAt": "2024-06-23T08:22:51Z",
+                          "publishedAt": "2024-06-23T08:22:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok I misunderstood what you wanted.\nLet's use a ParsedGenerateSideset\nhttps://mooseframework.inl.gov/source/meshgenerators/ParsedGenerateSideset.html\ninner radial elements should obey an analytical parsed expression you can specify in the combinatorial_geometry parameter",
+                          "url": "https://github.com/idaholab/moose/discussions/27961#discussioncomment-9852907",
+                          "updatedAt": "2024-06-23T16:52:02Z",
+                          "publishedAt": "2024-06-23T16:52:02Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Default syntax-block type for own syntax",
+          "author": {
+            "login": "jmeier"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nDear Moose Community,\nFor an custom syntax-block I'd like to define a \"default type\" so the user can skip to enter \"type = ...\". Please note the current state of my input file syntax:\n[MyBlock]\n  type = 'MyBlock'   # <-- how can I ask Moose to try to use the block name as type? Like e.g. Moose is doing the for \"Functions\"\n\n  [SubBlock0]\n    type = 'MySubBlock'  # <-- can I define a default subblock-type for MyBlock so I can skip this line?\n    some_parameter = 0.0\n  []\n\n  [SubBlock1]\n    type = 'MySubBlock'  # <-- can I define a default subblock-type for MyBlock so I can skip this line?\n    some_parameter = 0.4\n  []\n\n[]\n\nTo define \"MyBlock\" an \"MySubBlock\" I used registerMooseObjectTask and registerSyntaxTask.\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/27960",
+          "updatedAt": "2024-06-23T06:49:07Z",
+          "publishedAt": "2024-06-21T09:56:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf you only have a single object type you care about in a given syntax then in the Action (likely the AddMyBlockAction) you can not use a type and always create the same object\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27960#discussioncomment-9839976",
+                  "updatedAt": "2024-06-21T13:21:15Z",
+                  "publishedAt": "2024-06-21T13:21:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Hello\nIf I omit the type parameter, Moose gives \"missing required parameter 'MyBlock/MySubBlock/type'\". This despite the fact, that I ignore the type parameter in AddMyBlockAction and AddMySubBlockAction.\nJ\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/27960#discussioncomment-9850124",
+                          "updatedAt": "2024-06-23T05:46:54Z",
+                          "publishedAt": "2024-06-23T05:46:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is your action derived from MooseObjectAction? If so the 'type' is required. You can change that in validParams",
+                          "url": "https://github.com/idaholab/moose/discussions/27960#discussioncomment-9850139",
+                          "updatedAt": "2024-06-23T05:52:32Z",
+                          "publishedAt": "2024-06-23T05:52:31Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jmeier"
+                          },
+                          "bodyText": "Dear Guillaume,\nWonderful! That was it. Thank you very much!\nJ\u00f6rg",
+                          "url": "https://github.com/idaholab/moose/discussions/27960#discussioncomment-9850311",
+                          "updatedAt": "2024-06-23T06:49:07Z",
+                          "publishedAt": "2024-06-23T06:49:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Implementation of inclination dependence of the GB energies through $\\gamma$ in New phase-field model by Moelans in 2022",
+          "author": {
+            "login": "yixishen"
+          },
+          "bodyText": "Dear MOOSE community,\nI am aiming to develop a phase-field (PF) model with a strong inclination-dependent anisotropic grain boundary (GB) energy and mobility. I understand that GBAnisotropy can be utilized for calculating PF parameters following the framework established by Moelans et al. in their 2008 Phys. Rev. B publication (Phys. Rev. B 78, 024113 \u2013 Published 16 July 2008). To my knowledge, the inclination dependence is incorporated via angle-dependent PF parameters such as $\\kappa(\\theta)$ and $\\gamma(\\theta)$, without necessitating additional terms in the evolution equations (specifically, the Allen-Cahn equation).\nHowever, recent advancements by Moelans (2022) suggests that to have inclination dependent in a fully variational way, as $\\kappa$($\\theta$) is essentially a function of the gradient of order parameters $\\eta_i$ and $\\eta_j$, an extra term is introduced to the evolution equations:\n$$- m \\nabla \\cdot \\left( \\sum_{j \\neq i} \\left( \\frac{\\partial \\gamma_{ij}}{\\partial n_i} \\right) n_i^2 n_j ^2\\right)$$\nAnd my question is, does moose has any kernel that support this term? Or I may need to create my own function/application for this term?\nThanks\nYixi",
+          "url": "https://github.com/idaholab/moose/discussions/26842",
+          "updatedAt": "2024-06-23T04:40:06Z",
+          "publishedAt": "2024-02-19T19:58:14Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@laagesen @jiangwen84",
+                  "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-8523368",
+                  "updatedAt": "2024-02-20T00:45:08Z",
+                  "publishedAt": "2024-02-20T00:45:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Hi Yixi- it looks like the extra term you are asking about is the last term in Equation 16 of the 2022 Moelans paper, right? Just wanted to clarify, because the derivative of gamma is actually with respect to grad eta in the paper, rather than with respect to eta as you wrote. We don't have any kernel developed for that type of dependence currently. If you wanted to implement it, you'd need to write a kernel. It would be similar to ACInterfaceKobayashi1 kernel used in the snow.i example: moose/modules/phase_field/examples/anisotropic_interfaces/snow.i\nYou might also need to write a kernel similar to ACInterfaceKobayashi2 to capture the correct Jacobians for the last term of the second line of Eq. 16. We would welcome a contribution if you would like to do this and are willing to help out along the way. I would suggest first figure out what functional form you want to use for \\gamma_{i,j} and what the analytical forms are for the derivative (this might be in the supplemental material for the paper, I didn't double check it)",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-8533445",
+                          "updatedAt": "2024-02-20T17:57:05Z",
+                          "publishedAt": "2024-02-20T17:57:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yixishen"
+                          },
+                          "bodyText": "Hi Larry,\nThanks for your response. Yes, the extra term is the last term in Eq 16 of 2022 Moelans paper. And thank you for lead me to ACInterfaceKobayashi1 kernel and  ACInterfaceKobayashi2 kernel. I would be happy to make some contribution to the community. Will work on it as your suggested and let you know if I have questions.\nThanks,\nYixi",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-8535838",
+                          "updatedAt": "2024-02-20T22:20:18Z",
+                          "publishedAt": "2024-02-20T22:20:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yixishen"
+                          },
+                          "bodyText": "Hi Yixi- it looks like the extra term you are asking about is the last term in Equation 16 of the 2022 Moelans paper, right? Just wanted to clarify, because the derivative of gamma is actually with respect to grad eta in the paper, rather than with respect to eta as you wrote. We don't have any kernel developed for that type of dependence currently. If you wanted to implement it, you'd need to write a kernel. It would be similar to ACInterfaceKobayashi1 kernel used in the snow.i example: moose/modules/phase_field/examples/anisotropic_interfaces/snow.i You might also need to write a kernel similar to ACInterfaceKobayashi2 to capture the correct Jacobians for the last term of the second line of Eq. 16. We would welcome a contribution if you would like to do this and are willing to help out along the way. I would suggest first figure out what functional form you want to use for \\gamma_{i,j} and what the analytical forms are for the derivative (this might be in the supplemental material for the paper, I didn't double check it)\n\nHi Larry,\nSorry for my delayed response, I just started working on this very recently. As I go through with ACInterfaceKobayashi1, and some other examples. I noticed there is also a source file \"ADACInterfaceKobayashi1.C\", which applies the Automatic Differentiation feature in MOOSE. If my understanding is right, AD implementation is encouraged and for AD, Jacobian is not required and only residuals is required. Is my understanding correct?\nThank you for your help,\nYixi",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9599186",
+                          "updatedAt": "2024-05-29T23:33:28Z",
+                          "publishedAt": "2024-05-29T23:33:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Yes that is correct! We have not implemented AD versions of many of the phase-field kernels because we already have full Jacobians implemented. AD versions have been found to be slower than non-AD versions which have the full Jacobians implemented. However in cases where the Jacobians are so complex they haven't been implemented, the AD version performs better.",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9605813",
+                          "updatedAt": "2024-05-30T13:07:58Z",
+                          "publishedAt": "2024-05-30T13:07:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yixishen"
+                          },
+                          "bodyText": "Thanks for the confirmation. I\u2019m testing the script I coded by creating a custom application as illustrated on the MOOSE website. To use other modules from MOOSE, I edited the Makefile and set ALL_MODULES := yes.\nWhile testing the custom code, I found that the custom application works well on my local MacBook, though it takes a lot of time and almost gets stuck at \u201cSetting up\u201d when running on the UCSB cluster. For both the cluster and MacBook (apple chip), I installed MOOSE using the method described for [Linux and MacOS].\n1.\tI think this issue is due to the custom code because if I don\u2019t use that part on the cluster, it does not get stuck at \u201cSetting up.\u201d\n2.\tI also tried to just copy and paste my header and src files to the ../modules/phase_field/ directory and recompiled the framework, but the issue persists.\n\nI\u2019m confused about why the exact same custom code works well on my local machine but not on the cluster. Could this be due to differences in the compiler or environment?",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9655503",
+                          "updatedAt": "2024-06-03T23:24:47Z",
+                          "publishedAt": "2024-06-03T23:24:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What are the specs on each machine? Could it be that your local machine is just a lot faster",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9656827",
+                          "updatedAt": "2024-06-04T02:27:13Z",
+                          "publishedAt": "2024-06-04T02:27:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yixishen"
+                          },
+                          "bodyText": "What are the specs on each machine? Could it be that your local machine is just a lot faster\n\nMy local machine is m3 pro chip, and the cluster is intel Xeon Gold 6248R processors (48 cores/node). For single core, I think m3 pro is faster than intel, but not a lot. I don't think that is the reason, because if I don't use my custom kernels/materials on cluster, it works well. If I use my custom kernels/materials, it will stuck at \"setting up\", which is like the initialization of the simulation?\nI think it might due to some part of my code, I'm working on that.\nThanks,\nYixi",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9658683",
+                          "updatedAt": "2024-06-04T05:41:58Z",
+                          "publishedAt": "2024-06-04T05:41:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It could be slower in parallel if the custom code is not efficient. Do you use all 48 cores on the cluster?",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9663031",
+                          "updatedAt": "2024-06-04T11:00:32Z",
+                          "publishedAt": "2024-06-04T11:00:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "yixishen"
+                          },
+                          "bodyText": "Yes that is correct! We have not implemented AD versions of many of the phase-field kernels because we already have full Jacobians implemented. AD versions have been found to be slower than non-AD versions which have the full Jacobians implemented. However in cases where the Jacobians are so complex they haven't been implemented, the AD version performs better.\n\nI have some general questions.\n1), If I decided to use AD version, does that mean all other kernel should also be using an AD version? For example, the second term in the evolution equation,  $-Lm(\\eta_i^3 - \\eta_i + 2 \\eta_i \\sum_{j \\neq i} \\gamma_{ij} \\eta_i^2)$, is embedded via kernel ACGrGrMulti.\n2), I noticed that the ACGrGrMulti.C source code has parts for both AD and non-AD version of ACGrGrMulti. By using \"\nregisterMooseObject(\"PhaseFieldApp\", ADACGrGrMulti); \", the ADACGrGrMulti is also register in MOOSE. Does that mean I can just use an AD version by defining the type to ADACGrGrMulti?",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9833938",
+                          "updatedAt": "2024-06-20T23:13:23Z",
+                          "publishedAt": "2024-06-20T23:04:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "no you can mix and match AD and non AD objects in the input file. The only thing is that some material properties might be required to be AD to build / use AD kernels\n\n\nyes. When both are registered it means both versions are available, selectable through the type of the object in the input file",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9833986",
+                          "updatedAt": "2024-06-20T23:15:37Z",
+                          "publishedAt": "2024-06-20T23:15:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "yixishen"
+                  },
+                  "bodyText": "I test it with a very small model, so I only use 4 cores. In fact, the model is initiated at 200 by 200 mesh, one core is ok.On Jun 4, 2024, at 4:00\u202fAM, Guillaume Giudicelli ***@***.***> wrote:\ufeff\nIt could be slower in parallel if the custom code is not efficient. Do you use all 48 cores on the cluster?\n\n\u2014Reply to this email directly, view it on GitHub, or unsubscribe.You are receiving this because you authored the thread.Message ID: ***@***.***>",
+                  "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9664164",
+                  "updatedAt": "2024-06-04T12:38:29Z",
+                  "publishedAt": "2024-06-04T12:38:28Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok let's stick to one core then\nUsing a debugger (see debugging instructions on our website) on the cluster with one core, use the interrupt at regular intervals to find out in which line the code is spending a lot of time / getting stuck\nAlternatively, use a profiler (see profiling instructions) on the Mac to find the slow section",
+                          "url": "https://github.com/idaholab/moose/discussions/26842#discussioncomment-9671635",
+                          "updatedAt": "2024-06-05T02:14:08Z",
+                          "publishedAt": "2024-06-05T02:14:08Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Materials System shared among the other systems",
+          "author": {
+            "login": "styyokuda"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nAll,\nIt reads that the Materials System allows properties to be defined in a single object (a Material) and shared among the many other systems such as the Kernel or BoundaryCondition Systems.\nI was trying to share the values obtained in the Materials System with an object in the InterfaceKernels System and seemed not to work.  Can the Materials System share with only Kernel System and BoundaryCondition System?\nPlease help. S. Thomas",
+          "url": "https://github.com/idaholab/moose/discussions/27963",
+          "updatedAt": "2024-06-22T00:06:34Z",
+          "publishedAt": "2024-06-21T20:06:28Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nInterface kernels have slightly different routine names for retrieving material properties, notably because they need to retrieve both the element and neighbor material properties\nLook for examples among existing interface kernels",
+                  "url": "https://github.com/idaholab/moose/discussions/27963#discussioncomment-9844478",
+                  "updatedAt": "2024-06-21T23:59:52Z",
+                  "publishedAt": "2024-06-21T23:59:51Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Crack does not propagate with XFEM 3D",
+          "author": {
+            "login": "leeczway"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi developers,\nI am using the XFEM module to do pressurized cracking, and it works as expected in 2D case with the userobjects of LineSegmentCutUserObject and XFEMRankTwoTensorMarkerUserObject. But the similar combination of CircleCutUserObject and XFEMRankTwoTensorMarkerUserObject does not produce crack propagation even if the Maxprinciple stress was far exceeded.\nIs there a way to do 3D crack propagation simulation without using CrackMeshCut3DUserObject, since it seems cracking direction and speed has to be prescribled with options like growth_direction and growth_rate?\nThanks for your help!\nWei",
+          "url": "https://github.com/idaholab/moose/discussions/27946",
+          "updatedAt": "2024-06-21T22:56:56Z",
+          "publishedAt": "2024-06-19T14:56:32Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@hugary1995",
+                  "url": "https://github.com/idaholab/moose/discussions/27946#discussioncomment-9819011",
+                  "updatedAt": "2024-06-19T15:06:20Z",
+                  "publishedAt": "2024-06-19T15:06:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I'll have to defer this question to @jiangwen84 @bwspenc @lynnmunday",
+                          "url": "https://github.com/idaholab/moose/discussions/27946#discussioncomment-9822200",
+                          "updatedAt": "2024-06-19T21:49:45Z",
+                          "publishedAt": "2024-06-19T21:49:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lynnmunday"
+                          },
+                          "bodyText": "I haven't done much with the 3d xfem code but I think this test does what you want: moose/modules/xfem/test/tests/solid_mechanics_basic/edge_crack_3d_mhs.i\nThis uses CrackMeshCut3DUserObject to grow the crack.  The growth rate function is just used to grow the crack over that time step to see if it reaches a size where it will no longer grow.  The crack direction is still determined by a fracture integral.  The nucleation objects won't nucleate a new crack in 3D.  You would have to write code to nucleate a small circular crack in 3D.  I think it would follow the steps used to nucleate and grow cracks in 2D so it should be possible.",
+                          "url": "https://github.com/idaholab/moose/discussions/27946#discussioncomment-9844293",
+                          "updatedAt": "2024-06-22T20:22:50Z",
+                          "publishedAt": "2024-06-21T22:56:56Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to get the consumed CPU time in each time step?",
+          "author": {
+            "login": "SomnusYu"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHi all,\nWe can get the total consumed CPU time when we finish the calculation. But how do we get the total consumed CPU time in each time step?\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/27954",
+          "updatedAt": "2024-06-21T13:33:43Z",
+          "publishedAt": "2024-06-20T16:08:25Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI'm not sure we have something for this.\nYou ll want to create a postprocessor to report the delta between the starting CPU time and the current CPU time. or do differences between time steps.\nYou should look through the framework folder first, I may have missed it. It would be in the PPs, Reporters or VPPs if it exists\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/27954#discussioncomment-9831231",
+                  "updatedAt": "2024-06-20T16:34:14Z",
+                  "publishedAt": "2024-06-20T16:34:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "Hi, I have searched through the framework folder, but I can not find any type (PPS, Reporters or VPP) that can report the current CPU time.",
+                          "url": "https://github.com/idaholab/moose/discussions/27954#discussioncomment-9834647",
+                          "updatedAt": "2024-06-21T01:40:15Z",
+                          "publishedAt": "2024-06-21T01:40:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok thanks for double checking\nYou can look at the perf graph for this otherwise.\nThe perf graph will have a lot of the relevant code to perform this measurement",
+                          "url": "https://github.com/idaholab/moose/discussions/27954#discussioncomment-9839992",
+                          "updatedAt": "2024-06-21T13:23:16Z",
+                          "publishedAt": "2024-06-21T13:23:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "SomnusYu"
+                          },
+                          "bodyText": "Ok, thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/27954#discussioncomment-9840100",
+                          "updatedAt": "2024-06-21T13:33:45Z",
+                          "publishedAt": "2024-06-21T13:33:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Contravariant basis vectors in Shell Element",
+          "author": {
+            "login": "Kavan-Khaledi"
+          },
+          "bodyText": "Dear MOOSE team,\nI am trying to understand the code for the solid shell element in MOOSE. The implementation of the element follows exactly the formulations given in Dvorkin and Bathe (1984) for the MITC4 shell element. However, I ran into a problem when using the element on unstructured meshes. The element works well for structured meshes, but it gives incorrect results for unstructured meshes, and this I believe is due to incorrect contravariant basis vectors introduced to rotate the stiffness matrix. As an example, I have copied the results of simple tension and bending tests on a clamped plate with structured and unstructured meshes (the input file and the mesh file are attached). As you can see, the results of the unstructured mesh are not correct.\n\nTo solve the problem, I tested the following change in the code and now the shell element works fine for unstructured meshes.\nNew results on unstructured mesh:\n\nCurrent Contravariant basis vector calucation in ADComputeIncrementalShellStrain:\nADRankTwoTensor gmninv = local_rotation_mat.transpose() * gmninv_temp * local_rotation_mat;\n      (*_ge[j])[i](0, 0) = (gmninv * (*_dxyz_dxi[j])[i]) * e1;\n      (*_ge[j])[i](0, 1) = (gmninv * (*_dxyz_dxi[j])[i]) * e2;\n      (*_ge[j])[i](0, 2) = (gmninv * (*_dxyz_dxi[j])[i]) * e3;\n      (*_ge[j])[i](1, 0) = (gmninv * (*_dxyz_deta[j])[i]) * e1;\n      (*_ge[j])[i](1, 1) = (gmninv * (*_dxyz_deta[j])[i]) * e2;\n      (*_ge[j])[i](1, 2) = (gmninv * (*_dxyz_deta[j])[i]) * e3;\n      (*_ge[j])[i](2, 0) = (gmninv * (*_dxyz_dzeta[j])[i]) * e1;\n      (*_ge[j])[i](2, 1) = (gmninv * (*_dxyz_dzeta[j])[i]) * e2;\n      (*_ge[j])[i](2, 2) = (gmninv * (*_dxyz_dzeta[j])[i]) * e3;\n\nSuggested changes to calculate the contravariant basis vectors\n      ADRealVectorValue gi0=((*_dxyz_deta[j])[i].cross((*_dxyz_dzeta[j])[i]))/((*_dxyz_dxi[j])[i]*((*_dxyz_deta[j])[i].cross((*_dxyz_dzeta[j])[i])));\n      ADRealVectorValue gi1=((*_dxyz_dzeta[j])[i].cross((*_dxyz_dxi[j])[i]))/((*_dxyz_dxi[j])[i]*((*_dxyz_deta[j])[i].cross((*_dxyz_dzeta[j])[i])));\n      ADRealVectorValue gi2=((*_dxyz_dxi[j])[i].cross((*_dxyz_deta[j])[i]))/((*_dxyz_dxi[j])[i]*((*_dxyz_deta[j])[i].cross((*_dxyz_dzeta[j])[i])));\n\n      (*_ge[j])[i](0, 0) = gi0 * e1;\n      (*_ge[j])[i](0, 1) = gi0 * e2;\n      (*_ge[j])[i](0, 2) = gi0 * e3;\n      (*_ge[j])[i](1, 0) = gi1 * e1;\n      (*_ge[j])[i](1, 1) = gi1 * e2;\n      (*_ge[j])[i](1, 2) = gi1 * e3;\n      (*_ge[j])[i](2, 0) = gi2 * e1;\n      (*_ge[j])[i](2, 1) = gi2 * e2;\n      (*_ge[j])[i](2, 2) = gi2 * e3;\n\nThe above contravarient basis vectors gi0, gi1, gi2 were calculated through:\n$gi0=\\dfrac{(g_s \\times g_t)}{g_r.(g_s \\times g_t)}$\n$gi1=\\dfrac{(g_t \\times g_r)}{g_r.(g_s \\times g_t)}$\n$gi2=\\dfrac{(g_r \\times g_s)}{g_r.(g_s \\times g_t)}$\nwhere, $g_r, g_s, g_t$ are covariant basis vectors.\nHowever, I have not performed any other tests. Therefore, I decided to post the issue here for discussion first.\nShell_MITC4_test.zip\nBest regards,\nKavan",
+          "url": "https://github.com/idaholab/moose/discussions/27038",
+          "updatedAt": "2024-06-21T09:48:15Z",
+          "publishedAt": "2024-03-08T12:43:15Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@cbolisetti",
+                  "url": "https://github.com/idaholab/moose/discussions/27038#discussioncomment-8721192",
+                  "updatedAt": "2024-03-08T15:11:00Z",
+                  "publishedAt": "2024-03-08T15:10:59Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bwspenc"
+                          },
+                          "bodyText": "Thanks for looking into this, and for your input! I'll look into this tomorrow.\nJust so you know, the current version of the shell also only works for flat geometries because the rotation DOFs are in the element local coordinate system, so if there is a change of orientation from one element to another they are not compatible. I have a branch where we have a pretty major update that corrects that, but we haven't merged it in yet because we are still seeing some inconsistencies. I wonder if the changes you proposed might address those.",
+                          "url": "https://github.com/idaholab/moose/discussions/27038#discussioncomment-8766164",
+                          "updatedAt": "2024-03-13T00:03:25Z",
+                          "publishedAt": "2024-03-13T00:03:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Kavan-Khaledi"
+                          },
+                          "bodyText": "@bwspenc have you been able to find time to look into this? The original MITC4 element was actually developed for non-flat shells, and I think it should also work for curved geometries with unstructured meshes if the compatibility of local coordinates between all elements is preserved.",
+                          "url": "https://github.com/idaholab/moose/discussions/27038#discussioncomment-8879396",
+                          "updatedAt": "2024-03-24T05:43:48Z",
+                          "publishedAt": "2024-03-22T15:09:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bwspenc"
+                          },
+                          "bodyText": "Sorry for being so slow to get to this! I've just been swamped with other things. We have someone in our team that is going to be looking into this.\nI have to admit that I don't understand how one would go about maintaining the compatibility of local coordinates between elements for unstructured meshes or curved geometries. It's been a little while since I've looked into that in depth, but the 1984 Dvorkin & Bathe paper didn't really give any information on that as I recall. Maybe I'm missing something, but on a curved geometry, it seems like the rotational coordinates, which I understand need to be in the local plane of the element, would inherently be different for two neighboring elements if their orientations are different. That would be a problem for any nodes that are connected to multiple elements oriented on different planes.\nWe have a set of changes that have been in the works for a while that modify the element to have 3 rotational DOFs per node, aligned with the Cartesian axes, and then transforms those to a local coordinate system unique to each element. That does result in a zero-energy drilling DOF if you are modeling a flat surface, but we found that can be suppressed easily by giving it a penalty rotational stiffness. They're on this branch:\nhttps://github.com/bwspenc/moose/tree/shell_new\nI'm interested in your thoughts on this.",
+                          "url": "https://github.com/idaholab/moose/discussions/27038#discussioncomment-9596553",
+                          "updatedAt": "2024-05-29T17:38:56Z",
+                          "publishedAt": "2024-05-29T17:23:15Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Kavan-Khaledi"
+                  },
+                  "bodyText": "@bwspenc First of all, thanks for sharing the new shell formulation.\nFYI, following the discussion #23874, we decided to extend the existing four-noded shell element in MOOSE to a six-noded triangular element, primarily for applications in modeling support systems in tunnel construction. Another requirement for our application was adding orthotropic elasticity to the shell model. These two requirements, i.e. triangular geometry and anisotropic material, necessitated a slight deviation from Dvorkin\u2019s paper by introducing a compatible material coordinate system. This not only maintains the compatibility of local stresses but also makes the back-calculation of local force and moment resultants possible. To clarify, let me summarize the coordinate systems in Dvorkin\u2019s paper and our modifications. This might be relevant to your new shell formulation as well. Please correct me if I have misunderstood anything.\nThe following coordinate systems are used for the MITC4 shell element (I am trying to use the same terminology as used in the paper):\n\n\nThe stationary Cartesian coordinate system $x_1\u2212x_2\u2212x_3$: This is the global coordinate system in which the nodal locations and displacements are described (equations 1 and 2).\n\n\nThe local nodal coordinate system $V_1\u2212V_2\u2212V_n$ : Three perpendicular unit vectors are defined at each node. The director vector $V_n$ is the node normal vector. The other two unit vectors, $V_1$ and $V_2$, are the axes around which the rotational degrees of freedom are defined at each node. In Dvorkin\u2019s paper, a simple rule is used to maintain the compatibility of in-plane vectors $V_1$ and $V_2$ between elements. This convention is also applicable to curved geometries and unstructured meshes. The convention is described in the caption of Figure 1 and has been correctly implemented in MOOSE.\n\n\n\n\n\nCovariant base vectors $g_1,g_2,g_3 (g_i=dx/dr_i)$: These base vectors are used to define the Green-Lagrange strain components in the convected coordinates ($r_1,r_2,r_3$), as shown in equation 20. These strains are not compatible between elements because the orientation of $g_1,g_2,g_3$ varies from one element to another in curved geometries (or unstructured meshes). However, they become compatible once transformed to the stationary global coordinate system through the element Jacobian transformation (as implemented in MOOSE).\n\ncovariant_transformation_matrix[j])[i] = J\nThe transformation of stress to global coordinate is through the inverse of Jacobean.\n(*_contravariant_transformation_matrix[j])[i] = (*_covariant_transformation_matrix[j])[i].inverse();\n\nThe tricky part in the paper is hidden in the definition of the fourth-order contravariant stiffness matrix, where the elasticity tensor is transformed to a local coordinate system with orthonormal base vectors $\\hat{e}_1,\\hat{e}_2,\\hat{e}_3$, i.e.\n\n\nThe $g^1, g^2, g^3$ are contravariant base vectors of the convected coordinates $r_1,r_2,r_3$.\nI must admit, the mathematics of this part is beyond my knowledge, especially equations 11 and 12 in the paper. However, what I understand is that by multiplying this elasticity tensor with the convected strain tensor, the stress components are obtained in the $\\hat{e_{i}}$ coordinate system. The contravariant vectors $g^1, g^2, g^3$ that I showed in my first post above have an important property, $g^i . g_j = \\delta_{ij}$. This property brings the local stresses to the $\\hat{e}_1,\\hat{e}_2,\\hat{e}_3$ coordinate.\nDvorkin\u2019s paper suggests the following method for calculating the $\\hat{e}_1,\\hat{e}_2,\\hat{e}_3$ unit vectors:\n\nHowever, If we use the above approach for curved geometries, we lose the compatibility of $\\hat{e}_i$ vectors between elements because the $g_i$ base vectors are incompatible. This is also a problem when using anisotropic shells. Therefore, we changed this and incorporated two options in our triangular shell element:\nOption 1: $\\hat{e}_3$ is the normal vector to the shell element. The user defines a vector in the input file (in the strain block). This user-defined vector is projected onto the shell plane to construct $\\hat{e}_1$. Then, $\\hat{e}_2=\\hat{e}_3\\times\\hat{e}_1$\nOption 2: If the user does not provide any vector, the same method as described above in Figure 1 is used to preserve the compatibility of local coordinates.\nNow, having  compatible base vectors $\\hat{e}_1,\\hat{e}_2,\\hat{e}_3$  at the element level, we can transform the global stresses to this local coordinate system and back-calculate the force and moment resultants.\nSorry for the long post!!",
+                  "url": "https://github.com/idaholab/moose/discussions/27038#discussioncomment-9838185",
+                  "updatedAt": "2024-07-15T06:03:43Z",
+                  "publishedAt": "2024-06-21T09:48:15Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

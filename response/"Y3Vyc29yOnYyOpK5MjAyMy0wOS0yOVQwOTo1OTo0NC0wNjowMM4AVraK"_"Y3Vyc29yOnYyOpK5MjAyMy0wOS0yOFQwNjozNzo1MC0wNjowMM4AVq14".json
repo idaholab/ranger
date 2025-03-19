@@ -1,0 +1,903 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wOS0yOFQwNjozNzo1MC0wNjowMM4AVq14"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Questions about grain growth problem.",
+          "author": {
+            "login": "mdh23rct"
+          },
+          "bodyText": "Dear MOOSE experts,\nI am planning to generate a grain structure in MOOSE. For that, I have found this tutorial in the phase field grain growth module:\n# This initializes a polycrystal from random seeds at each node\n# Mesh adaptivity and time step adaptivity are used\n# Grain tracker is started once the grain structure is established\n\n[Mesh]\n  # Mesh block.  Meshes can be read in or automatically generated\n  type = GeneratedMesh\n  dim = 2 # Problem dimension\n  nx = 40 # Number of elements in the x-direction\n  ny = 40 # Number of elements in the y-direction\n  xmax = 1000 # maximum x-coordinate of the mesh\n  ymax = 1000 # maximum y-coordinate of the mesh\n  elem_type = QUAD4 # Type of elements used in the mesh\n  uniform_refine = 2 # Initial uniform refinement of the mesh\n\n  parallel_type = replicated # Periodic BCs\n[]\n\n[GlobalParams]\n  # Parameters used by several kernels that are defined globally to simplify input file\n  op_num = 10 # Number of grains\n  var_name_base = gr # Base name of grains\n[]\n\n[Modules]\n  [PhaseField]\n    [GrainGrowth]\n    []\n  []\n[]\n\n[ICs]\n  [PolycrystalICs]\n    [PolycrystalRandomIC]\n      random_type = discrete\n    []\n  []\n[]\n\n[AuxVariables]\n  # Dependent variables\n  [./unique_grains]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./var_indices]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./bnds]\n    order = FIRST\n    family = LAGRANGE\n  [../]\n[]\n\n[AuxKernels]\n  # AuxKernel block, defining the equations used to calculate the auxvars\n  [unique_grains]\n    type = FeatureFloodCountAux\n    variable = unique_grains\n    flood_counter = grain_tracker\n    field_display = UNIQUE_REGION\n    execute_on = 'initial timestep_end'\n  []\n  [var_indices]\n    type = FeatureFloodCountAux\n    variable = var_indices\n    flood_counter = grain_tracker\n    field_display = VARIABLE_COLORING\n    execute_on = 'initial timestep_end'\n  []\n  [./BndsCalc]\n    type = BndsCalcAux\n    variable = bnds\n  [../]\n[]\n\n[BCs]\n  # Boundary Condition block\n  [Periodic]\n    [top_bottom]\n      auto_direction = 'x y' # Makes problem periodic in the x and y directions\n    []\n  []\n[]\n\n[Materials]\n  [CuGrGr]\n    # Material properties\n    type = GBEvolution # Quantitative material properties for copper grain growth.  Dimensions are nm and ns\n    GBmob0 = 2.5e-6 # Mobility prefactor for Cu from Schonfelder1997\n    GBenergy = 0.708 # GB energy for Cu from Schonfelder1997\n    Q = 0.23 # Activation energy for grain growth from Schonfelder 1997\n    T = 450 # Constant temperature of the simulation (for mobility calculation)\n    wGB = 14 # Width of the diffuse GB\n  []\n[]\n\n[UserObjects]\n  [grain_tracker]\n    type = GrainTracker\n    tracking_step = 20 #Tracking is delayed until the polycrystalline structure is established\n  []\n[]\n\n[Postprocessors]\n  # Scalar postprocessors\n  [dt]\n    # Outputs the current time step\n    type = TimestepSize\n  []\n  [num_nodes]\n    type = NumNodes\n  []\n[]\n\n[Executioner]\n  type = Transient # Type of executioner, here it is transient with an adaptive time step\n  scheme = bdf2 # Type of time integration (2nd order backward euler), defaults to 1st order backward euler\n\n  solve_type = PJFNK\n\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre    boomeramg'\n\n  l_max_its = 20 # Max number of linear iterations\n  l_tol = 1e-4 # Relative tolerance for linear solves\n\n  start_time = 0.0\n  end_time = 50\n\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1 # Initial time step.  In this simulation it changes.\n    optimal_iterations = 6 # Time step will adapt to maintain this number of nonlinear iterations\n  []\n\n  [Adaptivity]\n    # Block that turns on mesh adaptivity. Note that mesh will never coarsen beyond initial mesh (before uniform refinement)\n    refine_fraction = 0.8 # Fraction of high error that will be refined\n    coarsen_fraction = 0.05 # Fraction of low error that will coarsened\n    max_h_level = 2 # Max number of refinements used, starting from initial mesh (before uniform refinement)\n  []\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n[]\n\nI have a couple of questions regarding this tutorial:\n\nFor example, I am doing a transient analysis in 100 time steps. First, I would like to stop the grain growth after the 10th time step. Next from the 11th time step, I would like to conduct a mechanical stress analysis on the grain structure built in the 10th time step? Can this consecutive analysis be done using these way in MOOSE?\nOr is it possible to export the grain structure with grain boundaries and orientations in txt format from the grain growth model? If it is possible, would you be kind to let me know what I should include in the output system? Then, I can use this txt file for a mechanical stress analysis in a decoupled way I believe.\n\nI would appreciate if you can manage time to reply.\nBest regards",
+          "url": "https://github.com/idaholab/moose/discussions/25600",
+          "updatedAt": "2023-09-29T15:14:10Z",
+          "publishedAt": "2023-09-27T18:00:53Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "permcody"
+                  },
+                  "bodyText": "The use of the MOOSE's restart and recover system could be used to solve both of these questions. When using restart, you can read in all of the solution fields from a previous simulation and run a \"new\" simulation. The other way you could go about this is using MOOSE's Control system. You can toggle objects on off while a simulation is running among other things with that system.\nI would not recommend trying to output all of the solution in a text format, although their is a \"vector postprocessor\" object capable of doing this if you do want to perform some of this discrete analysis. Restart is the way to go!",
+                  "url": "https://github.com/idaholab/moose/discussions/25600#discussioncomment-7126562",
+                  "updatedAt": "2023-09-27T18:29:10Z",
+                  "publishedAt": "2023-09-27T18:29:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "chaibhave"
+                  },
+                  "bodyText": "This is fairly straightforward, and there are two ways to do this. If you want to use the same grain structure (after the grain growth stage) for multiple mechanical stress analysis simulations, you can read the order parameter variables from the exodus file output of your grain growth stage using the Solution User Object .\nIf you are planning to only use each grain growth result once, it is faster to use the MultiApps system. Run the grain growth simulation as a sub-app, and return the grain order parameter variables after the grain growth step using the Transfers system.",
+                  "url": "https://github.com/idaholab/moose/discussions/25600#discussioncomment-7126580",
+                  "updatedAt": "2023-09-27T18:30:43Z",
+                  "publishedAt": "2023-09-27T18:30:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mdh23rct"
+                          },
+                          "bodyText": "Dear Dr. Chaitanya Bhave,\nI appreciate your reply. The way you have suggested has worked. I am currently trying to simulate random formation of precipitation in a polycrystal. However, when I run the random formation code, I am seeing some boundary problems. The nucleation is happening at the boundaries of the computational domain, not inside the domain. For your convenience, I have attached the boundary image and mesh in this mail.\n\n\nI am also including here the random nucleation code I am using.\n[Modules]\n    [./PhaseField]\n      [./Conserved]\n        [./c]\n          free_energy = F\n          mobility = M\n          kappa = kappa_c\n          solve_type = REVERSE_SPLIT\n        [../]\n      [../]\n    [../]\n  []\n  \n  [ICs]\n    [./c_IC]\n      type = ConstantIC\n      variable = c\n      value = 0.2\n    [../]\n  []\n  \n  [Materials]\n    [./pfmobility]\n      type = GenericConstantMaterial\n      prop_names  = 'M kappa_c'\n      prop_values = '1 25'\n    [../]\n    [./chemical_free_energy]\n      # simple double well free energy\n      type = DerivativeParsedMaterial\n      property_name = Fc\n      coupled_variables = 'c'\n      constant_names       = 'barr_height  cv_eq'\n      constant_expressions = '0.1          0'\n      expression = 16*barr_height*c^2*(1-c)^2 #+0.01*(c*plog(c,0.005)+(1-c)*plog(1-c,0.005))\n      derivative_order = 2\n      outputs = exodus\n    [../]\n    [./probability]\n      # This is a made up toy nucleation rate it should be replaced by\n      # classical nucleation theory in a real simulation.\n      type = ParsedMaterial\n      property_name = P\n      coupled_variables = c\n      expression = 'if(c<0.21,c*1e-8,0)'\n      outputs = exodus\n    [../]\n    [./nucleation]\n      # The nucleation material is configured to insert nuclei into the free energy\n      # tht force the concentration to go to 0.95, and holds this enforcement for 500\n      # time units.\n      type = DiscreteNucleation\n      property_name = Fn\n      op_names  = c\n      op_values = 0.90\n      penalty = 5\n      penalty_mode = MIN\n      map = map\n      outputs = exodus\n    [../]\n    [./free_energy]\n      # add the chemical and nucleation free energy contributions together\n      type = DerivativeSumMaterial\n      derivative_order = 2\n      coupled_variables = c\n      sum_materials = 'Fc Fn'\n    [../]\n  []\n  \n  [UserObjects]\n    [./inserter]\n      # The inserter runs at the end of each time step to add nucleation events\n      # that happened during the timestep (if it converged) to the list of nuclei\n      type = DiscreteNucleationInserter\n      hold_time = 50\n      probability = P\n      radius = 1\n    [../]\n    [./map]\n      # The map UO runs at the beginning of a timestep and generates a per-element/qp\n      # map of nucleus locations. The map is only regenerated if the mesh changed or\n      # the list of nuclei was modified.\n      # The map converts the nucleation points into finite area objects with a given radius.\n      type = DiscreteNucleationMap\n      periodic = c\n      inserter = inserter\n    [../]\n  []\n  \n  [Preconditioning]\n    [./SMP]\n      type = SMP\n      full = true\n    [../]\n  []\n  \n  [BCs]\n    [./Periodic]\n      [./all]\n        auto_direction = 'x y'\n        variable = c\n      [../]\n    [../]\n  []\n  \n  [Postprocessors]\n    [./dt]\n      type = TimestepSize\n    [../]\n    [./ndof]\n      type = NumDOFs\n    [../]\n    [./rate]\n      type = DiscreteNucleationData\n      value = RATE\n      inserter = inserter\n    [../]\n    [./dtnuc]\n      type = DiscreteNucleationTimeStep\n      inserter = inserter\n      p2nucleus = 0.0005\n      dt_max = 10\n    [../]\n    [./update]\n      type = DiscreteNucleationData\n      value = UPDATE\n      inserter = inserter\n    [../]\n    [./count]\n      type = DiscreteNucleationData\n      value = COUNT\n      inserter = inserter\n    [../]\n  []\n  \n  [Adaptivity]\n    [./Indicators]\n      [./jump]\n        type = GradientJumpIndicator\n        variable = c\n      [../]\n    [../]\n    [./Markers]\n      [./nuc]\n        type = DiscreteNucleationMarker\n        map = map\n      [../]\n      [./grad]\n        type = ValueThresholdMarker\n        variable = jump\n        coarsen = 0.1\n        refine = 0.2\n      [../]\n      [./combo]\n        type = ComboMarker\n        markers = 'nuc grad'\n      [../]\n    [../]\n    marker = combo\n    cycles_per_step = 3\n    recompute_markers_during_cycles = true\n    max_h_level = 3\n  []\n  \n  [Executioner]\n    type = Transient\n    scheme = bdf2\n    solve_type = 'PJFNK'\n    petsc_options_iname = '-pc_type -sub_pc_type'\n    petsc_options_value = 'asm      lu          '\n  \n    nl_max_its = 100\n    l_tol = 1.0e-4\n    nl_rel_tol = 1.0e-9\n    nl_abs_tol = 1.0e-9\n    start_time = 0.0\n    end_time = 2000\n  \n    [./TimeStepper]\n      type = IterationAdaptiveDT\n      dt = 10\n      growth_factor = 1.5\n      cutback_factor = 0.5\n      optimal_iterations = 8\n      iteration_window = 2\n      timestep_limiting_postprocessor = dtnuc\n    [../]\n  []\n  \n  [Outputs]\n    exodus = true\n    csv = true\n    print_linear_residuals = false\n  []\n\nAm I missing something in these code to remove this boundary issue! I would appreciate your expert advice.\nBest regards.",
+                          "url": "https://github.com/idaholab/moose/discussions/25600#discussioncomment-7145693",
+                          "updatedAt": "2023-09-29T17:18:57Z",
+                          "publishedAt": "2023-09-29T15:14:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A 'DarcyPressure' is not a regidtered object.",
+          "author": {
+            "login": "Yaode-Yin"
+          },
+          "bodyText": "I am a newcomer to MOOSE and have written the Babber App on  the tutorials  'Step 5: Develop a Kernel Object' : https://mooseframework.inl.gov/getting_started/examples_and_tutorials/tutorial01_app_development/step05_kernel_object.html#darcy-source\nI do the same things as the tutorials, but when I execute the input file, it cannot works.\n*** ERROR ***\nA 'DarcyPressure' is not a registered object.\n........\n\nI dont know why the 'DarcyPressure' cannot  be registered correctly. \nDarcyPressure.h in include/kernel\n\n#pragma once\n\n// Including the \"ADKernel\" base class here so we can extend it\n#include \"ADKernelGrad.h\"\n\n/**\n * Computes the residual contribution: K / mu * grad_test * grad_u.\n */\nclass DarcyPressure : public ADKernelGrad\n{\npublic:\n  static InputParameters validParams();\n\n  DarcyPressure(const InputParameters & parameters);\n\nprotected:\n  /// ADKernel objects must override precomputeQpResidual\n  virtual ADRealVectorValue precomputeQpResidual() override;\n\n  /// The variables which hold the value for K and mu\n  const Real _permeability;\n  const Real _viscosity;\n};\n\nDarcyPressure.C in src/kernel\n\n#include \"DarcyPressure.h\"\n\nregisterMooseObject(\"BabblerApp\", DarcyPressure);\n\nInputParameters\nDarcyPressure::validParams()\n{\n\tInputParameters params = ADKernelGrad::validParams();\n\tparams.addClassDescription(\"Compute the diffusion term for Darcy pressure ($p$) equation: \"\n\t\t\"$-\\\\nabla \\\\cdot \\\\frac{\\\\mathbf{K}}{\\\\mu} \\\\nabla p = 0$\");\n\n\treturn params;\n}\n\nDarcyPressure::DarcyPressure(const InputParameters & parameters)\n\t: ADKernelGrad(parameters),\n\n\t// Set the coefficients for the pressure kernel\n\t_permeability(0.8451e-09),\n\t_viscosity(7.98e-04)\n{\n}\n\nADRealVectorValue\nDarcyPressure::precomputeQpResidual()\n{\n\treturn (_permeability / _viscosity) * _grad_u[_qp];\n}",
+          "url": "https://github.com/idaholab/moose/discussions/25626",
+          "updatedAt": "2023-09-29T14:52:47Z",
+          "publishedAt": "2023-09-29T13:25:59Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat is the name of the app in the src/base folder?\nThere's an XXXApp named file. Then if you open that file you can see more.\nWe're looking for issues with capitalization\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144641",
+                  "updatedAt": "2023-09-29T13:34:04Z",
+                  "publishedAt": "2023-09-29T13:34:03Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "Hello\nIts name is BabblerApp.C . Here's the codes\n#include \"DarcyPressure.h\"\nregisterMooseObject(\"BabblerApp\", DarcyPressure);\nInputParameters\nDarcyPressure::validParams()\n{\nInputParameters params = ADKernelGrad::validParams();\nparams.addClassDescription(\"Compute the diffusion term for Darcy pressure ($p$) equation: \"\n\"$-\\nabla \\cdot \\frac{\\mathbf{K}}{\\mu} \\nabla p = 0$\");\nreturn params;\n\n}\nDarcyPressure::DarcyPressure(const InputParameters & parameters)\n: ADKernelGrad(parameters),\n// Set the coefficients for the pressure kernel\n_permeability(0.8451e-09),\n_viscosity(7.98e-04)\n\n{\n}\nADRealVectorValue\nDarcyPressure::precomputeQpResidual()\n{\nreturn (_permeability / _viscosity) * _grad_u[_qp];\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144671",
+                          "updatedAt": "2023-09-29T13:37:25Z",
+                          "publishedAt": "2023-09-29T13:37:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "can you copy-paste babblerApp.C here?\nalso you compiled after adding this object right?",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144695",
+                          "updatedAt": "2023-09-29T13:39:51Z",
+                          "publishedAt": "2023-09-29T13:39:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "Sorry, not thar code",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144696",
+                          "updatedAt": "2023-09-29T13:39:59Z",
+                          "publishedAt": "2023-09-29T13:39:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "#include \"BabblerApp.h\"\n#include \"Moose.h\"\n#include \"AppFactory.h\"\n#include \"ModulesApp.h\"\n#include \"MooseSyntax.h\"\nInputParameters\nBabblerApp::validParams()\n{\nInputParameters params = MooseApp::validParams();\nparams.set(\"use_legacy_material_output\") = false;\nreturn params;\n}\nBabblerApp::BabblerApp(InputParameters parameters) : MooseApp(parameters)\n{\nBabblerApp::registerAll(_factory, _action_factory, _syntax);\n}\nBabblerApp::~BabblerApp() {}\nvoid\nBabblerApp::registerAll(Factory & f, ActionFactory & af, Syntax & s)\n{\nModulesApp::registerAllObjects(f, af, s);\nRegistry::registerObjectsTo(f, {\"BabblerApp\"});\nRegistry::registerActionsTo(af, {\"BabblerApp\"});\n/* register custom execute flags, action syntax, etc. here */\n}\nvoid\nBabblerApp::registerApps()\n{\nregisterApp(BabblerApp);\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144777",
+                          "updatedAt": "2023-09-29T13:47:48Z",
+                          "publishedAt": "2023-09-29T13:47:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "The code seems to be  automatically generated by Moose.",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144813",
+                          "updatedAt": "2023-09-29T13:51:49Z",
+                          "publishedAt": "2023-09-29T13:51:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "seems fine\nok let s change this line\nregisterMooseObject(\"BabblerApp\", DarcyPressure);\nto this\nregisterMooseObject(\"MooseApp\", DarcyPressure);\nand recompile please",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144899",
+                          "updatedAt": "2023-09-29T13:59:44Z",
+                          "publishedAt": "2023-09-29T13:59:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "After\ncd ~/projects/babbler \nmake -j4\ncd ~/projects/babbler/problems\n../babbler-opt -i pressure_diffusion.i \n\nit still not work correctly.\n'DarcyPressure' is not a registered object.\nDo I have Installation failure?",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144961",
+                          "updatedAt": "2023-09-29T14:07:32Z",
+                          "publishedAt": "2023-09-29T14:06:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "Of course, I've changed the code",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144975",
+                          "updatedAt": "2023-09-29T14:07:04Z",
+                          "publishedAt": "2023-09-29T14:07:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "What does make return? Does it give an error?",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144985",
+                          "updatedAt": "2023-09-29T14:07:51Z",
+                          "publishedAt": "2023-09-29T14:07:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yaode-Yin"
+                          },
+                          "bodyText": "No, make has no error.",
+                          "url": "https://github.com/idaholab/moose/discussions/25626#discussioncomment-7144998",
+                          "updatedAt": "2023-09-29T14:09:25Z",
+                          "publishedAt": "2023-09-29T14:09:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Unexpected results with PorousFlowSink",
+          "author": {
+            "login": "nlosacco"
+          },
+          "bodyText": "Hi all,\nI am trying to simulate a desiccation test on an odometer (cylindrical) specimen by imposing an outflow boundary at the bases.\nI simulate a quarter of the specimen diametral cross section in axisymmetric conditions, hence imposing the flow at the top only.\nThe specimen in initially fully saturated and with pore pressure = -10 kPa.\nGiven the specimen volume 2.46301E-05 m^3, the initial porosity 0.43, the imposed specific mass flow 1.47953E-07 kg/(m^2 . s) I expect the saturation ratio after 7 days to be 0.979, whereas MOOSE yield 0.9985 (and the pop remains -10 kPa).\nThe weirdest thing is that it nothing changes if I increase the flow by one order of magnitude!\nResults start to change when I increase the flow by four orders of magnitude (which leads to convergence issues while the soil gets completely dry).\nThe sink BC seems to be applied correctly, as I checked using an AuxVariable and NodalSum postprocessing.\nAfter trying for days I am quite lost. What am I missing?\nPlease find attached the input file.\nedo.i.txt",
+          "url": "https://github.com/idaholab/moose/discussions/25613",
+          "updatedAt": "2023-09-28T21:37:49Z",
+          "publishedAt": "2023-09-28T11:31:18Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "nlosacco"
+                  },
+                  "bodyText": "As a matter of fact, I also postprocessed PorousFlowFluidMass, and the total mass is not changing at all",
+                  "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7134648",
+                  "updatedAt": "2023-09-28T13:50:41Z",
+                  "publishedAt": "2023-09-28T13:50:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@rpodgorney @1runer",
+                  "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7134672",
+                  "updatedAt": "2023-09-28T13:53:35Z",
+                  "publishedAt": "2023-09-28T13:53:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "so the mass flow should be:\n0.01 * 1 * 1.47953E-07 * 6 days in s ?\nand the mass of fluid is\n0.01 * 0.028 * 1 * 1000 kg/m3 right ?",
+                  "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7134706",
+                  "updatedAt": "2023-09-28T13:56:09Z",
+                  "publishedAt": "2023-09-28T13:56:08Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "er... it's axisymmetric\nxmax = 0.028 (radius)\nymax = 0.01 (height)\nhence, if I'm not mistaken, the total mass flow should be:\npi * 0.028^2 * 1.47953E-07 * 604800 (7 days in seconds, I wrote 6 in the original post by mistake) = 2.2040E-04 kg\nwhile the initial mass of fluid\npi * 0.028^2 * 0.01 * 1000 * 0.43 (porosity) = 1.0591E-02 kg",
+                          "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7134818",
+                          "updatedAt": "2023-09-28T14:06:51Z",
+                          "publishedAt": "2023-09-28T14:06:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "1runer"
+                  },
+                  "bodyText": "I'm not an expert on the BCs and all true/false parameters to play with. I guess @cpgr could help more.\nWhat I noticed is that you don't solve your problem at all. Each timestep converges at 0 Nonlinear iterations.\nThe residuals start with 1e-11 and your convergence criterion is 1e-7 (nl_abs_tol). I recommend changing the criterion or scale the variables accordingly (by setting automatic_scaling = true in the Executioner block.",
+                  "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7138609",
+                  "updatedAt": "2023-09-28T21:07:21Z",
+                  "publishedAt": "2023-09-28T21:07:20Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nlosacco"
+                          },
+                          "bodyText": "That was the problem indeed. Now, setting nl_abs_tol = 1.E-12, the analysis is giving the expected results.\nFor larger problem I shall consider scaling the variables, so as not to use such a tight convergence criterion.\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/25613#discussioncomment-7138791",
+                          "updatedAt": "2023-09-28T21:40:01Z",
+                          "publishedAt": "2023-09-28T21:37:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Interplay between the Phase Field module and the Tensor Mechanics module",
+          "author": {
+            "login": "RobMacka"
+          },
+          "bodyText": "Hello all,\nI'm writing this in the general section as it covers both the Phase Field and the Tensor Mechanics modules. I'm looking to implement strain fields using inclusion defects with the Tensor Mechanics module, while also evolving the strain with an equation under the Phase Field model which includes strain components as a full variable. However, since the Tensor Mechanics module outputs the strain tensor components as AuxVariables, I can't evolve these under the Allen-Cahn kernel as it is incompatible with AuxVariables. Is there a way around this i.e. to cast the strains from the Tensor Mechanics module as full variables, or is this not possible within the MOOSE framework? Thank you for your time",
+          "url": "https://github.com/idaholab/moose/discussions/25615",
+          "updatedAt": "2023-09-28T19:41:52Z",
+          "publishedAt": "2023-09-28T12:58:25Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\nTensor Mechanics module outputs the strain tensor components as AuxVariables\n\nthis output is just for visualization purposes.\nFor coupling purposes, use the underlying material property\nThere should be some work on PF - TM coupling in the combined module you can look at.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25615#discussioncomment-7134471",
+                  "updatedAt": "2023-09-28T13:34:42Z",
+                  "publishedAt": "2023-09-28T13:34:41Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RobMacka"
+                          },
+                          "bodyText": "Hello Guillaume,\nThank you for your answer, sorry I don't think I explained the problem properly. The Phase Field problem i wish to evolve depends on different variables unrelated to that causing the strain in the Tensor Mechanics problem (basically they would result in \"competing\" strain terms). Is there a way I can directly evolve the strain in both Tensor Mechanics and Phase Field instead of any underlying material properties?",
+                          "url": "https://github.com/idaholab/moose/discussions/25615#discussioncomment-7134936",
+                          "updatedAt": "2023-09-28T14:15:25Z",
+                          "publishedAt": "2023-09-28T14:15:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "RobMacka"
+                          },
+                          "bodyText": "Essentially the free energy density includes both magnetic variables and strain tensor components simulataneously, which can't be separated in any sensible way.",
+                          "url": "https://github.com/idaholab/moose/discussions/25615#discussioncomment-7134962",
+                          "updatedAt": "2023-09-28T14:17:22Z",
+                          "publishedAt": "2023-09-28T14:17:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So for the free energy you can write it as a parsed function so it's fairly easy to make complicated dependencies.\nFor having two different sources of stress you can use this material maybe?\nhttps://mooseframework.inl.gov/source/materials/ComputeMultipleInelasticStress.html\nThis is not my area of expertise, but I think it s been done to combine strain sources",
+                          "url": "https://github.com/idaholab/moose/discussions/25615#discussioncomment-7138076",
+                          "updatedAt": "2023-09-28T19:41:53Z",
+                          "publishedAt": "2023-09-28T19:41:52Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Failed run_tests: signal_handler.test_signal, \"ValueError: seek of closed file\"",
+          "author": {
+            "login": "rmchurch"
+          },
+          "bodyText": "Just getting started installing MOOSE on an HPC cluster (Intel Cascade Lake CPU). I followed these instructions to install using the HPC modules, including a conda env for python. I had an issue with ./run_tests at first with the pyhit module, but I added my conda lib path to LD_LIBRARY_PATH and that went away. Now I can do ./run_tests, but I get two failed tests, signal_handler.test_signal and signal_handler.test_signal_parallel. This seems to be a file for a stdout buffer, but I can't tell from SignalHandler.py why it would close before this seek operation. Any ideas?\nmisc/signal_handler.test_signal: Working Directory: /home/rmc2/stellarator_neutronics/moose/test/tests/misc/signal_handler\nmisc/signal_handler.test_signal: Running command: /home/rmc2/stellarator_neutronics/moose/test/moose_test-opt -i simple_transient_diffusion_scaled.i --error --error-override --no-gdb-backtrace\nmisc/signal_handler.test_signal: Python exception encountered:\nmisc/signal_handler.test_signal: \nmisc/signal_handler.test_signal: Traceback (most recent call last):\nmisc/signal_handler.test_signal:   File \"/home/rmc2/stellarator_neutronics/moose/python/TestHarness/schedulers/RunParallel.py\", line 54, in run\nmisc/signal_handler.test_signal:     job.run()\nmisc/signal_handler.test_signal:   File \"/home/rmc2/stellarator_neutronics/moose/python/TestHarness/schedulers/Job.py\", line 231, in run\nmisc/signal_handler.test_signal:     self.__tester.run(self.timer, self.options)\nmisc/signal_handler.test_signal:   File \"/home/rmc2/stellarator_neutronics/moose/python/TestHarness/testers/Tester.py\", line 394, in run\nmisc/signal_handler.test_signal:     self.runCommand(cmd, cwd, timer, options)\nmisc/signal_handler.test_signal:   File \"/home/rmc2/stellarator_neutronics/moose/python/TestHarness/testers/SignalTester.py\", line 100, in runCommand\nmisc/signal_handler.test_signal:     self.send_signal(process.pid)\nmisc/signal_handler.test_signal:   File \"/home/rmc2/stellarator_neutronics/moose/python/TestHarness/testers/SignalTester.py\", line 43, in send_signal\nmisc/signal_handler.test_signal:     out_dupe.seek(0)\nmisc/signal_handler.test_signal:   File \"/home/rmc2/.conda/envs/aurora/lib/python3.11/tempfile.py\", line 808, in seek\nmisc/signal_handler.test_signal:     return self._file.seek(*args)\nmisc/signal_handler.test_signal:            ^^^^^^^^^^^^^^^^^^^^^^\nmisc/signal_handler.test_signal: ValueError: seek of closed file\nmisc/signal_handler.test_signal: \nmisc/signal_handler.test_signal .................................................... FAILED (TESTER EXCEPTION)\n\nFrom moose/scripts/diagnostics.sh\nWed Sep 27 18:18:48 EDT 2023\n\nSystem Arch: LSB Version: :core-4.1-amd64:core-4.1-noarch Distributor ID: Springdale Description: Springdale Linux release 8.8 (Modena) Release: 8.8 Codename: Modena\n\nMOOSE Package Version: Custom Build\n\nCPU Count: 48\n\nMemory Free: 146335.738 MB\n\nVariable `which $CC` check:\n/usr/local/openmpi/4.1.0/gcc-toolset-10/bin/mpicc\n\n$CC --version:\ngcc (GCC) 10.3.1 20210422 (Red Hat 10.3.1-1)\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nMPICC:\nwhich mpicc:\n\t/usr/local/openmpi/4.1.0/gcc-toolset-10/bin/mpicc\nmpicc -show:\n\tgcc -I/usr/local/openmpi/4.1.0/gcc-toolset-10/include -pthread -L/usr/lib64 -Wl,-rpath -Wl,/usr/lib64 -Wl,-rpath -Wl,/usr/local/openmpi/4.1.0/gcc-toolset-10/lib64 -Wl,--enable-new-dtags -L/usr/local/openmpi/4.1.0/gcc-toolset-10/lib64 -lmpi\n\nCOMPILER gcc:\ngcc (GCC) 10.3.1 20210422 (Red Hat 10.3.1-1)\nCopyright (C) 2020 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\nPython:\n\t/home/rmc2/.conda/envs/aurora/bin/python\n\tPython 3.11.5\n\nMODULES:\nCurrently Loaded Modulefiles:\n 1) gcc-toolset/10                 3) eigen3/3.3.4                               5) anaconda3/2023.3                             7) cmake/pppl/3.24.2  \n 2) openmpi/gcc-toolset-10/4.1.0   4) hdf5/gcc-toolset-10/openmpi-4.1.0/1.10.6   6) netcdf/gcc/hdf5-1.10.6/openmpi-4.1.0/4.7.4  \n\nPETSC_DIR not set",
+          "url": "https://github.com/idaholab/moose/discussions/25610",
+          "updatedAt": "2023-09-28T18:25:00Z",
+          "publishedAt": "2023-09-27T22:27:06Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "That test is brittle, I would not worry about it.\nThe signal handler is meant to enable you to force a checkpoint creation while the simulation is running",
+                  "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7128468",
+                  "updatedAt": "2023-09-27T23:46:49Z",
+                  "publishedAt": "2023-09-27T23:46:49Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rmchurch"
+                          },
+                          "bodyText": "Got it.\nI can open a new Discussion if needed, but can the same be said for changes to --with-derivative-size? Increasing from default of 64 give four test fails, the EXOFAIL and CSVFAIL I assume can be due to error tolerances with the gold file, but the INCORRECT JACOBIAN has some nonlinear solver not converging error message.\nmaterials/derivative_sum_material.random_ic/ad_validating ................................... FAILED (EXODIFF)\nmaterials/derivative_material_interface.ad_analytic_derivatives/material_chaining ........... FAILED (CSVDIFF)\nmaterials/derivative_material_interface.ad_analytic_derivatives/jacobian ......... FAILED (INCORRECT JACOBIAN)\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian FAILED (INCORRECT JACOBIAN)\n\nvative_material_interface.ad_analytic_derivatives/derivative_jacobian: Nonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 0\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian:  Solve Did NOT Converge!\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: Aborting as solve did not converge\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: *** ERROR ***\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: The following error occurred in the object \"ConstantDT\", of type \"ConstantDT\".\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: Solve failed and timestep already at or below dtmin, cannot continue!\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: Stack frames: 12\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 0: libMesh::print_trace(std::ostream&)\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 2: callMooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, MooseApp*)\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 3: void MooseObject::mooseError<char const (&) [70]>(char const (&) [70]) const\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 4: /home/rmc2/stellarator_neutronics/moose/framework/libmoose-opt.so.0(+0x1e68867) [0x14b6f75b8867]\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 5: TimeStepper::computeStep()\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 6: Transient::execute()\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 7: MooseApp::executeExecutioner()\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 8: MooseApp::run()\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 9: main\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 10: __libc_start_main\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: 11: /home/rmc2/stellarator_neutronics/moose/test/moose_test-opt() [0x40aefe]\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: --------------------------------------------------------------------------\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: with errorcode 1.\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: NOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: You may or may not see output from other processes, depending on\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: exactly when Open MPI kills them.\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: --------------------------------------------------------------------------\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: ################################################################################\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: Tester failed, reason: INCORRECT JACOBIAN\nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian: \nmaterials/derivative_material_interface.ad_analytic_derivatives/derivative_jacobian FAILED (INCORRECT JACOBIAN)",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7129660",
+                          "updatedAt": "2023-09-28T03:55:10Z",
+                          "publishedAt": "2023-09-28T03:55:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "That s more of an issue.\nwhich size did you use? I ll see if I can reproduce.\nwe should be able to get it back into convergence too",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7133705",
+                          "updatedAt": "2023-09-28T12:32:47Z",
+                          "publishedAt": "2023-09-28T12:29:01Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rmchurch"
+                          },
+                          "bodyText": "I tried with --with-derivative-size= 128, 200, 256, 512, all of them failed. When I put in 64 (the default, not sure why help page says its 53), those tests were succesful. When I put in 53, even more tests failed.",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7136043",
+                          "updatedAt": "2023-09-28T15:54:31Z",
+                          "publishedAt": "2023-09-28T15:54:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I cannot reproduce the failures at 53 or at 128 derivative size on my machine.\nWhich cluster is it that you are using?",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7137041",
+                          "updatedAt": "2023-09-28T17:36:41Z",
+                          "publishedAt": "2023-09-28T17:36:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rmchurch"
+                          },
+                          "bodyText": "Stellar at Princeton https://researchcomputing.princeton.edu/systems/stellar\nI am using the HPC instructions, so nothing is mamba, I run the update_ scripts for petsc and libmesh. Perhaps something related? I could try with mamba, etc.",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7137357",
+                          "updatedAt": "2023-09-28T18:12:48Z",
+                          "publishedAt": "2023-09-28T18:12:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "mamba will be something like 3x slower than the manual install.\n@milljm @friedmud do we have access to some intel cascade lake chips anywhere to try to reproduce this?",
+                          "url": "https://github.com/idaholab/moose/discussions/25610#discussioncomment-7137457",
+                          "updatedAt": "2023-09-28T18:25:00Z",
+                          "publishedAt": "2023-09-28T18:24:59Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Pressure is not a registered object",
+          "author": {
+            "login": "Emmanuel-324"
+          },
+          "bodyText": "Hello all,\nI am a new user of MOOSE trying to submit my first job. Below is the output I get after send my job. Can anyone help me resolve it.\n\"/cm/local/apps/slurm/var/spool/job1678239/slurm_script: line 17: source: /home/emmanuel324/.moose_profile: is a directory\n\n\ufffd[31m\n*** ERROR ***\nA 'Pressure' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nA 'Pressure' is not a registered object.\n\nIf you are trying to find this object in a dynamically loaded library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\ufffd[39m\n\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n--------------------------------------------------------------------------\"",
+          "url": "https://github.com/idaholab/moose/discussions/25619",
+          "updatedAt": "2023-09-28T18:03:15Z",
+          "publishedAt": "2023-09-28T15:43:29Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe first error seems to be that /home/emmanuel324/.moose_profile is not a file\nThe second error is that you are using the TensorMechancis Pressure object, but your application does not seem to have access to it\nDid you enable Tensor mechanics in the Makefile?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136032",
+                  "updatedAt": "2023-09-28T15:53:38Z",
+                  "publishedAt": "2023-09-28T15:53:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "If you are referring to the modules in my Makefile, yes I turned all of the to yes",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136075",
+                          "updatedAt": "2023-09-28T15:57:51Z",
+                          "publishedAt": "2023-09-28T15:57:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "did you make clobberall then recompile after?",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136082",
+                          "updatedAt": "2023-09-28T15:58:27Z",
+                          "publishedAt": "2023-09-28T15:58:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "I have a quick question. I get confused sometimes, do I place my job and sbatch file in my application or outside my application?",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136091",
+                          "updatedAt": "2023-09-28T15:59:16Z",
+                          "publishedAt": "2023-09-28T15:59:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Yes I did recompile after adding the .h and .c files",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136097",
+                          "updatedAt": "2023-09-28T16:00:03Z",
+                          "publishedAt": "2023-09-28T16:00:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "The way I do it is:\n\ncreate a folder for the run with the input file\nplace a symlink to the executable in that folder. It points to the executable in the application folder\nput the job file in that folder and run it from there too",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136114",
+                          "updatedAt": "2023-09-28T16:01:13Z",
+                          "publishedAt": "2023-09-28T16:01:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "Sorry but aside creating a folder and putting the job in the folder I do not under your second point or how to do that",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136153",
+                          "updatedAt": "2023-09-28T16:03:36Z",
+                          "publishedAt": "2023-09-28T16:03:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "to create a symlink: ln -s <folder with the app>/<name of the executable, probably app-opt> ./",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136276",
+                          "updatedAt": "2023-09-28T16:13:22Z",
+                          "publishedAt": "2023-09-28T16:13:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "so my app name is belson and my job is in the folder called \"kks_multiphase_largescale_large\". Can you help create the command for the symlink. If you need any additional info i can provide.",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136331",
+                          "updatedAt": "2023-09-28T16:19:08Z",
+                          "publishedAt": "2023-09-28T16:19:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what does pwd return in your application folder?",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136355",
+                          "updatedAt": "2023-09-28T16:21:44Z",
+                          "publishedAt": "2023-09-28T16:21:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Emmanuel-324"
+                          },
+                          "bodyText": "/home/emmanuel324/projects/belson",
+                          "url": "https://github.com/idaholab/moose/discussions/25619#discussioncomment-7136817",
+                          "updatedAt": "2023-09-28T17:10:14Z",
+                          "publishedAt": "2023-09-28T17:10:13Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Periodic boundaries not identified in distributed mesh",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Dear Moose team,\nIt seems like the periodic boundary detection has issues, when the model is run with a distributed mesh in several cores. I am running a 1M FE meshed model, partitioned in to 20 divisions, utilizing the services on 20 nodes and 20 cores. Here are the input block of commands i am using to run this simulation.\n[GlobalParams]\n  displacements = 'disp_x disp_y disp_z'\n  large_kinematics = true\n  macro_gradient = hvar\n  homogenization_constraint = homogenization\n[]\n\n[Mesh]\n  [base]\n    type = FileMeshGenerator\n    file = 'pcrystal_standard.msh'\n  []\n  [./fix_all]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_all'\n    coord = '7.1 1.9 0.2'\n    input = base\n  [../]\n  [./fix_xy]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_xy'\n    coord = '6.9 1.9 0.2'\n    input = fix_all\n  [../]\n  [./fix_z]\n    type = ExtraNodesetGenerator\n    new_boundary = 'fix_z'\n    coord = '7.0 1.9 0.2'\n    input = fix_xy\n  [../]\n  [sidesets]\n    type = SideSetsFromNormalsGenerator\n    input = fix_z\n    normals = '\n                -1 0 0\n                1 0 0\n                0 -1 0\n                0 1 0\n                0 0 -1\n                0 0 1\n              '\n    fixed_normal = true\n    new_boundary = 'left right bottom top back front'\n  []\n[]\n\n[Variables]\n  [disp_x]\n    order = SECOND\n  []\n  [disp_y]\n    order = SECOND\n  []\n  [disp_z]\n    order = SECOND\n  []\n  [hvar]\n    family = SCALAR\n    order = NINTH\n  []\n[]\n\n[UserObjects]\n  [./prop_read]\n    type = PropertyReadFile\n    prop_file_name = 'pcrystal_standard.csv'\n    # Enter file data as prop#1, prop#2, .., prop#nprop\n    nprop = 3\n    read_type = element\n  [../]\n[]\n\n[AuxVariables]\n  [s11]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s21]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s31]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s12]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s22]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s32]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s13]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s23]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [s33]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [fp_xx]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [F11]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F21]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F31]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F12]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F22]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F32]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F13]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F23]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [F33]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n  [./gss]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n  [./slin]\n    order = CONSTANT\n    family = MONOMIAL\n  [../]\n[]\n\n[AuxKernels]\n  [s11]\n    type = RankTwoAux\n    variable = s11\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 0\n  []\n  [s21]\n    type = RankTwoAux\n    variable = s21\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 0\n  []\n  [s31]\n    type = RankTwoAux\n    variable = s31\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 0\n  []\n  [s12]\n    type = RankTwoAux\n    variable = s12\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 1\n  []\n  [s22]\n    type = RankTwoAux\n    variable = s22\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 1\n  []\n  [s32]\n    type = RankTwoAux\n    variable = s32\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 1\n  []\n  [s13]\n    type = RankTwoAux\n    variable = s13\n    rank_two_tensor = pk1_stress\n    index_i = 0\n    index_j = 2\n  []\n  [s23]\n    type = RankTwoAux\n    variable = s23\n    rank_two_tensor = pk1_stress\n    index_i = 1\n    index_j = 2\n  []\n  [s33]\n    type = RankTwoAux\n    variable = s33\n    rank_two_tensor = pk1_stress\n    index_i = 2\n    index_j = 2\n  []\n  [fp_xx]\n    type = RankTwoAux\n    variable = fp_xx\n    rank_two_tensor = plastic_deformation_gradient\n    index_j = 0\n    index_i = 0\n    execute_on = timestep_end\n  [../]\n  [F11]\n    type = RankTwoAux\n    variable = F11\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 0\n  []\n  [F21]\n    type = RankTwoAux\n    variable = F21\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 0\n  []\n  [F31]\n    type = RankTwoAux\n    variable = F31\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 0\n  []\n  [F12]\n    type = RankTwoAux\n    variable = F12\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 1\n  []\n  [F22]\n    type = RankTwoAux\n    variable = F22\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 1\n  []\n  [F32]\n    type = RankTwoAux\n    variable = F32\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 1\n  []\n  [F13]\n    type = RankTwoAux\n    variable = F13\n    rank_two_tensor = deformation_gradient\n    index_i = 0\n    index_j = 2\n  []\n  [F23]\n    type = RankTwoAux\n    variable = F23\n    rank_two_tensor = deformation_gradient\n    index_i = 1\n    index_j = 2\n  []\n  [F33]\n    type = RankTwoAux\n    variable = F33\n    rank_two_tensor = deformation_gradient\n    index_i = 2\n    index_j = 2\n  []\n  [gss]\n    type = MaterialStdVectorAux\n    variable = gss\n    property = slip_resistance\n    index = 0\n    execute_on = timestep_end\n  [../]\n  [./sincr]\n    type = MaterialStdVectorAux\n    variable = slin\n    property = slip_increment\n    index = 0\n    execute_on = timestep_end\n  [../]\n[]\n\n[UserObjects]\n  [homogenization]\n    type = HomogenizationConstraint\n    constraint_types = 'strain stress stress stress stress stress stress stress stress'\n#    targets = 'strain11 strain21 strain31 strain12 strain22 strain32 strain13 strain23 strain33'\n    targets = 'strain11 zero zero zero zero zero zero zero zero'\n    execute_on = 'INITIAL LINEAR NONLINEAR'\n  []\n[]\n\n[Kernels]\n  [sdx]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_x\n    component = 0\n  []\n  [sdy]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_y\n    component = 1\n  []\n  [sdz]\n    type = HomogenizedTotalLagrangianStressDivergence\n    variable = disp_z\n    component = 2\n  []\n[]\n\n[ScalarKernels]\n  [enforce]\n    type = HomogenizationConstraintScalarKernel\n    variable = hvar\n  []\n[]\n\n[Functions]\n  [strain11]\n    type = ParsedFunction\n    expression = '8.0e-2*t'\n  []\n  [strain22]\n    type = ParsedFunction\n    expression = '-4.0e-2*t'\n  []\n  [strain33]\n    type = ParsedFunction\n    expression = '8.0e-2*t'\n  []\n  [strain23]\n    type = ParsedFunction\n    expression = '2.0e-2*t'\n  []\n  [strain13]\n    type = ParsedFunction\n    expression = '7.0e-2*t'\n  []\n  [strain12]\n    type = ParsedFunction\n    expression = '1.0e-2*t'\n  []\n  [strain32]\n    type = ParsedFunction\n    expression = '1.0e-2*t'\n  []\n  [strain31]\n    type = ParsedFunction\n    expression = '2.0e-2*t'\n  []\n  [strain21]\n    type = ParsedFunction\n    expression = '-1.5e-2*t'\n  []\n  [stress11]\n    type = ParsedFunction\n    expression = '5.0e2*t'\n  []\n  [stress22]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress33]\n    type = ParsedFunction\n    expression = '8.0e2*t'\n  []\n  [stress23]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress13]\n    type = ParsedFunction\n    expression = '7.0e2*t'\n  []\n  [stress12]\n    type = ParsedFunction\n    expression = '1.0e2*t'\n  []\n  [stress32]\n    type = ParsedFunction\n    expression = '1.0e2*t'\n  []\n  [stress31]\n    type = ParsedFunction\n    expression = '2.0e2*t'\n  []\n  [stress21]\n    type = ParsedFunction\n    expression = '1.5e2*t'\n  []\n  [zero]\n    type = ConstantFunction\n    value = 0\n  []\n[]\n\n[BCs]\n  [Periodic]\n    [x]\n      variable = disp_x\n      auto_direction = 'x y z'\n    []\n    [y]\n      variable = disp_y\n      auto_direction = 'x y z'\n    []\n    [z]\n      variable = disp_z\n      auto_direction = 'x y z'\n    []\n  []\n  [fix1_x]\n    type = DirichletBC\n    boundary = \"fix_all\"\n    variable = disp_x\n   value = 0\n  []\n  [fix1_y]\n    type = DirichletBC\n    boundary = \"fix_all\"\n    variable = disp_y\n    value = 0\n  []\n  [fix1_z]\n    type = DirichletBC\n    boundary = \"fix_all\"\n   variable = disp_z\n   value = 0\n []\n  [fix2_x]\n    type = DirichletBC\n    boundary = \"fix_xy\"\n    variable = disp_x\n    value = 0\n  []\n  [fix2_y]\n    type = DirichletBC\n    boundary = \"fix_xy\"\n    variable = disp_y\n    value = 0\n  []\n  [fix3_z]\n    type = DirichletBC\n    boundary = \"fix_z\"\n    variable = disp_z\n    value = 0\n []\n[]\n\n[Materials]\n  [./elasticity_tensor]\n    type = ComputeElasticityTensorCP\n    C_ijkl = '1.684e5 1.214e5 1.214e5 1.684e5 1.214e5 1.684e5 0.754e5 0.754e5 0.754e5'\n    fill_method = symmetric9\n    read_prop_user_object = prop_read   \n  [../]\n  [./stress]\n    type = ComputeMultipleCrystalPlasticityStress\n    crystal_plasticity_models = 'trial_xtalpl'\n    tan_mod_type = exact\n    maximum_substep_iteration = 10\n  [../]\n  [./trial_xtalpl]\n    type = CrystalPlasticityKalidindiUpdate\n    number_slip_systems = 12\n    slip_sys_file_name = input_slip_sys.txt\n    resistance_tol = 1.0e-2\n    gss_initial = 60.8\n  [../]  \n  [compute_stress]\n    type = ComputeLagrangianLinearElasticStress\n  []\n  [compute_strain]\n    type = ComputeLagrangianStrain\n    homogenization_gradient_names = 'homogenization_gradient'\n  []\n  [compute_homogenization_gradient]\n    type = ComputeHomogenizedLagrangianStrain\n  []\n[]\n\n[Postprocessors]\n  [d11]\n    type = AverageNodalVariableValue\n    variable = disp_x\n    execute_on = 'initial timestep_end'\n  []\n  [d22]\n    type = AverageNodalVariableValue\n    variable = disp_y\n    execute_on = 'initial timestep_end'\n  []\n  [d33]\n    type = AverageNodalVariableValue\n    variable = disp_z\n    execute_on = 'initial timestep_end'\n  []\n  [s11]\n    type = ElementAverageValue\n    variable = s11\n    execute_on = 'initial timestep_end'\n  []\n  [s21]\n    type = ElementAverageValue\n    variable = s21\n    execute_on = 'initial timestep_end'\n  []\n  [s31]\n    type = ElementAverageValue\n    variable = s31\n    execute_on = 'initial timestep_end'\n  []\n  [s12]\n    type = ElementAverageValue\n    variable = s12\n    execute_on = 'initial timestep_end'\n  []\n  [s22]\n    type = ElementAverageValue\n    variable = s22\n    execute_on = 'initial timestep_end'\n  []\n  [s32]\n    type = ElementAverageValue\n    variable = s32\n    execute_on = 'initial timestep_end'\n  []\n  [s13]\n    type = ElementAverageValue\n    variable = s13\n    execute_on = 'initial timestep_end'\n  []\n  [s23]\n    type = ElementAverageValue\n    variable = s23\n    execute_on = 'initial timestep_end'\n  []\n  [s33]\n    type = ElementAverageValue\n    variable = s33\n    execute_on = 'initial timestep_end'\n  []  \n  [fp_xx]\n    type = ElementAverageValue\n    variable = fp_xx\n  [../]\n  [F11]\n    type = ElementAverageValue\n    variable = F11\n    execute_on = 'initial timestep_end'\n  []\n  [F21]\n    type = ElementAverageValue\n    variable = F21\n    execute_on = 'initial timestep_end'\n  []\n  [F31]\n    type = ElementAverageValue\n    variable = F31\n    execute_on = 'initial timestep_end'\n  []\n  [F12]\n    type = ElementAverageValue\n    variable = F12\n    execute_on = 'initial timestep_end'\n  []\n  [F22]\n    type = ElementAverageValue\n    variable = F22\n    execute_on = 'initial timestep_end'\n  []\n  [F32]\n    type = ElementAverageValue\n    variable = F32\n    execute_on = 'initial timestep_end'\n  []\n  [F13]\n    type = ElementAverageValue\n    variable = F13\n    execute_on = 'initial timestep_end'\n  []\n  [F23]\n    type = ElementAverageValue\n    variable = F23\n    execute_on = 'initial timestep_end'\n  []\n  [F33]\n    type = ElementAverageValue\n    variable = F33\n    execute_on = 'initial timestep_end'\n  []\n  [./gss]\n    type = ElementAverageValue\n    variable = gss\n  [../]\n  [./slin]\n    type = ElementAverageValue\n    variable = slin\n  [../]\n[]\n\n[Executioner]\n  type = Transient\n\n  solve_type = 'newton'\n  line_search = none\n\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'lu'\n\n  l_max_its = 2\n  l_tol = 1e-14\n  nl_max_its = 10\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n\n  start_time = 0.0\n  dt = 0.2\n  dtmin = 0.2\n  end_time = 1.0\n[]\n\n[Outputs]\n  csv = true\n  exodus = true\n[]\n\nThe execution log can be referred in the attached file. I am sure this might be a bug which needs fixing somewhere deep inside the core functionalities of moose. I welcome your thoughts on this.\nKind regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/25618",
+          "updatedAt": "2023-09-28T17:42:16Z",
+          "publishedAt": "2023-09-28T15:31:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Is the mesh truly periodic? We dont do arbitrary matching if the nodes dont lign up",
+                  "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7136129",
+                  "updatedAt": "2023-09-28T16:02:11Z",
+                  "publishedAt": "2023-09-28T16:02:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "abarun22"
+                  },
+                  "bodyText": "Here is my simple hex mesh that i consider as periodic. The boundary nodes line up correctly here without any need for correction. I am not quiet sure if there are other arguments attached to that supporting the periodicity of the model.",
+                  "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7136455",
+                  "updatedAt": "2023-09-28T16:33:30Z",
+                  "publishedAt": "2023-09-28T16:33:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "abarun22"
+                          },
+                          "bodyText": "The execution log which wasn't attached correctly before\nChanged directory to /rds/project/iris_vol2/rds-ukaea-ap001/arunpb/mooseApp/problems/Homogenization/micro_structure/large_mesh.\n\nJobID: 28377887\n======\nTime: Thu Sep 28 15:09:06 BST 2023\nRunning on master node: cpu-p-181\nCurrent directory: /rds/project/iris_vol2/rds-ukaea-ap001/arunpb/mooseApp/problems/Homogenization/micro_structure/large_mesh\n\nNodes allocated:\n================\ncpu-p-181 cpu-p-202 cpu-p-242 cpu-p-256 cpu-p-315 cpu-p-317 cpu-p-362 cpu-p-373 cpu-p-413 cpu-p-414 cpu-p-460 cpu-p-461 cpu-p-463 cpu-p-464 cpu-p-467 cpu-p-468 cpu-p-496 cpu-p-497 cpu-p-602 cpu-p-603\n\nnumtasks=1120, numnodes=20, mpi_tasks_per_node=56 (OMP_NUM_THREADS=1)\n\nExecuting command:\n==================\n/usr/bin/time -v mpiexec -npernode 1 -np 20 /rds-d2/user/ir-bala2/rds-ukaea-ap001/arunpb/mooseApp/hardening_model_app-opt -i 3d_micro.i --use-split --split-file meshsplit.cpr\n\n--------------------------------------------------------------------------\nWARNING: No preset parameters were found for the device that Open MPI\ndetected:\n\n  Local host:            cpu-p-460\n  Device name:           mlx5_0\n  Device vendor ID:      0x02c9\n  Device vendor part ID: 4123\n\nDefault device parameters will be used, which may result in lower\nperformance.  You can edit any of the files specified by the\nbtl_openib_device_param_files MCA parameter to set values for your\ndevice.\n\nNOTE: You can turn off this warning by setting the MCA parameter\n      btl_openib_warn_no_device_params_found to 0.\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nBy default, for Open MPI 4.0 and later, infiniband ports on a device\nare not used by default.  The intent is to use UCX for these devices.\nYou can override this policy by setting the btl_openib_allow_ib MCA parameter\nto true.\n\n  Local host:              cpu-p-468\n  Local adapter:           mlx5_0\n  Local port:              1\n\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nWARNING: There was an error initializing an OpenFabrics device.\n\n  Local host:   cpu-p-468\n  Local device: mlx5_0\n--------------------------------------------------------------------------\n\n\ufffd[33m\n*** Warning, This code is deprecated and will be removed in future versions:\nThe parameter 'use_legacy_dirichlet_bc' is no longer valid.\n\nAll Dirichlet boundary conditions are preset by default.\n\nRemove said parameter in main to remove this deprecation warning.\ufffd[39m\n\n\n\ufffd[33m\n*** Warning, This code is deprecated and will be removed in future versions:\n\"registerAll\" in Modules is deprecated. Please update your *App.C file to call the new templated \"registerAllObjects\" method (e.g. ModulesApp::registerAllobject<MyApp>(...))\ufffd[39m\n\nSetting Up\n  Finished Setting Mesh                                                                  [\ufffd[33m  2.19 s\ufffd[39m] [\ufffd[33m  192 MB\ufffd[39m]\n_read_type:0\n\n\ufffd[33m\n*** Warning ***\nThe following warning occurred in the object \"prop_read\", of type \"PropertyReadFile\".\n\nCSV data is sorted by element, but mesh element renumbering is on, be careful!\ufffd[39m\n[cpu-p-181:08896] 19 more processes have sent help message help-mpi-btl-openib.txt / no device params found\n[cpu-p-181:08896] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\n[cpu-p-181:08896] 19 more processes have sent help message help-mpi-btl-openib.txt / ib port not selected\n[cpu-p-181:08896] 19 more processes have sent help message help-mpi-btl-openib.txt / error in device init\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[17] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n--------------------------------------------------------------------------\nMPI_ABORT was invoked on rank 17 in communicator MPI_COMM_WORLD\nwith errorcode 1.\n\nNOTE: invoking MPI_ABORT causes Open MPI to kill all MPI processes.\nYou may or may not see output from other processes, depending on\nexactly when Open MPI kills them.\n--------------------------------------------------------------------------\n[cpu-p-181:08896] PMIX ERROR: UNREACHABLE in file server/pmix_server.c at line 2079\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[0] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\nFinished Setting Up                                                                      [\ufffd[33m  8.44 s\ufffd[39m] [\ufffd[33m  409 MB\ufffd[39m]\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[16] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[10] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[14] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[18] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[2] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[19] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[11] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[7] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[6] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[15] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[5] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[1] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[8] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[4] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[12] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[9] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[3] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n\n\ufffd[31m\n*** ERROR ***\nPeriodic boundary neighbor not found\n[13] ../src/base/periodic_boundaries.C, line 107, compiled May 25 2023 at 13:59:50\n\ufffd[39m\n\n[cpu-p-181:08896] 19 more processes have sent help message help-mpi-api.txt / mpi-abort\nCommand exited with non-zero status 1\n\tCommand being timed: \"mpiexec -npernode 1 -np 20 /rds-d2/user/ir-bala2/rds-ukaea-ap001/arunpb/mooseApp/hardening_model_app-opt -i 3d_micro.i --use-split --split-file meshsplit.cpr\"\n\tUser time (seconds): 5.80\n\tSystem time (seconds): 2.79\n\tPercent of CPU this job got: 70%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 0:12.22\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 404940\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 93\n\tMinor (reclaiming a frame) page faults: 106749\n\tVoluntary context switches: 10214\n\tInvoluntary context switches: 69\n\tSwaps: 0\n\tFile system inputs: 371360\n\tFile system outputs: 24\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 1",
+                          "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7136468",
+                          "updatedAt": "2023-09-28T16:35:30Z",
+                          "publishedAt": "2023-09-28T16:35:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "since it's simple xyz periodicity, did you try the two options for searching periodic boundaries in the PeriodicBC?",
+                          "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7136525",
+                          "updatedAt": "2023-09-28T16:41:30Z",
+                          "publishedAt": "2023-09-28T16:41:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "this won't work if you've pre-split the mesh",
+                          "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7137020",
+                          "updatedAt": "2023-09-28T17:33:54Z",
+                          "publishedAt": "2023-09-28T17:33:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "this is a variant of this issue: #24140",
+                          "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7137036",
+                          "updatedAt": "2023-09-28T17:36:00Z",
+                          "publishedAt": "2023-09-28T17:36:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I've opened #25621 which is more directly applicable to your problem",
+                          "url": "https://github.com/idaholab/moose/discussions/25618#discussioncomment-7137079",
+                          "updatedAt": "2023-09-28T17:42:17Z",
+                          "publishedAt": "2023-09-28T17:42:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Eigenstrain derivative for ComputeMeanThermalExpansionFunctionEigenstrain",
+          "author": {
+            "login": "chakra34"
+          },
+          "bodyText": "Hi,\nI was going through the source code for ComputeMeanThermalExpansionFunctionEigenstrain  and it seems that the eigenstrain derivative is calculated as:\n\nBut if I look at the equation of thermal strain which is:\nEig_strain(T) = alpha_mean(T,T_ref) * (T - T_ref),\nthen shouldn't the derivative d{Eig_strain(T)}/dT be:\nd{Eig_strain(T)}/dT = (d{alpha_mean(T,T_ref)}/dT) * (T - T_ref) + alpha_mean(T,T_ref)*dT/dT = (d{alpha_mean(T,T_ref)}/dT) * (T - T_ref) + alpha_mean(T,T_ref)\n\n\ninstead of the coded\nd{Eig_strain(T)}/dT = (d{alpha_mean(T,T_ref)}/dT) * dT/dT = (d{alpha_mean(T,T_ref)}/dT)\n\n\nAm I missing something ?\nThanks,\nBest,\nAritra",
+          "url": "https://github.com/idaholab/moose/discussions/25620",
+          "updatedAt": "2023-09-28T15:55:55Z",
+          "publishedAt": "2023-09-28T15:47:16Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@bwspenc @dschwen worked on that code",
+                  "url": "https://github.com/idaholab/moose/discussions/25620#discussioncomment-7136053",
+                  "updatedAt": "2023-09-28T15:55:56Z",
+                  "publishedAt": "2023-09-28T15:55:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Use of displaced mesh within transfers and SAM",
+          "author": {
+            "login": "robertjdemuth"
+          },
+          "bodyText": "I am using MOOSE's MultiApp feature to model the 3D conduction of a fuel rod with a 1D coolant channel in SAM. I am having a hard time understanding the purpose of the displaced mesh within SAM and the transfers. Most example files I have been able to find have use_displaced=true within the SAM subapp output section, but don't have an explanation as to why.\n\nThe transfers section also has a displaced_source_mesh and displaced_target_mesh option.\n\nI have run the code with displaced meshes on and off and get drastically different results for my heat transfer coefficient, none of which seem correct.\ndisplaced mesh off:\n\ndisplaced mesh on for subapp, on for master:\n\nI am just modelling diffusion and never define a displaced mesh, so I am not sure why turning on displaced mesh makes a difference. Any advice would be appreciated.\nEdit:\nMy heat transfer coefficient results are stripped. I'm thinking this has something to do with the SAM built in displaced mesh defined wrong on my end. Any advice would be appreciated.",
+          "url": "https://github.com/idaholab/moose/discussions/25604",
+          "updatedAt": "2023-09-28T14:25:31Z",
+          "publishedAt": "2023-09-27T19:05:35Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "If I remember well,\nSAM uses the mesh displacements to have the components be at their real location in space iirc\nif you do not use that, they are probably effectively all on the same axis starting from the origin when the transfer seeks to compute the nodal locations of SAM components",
+                  "url": "https://github.com/idaholab/moose/discussions/25604#discussioncomment-7126918",
+                  "updatedAt": "2023-09-27T19:24:20Z",
+                  "publishedAt": "2023-09-27T19:15:55Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "robertjdemuth"
+                          },
+                          "bodyText": "This makes sense, thanks. I changed the location of the SAM component to confirm.",
+                          "url": "https://github.com/idaholab/moose/discussions/25604#discussioncomment-7135068",
+                          "updatedAt": "2023-09-28T14:25:31Z",
+                          "publishedAt": "2023-09-28T14:25:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "lindsayad"
+                  },
+                  "bodyText": "@rui-hu @lingzou",
+                  "url": "https://github.com/idaholab/moose/discussions/25604#discussioncomment-7126947",
+                  "updatedAt": "2023-09-27T19:19:11Z",
+                  "publishedAt": "2023-09-27T19:19:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "HEVPRambergOsgoodHardening",
+          "author": null,
+          "bodyText": "Hello,\nI do not understand what HEVPRambergOsgoodHardening should be returning, is it the value of 'val' or a boolean value (return true) ?\n bool\nHEVPRambergOsgoodHardening::computeValue(unsigned int qp, Real & val) const\n{\n  val = _sig0 * std::pow(_intvar[qp] / _peeq0 + 1.0, _exponent);\n  return true;\n}",
+          "url": "https://github.com/idaholab/moose/discussions/25612",
+          "updatedAt": "2023-09-28T12:37:50Z",
+          "publishedAt": "2023-09-28T09:47:30Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthat s an interesting function definition but it s actually both!\nIt returns true as you can see\nBut then it takes a reference to a real in its arguments and sets it to a value. And given the name of the function I imagine that it s its primary role.\nplease have a look at the code calling that function to see what the reference is equal to\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25612#discussioncomment-7133830",
+                  "updatedAt": "2023-09-28T12:37:50Z",
+                  "publishedAt": "2023-09-28T12:37:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

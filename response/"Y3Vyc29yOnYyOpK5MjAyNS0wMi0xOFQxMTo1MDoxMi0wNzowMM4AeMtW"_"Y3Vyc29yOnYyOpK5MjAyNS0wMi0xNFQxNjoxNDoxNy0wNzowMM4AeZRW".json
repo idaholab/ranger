@@ -1,0 +1,759 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyNS0wMi0xNFQxNjoxNDoxNy0wNzowMM4AeZRW"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Is it possible to apply periodic BCs using DGFEM kernels?",
+          "author": {
+            "login": "atarias1"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello, I am interested in applying the ADDGAdvection kernel, however as I have seen in previous posts when using monomial shape functions the periodic boundary conditions do not currently work. I am wondering if there is any update on this or at least if there is a work around that allows for periodic BCs to be applied to variables using DGKernels.\nCurrently, my system is a simple Couette shear flow velocity field applied to some conserved variables. I have used ADConservativeAdvection, but there is no full upwinding and the documentation suggests using ADDGAdvection kernels instead.\nWould a quick fix be to use the non-AD ConservativeAdvection kernel? But I guess then the conserved variables would have to be Real and I wouldn't be able to couple them with ADReal variables?",
+          "url": "https://github.com/idaholab/moose/discussions/29896",
+          "updatedAt": "2025-02-18T18:26:49Z",
+          "publishedAt": "2025-02-17T11:48:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@lindsayad on periodic BCs for DG\n\nWould a quick fix be to use the non-AD ConservativeAdvection kernel?\n\nyou can absolutely mix AD and non-AD kernels. If that kernel works for you go ahread\n\nBut I guess then the conserved variables would have to be Real and I wouldn't be able to couple them with ADReal variables?\n\nThere are no AD or non-AD variables. Nonlinear variables can be used by both AD and non-AD kernels",
+                  "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12227434",
+                  "updatedAt": "2025-02-17T17:23:48Z",
+                  "publishedAt": "2025-02-17T17:23:48Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "Yea no periodic BCs for DG, but you could use the mortar method instead. You can look in https://github.com/idaholab/moose/tree/next/test/tests/mortar/periodic-value for a 2D example and https://github.com/idaholab/moose/tree/next/test/tests/mortar/3d-periodic for a 3D example. Those examples use continuous finite element families for the primal variable but that isn't necessary. The only constraint for stability, unless you're using dual shape functions, is that the order of the Lagrange multiplier be one less than for the primal variable, similar to Taylor-Hood elements for velocity-pressure in Navier-Stokes",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12228135",
+                          "updatedAt": "2025-02-17T18:40:47Z",
+                          "publishedAt": "2025-02-17T18:40:46Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "atarias1"
+                          },
+                          "bodyText": "Thanks for the replies.\nI will try mixing the kernels if it comes to it. I tried to implement the mortar method, but I can't seem to get it to work with the DG kernels. At least in terms of the periodic conditions, they seem to work when I use Lagrange elements and the AD advection kernel. Here is that result:\n\nBut if I just switch to an  ADDGAdvection kernel and use Monomial elements for some reason the initial condition is not applied to the boundaries and there is strange behavior in the solution.\nHere is that result:\n\nHere is my input file built off of the mortar example in case I am making any mistakes:\n[Mesh]\n  [gmg]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 50\n    ny = 50\n    xmax = 1\n    ymax = 1\n  []\n  [nb]\n    input = gmg\n    type = SubdomainBoundingBoxGenerator\n    block_id = 1\n    bottom_left = '0 0 0'\n    top_right = '1 1 0'\n    block_name = \"domain\"\n  []\n  [secondary]\n    input = nb\n    type = LowerDBlockFromSidesetGenerator\n    new_block_name = \"secondary\"\n    sidesets = 'right'\n  []\n  [primary]\n    input = secondary\n    type = LowerDBlockFromSidesetGenerator\n    new_block_name = \"primary\"\n    sidesets = 'left'\n  []\n[]\n\n[Variables]\n\n  [X_SiO2]\n    order = FIRST\n    family = MONOMIAL\n    block = 'domain'\n  []\n\n  [lm]\n    order = CONSTANT\n    family = MONOMIAL\n    block = 'secondary'\n  []\n[]\n\n[Kernels]\n\n  [time_X_SiO2]\n    type = TimeDerivative\n    variable = X_SiO2\n    block = 'domain'\n  []\n\n  # [advect_X_SiO2]\n  #   type = ADConservativeAdvection\n  #   variable = X_SiO2\n  #   velocity = 'velocity'\n  #   block = 'domain'\n  # []\n[]\n\n[DGKernels]\n  [X_SiO2_advect]\n    type = ADDGAdvection\n    variable = X_SiO2\n    velocity = 'velocity'\n    block = 'domain'\n  []\n[]\n\n[ICs]\n  [vein_SiO2]\n    type = BoundingBoxIC\n    variable = X_SiO2\n    x1 = 0.45\n    x2 = 0.55\n    y1 = 0.0\n    y2 = 1.0\n    inside = 0.36\n    outside = 0.45\n  []\n[]\n\n[BCs]\n  [bottom_X_SiO2]\n    type = ADConservativeAdvectionBC\n    boundary = 'bottom'\n    primal_dirichlet_value = 0\n    variable = X_SiO2\n    velocity_mat_prop = 'velocity'\n  []\n  [top_X_SiO2]\n    type = ADConservativeAdvectionBC\n    boundary = 'top'\n    primal_dirichlet_value = 0\n    variable = X_SiO2\n    velocity_mat_prop = 'velocity'\n  []\n[]\n\n[Constraints]\n  [ev]\n    type = EqualValueConstraint\n    variable = lm\n    secondary_variable = X_SiO2\n    primary_boundary = 'left'\n    secondary_boundary = 'right'\n    primary_subdomain = primary\n    secondary_subdomain = secondary\n    periodic = true\n  []\n[]\n\n[Materials]\n  [vel]\n    type = ADVectorFromComponentVariablesMaterial\n    vector_prop_name = 'velocity'\n    u = 0.1\n    v = 0.0\n  []\n[]\n\n[Preconditioning]\n  [smp]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n  num_steps = 25\n  dt = 0.005\n  solve_type = NEWTON\n[]\n\n[Outputs]\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12229631",
+                          "updatedAt": "2025-02-17T21:58:37Z",
+                          "publishedAt": "2025-02-17T21:58:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "At least in terms of the periodic conditions, they seem to work when I use Lagrange elements and the AD advection kernel. Here is that result:\n\nThat result does not look great.  Can you turn on upwinding in the ConservativeAdvection?\nIt is implemented in that one\nhttps://mooseframework.inl.gov/source/kernels/ConservativeAdvection.html\n\nBut if I just switch to an ADDGAdvection kernel and use Monomial elements for some reason the initial condition is not applied to the boundaries and there is strange behavior in the solution.\n\nyeah this isnt good. If you look at examples of ADDGAdvection, see this page\nhttps://mooseframework.inl.gov/source/dgkernels/ADDGAdvection.html\nthey all also include a ADConservativeAdvection.\nThe DGKernel works on the internal sidesets only, you need a kernel to compute the integral of the advective term in the weak form over the volume",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12232202",
+                          "updatedAt": "2025-02-18T05:37:45Z",
+                          "publishedAt": "2025-02-18T05:37:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "atarias1"
+                          },
+                          "bodyText": "Hi, I applied full upwinding using ConservativeAdvection, but the solution seems significantly worse than without.\nHere is that result after 25 time steps:\n\nI also then tried including ADConservativeAdvection with ADDGAdvection, and the result is much better. Also, it seems to have periodic behavior at the left and right boundaries as desired, but the boundaries still seem to have 0 initial condition that stays constant.\nHere is that result over 1000 timesteps:\n\nIt seems the DGKernel combined with the mortar method produces the best result so far, but I am unsure how to handle the boundary values, though they don't seem to affect the solution from what I see. But I worry if once I couple the variable to other kernels it may start causing issues.",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12233532",
+                          "updatedAt": "2025-02-18T08:11:33Z",
+                          "publishedAt": "2025-02-18T08:11:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what you are seeing on the boundary is a visualization artefact because the nodal variables are not block restricted in their output, and the value of the nodal variable is 0 on the primary / secondary subdomains",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12239057",
+                          "updatedAt": "2025-02-18T16:12:27Z",
+                          "publishedAt": "2025-02-18T16:12:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "atarias1"
+                          },
+                          "bodyText": "I see that makes sense. Thanks for the clarification, I'll mark the thread as solved!",
+                          "url": "https://github.com/idaholab/moose/discussions/29896#discussioncomment-12240572",
+                          "updatedAt": "2025-02-18T18:26:40Z",
+                          "publishedAt": "2025-02-18T18:26:39Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Coupling Navier\u2013Stokes (in tunnel) and Darcy Flow (in porous media) in a single MOOSE simulation?",
+          "author": {
+            "login": "Traiwit"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A Navier Stokes is the most appropriate category for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (avoid screenshots if possible, triple back quotes before/after pasted text, etc)\n\nQuestion\nHi guys,\nI\u2019m working on a radon transport problem in which I have two adjacent subdomains:\nSubdomain 1 (Tunnel): An open tunnel with incompressible air flow, where I want to use the Navier\u2013Stokes equations.\nSubdomain 2 (Porous Media): Surrounding rock or soil, where I want to use Darcy flow (e.g., via the PorousFlow module).\nThe main objective is to solve for the velocity and pressure fields in both subdomains and track radon concentration across the entire domain, including exchange at the interface.\nI have two questions:\n\n\n\nIs it possible (or advisable) to solve both the Navier\u2013Stokes and Darcy flow equations in one MOOSE input file (i.e., in a single coupled system)? ie assign block in kernels? also this is a finite volume problem, right?\n\n\n\nAre there any existing examples or test input files in MOOSE that demonstrate a setup where one subdomain is governed by Navier\u2013Stokes and another by Darcy flow? I want to see how people typically handle boundary conditions, coupling at the interface, and the combined solve.\nAny advice or pointers would be greatly appreciated!\n\nThanks guys\nTraiwit\nAdditional information\nMesh size and type: 50k to 1mil element\nReynolds number:\nDiscretization (finite element CG/DG, finite volume, etc): finite volume (maybe)\nModels (turbulence, porous media, etc): turbulence & porous media\nSolver method (fully coupled, segregated, multiapps, etc): fully coupled\nBase input you started from: N/A",
+          "url": "https://github.com/idaholab/moose/discussions/29879",
+          "updatedAt": "2025-02-18T14:24:13Z",
+          "publishedAt": "2025-02-14T01:58:32Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Is it possible (or advisable) to solve both the Navier\u2013Stokes and Darcy flow equations in one MOOSE input file (i.e., in a single coupled system)? ie assign block in kernels? also this is a finite volume problem, right?\n\npossible certainly. You can assign blocks to variables to limit their domain of definition. Advisable you'll see but it's very easy to pivot from fully-coupled to multi-system fixed-point (or multiapp)\n\nalso this is a finite volume problem, right?\n\nour best solver for navier stokes is a custom linear finite volume discretization. It can scale to Ms of elements. You can still use the finite element or regular nonlinear finite volume solvers, but they wont go much beyond 100k elements\n\nAre there any existing examples or test input files in MOOSE that demonstrate a setup where one subdomain is governed by Navier\u2013Stokes and another by Darcy flow?\n\nnot that I know.\nWhat are your variables for Darcy flow? only pressure right? You should be able to use boundary conditions to make two pressure connect on the boundary",
+                  "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12195001",
+                  "updatedAt": "2025-02-14T02:16:14Z",
+                  "publishedAt": "2025-02-14T02:16:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "Hi @GiudGiud, thanks for the prompt reply!\nI still try to get my head around the kernels and variables for each system (lets call them tunnel and porous media)\nlets say we use finite volume for the whole system for simplicity.\nIn the tunnel, I'd want to solve Navier stokes, we use all the Navier stokes kernels there - to solve velocity field and P\nand then in the porous media, I use the kernel from porous flow (Darcy flow)? but this will only solve P and velocity field will be its by-product\nare these P and velocity field from both kernel systems the same?\nAlso, do they share fluid property system? (I kinda want to use single fluid system - simple Air)\nthen I use FVAdvection and FVDiffusion for both tunnel and porous media for Radon tracking (right?, or there are special Advection-Diffusion for NS system)\nas you can see, i'm quite confused, I just want to simplify the system and number of variables I need to solve before I actually start\nThanks!\nTraiwit",
+                  "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12195168",
+                  "updatedAt": "2025-02-14T02:42:03Z",
+                  "publishedAt": "2025-02-14T02:42:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "are these P and velocity field from both kernel systems the same?\n\nit wont be easy with finite volume to make them the same. For NSFV, you need to use an INSFVPressureVariable for example.\n\nAlso, do they share fluid property system? (I kinda want to use single fluid system - simple Air)\n\nyes they can use the same properties\n\nthen I use FVAdvection and FVDiffusion for both tunnel and porous media\n\nSo radon is passive scalar being advected?\nYou cannot use FVAdvection with NS because the face interpolation scheme would be inconsistent for velocities (rhie chow in NSFV, average or upwind in FVAdvection). You need to use INSFVScalarAdvection\nFor porous media I think it should be fine to use FVAdvection but I dont know.\nFVDiffusion fine I for NS. I dont know about porous media",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12195604",
+                          "updatedAt": "2025-02-14T03:50:16Z",
+                          "publishedAt": "2025-02-14T03:50:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "@Traiwit we did integrate NS modules, though against PF module but a in house developed moose app. This said, it should work as smooth as in our case for PF module. You just need to careful in deciding what to exchange between the two domains.\nHere is a reference of a recent publication (https://doi.org/10.1029/2024JB029001). Maybe it can help",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12199053",
+                          "updatedAt": "2025-02-14T10:26:59Z",
+                          "publishedAt": "2025-02-14T10:26:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi @mcacace, wow very complicated framework esp with Mechanical simulation on top of it!\nso you'd suggest to break them into 2 systems (in your case 3) and exchange the data between them (via BC or IC for the next step?)\njust wondering, did you feed pressure field from NS back into PF and vice-versa? (I should have carefully read the paper before asking)\ngreat work btw!\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12199304",
+                          "updatedAt": "2025-02-14T10:48:07Z",
+                          "publishedAt": "2025-02-14T10:48:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "@Traiwit\n\nso you'd suggest to break them into 2 systems (in your case 3) and exchange the data between them (via BC or IC for the next step?)\n\nWe relied on a multiapp set up because of the very different scales. We required a 3 system only for some specific internal reasons, but in your case 2 would be enough.\n\nJust wondering, did you feed pressure field from NS back into PF and vice-versa? (I should have carefully read the paper before asking)\n\nWe did pass exchange pressure, velocity and other quantity of interest from one system to the other when needed in terms of BC conditions (need to write some custom BC, but no big issue). It should be all explained in the paper, but in case I can provide you some more details.\nmauro",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12199598",
+                          "updatedAt": "2025-02-14T11:18:44Z",
+                          "publishedAt": "2025-02-14T11:18:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "BTW, our porous HM simulations are not based on the PF module neither the solid mechanics, but as said, it should be relatively straightforward to make use of existing modules",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12199613",
+                          "updatedAt": "2025-02-14T11:20:13Z",
+                          "publishedAt": "2025-02-14T11:20:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "Hi guys, update, i'm still trying to push through solving both in 1 system\nplease see the input file below (there are a few problems that i might need help @GiudGiud i'm not sure who is the expert in NS module)\n\nI come across https://mooseframework.inl.gov/modules/navier_stokes/pinsfv.html which seems to be what i want\nwhen i tried to implement [Physics/NavierStokes] [ScalarTransport] with it i got this error\nPorous media scalar advection is currently unimplemented\nwhich reasonable since NS is quite new in MOOSE (though I'd also like to know the timeline of this implementation :) )\njust wondering is there a way to work around this?\nsince pinsfv only generate SuperficialVelocity is there a way to convert it to normal INSFVVelocityVariable? then I can do advection-diffusion via kernels\nor is there a way to separate them by subdomain? ie only let porous_medium_treatment = true in block 2 and only track concentration in block 1, but in this case i still need to make sure that pressure and vel between 2 subdomains are talking to each other (which I still dont know how)\nAny advice would be greatly appreciated! i'm super new to this MOOSE-NS thing\nTraiwit\n# Fluid properties\nmu = 1.1\nrho = 1.1\ncp = 1.1\nk = 1e-3\n\n# Operating conditions\nu_inlet = 1\nT_inlet = 15\nT_solid = 25\np_outlet = 10\nh_fs = 0.01\n\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 3\n    xmin = 0\n    xmax = 20\n    ymin = -2\n    ymax = 2\n    zmin = -2\n    zmax = 2\n    nx = 20\n    ny = 5\n    nz = 10\n    elem_type = TET\n  []\n\n  [bottom]\n    type = SubdomainBoundingBoxGenerator\n    input = gen\n    location = inside\n    bottom_left = '10 -2 -2'\n    top_right = '20 2 2'\n    block_id = 1\n  []\n[]\n\n\n[Physics]\n  [NavierStokes]\n    [Flow]\n      [flow]\n        compressibility = 'incompressible'\n        \n        porous_medium_treatment = true\n        porosity = porosity\n\n        density = 'rho'\n        dynamic_viscosity = 'mu'\n\n        initial_velocity = '${u_inlet} 0 0'\n        initial_pressure = 0.0\n\n        inlet_boundaries = 'left'\n        momentum_inlet_types = 'fixed-velocity'\n        momentum_inlet_function = '${u_inlet} 0 0'\n        wall_boundaries = 'bottom top front back'\n        momentum_wall_types = 'noslip noslip noslip noslip'\n\n        outlet_boundaries = 'right'\n        momentum_outlet_types = 'fixed-pressure-zero-gradient'\n        pressure_function = '${p_outlet}'\n\n        mass_advection_interpolation = 'average'\n        momentum_advection_interpolation = 'average'\n      []\n    []\n\n  []\n[]\n\n[Physics/NavierStokes]\n  [FluidHeatTransfer]\n    [heat]\n      coupled_turbulence_physics = 'turbulence'\n      thermal_conductivity = 'k'\n      specific_heat = 'cp'\n\n      fluid_temperature_variable = 'T_fluid'\n      initial_temperature = 30 # '${T_inlet}'\n      energy_inlet_types = 'heatflux'\n      energy_inlet_functors = '${fparse u_inlet * rho * cp * T_inlet}'\n\n      energy_wall_types = 'heatflux heatflux heatflux heatflux'\n      energy_wall_functors = '0 0 0 0'\n\n      ambient_convection_alpha = 'h_cv'\n      ambient_temperature = 'T_solid'\n\n      energy_advection_interpolation = 'average'\n    []\n  []\n[]\n\n# [Physics/NavierStokes]\n#   [ScalarTransport]\n#     [Radon]\n#       coupled_turbulence_physics = 'turbulence'\n#       passive_scalar_names = 'scalar'\n#       coupled_flow_physics = 'flow'\n#       fluid_heat_transfer_physics = 'heat'\n\n#       passive_scalar_diffusivity = 0.2\n#       passive_scalar_source = 0.5\n\n#       passive_scalar_inlet_types = 'fixed-value'\n#       passive_scalar_inlet_function = '0'\n\n#       passive_scalar_advection_interpolation = 'average'\n#     []\n#   []\n# []\n\n[Physics/NavierStokes]\n[Turbulence]\n  [turbulence]\n    coupled_flow_physics = flow\n    fluid_heat_transfer_physics = heat\n  []\n[]\n[]\n\n[FunctorMaterials]\n  [constants]\n    type = ADGenericFunctorMaterial\n    prop_names = 'h_cv T_solid rho mu cp k'\n    prop_values = '${h_fs} ${T_solid} ${rho} ${mu} ${cp} ${k}'\n  []\n\n  [constants2]\n    type = ADGenericFunctorMaterial\n    prop_names = 'porosity'\n    prop_values = porosity_fx\n  []\n[]\n\n[Functions]\n    [./porosity_fx]\n      type = ParsedFunction\n      expression = if(x>=10,0.1,1)\n    [../]\n  []\n\n[Executioner]\n  type = Transient\n  solve_type = 'NEWTON'\n\n  petsc_options_iname = '-ksp_gmres_restart -pc_type -sub_pc_type -sub_pc_factor_levels'\n  petsc_options_value = '300                bjacobi  ilu          4'\n  line_search = 'none'\n  nl_rel_tol = 1e-6\n  dt = 0.2\n  end_time = 30\n  automatic_scaling = true\n[]\n\n[Outputs]\n  exodus = true\n  csv = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12220266",
+                          "updatedAt": "2025-02-17T05:42:35Z",
+                          "publishedAt": "2025-02-17T05:42:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I am a developer for the NS module I can help\n\njust wondering is there a way to work around this?\n\nthe easy way here is to add epsilon in the kernels for the scalar advection. It should be fairly reasonable.\nI almost did back then but was not sure where epsilon (the porosity) came in for some terms so I abstained.\n\nor is there a way to separate them by subdomain? ie only let porous_medium_treatment = true in block 2 and only track concentration in block 1, but in this case i still need to make sure that pressure and vel between 2 subdomains are talking to each other (which I still dont know how)\n\nYou can define two physics with different porous media settings  and different variables and use interface kernels to make the connection manually. It wont solve the porous media scalar advection problem ?",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12220526",
+                          "updatedAt": "2025-02-17T06:25:45Z",
+                          "publishedAt": "2025-02-17T06:13:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "the easy way here is to add epsilon in the kernels for the scalar advection. It should be fairly reasonable.\nI almost did back then but was not sure where epsilon came in for some terms so I abstained.\n\nI'm not exactly sure what it is and where it is, but thank you for pointing this out @GiudGiud! i'll look into this tomorrow!\nif there is an easy fix like by-passing some of the required parameters would be nice, i dont need it to be super realistic at its current stage\n\nIt wont solve the porous media scalar advection problem\n\nThat's true, I thought i'd need to track concentration only in the tunnel, but it has to also come from porous media area (stupid me)\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12220578",
+                          "updatedAt": "2025-02-17T06:20:18Z",
+                          "publishedAt": "2025-02-17T06:20:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "I just did this to WCNSFVScalarTransportPhysicsBase.C and it works, the results look kinda okay too\n// if (_porous_medium_treatment)\n//   _flow_equations_physics->paramError(\"porous_medium_treatment\",\n//                                       \"Porous media scalar advection is currently unimplemented\");\njust wondering how bad can it be? @GiudGiud\nTraiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12223490",
+                          "updatedAt": "2025-02-17T11:16:41Z",
+                          "publishedAt": "2025-02-17T11:16:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "haha it could be that simple\nI ll talk with porous media people to be sure",
+                          "url": "https://github.com/idaholab/moose/discussions/29879#discussioncomment-12226975",
+                          "updatedAt": "2025-02-17T16:38:25Z",
+                          "publishedAt": "2025-02-17T16:38:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Reference Papers - Phase Field Equations",
+          "author": {
+            "login": "YohanWithanage"
+          },
+          "bodyText": "Hi,\nI would appreciate if i can get the paper that is used for developing phase field equations in MOOSE phase field.\nThanks,\nYohan",
+          "url": "https://github.com/idaholab/moose/discussions/29892",
+          "updatedAt": "2025-02-18T13:59:57Z",
+          "publishedAt": "2025-02-16T02:47:45Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nProbably one of these\nhttps://github.com/idaholab/moose/blob/next/modules/phase_field/doc/content/bib/phase_field.bib",
+                  "url": "https://github.com/idaholab/moose/discussions/29892#discussioncomment-12213568",
+                  "updatedAt": "2025-02-16T06:40:48Z",
+                  "publishedAt": "2025-02-16T06:40:47Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "but @dschwen @laagesen will know",
+                          "url": "https://github.com/idaholab/moose/discussions/29892#discussioncomment-12213569",
+                          "updatedAt": "2025-02-16T06:41:08Z",
+                          "publishedAt": "2025-02-16T06:41:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "laagesen"
+                          },
+                          "bodyText": "Yes this is a good list. There is not one single paper that encompasses all the models available, so the list that @GiudGiud shared is a good start. If there is a specific model or kernels that you have questions on, we can probably point you to a more specific paper.",
+                          "url": "https://github.com/idaholab/moose/discussions/29892#discussioncomment-12237362",
+                          "updatedAt": "2025-02-18T14:00:10Z",
+                          "publishedAt": "2025-02-18T13:59:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Compilation fails on macOS: Missing pyyaml dependency and clang -fopenmp error",
+          "author": {
+            "login": "jltuhnu"
+          },
+          "bodyText": "When I followed the steps below to install MOOSE, I encountered some issues.\nconda init --all\nconda update --all --yes\nconda config --add channels https://conda.software.inl.gov/public\nconda create -n moose moose-dev=2024.12.23=mpich\nconda activate moose\ngit clone https://github.com/idaholab/moose.git\ncd moose\ncd test \nmake -j6\n~/software/moose/test (next) \u00bb make clean && make -j6                                                            jltu@jldeMacBook-Pro\nWARNING: Failed to initialize PreMake for version checking; this may be ignored but may suggest an environment issue.\n\nTraceback (most recent call last):\n  File \"/Users/jltu/software/moose/framework/../scripts/premake.py\", line 20, in __init__\n    from versioner import Versioner\n  File \"/Users/jltu/software/moose/scripts/versioner.py\", line 24, in <module>\n    import yaml\nModuleNotFoundError: No module named 'yaml'\n\nTraceback (most recent call last):\n  File \"/Users/jltu/software/moose/framework/../scripts/premake.py\", line 261, in <module>\n    PreMake().check()\n    ^^^^^^^^^\n  File \"/Users/jltu/software/moose/framework/../scripts/premake.py\", line 27, in __init__\n    self.versioner_meta = Versioner().version_meta()\n                          ^^^^^^^^^\nUnboundLocalError: cannot access local variable 'Versioner' where it is not associated with a value\nmake: [prebuild] Error 1 (ignored)\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/linesearches_Unity.C...\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/mesh_Unity.C...\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/fvics_Unity.C...\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/auxkernels_Unity.C...\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/kernels_Unity.C...\nCompiling C++ (in opt mode) /Users/jltu/software/moose/framework/build/unity_src/executioners_Unity.C...\nclang: error: unsupported option '-fopenmp'\nmake: *** [/Users/jltu/software/moose/framework/build/unity_src/linesearches_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....\nclang: error: unsupported option '-fopenmp'\nmake: *** [/Users/jltu/software/moose/framework/build/unity_src/mesh_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1\nclang: error: unsupported option '-fopenmp'\nmake: clang*** [/Users/jltu/software/moose/framework/build/unity_src/fvics_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1: \nerror: unsupported option '-fopenmp'\nmake: *** [/Users/jltu/software/moose/framework/build/unity_src/auxkernels_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1\nclang: error: unsupported option '-fopenmp'\nclang: error: unsupported option '-fopenmp'\nmake: *** [/Users/jltu/software/moose/framework/build/unity_src/kernels_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1\nmake: *** [/Users/jltu/software/moose/framework/build/unity_src/executioners_Unity.aarch64-apple-darwin20.0.0.opt.lo] Error 1\n(moose) ------------------------------------------------------------------------------------------------------------------------------\n~/software/moose/test (next) \u00bb echo -e '#include <omp.h>\\n#include <stdio.h>\\nint main() { \\n#pragma omp parallel\\n printf(\"Thread %d\\\\n\", omp_get_thread_num()); \\n}' > test_omp.c\n(moose) ------------------------------------------------------------------------------------------------------------------------------\n~/software/moose/test (next*) \u00bb $CC -fopenmp test_omp.c -o test_omp                                              jltu@jldeMacBook-Pro\nld: warning: dylib (/opt/homebrew/Cellar/llvm/19.1.0/lib/libomp.dylib) was built for newer macOS version (12.7) than being linked (12.0)\nld: warning: dylib (/opt/homebrew/Cellar/llvm/19.1.0/lib/libunwind.dylib) was built for newer macOS version (12.7) than being linked (12.0)\nld: warning: dylib (/opt/homebrew/Cellar/llvm/19.1.0/lib/libunwind.dylib) was built for newer macOS version (12.7) than being linked (12.0)\n(moose) ------------------------------------------------------------------------------------------------------------------------------\n~/software/moose/test (next*) \u00bb ./test_omp                                                                       jltu@jldeMacBook-Pro\nThread 0\nThread 6\nThread 4\nThread 1\nThread 2\nThread 5\nThread 7\nThread 3",
+          "url": "https://github.com/idaholab/moose/discussions/29905",
+          "updatedAt": "2025-02-18T13:58:20Z",
+          "publishedAt": "2025-02-16T07:33:05Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "milljm"
+                  },
+                  "bodyText": "Was this a Homebrew issue? I'd like to turn this into a Discussion so it may be discovered by others as a possible sollution.",
+                  "url": "https://github.com/idaholab/moose/discussions/29905#discussioncomment-12237338",
+                  "updatedAt": "2025-02-18T13:58:11Z",
+                  "publishedAt": "2025-02-17T15:17:19Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jltuhnu"
+                  },
+                  "bodyText": "This isn't the first time I've installed moose on this Mac. Previous installations went smoothly. Although I don't know the source of this error, after struggling with it for a long time, I deleted a bunch of environment variables set in the .zshrc file, completely removed conda and related components, restarted my Mac, and finally succeeded in installing it by following the official moose website's instructions.",
+                  "url": "https://github.com/idaholab/moose/discussions/29905#discussioncomment-12237339",
+                  "updatedAt": "2025-02-18T13:58:11Z",
+                  "publishedAt": "2025-02-18T12:49:05Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "SolutionIC",
+          "author": {
+            "login": "mcacace"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nDear all, this is more a comment than a real issue...\nI have been using the SolutionIC to set up the initial condition from an existing exodus. What I noticed is that if we integrate it in a [ICs] object all works properly, but if integrated in a [InitialCondition] object it returns all zeros --> it seems that the userobject is either called after the [Variables] and inherited [InitialCondition] definition or its information is retrieve after. Not sure if this is on purpose, but if yes, might be worth to throw a warning?\nmauro",
+          "url": "https://github.com/idaholab/moose/discussions/29881",
+          "updatedAt": "2025-02-18T05:58:43Z",
+          "publishedAt": "2025-02-14T10:22:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\nI ll take a look, this is indeed an issue",
+                  "url": "https://github.com/idaholab/moose/discussions/29881#discussioncomment-12202772",
+                  "updatedAt": "2025-02-14T16:02:12Z",
+                  "publishedAt": "2025-02-14T16:02:11Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "Excellent @GiudGiud!",
+                          "url": "https://github.com/idaholab/moose/discussions/29881#discussioncomment-12202920",
+                          "updatedAt": "2025-02-14T16:14:31Z",
+                          "publishedAt": "2025-02-14T16:14:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I cant reproduce the behavior with a modified solution_ic.i test\n\n[Variables]\n  [u]\n    order = FIRST\n    family = LAGRANGE\n    [InitialCondition]\n      type = SolutionIC\n      solution_uo = exo_soln\n      variable = u\n      from_variable = 'u'\n      block = 0\n    []\n  []\n  [u_elem]\n    order = CONSTANT\n    family = MONOMIAL\n    [InitialCondition]\n      type = SolutionIC\n      solution_uo = exo_soln\n      variable = u_elem\n      from_variable = 'u_elem'\n    []\n  []\n[]\n\n[AuxVariables]\n  [u_aux]\n    order = FIRST\n    family = LAGRANGE\n\n    [InitialCondition]\n      type = SolutionIC\n      solution_uo = exo_soln\n      variable = u_aux\n      from_variable = 'u_aux'\n    []\n  []\n  [u_aux_elem]\n    order = CONSTANT\n    family = MONOMIAL\n\n    [InitialCondition]\n      type = SolutionIC\n      solution_uo = exo_soln\n      variable = u_aux_elem\n      from_variable = 'u_aux_elem'\n    []\n  []\n[]\n\ncan you please share with me a reproducible example? with either MOOSE, a module or an open-source app if needed",
+                          "url": "https://github.com/idaholab/moose/discussions/29881#discussioncomment-12206078",
+                          "updatedAt": "2025-02-14T22:31:20Z",
+                          "publishedAt": "2025-02-14T22:31:19Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "mcacace"
+                          },
+                          "bodyText": "@GiudGiud somehow I cannot reproduce it any longer. I'd suggest I close it, and if I should encounter this behavior again will share it with you. Sorry about that!\nMauro",
+                          "url": "https://github.com/idaholab/moose/discussions/29881#discussioncomment-12221348",
+                          "updatedAt": "2025-02-17T07:50:20Z",
+                          "publishedAt": "2025-02-17T07:50:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "sounds good thanks for double checking",
+                          "url": "https://github.com/idaholab/moose/discussions/29881#discussioncomment-12232389",
+                          "updatedAt": "2025-02-18T05:58:43Z",
+                          "publishedAt": "2025-02-18T05:58:42Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Automatic reply with \"most relevant posts\"",
+          "author": {
+            "login": "hugary1995"
+          },
+          "bodyText": "So just now I came up with this idea of letting a bot reply to every post with \"the most relevant posts\" before @GiudGiud gets to every one of them. I did a little bit of search online, and I found that this is very much doable. The steps are\n\nCollect all the discussion posts, comments, and replies. Github GraphQL can do this very easily. I'm attaching an example query json in the end.\nFormat useful information into a dataset. Say username, title, body text, etc.\nUse a popular model to extract features and compute post similarities. scipy can do this fairly easily, for example.\nSet up a github bot to automatically reply every new post with the most similar posts.\n\nApparently, we need to periodically re-index database by running steps 1-3, but that should be an easy job for CIVET. Any ideas/suggestions, or anyone wants to collaborate on this fun little weekend project?\nquery { \n  rateLimit {\n    limit\n    cost\n    remaining\n    resetAt\n  }\n  repository(owner: \"idaholab\", name: \"moose\") {\n    discussions(first: 10) {\n      pageInfo {\n        hasNextPage\n        endCursor\n      }\n      edges {\n        node {\n          title\n          author {\n            login\n          }\n          bodyText\n          url\n          updatedAt\n          publishedAt\n          category {\n            name\n          }\n          comments(first: 100) {\n            edges {\n              node {\n                author {\n                  login\n                }\n                bodyText\n                url\n                updatedAt\n                publishedAt\n                isAnswer\n                replies(first: 100) {\n                  edges {\n                    node {\n                      author {\n                        login\n                      }\n                      bodyText\n                      url\n                      updatedAt\n                      publishedAt\n                      isAnswer\n                    }\n                  }\n                }\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}",
+          "url": "https://github.com/idaholab/moose/discussions/24823",
+          "updatedAt": "2025-02-17T18:13:36Z",
+          "publishedAt": "2023-06-26T02:35:24Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "Are you using word2vec?",
+                  "url": "https://github.com/idaholab/moose/discussions/24823#discussioncomment-6277400",
+                  "updatedAt": "2023-06-26T03:14:08Z",
+                  "publishedAt": "2023-06-26T03:14:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I'm thinking of doc2vec from gensim. But ya, basically the same thing.",
+                          "url": "https://github.com/idaholab/moose/discussions/24823#discussioncomment-6277452",
+                          "updatedAt": "2023-06-26T03:30:22Z",
+                          "publishedAt": "2023-06-26T03:30:21Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "MengnanLi91"
+                  },
+                  "bodyText": "I found this github bot (https://github.com/dhrubasaha08/Discuss-Bot). We have open-source LLM on INL HPC and a rag pipeline ready. I would love to try this out and see how it works",
+                  "url": "https://github.com/idaholab/moose/discussions/24823#discussioncomment-12227924",
+                  "updatedAt": "2025-02-17T18:13:37Z",
+                  "publishedAt": "2025-02-17T18:13:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Short courses on GPU constitutive modeling",
+          "author": {
+            "login": "hugary1995"
+          },
+          "bodyText": "Hello folks,\nI want to bring to your attention two upcoming training opportunities on NEML2:\n\nThe MOOSE International Workshop, March 13th: https://inl.gov/mooseworkshop2025/\nUSNCCM 18, July 12th: https://usnccm18.usacm.org/short-courses\n\nNEML2 is a GPU constitutive modeling library. See its online documentation here.\nNEML2 can be used together with MOOSE. See related MOOSE documentation here.\nThank you,\nGary",
+          "url": "https://github.com/idaholab/moose/discussions/29897",
+          "updatedAt": "2025-02-17T17:46:04Z",
+          "publishedAt": "2025-02-17T17:46:02Z",
+          "category": {
+            "name": "Opportunities"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Grain size distribution output",
+          "author": {
+            "login": "MohamedAbdulHameed"
+          },
+          "bodyText": "Is there a way (e.g., AuxVariable, PostpProcessor, etc.) to make the PhaseField module output at each timestep the grain size distrbution in, e.g., a 2D simulation of grain growth? Can I manipulate GrainTracker or BndsCalcAux to do such a thing? To be more specific, how to edit the grain_growth_2D_graintracker.i example to add this capability?",
+          "url": "https://github.com/idaholab/moose/discussions/29891",
+          "updatedAt": "2025-02-16T06:44:07Z",
+          "publishedAt": "2025-02-16T02:44:14Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nso you want a histogram of the grain size distribution?",
+                  "url": "https://github.com/idaholab/moose/discussions/29891#discussioncomment-12213573",
+                  "updatedAt": "2025-02-16T06:42:27Z",
+                  "publishedAt": "2025-02-16T06:42:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This one will give you the average. It could be reworked into a vectorpostprocessor to give the distribution as a histogram\nhttps://mooseframework.inl.gov/source/postprocessors/AverageGrainVolume.html",
+                          "url": "https://github.com/idaholab/moose/discussions/29891#discussioncomment-12213577",
+                          "updatedAt": "2025-02-16T06:44:08Z",
+                          "publishedAt": "2025-02-16T06:44:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Cannot install moose by conda, conda_forge::_libgcc_mutex does not exist.",
+          "author": {
+            "login": "MSJavaScript"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n I have consulted the Posting Guidelines.\n I have searched the Discussions Forum and MOOSE Framework Troubleshooting and have not found what I was looking for\n Q&A Getting Started is the most appropriate category for my question (trouble installing, beginner user, ...)\n\nIssue or question about MOOSE\nHello, I am trying to install moose by conda. Firstly I tried to install it on my local windows machine. I installed miniconda3 on the WSL and create an new environment for moose. The I add the channel by\nconda config --add channels https://conda.software.inl.gov/public\nand install moose by conda install moose. But I got the following errors:\n\nI searched the _libgcc_mutex, there is a packed named anaconda::_libgcc_mutex, but there is no conda_forge::_libgcc_mutex.\nThen I tried to install moose by conda on a remote linux server, it also failed.\n\n(Optional) code in question / simulation log / errors\nNo response\nEncountering Errors? Please include diagnostic output\nNo response",
+          "url": "https://github.com/idaholab/moose/discussions/29878",
+          "updatedAt": "2025-02-15T00:02:44Z",
+          "publishedAt": "2025-02-14T01:20:25Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "hello\ndelete your moose conda environment\nthen update conda\nthen try again with a fresh moose conda environment\nthe dependencies of an old moose conda package are not resolvable at this point",
+                  "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12194690",
+                  "updatedAt": "2025-02-14T01:26:51Z",
+                  "publishedAt": "2025-02-14T01:26:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MSJavaScript"
+                          },
+                          "bodyText": "Thanks for your reply.\nUnfortunately, it does not work. I have updated the conda to 25.1.1. And I find that there is a package named conda-forge::_libgcc_mutex, there is no such a conda channel called conda_forge. Maybe there is a spelling mistake in the moose package ?",
+                          "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12196054",
+                          "updatedAt": "2025-02-14T05:19:10Z",
+                          "publishedAt": "2025-02-14T05:19:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "what OS are you using? What does the diagnostics script in moose/scripts return?",
+                          "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12196321",
+                          "updatedAt": "2025-02-14T06:05:47Z",
+                          "publishedAt": "2025-02-14T06:05:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MSJavaScript"
+                          },
+                          "bodyText": "I am using windows and trying to install moose in WSL. I also tried it on linux (CentOS 7) and I get the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12198423",
+                          "updatedAt": "2025-02-14T09:28:05Z",
+                          "publishedAt": "2025-02-14T09:28:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "These operating systems are too old to be using the Conda-Forge channel. And our packages require packages from the Conda-Forge channel. So there will never another solution other than to use a modern Linux OS.\nMy advice is to use Rocky-8 or higher, or Ubuntu 24.x or higher. Being that these are WSL images, it relatively easy to switch back and forth. I think I read that you also tried Ubuntu? Can you switch back to that one and report what a diagnostic run says:\ncd ~/projects/moose/scripts\n./diagnostics.sh",
+                          "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12201646",
+                          "updatedAt": "2025-02-14T14:38:37Z",
+                          "publishedAt": "2025-02-14T14:38:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MSJavaScript"
+                          },
+                          "bodyText": "Thanks, I'll try it. I also want to ask another question. Can I install the latest gcc and mpich in a conda environment and then follow the instructions in gcc_install_moose to build moose ?",
+                          "url": "https://github.com/idaholab/moose/discussions/29878#discussioncomment-12206509",
+                          "updatedAt": "2025-02-15T00:02:44Z",
+                          "publishedAt": "2025-02-15T00:02:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Changing the solution value",
+          "author": {
+            "login": "alimostafavi24"
+          },
+          "bodyText": "Check these boxes if you have followed the posting rules.\n\n Q&A General is the most appropriate section for my question\n I have consulted the posting Guidelines on the Discussions front page\n I have searched the Discussions forum and my question has not been asked before\n I have searched the MOOSE website and the documentation does not answer my question\n I have formatted my post following the posting guidelines (screenshots as a last resort, triple back quotes around pasted text)\n\nQuestion\nHello,\nI wanted to see if it is possible to change the solution value in the MOOSE framework for a nonlinear variable.\nFor example, I want to solve Laplace equation to solve for \\phi. Then I want to set the \\phi variable to 0 when c > 0. Here c is the order parameter in phase field and it is a coupled variable. both \\phi and c are nonlinear variables\nAny guidance on this is highly appreciated.\nBest,\nAli",
+          "url": "https://github.com/idaholab/moose/discussions/29887",
+          "updatedAt": "2025-02-14T23:14:17Z",
+          "publishedAt": "2025-02-14T21:57:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can do this two ways (at least)\nFirst you can enforce this constraint when solving the nonlinear system using the Bounds\nhttps://mooseframework.inl.gov/syntax/Bounds/index.html\nThen you dont need to change the value after the solve\nOr you can use a Corrector object (you ll have to code a new one, I dont think we have any that applies a bound, if we dont, happy to see a contribution to moose on this) to act after the solution has been found by the nonlinear system",
+                  "url": "https://github.com/idaholab/moose/discussions/29887#discussioncomment-12206031",
+                  "updatedAt": "2025-02-14T22:26:57Z",
+                  "publishedAt": "2025-02-14T22:24:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "alimostafavi24"
+                          },
+                          "bodyText": "No, I do not want to set any bound on my variable. I just want to zero them out on certain parts of the computational domain where c>0. Please see the attached.\n\nThanks,",
+                          "url": "https://github.com/idaholab/moose/discussions/29887#discussioncomment-12206140",
+                          "updatedAt": "2025-02-14T22:38:21Z",
+                          "publishedAt": "2025-02-14T22:38:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Corrector should do then",
+                          "url": "https://github.com/idaholab/moose/discussions/29887#discussioncomment-12206342",
+                          "updatedAt": "2025-02-14T23:14:18Z",
+                          "publishedAt": "2025-02-14T23:14:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

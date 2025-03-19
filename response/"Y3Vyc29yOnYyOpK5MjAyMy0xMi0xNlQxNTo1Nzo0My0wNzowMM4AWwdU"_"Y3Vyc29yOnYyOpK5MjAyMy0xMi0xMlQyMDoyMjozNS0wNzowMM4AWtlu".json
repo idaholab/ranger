@@ -1,0 +1,834 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0xMi0xMlQyMDoyMjozNS0wNzowMM4AWtlu"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Implementation of moose surrogate models in multi-scale material problems",
+          "author": {
+            "login": "abarun22"
+          },
+          "bodyText": "Hi,\nThe problem that i was considering earlier (#19997) has now been stragetised to be implemented under a surrogate scheme in order to better manage the computational performance of the application we are developing for analyzing material problems in the crystal plasticity scale. The training data for the surrogates is planned to be derived from DAMASK homogenization modules, that comprises of the material deformation gradient and the corresponding homogenized stresses. The moose surrogate model then reads the macro deformation gradients from the component model and returns the stresses to their material quadrature points. The plan looks quite feasible give the features available in moose, but may need some tweaks to get in to correct form needed for the implementing the entire workflow. I would need the following to be answered to be able to start working on this proposed model set-up.\n\nI am not quite clear on the format of the training data that i should be writing out from my damask full model that contains deformation gradients and stresses. Looking at the existing code ('NearestPointSurrogate.C'), i see that we might need some features for reading this training data file (*.rd), as currently they can only take in-built data coming from the sampler objects. I welcome any suggestions here, not to forget the format for the training dataset.\nThe other important thing to be answered here is the communication between the component model QP's and the surrogate model. The surrogates are really quick and so it would be more compelling to go for a moose multiapp way of implementation, where the existing 'QuadraturePointMultiapp' (#21340) can be exploited here to handle the surrogate reference from and to the component model. Not quite sure if this is the correct way to address this coupling, but welcome better ideas/suggestions.\n\nThe workflow can be visualized here for your reference.\n\nKind regards,\nArun",
+          "url": "https://github.com/idaholab/moose/discussions/26161",
+          "updatedAt": "2023-12-16T06:00:01Z",
+          "publishedAt": "2023-11-27T16:07:20Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat is this .rd format? Is this standardized in some way and we could have a reader for it in MOOSE?\nCould it be converted to a simple csv file?\n@grmnptr on whether we could support a file format here instead\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26161#discussioncomment-7682906",
+                  "updatedAt": "2023-11-27T16:12:44Z",
+                  "publishedAt": "2023-11-27T16:12:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "manikumd22"
+                          },
+                          "bodyText": "Hi. @GiudGiud ,\nI am working on the same multiscale problem on MOOSE in my case I have CSV file that will take F and will give P. But I'm struggling with the implementation in MOOSE.\nCan you please hep me with this?",
+                          "url": "https://github.com/idaholab/moose/discussions/26161#discussioncomment-7847906",
+                          "updatedAt": "2023-12-13T22:58:00Z",
+                          "publishedAt": "2023-12-13T22:58:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nThere's plenty of utilities for parsing a CSV file. For example the DelimitedFileReader utility.\nThen once the CSV file is in memory you can use the reader to query interpolated data, or use other utilities (MultiDimensionalInterpolation notably) to interpolate within the CSV data",
+                          "url": "https://github.com/idaholab/moose/discussions/26161#discussioncomment-7848108",
+                          "updatedAt": "2023-12-13T23:42:31Z",
+                          "publishedAt": "2023-12-13T23:42:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "manikumd22"
+                          },
+                          "bodyText": "Hi @GiudGiud\nI am new to MOOSE, I am struggling with the same kind of problem like reading the CSV file and then using the values in the material. I am reading strain CSV file and I am using it to calculate _S[_qp] every gauss point. Is it correct way to write it. Please let me know\nI write it the way you described\nInputParameters\nComputeNeoHookeanStress::validParams()\n{\nInputParameters params = ComputeLagrangianStressPK2::validParams();\nparams.addParam(\"lambda\",\n\"lambda\",\n\"Parameter conjugate to Lame parameter\"\n\" for small deformations\");\nparams.addParam(\"mu\",\n\"mu\",\n\"Parameter conjugate to Lame parameter\"\n\" for small deformations\");\nparams.addParam(\"strain_csv\",\"This strain will be used to calculate the stress tensor\");\nreturn params;\n}\nComputeNeoHookeanStress::ComputeNeoHookeanStress(const InputParameters & parameters)\n: ComputeLagrangianStressPK2(parameters),\n_lambda(getMaterialProperty(getParam(\"lambda\"))),\n_mu(getMaterialProperty(getParam(\"mu\")))\n_strain_csv(getMaterialProperty(getParam(\"strain_csv\")))\n{\n}\nvoid\nComputeNeoHookeanStress::computeQpPK2Stress()\n{\n// Hyperelasticity is weird, we need to branch on the type of update if we\n// want a truly linear model\n//\n// This is because we need to drop quadratic terms for the linear update\nusingTensorIndices(i_, j_, k_, l_);\n// Large deformation = nonlinear strain\nif (_large_kinematics)\n{\nRankTwoTensor Cinv = (2 * _E[_qp] + RankTwoTensor::Identity()).inverse();\n_S[_qp] = (_lambda[_qp] * log(_F[_qp].det()) - _mu[_qp]) * Cinv +\n_mu[_qp] * RankTwoTensor::Identity();\n_C[_qp] =\n-2 * (lambda[qp] * log(F[qp].det()) - mu[qp]) * Cinv.times<i, k, l, j>(Cinv) +\nlambda[qp] * Cinv.times<i, j, k, l>(Cinv);\n}\n// Small deformations = linear strain\nelse\n{\nconst auto I = RankTwoTensor::Identity();\nRankTwoTensor strain = 0.5 * (_F[_qp] + _F[_qp].transpose()) - I;\nC[qp] = lambda[qp] * I.times<i, j, k, l>(I) +\n2.0 * _mu[_qp] * RankFourTensor(RankFourTensor::initIdentitySymmetricFour);\nstrain_PBC = _strain_csv\n_S[_qp] = strain_PBC;\n}\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/26161#discussioncomment-7869430",
+                          "updatedAt": "2023-12-16T05:52:45Z",
+                          "publishedAt": "2023-12-16T05:16:51Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "grmnptr"
+                  },
+                  "bodyText": "Surrogates that are trained within moose are saved in an rd file. We support reading csv tables and creating surrogates from those as well. The surrogate itself, however will be saved in a restartable data file so that we can load it easily.\nThere is one surrogate which goes beyond this. We have an interface to libtorch so those could potentially be loaded in a torchscript format.\nEdit: we have a surrogate system with well-defined interfaces. So you can fetch/evaluate a surrogate super easily.\nThere have been multiple works which used surrogates in material models. I would suggest looking at the evaluate function.",
+                  "url": "https://github.com/idaholab/moose/discussions/26161#discussioncomment-7869525",
+                  "updatedAt": "2023-12-16T06:03:44Z",
+                  "publishedAt": "2023-12-16T06:00:01Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Error deriving from PorousFlowMasstimederivative",
+          "author": {
+            "login": "navier-rgb"
+          },
+          "bodyText": "Hello,\nIt looks impossible to derive from PorousFlowMasstimederivative without re-declaring (in the header file) and redefining each property as [_qp] instead of [_i]. Why is that? Is there a way around it? I want to inherit without redefining all properties. I got the following error after running my derived object.\n*** ERROR ***\nThe following error occurred in the object \"MOOSE Problem\", of type \"FEProblem\".\n\nMaterial property 'PorousFlow_porosity_nodal', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_porosity_nodal_dvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_porosity_nodal_dgradvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'PorousFlow_fluid_phase_density_nodal', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_fluid_phase_density_nodal_dvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'PorousFlow_saturation_nodal', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_saturation_nodal_dvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'PorousFlow_mass_frac_nodal', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_mass_frac_nodal_dvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'PorousFlow_primary_sps_conc_nodal', requested by 'mass_a' is not defined on block 0\nMaterial property 'dPorousFlow_primary_sps_conc_nodal_dvar', requested by 'mass_a' is not defined on block 0\nMaterial property 'PorousFlow_porosity_nodal', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_porosity_nodal_dvar', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_porosity_nodal_dgradvar', requested by 'mass_b' is not defined on block 0\nMaterial property 'PorousFlow_fluid_phase_density_nodal', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_fluid_phase_density_nodal_dvar', requested by 'mass_b' is not defined on block 0\nMaterial property 'PorousFlow_saturation_nodal', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_saturation_nodal_dvar', requested by 'mass_b' is not defined on block 0\nMaterial property 'PorousFlow_mass_frac_nodal', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_mass_frac_nodal_dvar', requested by 'mass_b' is not defined on block 0\nMaterial property 'PorousFlow_primary_sps_conc_nodal', requested by 'mass_b' is not defined on block 0\nMaterial property 'dPorousFlow_primary_sps_conc_nodal_dvar', requested by 'mass_b' is not defined on block 0\n\n#include \"APMassTimeDerivative.h\"\n\n#include \"MooseVariable.h\"\n\n#include \"libmesh/quadrature.h\"\n\n#include <limits>\n\nregisterMooseObject(\"APApp\", APMassTimeDerivative);\n\nInputParameters\nAPMassTimeDerivative::validParams()\n{\n  InputParameters params = PorousFlowMassTimeDerivative::validParams();\n  params.addRequiredParam<std::vector<Real>>(\n      \"ap_mass\",\n      \"molar_mass (kg/mol) of each fluid component\");\n  params.addClassDescription(\"Derivative of fluid-component mass with respect to time.  Mass \"\n                             \"lumping to the nodes is used.\");\n  return params;\n}\n\nAPMassTimeDerivative::APMassTimeDerivative(const InputParameters & parameters)\n  : PorousFlowMassTimeDerivative(parameters),\n    _ap_mass(getParam<std::vector<Real>>(\"ap_mass\")),\n    _ap(getMaterialProperty<std::vector<std::vector<Real>>>(\"PorousFlow_ap_nodal\")),\n    _ap_old(\n        getMaterialPropertyOld<std::vector<std::vector<Real>>>(\"PorousFlow_ap_nodal\")),\n    _dap_dvar(getMaterialProperty<std::vector<std::vector<std::vector<Real>>>>(\n        \"dPorousFlow_ap_nodal_dvar\"))\n{\n    // PorousFlowMassTimeDerivative already made the necessary checks!\n}\n\nReal\nAPMassTimeDerivative::computeQpResidual()\n{\n  Real mass = 0.0;\n  Real mass_old = 0.0;\n  for (unsigned ph = 0; ph < _num_phases; ++ph)\n  {\n    const Real dens = (_multiply_by_density ? (*_fluid_density)[_i][ph] : 1.0);\n    mass += dens * _fluid_saturation_nodal[_i][ph] * _ap[_i][ph][_fluid_component];\n    const Real dens_old = (_multiply_by_density ? (*_fluid_density_old)[_i][ph] : 1.0);\n    mass_old +=\n        dens_old * _fluid_saturation_nodal_old[_i][ph] * _ap_old[_i][ph][_fluid_component];\n  }\n  const Real strain = (_has_total_strain ? (*_total_strain_old)[_qp].trace() : 0.0);\n\n  return _test[_i][_qp] * (1.0 + strain) * (_porosity[_i] * mass - _porosity_old[_i] * mass_old) /\n         _dt;\n}\n\nReal\nAPMassTimeDerivative::computeQpJacobian()\n{\n  // If the variable is not a PorousFlow variable (very unusual), the diag Jacobian terms are 0\n  if (!_var_is_porflow_var)\n    return 0.0;\n  return computeQpJac(_dictator.porousFlowVariableNum(_var.number()));\n}\n\nReal\nAPMassTimeDerivative::computeQpOffDiagJacobian(unsigned int jvar)\n{\n  // If the variable is not a PorousFlow variable, the OffDiag Jacobian terms are 0\n  if (_dictator.notPorousFlowVariable(jvar))\n    return 0.0;\n  return computeQpJac(_dictator.porousFlowVariableNum(jvar));\n}\n\nReal\nAPMassTimeDerivative::computeQpJac(unsigned int pvar)\n{\n  const unsigned nearest_qp = (_strain_at_nearest_qp ? (*_nearest_qp)[_i] : _i);\n\n  const Real strain = (_has_total_strain ? (*_total_strain_old)[_qp].trace() : 0.0);\n\n  // porosity is dependent on variables that are lumped to the nodes,\n  // but it can depend on the gradient\n  // of variables, which are NOT lumped to the nodes, hence:\n  Real dmass = 0.0;\n  for (unsigned ph = 0; ph < _num_phases; ++ph)\n  {\n    const Real dens = (_multiply_by_density ? (*_fluid_density)[_i][ph] : 1.0);\n    dmass += dens * _fluid_saturation_nodal[_i][ph] * _ap[_i][ph][_fluid_component] *\n             _dporosity_dgradvar[_i][pvar] * _grad_phi[_j][nearest_qp];\n  }\n\n  if (_i != _j)\n    return _test[_i][_qp] * (1.0 + strain) * dmass / _dt;\n\n  // As the fluid mass is lumped to the nodes, only non-zero terms are for _i==_j\n  for (unsigned ph = 0; ph < _num_phases; ++ph)\n  {\n    if (_multiply_by_density)\n      dmass += (*_dfluid_density_dvar)[_i][ph][pvar] * _fluid_saturation_nodal[_i][ph] *\n               _ap[_i][ph][_fluid_component] * _porosity[_i];\n    const Real dens = (_multiply_by_density ? (*_fluid_density)[_i][ph] : 1.0);\n    dmass += dens * _dfluid_saturation_nodal_dvar[_i][ph][pvar] *\n             _ap[_i][ph][_fluid_component] * _porosity[_i];\n    dmass += dens * _fluid_saturation_nodal[_i][ph] *\n             _dap_dvar[_i][ph][_fluid_component][pvar] * _porosity[_i];\n    dmass += dens * _fluid_saturation_nodal[_i][ph] * _ap[_i][ph][_fluid_component] *\n             _dporosity_dvar[_i][pvar];\n  }\n  return _test[_i][_qp] * (1.0 + strain) * dmass / _dt;\n}",
+          "url": "https://github.com/idaholab/moose/discussions/26350",
+          "updatedAt": "2023-12-18T06:33:51Z",
+          "publishedAt": "2023-12-15T19:36:54Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "The error means that a nodal version of those material properties isn't supplied. We use an action (PorousFlowAddMaterialAction) to add either nodal or qp versions of each material (or both if required), depending on what kernels are added. As you have inherited from PorousFlowMassTimeDerivative, your kernel is looking for nodal versions, but the action doesn't know what to add for your new kernel, so only defaults to qp versions.\nYou can just specify at_nodes = true in the input file for all of those materials that provide the properties that are missing in the error message (you might need to have two versions, one with at_nodes = true and one without, depending on your other kernels, see https://github.com/idaholab/moose/blob/next/modules/porous_flow/test/tests/actions/addmaterials.i for an example).",
+                  "url": "https://github.com/idaholab/moose/discussions/26350#discussioncomment-7868214",
+                  "updatedAt": "2023-12-15T21:53:14Z",
+                  "publishedAt": "2023-12-15T21:53:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Serving documentation without building",
+          "author": {
+            "login": "nlosacco"
+          },
+          "bodyText": "Hi all,\nI like to serve the documentation on my laptop, it\u2019s quite useful since I travel a lot and I\u2019m often offline.  How can I start the documentation server without having to re-build the documentation each and every time? So far I used:\n./moosedocs.py build --serve\nthanks",
+          "url": "https://github.com/idaholab/moose/discussions/26344",
+          "updatedAt": "2023-12-14T22:47:53Z",
+          "publishedAt": "2023-12-14T21:27:38Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI dont think we have that option.\nCan you try build --serve --fast to see if that s good enough? It still builds but without one of the slowest extensions.\nAlternatively --files will let you specify which files to build, this should be a lot faster than the full documentation. This is mostly for writing new docs and checking that it works\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26344#discussioncomment-7858064",
+                  "updatedAt": "2023-12-14T21:36:27Z",
+                  "publishedAt": "2023-12-14T21:36:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "cticenhour"
+                  },
+                  "bodyText": "You can definitely view the documentation site offline after building it once. When MooseDocs builds documentation, it places the files in a temporary location. This is, by default:\n~/.local/share/moose/site\n\nSo, you could build the site and then look at it later by opening the index.html file in that location using your web browser. On a Mac, this is as easy as navigating to the location and then typing open index.html in a Terminal to open your default browser. The opened site is fully navigable.\nIf you want to \"install\" those files to a particular location, we have a flag for that. Build MooseDocs by doing the following:\n./moosedocs.py build --destination /my/wonderful/moose/local/website\n\nOf course, you should replace /my/wonderful/moose/local/website with the location on your drive where you want to place the files.",
+                  "url": "https://github.com/idaholab/moose/discussions/26344#discussioncomment-7858504",
+                  "updatedAt": "2023-12-14T22:48:35Z",
+                  "publishedAt": "2023-12-14T22:47:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "libMesh terminating: Error writing sidesets",
+          "author": {
+            "login": "Yasunaoka"
+          },
+          "bodyText": "I am trying to use MOOSE on HPC for my needs for larger model calculations. So far everything is fine on the installation and the results of running the simple file arithmetic example located at ~/projects/moose/modules/combined/test/tests/phase_field_fracture are correct.\nHowever when I submit my multi-app example (which runs fine locally), things changed and the following is returned in the output.\nFailed to JIT compile expression, falling back to byte code interpretation.\nIn the HPC system, the err file is also given containing the following.\nJIT compile failed. g++: error: unrecognized command line option \u2018-std=gnu++17\u2019\nBoth errors are beyond my understanding, any help you guys can offer me would be appreciated.\nBoth my input file and the output file returned by HPC are attached.\nI_fracture-4.zip",
+          "url": "https://github.com/idaholab/moose/discussions/26315",
+          "updatedAt": "2023-12-14T21:59:53Z",
+          "publishedAt": "2023-12-13T04:03:07Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Yasunaoka"
+                  },
+                  "bodyText": "Update: After specifying the gcc version\n`module load gcc/13.2.0`\n\nThe above message does not appear anymore and it works fine with only one CPU on the HPC.\nHowever, after specifying more CPUs, the following error message appears:\n`libMesh terminating:\nError writing sidesets\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: libMesh::ExodusII_IO_Helper::write_sidesets(libMesh::MeshBase const&)\n3: libMesh::ExodusII_IO::write_nodal_data_common(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, bool)\n4: libMesh::ExodusII_IO::write_nodal_data(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<double, std::allocator<double> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)\n5: libMesh::MeshOutput<libMesh::MeshBase>::write_equation_systems(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n6: libMesh::ExodusII_IO::write_timestep(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, int, double, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n7: Exodus::outputNodalVariables()\n8: AdvancedOutput::output()\n9: Exodus::output()\n10: OversampleOutput::outputStep(MooseEnumItem const&)\n11: OutputWarehouse::outputStep(MooseEnumItem)\n12: FEProblemBase::outputStep(MooseEnumItem)\n13: Transient::preExecute()\n14: Transient::execute()\n15: MooseApp::executeExecutioner()\n16: MooseApp::run()\n17: main\n18: __libc_start_main\n19: /data/home/huangsen22/projects/moose/modules/combined/combined-opt(+0x43ff) [0x56244b7b13ff]\n[0] ../src/mesh/exodusII_io_helper.C, line 3093, compiled Nov 30 2023 at 16:46:29\nlibMesh terminating:\nError writing concatenated nodesets\nStack frames: 20\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: libMesh::ExodusII_IO_Helper::write_nodesets(libMesh::MeshBase const&)\n3: libMesh::ExodusII_IO::write_nodal_data_common(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&, bool)\n4: libMesh::ExodusII_IO::write_nodal_data(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::vector<double, std::allocator<double> > const&, std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const&)\n5: libMesh::MeshOutput<libMesh::MeshBase>::write_equation_systems(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n6: libMesh::ExodusII_IO::write_timestep(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, libMesh::EquationSystems const&, int, double, std::set<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::less<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > > const*)\n7: Exodus::outputNodalVariables()\n8: AdvancedOutput::output()\n9: Exodus::output()\n10: OversampleOutput::outputStep(MooseEnumItem const&)\n11: OutputWarehouse::outputStep(MooseEnumItem)\n12: FEProblemBase::outputStep(MooseEnumItem)\n13: Transient::preExecute()\n14: Transient::execute()\n15: MooseApp::executeExecutioner()\n16: MooseApp::run()\n17: main\n18: __libc_start_main\n19: /data/home/huangsen22/projects/moose/modules/combined/combined-opt(+0x43ff) [0x5565dbb1e3ff]\n[0] ../src/mesh/exodusII_io_helper.C, line 3196, compiled Nov 30 2023 at 16:46:29\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n--------------------------------------------------------------------------\nPrimary job  terminated normally, but 1 process returned\na non-zero exit code. Per user-direction, the job has been aborted.\n--------------------------------------------------------------------------\n--------------------------------------------------------------------------\nmpiexec detected that one or more processes exited with non-zero status, thus causing\nthe job to be terminated. The first process to do so was:\n\n  Process name: [[10734,1],3]\n  Exit code:    1\n--------------------------------------------------------------------------\n\nMy input file remains unchanged, and the HPC runs the script as follows\n#!/bin/sh\n#SBATCH -N 2\n#SBATCH -n 56\n#SBATCH --ntasks-per-node=28 \n#SBATCH --partition=normal,normal2,normal3,normal4,28c_256g \n#SBATCH --output=%j.out  \n#SBATCH --error=%j.err\nmodule load openmpi/4.1.5\nulimit -s unlimited\nmpiexec -n $SLURM_NPROCS /data/home/huangsen22/projects/moose/modules/combined/combined-opt -i displacement.i`",
+                  "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7841226",
+                  "updatedAt": "2023-12-13T14:42:56Z",
+                  "publishedAt": "2023-12-13T11:19:25Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nI m glad you fixed the compile issue\nIt seems something is wrong with the sidesets. What does your Mesh block look like?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7841928",
+                          "updatedAt": "2023-12-13T12:44:05Z",
+                          "publishedAt": "2023-12-13T12:44:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Thank you for your interest, my mesh inputs are shown below:\n[Mesh] allow_renumbering = false [TWC] type = GeneratedMeshGenerator xmin = 0 xmax = 100 ymin = 0 ymax = 40 nx = 800 ny = 320 dim = 2 [] []\nAs you can see, this is a very simple grid that works fine both locally and on HPC with a single core. It is only once multiple CPUs are used on the HPC that the above problem occurs, so I don't think it's a grid issue. Can I ask you any suggestions please?",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7842169",
+                          "updatedAt": "2023-12-13T13:09:53Z",
+                          "publishedAt": "2023-12-13T13:09:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Oh the exact mesh block should be this:\n[Mesh]\n  allow_renumbering = false\n  [TWC]\n    type = GeneratedMeshGenerator\n    xmin = 0\n    xmax = 100\n    ymin = 0\n    ymax = 40\n    nx = 800\n    ny = 320\n    dim = 2\n  []\n[]\n\nBut I think this is a simple mesh still",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7842277",
+                          "updatedAt": "2023-12-13T14:42:18Z",
+                          "publishedAt": "2023-12-13T13:19:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Indeed no problem with that grid.\nDo you have any user object modifying the sidesets?\nAre you running out of diskspace by any chance? This could cause an error while writing the file",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7843288",
+                          "updatedAt": "2023-12-13T14:43:55Z",
+                          "publishedAt": "2023-12-13T14:43:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Hello, after investigation, I found that this hpc is using GPFS (General Parallel File System). So it may not be this issue. I haven't found any possible breakthrough points yet. However, I have found that this issue only occurs during multiapp, and multiple CPUs run well even when submitting a single input file. Do you have any other ideas? Very grateful.",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844166",
+                          "updatedAt": "2023-12-13T15:52:28Z",
+                          "publishedAt": "2023-12-13T15:52:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "how many multiapps are you running? Are they using the same file-base to write to file maybe?",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844180",
+                          "updatedAt": "2023-12-13T15:53:22Z",
+                          "publishedAt": "2023-12-13T15:53:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "And yes, there is no user object in the input file. If you are interested, input the file in the attached compressed file.",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844208",
+                          "updatedAt": "2023-12-13T15:55:24Z",
+                          "publishedAt": "2023-12-13T15:55:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Hello, there are two input files in total. The main file is displacement.i, and the secondary file is fragment.i. In displacement.i, there are the following blocks.\n[MultiApps]\n  [fracture]\n    type = TransientMultiApp\n    input_files = fracture.i\n    execute_on = TIMESTEP_END\n  []\n[]\n\nThey pass values to each other. Also, I don't quite understand what you mean by a same file base. I can only say that when running locally, there is only one output file called display_ out. e, but both inputfiles have exodus=true",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844334",
+                          "updatedAt": "2023-12-13T16:12:52Z",
+                          "publishedAt": "2023-12-13T16:04:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "In the outputs block, is there a file_base parameter? If two apps are writing to the same file, that can cause issues. This happens often with two sub-apps using the same file_base.\nBut looks like this is not that. I m running out of ideas.\n@roystgnr  any idea on why nodeset writing could fail? This is a MOOSE mesh being output.\nIf not, then we would be down for the full input so we can see the problem for ourselves",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844442",
+                          "updatedAt": "2023-12-13T16:14:15Z",
+                          "publishedAt": "2023-12-13T16:14:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Yasunaoka"
+                          },
+                          "bodyText": "Thank you for your guidance, but there are only the following statements in the output module\n[Outputs]\n  exodus = true\n  # interval = 1e2\n  checkpoint = true\n[]\n\nThen I checked the fracture.i file and found that there was no output module inside. I apologize for the previous wrong response!",
+                          "url": "https://github.com/idaholab/moose/discussions/26315#discussioncomment-7844857",
+                          "updatedAt": "2023-12-13T16:53:18Z",
+                          "publishedAt": "2023-12-13T16:49:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Getting material properties for Dirichlet boundary condition",
+          "author": {
+            "login": "starkekr"
+          },
+          "bodyText": "I have a Dirichlet BC that depends on material properties and am struggling to find a way to enforce this BC.\nIs there a way in MOOSE to interpolate material properties from elements to the nodes to apply Dirichlet BC's that depend on material properties?\nIs something like this already implemented?",
+          "url": "https://github.com/idaholab/moose/discussions/26340",
+          "updatedAt": "2023-12-14T21:58:52Z",
+          "publishedAt": "2023-12-14T17:33:33Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "starkekr"
+                  },
+                  "bodyText": "seems like this is related to #23634",
+                  "url": "https://github.com/idaholab/moose/discussions/26340#discussioncomment-7856151",
+                  "updatedAt": "2023-12-14T17:36:41Z",
+                  "publishedAt": "2023-12-14T17:36:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDoes the material property depend on the nonlinear variable?\nA simple-ish scheme but that will be inexact would be:\n\nUse materialRealAux to project the matprop to a constant monomial auxvariable\nuse a projectionAux to project the constant monomial on a lagrange / nodal  auxvariable\nuse the nodal auxvariable in a MatchedValueBC\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26340#discussioncomment-7858227",
+                  "updatedAt": "2023-12-14T21:58:52Z",
+                  "publishedAt": "2023-12-14T21:58:51Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Updating old moose simulation",
+          "author": {
+            "login": "Liserion"
+          },
+          "bodyText": "Hi everybody. I am new to moose and I am currently trying to Update an older simulation (I think it was originally created in 2018, executed again in 2020). Apparently moose has changed quite a lot which is why I had to update some parts. There were some customs kernels which I have been able to update and implement. However, when I now want to run the input file I keep getting the following error:\nThe parameter \"pps_phi1\" is being retrieved before being set.\n\n\nStack frames: 26\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const (&) [16], std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, char const (&) [40]>(char const (&) [16], std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, char const (&) [40])\n3: /home/michael/projects/babbler/lib/libbabbler-opt.so.0(+0x48569) [0x7f16a5426569]\n4: ParticleBVPostBCKernel::ParticleBVPostBCKernel(InputParameters const&)\n5: RegistryEntry<ParticleBVPostBCKernel>::build(InputParameters const&)\n6: Factory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int, bool)\n7: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x10c565b) [0x7f16a22b165b]\n8: NonlinearSystemBase::addBoundaryCondition(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: Action::timedAct()\n10: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n11: ActionWarehouse::executeAllActions()\n12: MooseApp::runInputFile()\n13: MultiApp::createApp(unsigned int, double)\n14: MultiApp::createLocalApp(unsigned int)\n15: MultiApp::createApps()\n16: FEProblemBase::addMultiApp(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n17: Action::timedAct()\n18: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n19: ActionWarehouse::executeAllActions()\n20: MooseApp::runInputFile()\n21: MooseApp::run()\n22: main\n23: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7f1699f02d90]\n24: __libc_start_main\n25: ./babbler-opt(+0x33ef) [0x558e20ed03ef]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\nThe parameter is calculated by a postprocessor and should then be sent to a BC. The parameter is not set before the boundary condition is being calculated. I have tried a couple of things including just deleting this part of the input file\n[BCs]\n\n[./bv_flux]\n   execute_on = 'TIMESTEP_END'\n   type = ParticleBVPostBCKernel\n   variable = Cs\n   boundary = right\n   pps_c2 = c2_from_macro\n   pps_phi1 = phi1_from_macro\n   pps_phi2 = phi2_from_macro\n   MateChoice = 4\n [../]\n[]\n\nwhich then leads to a functioning simulation.\nI have read that when I put 'execute_on='NONE'' that the part wouldn't be executed. When I do that, I still get the same error.\nI am also not aware what has changed with moose since the simulation worked in 2020 as far as I know without any errors..\nSo now I am thinking: does the execute_on  not work? I have included my files (Kernels mesh and input files.)\nThank you so much for looking over this!\nhttps://github.com/Liserion/moose_project",
+          "url": "https://github.com/idaholab/moose/discussions/26184",
+          "updatedAt": "2023-12-14T12:44:11Z",
+          "publishedAt": "2023-11-29T13:25:51Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe have changed vector parameters to no longer have a default recently.\nSo if you had one of these, or a coupledVar parameter, and you were retrieving it without setting it it now errors\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7704811",
+                  "updatedAt": "2023-11-29T13:28:11Z",
+                  "publishedAt": "2023-11-29T13:28:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "Thank you so much for you answer. I checked my files and concluded that my BC are coupledVar since their calculations involve more than one variable. So the problem is that something in my code is trying to retrieve the value from the BC before it has the value for the calculation? To fix this I have to adjust the execution_on order or do I have to adjust something inside the .C file? Sorry if those are dumb questions, thank you so much for your help tho!",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7705424",
+                          "updatedAt": "2023-11-29T14:23:50Z",
+                          "publishedAt": "2023-11-29T14:23:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I dont think \"involving more than one variable\" is the problem\nSomething must be wrong with how this parameter is handled (pps_phi1)\nCan you share the code? Git repo is best but copy-paste of the object .C file can work too",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7705558",
+                          "updatedAt": "2023-11-29T14:33:35Z",
+                          "publishedAt": "2023-11-29T14:33:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "https://github.com/Liserion/moose_project does this link work? This is the .C of the boudary condition:\n\nregisterMooseObject(\"BabblerApp\", ParticleBVPostBCKernel);\n\ntemplate <>\nInputParameters validParams<ParticleBVPostBCKernel>()\n{\n    InputParameters params=IntegratedBCBase::validParams();\n\n\nparams.addParam<PostprocessorName>(\"pps_c2\", \"name of pps for c2\");\n    params.addRequiredParam<PostprocessorName>(\"pps_phi1\",\"name of pps for phi1\");\n    params.addRequiredParam<PostprocessorName>(\"pps_phi2\",\"name of pps for phi2\");\n\n\n    params.addRequiredParam<Real>(\"Cm\",\"The maximum concentration of electrolyte phase\");\n    params.addRequiredParam<Real>(\"K2\",\"The reaction rate for Bulter-Volmer reaction\");\n    params.addRequiredParam<int>(\"MateChoice\",\"1->TiS2,\"\n                                              \"2->Mn2O4,\"\n                                              \"3->TiS2 new,\"\n                                              \"4->LiFePO4,\"\n                                              \"5->LiFePO4 from safari,\"\n                                              \"6->V2O5\");\n\n    params.addParam<Real>(\"T\",298.15,\"Temperature(default 298.15)\");\n\n    return params;\n\n}\n\nParticleBVPostBCKernel::ParticleBVPostBCKernel(const InputParameters &parameters)\n:IntegratedBC(parameters),\n_Cm(getParam<Real>(\"Cm\")),\n_K2(getParam<Real>(\"K2\")),\n_MateChoice(getParam<int>(\"MateChoice\")),\n_T(getParam<Real>(\"T\")),\n_pps_c2(getParam<PostprocessorName>(\"pps_c2\")),\n_pps_phi1(getParam<PostprocessorName>(\"pps_phi1\")),\n_pps_phi2(getParam<PostprocessorName>(\"pps_phi2\"))\n{}\n\nvoid ParticleBVPostBCKernel::OpenCircuitV(const Real &x, Real &u, Real &dudx)\n{\n    const Real R=8.3144598,F=96485.3329;\n\n\n    if(_MateChoice==1)\n    {\n        // For TiS2\n        // For LiyTiS2  (0.0<x<1.0)\n        u=2.17+(R*_T/F)*(log(fabs((1-x)/x))-16.2*x+8.1);\n        dudx=(-16.2*R*_T/F)*(x*x-x-0.0617284)/(x*(x-1));\n    }\n    else if(_MateChoice==2)\n    {\n        u=4.06279\n          +0.0677504*tanh(12.8268-21.8502*x)\n          -0.105734*(pow(1.00167-x,-0.379571)-1.575994)\n          -0.045*exp(-71.69*pow(x,8))\n          +0.01*exp(-200.0*(x-0.19));\n\n        dudx=-2.0*exp(-200.*(x-0.19))\n             -0.0401336/pow(1.00167-x,1.37957)\n             +25.8084*exp(-71.69*pow(x,8))*pow(x,7)\n             -1.48036*Sech(12.8268-21.8502*x)*Sech(12.8268-21.8502*x);\n    }\n    else if(_MateChoice==3)\n    {\n        u=2.17+R*_T*(-0.000558*x+8.10)/F;\n        dudx=R*_T*-0.000558/F;\n    }\n    else if(_MateChoice==4)\n    {\n        // For LiFePO4\n        // taken from \"Discharge Model for the Lithium Iron-Phosphate Electrode\"\n        // Venkat Srinivasan, DOI: 10.1149/1.1785012\n        u=3.114559\n          +4.438792*atan(-71.7352*x+70.85337)\n          -4.240252*atan(-68.5605*x+67.730082);\n        dudx=4.438792*(-71.7352)/(1+pow(-71.7352*x+70.85337,2))\n            +(-4.240252)*(-68.5605)/(1+pow(-68.5605*x+67.730082,2));\n    }\n    else if(_MateChoice==5)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.4324\n          -0.8428*exp(-80.2493*pow(1-x,1.3198))\n          -(3.2474e-6)*exp(20.2645*pow(1-x,3.8003))\n          +(3.2482e-6)*exp(20.2646*pow(1-x,3.7995));\n\n        dudx=-89.2635*exp(-80.2493*pow(1-x,1.3198))*pow(1-x,0.3198)\n            +0.000250086*exp(20.2645*pow(1-x,3.8003))*pow(1-x,2.8003)\n            -0.000250104*exp(20.2646*pow(1-x,3.7995))*pow(1-x,2.7995);\n    }\n    else if(_MateChoice==6)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.3059\n          +0.092769*tanh(-14.362*x+6.6874)\n          -0.034252*exp(100*(x-0.96))\n          +0.00724*exp(80.0*(0.01-x));\n\n        dudx=1.33235*Sech(6.6874-14.362*x)*Sech(6.6874-14.362*x)\n            -3.4252*exp(100*(x-0.96))\n            -0.5792*exp(80*(0.01-x));\n    }\n\n    u=u*F/(R*_T);\n    dudx=dudx*F/(R*_T);\n}\n\nvoid ParticleBVPostBCKernel::BV(const Real &c, const Real &phi1, const Real &phi2, const Real &cs, Real &J, Real &dJdc)\n{\n    Real U,dUdc;\n\n    OpenCircuitV(cs,U,dUdc);\n\n    Real eta=phi1-phi2-U;\n\n    J=_K2*sqrt((_Cm-c)*c)*(cs*exp(0.5*eta)-(1-cs)*exp(-0.5*eta));\n\n    dJdc=_K2*sqrt((_Cm-c)*c)*\n         (exp(0.5*eta)-0.5*cs*dUdc*exp(0.5*eta)\n          +exp(-0.5*eta)-0.5*(1-cs)*dUdc*exp(-0.5*eta));\n}\n\n\n//*************************\nReal ParticleBVPostBCKernel::computeQpResidual()\n{\n    Real c2=getPostprocessorValueByName(_pps_c2);\n    Real phi1=getPostprocessorValueByName(_pps_phi1);\n    Real phi2=getPostprocessorValueByName(_pps_phi2);\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return J*_test[_i][_qp];\n}\n\nReal ParticleBVPostBCKernel::computeQpJacobian()\n{\n    Real c2=getPostprocessorValueByName(_pps_c2);\n    Real phi1=getPostprocessorValueByName(_pps_phi1);\n    Real phi2=getPostprocessorValueByName(_pps_phi2);\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return dJdc*_phi[_j][_qp]*_test[_i][_qp];\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7705616",
+                          "updatedAt": "2023-11-29T14:37:32Z",
+                          "publishedAt": "2023-11-29T14:37:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For starters, make pps_c2 required as it is retrieved below whether it is passed or not\nwhy 'pps' and not 'pp' ? There s only one postprocessor expected right?",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7705847",
+                          "updatedAt": "2023-11-29T14:54:29Z",
+                          "publishedAt": "2023-11-29T14:54:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Liserion"
+                  },
+                  "bodyText": "For starters, make pps_c2 required as it is retrieved below whether it is passed or not\nwhy 'pps' and not 'pp' ? There s only one postprocessor expected right?\nThank you for the answer. Oh sorry, I must have tried some things to fix the error and not reverted it back.\n\n   params.addRequiredParam<PostprocessorName>(\"pps_phi1\", \"name of pps for phi1\");\n    params.addRequiredParam<PostprocessorName>(\"pps_phi2\", \"name of pps for phi2\");\n\nchanged it to this and still the same error. I think pps was used just for consistency and it shouldnt effect the code, right?",
+                  "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7706194",
+                  "updatedAt": "2023-11-29T15:25:07Z",
+                  "publishedAt": "2023-11-29T15:25:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "unrelated again but this:\n    Real c2=getPostprocessorValueByName(_pps_c2);\n    Real phi1=getPostprocessorValueByName(_pps_phi1);\n    Real phi2=getPostprocessorValueByName(_pps_phi2);\n\ncan be done at construction instead of during the residual computation. Make sure to store a reference though! Not a number like you do right. Store that reference in the class attributes.\nFor the main problem I am blanking.\nCan I please get a second pair of eyes? @MengnanLi91",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7706409",
+                          "updatedAt": "2023-11-29T15:41:35Z",
+                          "publishedAt": "2023-11-29T15:41:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "#include \"ParticleBVPostBCKernel.h\"\n\nregisterMooseObject(\"BabblerApp\", ParticleBVPostBCKernel);\n\ntemplate <>\nInputParameters validParams<ParticleBVPostBCKernel>()\n{\n    InputParameters params=IntegratedBCBase::validParams();\n\n    params.addRequiredParam<PostprocessorName>(\"pps_c2\", \"name of pps for c2\");\n    params.addRequiredParam<PostprocessorName>(\"pps_phi1\", \"name of pps for phi1\");\n    params.addRequiredParam<PostprocessorName>(\"pps_phi2\", \"name of pps for phi2\");\n\n    params.addRequiredParam<Real>(\"Cm\",\"The maximum concentration of electrolyte phase\");\n    params.addRequiredParam<Real>(\"K2\",\"The reaction rate for Bulter-Volmer reaction\");\n    params.addRequiredParam<int>(\"MateChoice\",\"1->TiS2,\"\n                                              \"2->Mn2O4,\"\n                                              \"3->TiS2 new,\"\n                                              \"4->LiFePO4,\"\n                                              \"5->LiFePO4 from safari,\"\n                                              \"6->V2O5\");\n\n    params.addParam<Real>(\"T\",298.15,\"Temperature(default 298.15)\");\n\n    return params;\n\n}\n\nParticleBVPostBCKernel::ParticleBVPostBCKernel(const InputParameters &parameters)\n:IntegratedBC(parameters),\n_c2_value(getPostprocessorValue(\"pps_c2\")),\n_phi1_value(getPostprocessorValue(\"pps_phi1\")),\n_phi2_value(getPostprocessorValue(\"pps_phi2\")),\n_Cm(getParam<Real>(\"Cm\")),\n_K2(getParam<Real>(\"K2\")),\n_MateChoice(getParam<int>(\"MateChoice\")),\n_T(getParam<Real>(\"T\")),\n_pps_c2(getParam<PostprocessorName>(\"pps_c2\")),\n_pps_phi1(getParam<PostprocessorName>(\"pps_phi1\")),\n_pps_phi2(getParam<PostprocessorName>(\"pps_phi2\"))\n\n{}\n\nvoid ParticleBVPostBCKernel::OpenCircuitV(const Real &x, Real &u, Real &dudx)\n{\n    const Real R=8.3144598,F=96485.3329;\n\n\n    if(_MateChoice==1)\n    {\n        // For TiS2\n        // For LiyTiS2  (0.0<x<1.0)\n        u=2.17+(R*_T/F)*(log(fabs((1-x)/x))-16.2*x+8.1);\n        dudx=(-16.2*R*_T/F)*(x*x-x-0.0617284)/(x*(x-1));\n    }\n    else if(_MateChoice==2)\n    {\n        u=4.06279\n          +0.0677504*tanh(12.8268-21.8502*x)\n          -0.105734*(pow(1.00167-x,-0.379571)-1.575994)\n          -0.045*exp(-71.69*pow(x,8))\n          +0.01*exp(-200.0*(x-0.19));\n\n        dudx=-2.0*exp(-200.*(x-0.19))\n             -0.0401336/pow(1.00167-x,1.37957)\n             +25.8084*exp(-71.69*pow(x,8))*pow(x,7)\n             -1.48036*Sech(12.8268-21.8502*x)*Sech(12.8268-21.8502*x);\n    }\n    else if(_MateChoice==3)\n    {\n        u=2.17+R*_T*(-0.000558*x+8.10)/F;\n        dudx=R*_T*-0.000558/F;\n    }\n    else if(_MateChoice==4)\n    {\n        // For LiFePO4\n        // taken from \"Discharge Model for the Lithium Iron-Phosphate Electrode\"\n        // Venkat Srinivasan, DOI: 10.1149/1.1785012\n        u=3.114559\n          +4.438792*atan(-71.7352*x+70.85337)\n          -4.240252*atan(-68.5605*x+67.730082);\n        dudx=4.438792*(-71.7352)/(1+pow(-71.7352*x+70.85337,2))\n            +(-4.240252)*(-68.5605)/(1+pow(-68.5605*x+67.730082,2));\n    }\n    else if(_MateChoice==5)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.4324\n          -0.8428*exp(-80.2493*pow(1-x,1.3198))\n          -(3.2474e-6)*exp(20.2645*pow(1-x,3.8003))\n          +(3.2482e-6)*exp(20.2646*pow(1-x,3.7995));\n\n        dudx=-89.2635*exp(-80.2493*pow(1-x,1.3198))*pow(1-x,0.3198)\n            +0.000250086*exp(20.2645*pow(1-x,3.8003))*pow(1-x,2.8003)\n            -0.000250104*exp(20.2646*pow(1-x,3.7995))*pow(1-x,2.7995);\n    }\n    else if(_MateChoice==6)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.3059\n          +0.092769*tanh(-14.362*x+6.6874)\n          -0.034252*exp(100*(x-0.96))\n          +0.00724*exp(80.0*(0.01-x));\n\n        dudx=1.33235*Sech(6.6874-14.362*x)*Sech(6.6874-14.362*x)\n            -3.4252*exp(100*(x-0.96))\n            -0.5792*exp(80*(0.01-x));\n    }\n\n    u=u*F/(R*_T);\n    dudx=dudx*F/(R*_T);\n}\n\nvoid ParticleBVPostBCKernel::BV(const Real &c, const Real &phi1, const Real &phi2, const Real &cs, Real &J, Real &dJdc)\n{\n    Real U,dUdc;\n\n    OpenCircuitV(cs,U,dUdc);\n\n    Real eta=phi1-phi2-U;\n\n    J=_K2*sqrt((_Cm-c)*c)*(cs*exp(0.5*eta)-(1-cs)*exp(-0.5*eta));\n\n    dJdc=_K2*sqrt((_Cm-c)*c)*\n         (exp(0.5*eta)-0.5*cs*dUdc*exp(0.5*eta)\n          +exp(-0.5*eta)-0.5*(1-cs)*dUdc*exp(-0.5*eta));\n}\n\n\n//*************************\nReal ParticleBVPostBCKernel::computeQpResidual()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return J*_test[_i][_qp];\n}\n\nReal ParticleBVPostBCKernel::computeQpJacobian()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return dJdc*_phi[_j][_qp]*_test[_i][_qp];\n}\nIll update the files on the rep too. It is still not working but I really appreciate the effort!",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7706839",
+                          "updatedAt": "2023-11-29T16:16:10Z",
+                          "publishedAt": "2023-11-29T16:16:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "MengnanLi91"
+                          },
+                          "bodyText": "Can you run the simulation in devel or debug mode? In your stack frame, I didn't see getParam is called which usually appears when we have \"xxx is being retrieved before being set.\" error.",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7709926",
+                          "updatedAt": "2023-11-29T20:48:32Z",
+                          "publishedAt": "2023-11-29T20:48:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "Sorry that I still haven't responded, I am still in the make process in developer mode. As soon as this is done I will get back to you. Thank you very much for looking over this, too!",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7718838",
+                          "updatedAt": "2023-11-30T14:56:05Z",
+                          "publishedAt": "2023-11-30T14:56:05Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Liserion"
+                  },
+                  "bodyText": "Can you run the simulation in devel or debug mode? In your stack frame, I didn't see getParam is called which usually appears when we have \"xxx is being retrieved before being set.\" error.\nHi,\nso I let my computer run over the night and he just hung himself up. I tried putting it on a HPC but my account has run out.\nIll try fixing this and doing the devel mode asap and let you know.",
+                  "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7727664",
+                  "updatedAt": "2023-12-01T09:58:54Z",
+                  "publishedAt": "2023-12-01T09:58:53Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Ok I found the problem\nFirst the values are not retrieved with the right name. You need to do this in the initializer list:\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n    _c2_value(getPostprocessorValue(_pps_c2)),\n    _phi1_value(getPostprocessorValue(_pps_phi1)),\n    _phi2_value(getPostprocessorValue(_pps_phi2)),\n    _Cm(getParam<Real>(\"Cm\")),\n    _K2(getParam<Real>(\"K2\")),\n    _MateChoice(getParam<int>(\"MateChoice\")),\n    _T(getParam<Real>(\"T\"))\n\nThen the main problem, validParams has the wrong definition\nYou are using the old templated form\nPlease use this instead:\nInputParameters\nParticleBVPostBCKernel::validParams()\n{\n  InputParameters params = IntegratedBCBase::validParams();\n\n  params.addRequiredParam<PostprocessorName>(\"pps_c2\", \"name of pps for c2\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi1\", \"name of pps for phi1\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi2\", \"name of pps for phi2\");\n\n  params.addRequiredParam<Real>(\"Cm\", \"The maximum concentration of electrolyte phase\");\n  params.addRequiredParam<Real>(\"K2\", \"The reaction rate for Bulter-Volmer reaction\");\n  params.addRequiredParam<int>(\"MateChoice\",\n                               \"1->TiS2,\"\n                               \"2->Mn2O4,\"\n                               \"3->TiS2 new,\"\n                               \"4->LiFePO4,\"\n                               \"5->LiFePO4 from safari,\"\n                               \"6->V2O5\");\n\n  params.addParam<Real>(\"T\", 298.15, \"Temperature(default 298.15)\");\n\n  return params;\n}\n\nand in the header\nclass ParticleBVPostBCKernel : public IntegratedBC\n{\npublic:\n  ParticleBVPostBCKernel(const InputParameters & parameters);\n  static InputParameters validParams();",
+                  "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7730106",
+                  "updatedAt": "2023-12-01T14:28:27Z",
+                  "publishedAt": "2023-12-01T14:28:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "Sorry I was absent over the weekend\nThank you very much. So I tried building an App on my mac system since my teamviewer broke. When I try \"make\" on my Mac I get a new wave of errors:\n(moose) jean@Jeans-MacBook-Pro babbler % make\nCompiling C++ (in opt mode) /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C...\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:2:\n/Users/jean/projects/babbler/src/Kernels/CathodeCeKernel.C:38:5: error: field '_Cm' will be initialized after field '_eps' [-Werror,-Wreorder-ctor]\n    _Cm(getParam<Real>(\"Cm\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/CathodeCeKernel.C:39:5: error: field '_eps' will be initialized after field '_K' [-Werror,-Wreorder-ctor]\n    _eps(getParam<Real>(\"eps\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/CathodeCeKernel.C:45:5: error: field '_IsDebug' will be initialized after field '_couple_cs' [-Werror,-Wreorder-ctor]\n    _IsDebug(getParam<int>(\"IsDebug\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/CathodeCeKernel.C:46:5: error: field '_couple_cs' will be initialized after field '_couple_phi1' [-Werror,-Wreorder-ctor]\n    _couple_cs(coupledValue(\"Cs\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/CathodeCeKernel.C:48:5: error: field '_couple_phi1_var' will be initialized after field '_couple_phi2' [-Werror,-Wreorder-ctor]\n    _couple_phi1_var(coupled(\"PhiS\")),\n    ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:3:\n/Users/jean/projects/babbler/src/Kernels/CathodePhiEKernel.C:41:5: error: field '_Cm' will be initialized after field '_eps' [-Werror,-Wreorder-ctor]\n    _Cm(getParam<Real>(\"Cm\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiEKernel.C:43:1: error: field '_MateChoice' will be initialized after field '_K2' [-Werror,-Wreorder-ctor]\n_MateChoice(getParam<int>(\"MateChoice\")),\n^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiEKernel.C:46:1: error: field '_T' will be initialized after field '_couple_cs' [-Werror,-Wreorder-ctor]\n_T(getParam<Real>(\"T\")),\n^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiEKernel.C:47:1: error: field '_couple_cs' will be initialized after field '_couple_c' [-Werror,-Wreorder-ctor]\n_couple_cs(coupledValue(\"Cs\")),\n^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiEKernel.C:50:1: error: field '_couple_c_var' will be initialized after field '_couple_phi1' [-Werror,-Wreorder-ctor]\n_couple_c_var(coupled(\"Ce\")),\n^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:4:\n/Users/jean/projects/babbler/src/Kernels/CathodePhiSKernel.C:39:3: error: field '_Cm' will be initialized after field '_Sigma' [-Werror,-Wreorder-ctor]\n  _Cm(getParam<Real>(\"Cm\")),\n  ^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiSKernel.C:45:3: error: field '_T' will be initialized after field '_couple_cs' [-Werror,-Wreorder-ctor]\n  _T(getParam<Real>(\"T\")),\n  ^\n/Users/jean/projects/babbler/src/Kernels/CathodePhiSKernel.C:46:3: error: field '_couple_cs' will be initialized after field '_couple_c' [-Werror,-Wreorder-ctor]\n  _couple_cs(coupledValue(\"Cs\")),\n  ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:9:\n/Users/jean/projects/babbler/src/Kernels/ParticleBVPostBCKernel.C:38:13: error: reference member '_pps_c2' binds to a temporary object whose lifetime would be shorter than the lifetime of the constructed object\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n/Users/jean/projects/babbler/build/header_symlinks/ParticleBVPostBCKernel.h:32:31: note: reference member declared here\n     const PostprocessorName &_pps_c2,&_pps_phi1,&_pps_phi2;\n                              ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:9:\n/Users/jean/projects/babbler/src/Kernels/ParticleBVPostBCKernel.C:39:15: error: reference member '_pps_phi1' binds to a temporary object whose lifetime would be shorter than the lifetime of the constructed object\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n/Users/jean/projects/babbler/build/header_symlinks/ParticleBVPostBCKernel.h:32:40: note: reference member declared here\n     const PostprocessorName &_pps_c2,&_pps_phi1,&_pps_phi2;\n                                       ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:9:\n/Users/jean/projects/babbler/src/Kernels/ParticleBVPostBCKernel.C:40:15: error: reference member '_pps_phi2' binds to a temporary object whose lifetime would be shorter than the lifetime of the constructed object\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n/Users/jean/projects/babbler/build/header_symlinks/ParticleBVPostBCKernel.h:32:51: note: reference member declared here\n     const PostprocessorName &_pps_c2,&_pps_phi1,&_pps_phi2;\n                                                  ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:9:\n/Users/jean/projects/babbler/src/Kernels/ParticleBVPostBCKernel.C:44:5: error: field '_Cm' will be initialized after field '_K2' [-Werror,-Wreorder-ctor]\n    _Cm(getParam<Real>(\"Cm\")),\n    ^\n/Users/jean/projects/babbler/src/Kernels/ParticleBVPostBCKernel.C:46:5: error: field '_MateChoice' will be initialized after field '_T' [-Werror,-Wreorder-ctor]\n    _MateChoice(getParam<int>(\"MateChoice\")),\n    ^\nIn file included from /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.C:10:\n/Users/jean/projects/babbler/src/Kernels/SeparatorCeKernel.C:22:3: error: field '_eps' will be initialized after field '_K' [-Werror,-Wreorder-ctor]\n  _eps(getParam<Real>(\"eps\")),\n  ^\nfatal error: too many errors emitted, stopping now [-ferror-limit=]\n20 errors generated.\nmake: *** [/Users/jean/projects/moose/framework/build.mk:151: /Users/jean/projects/babbler/build/unity_src/Kernels_Unity.x86_64-apple-darwin13.4.0.opt.lo] Error 1\n(moose) jean@Jeans-MacBook-Pro babbler % \n\nIs this because I have just installed the newest Version of moose on my mac? Regardless, I have access to my Linux Computer again and when I did the adjustments I got this error:\nERROR: no std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > parameter named \"pps_phi1\" found.\n\nKnown parameters:\nName     Type    Value\n---------------------\n Cm      double  0.171479\n K2      double  2.286\n MateChoice      int     4\n T       double  298.15\n _dual_restrictable      bool    0\n _eigen_problem  EigenProblem*   0\n _executioner    Transient*      0\n _fe_problem     FEProblem*      0x55a1ff2d2130\n _fe_problem_base        FEProblemBase*  0x55a1ff2d2130\n _material_data_type     Moose::MaterialDataType         1\n _moose_app      MooseApp*       0x55a1fefd13f0\n _moose_base     std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition\n _nl_sys         SystemBase*     0\n _object_name    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         bv_flux\n _residual_object        bool    1\n _subproblem     SubProblem*     0x55a1ff2d2130\n _sys    SystemBase*     0x55a1ff2f5580\n _tid    unsigned int    0\n _type   std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         ParticleBVPostBCKernel\n _unique_name    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition::bv_flux\n absolute_value_vector_tags      std::vector<TagName, std::allocator<TagName> >  \n boundary        std::vector<BoundaryName, std::allocator<BoundaryName> >        right \n control_tags    std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >         BCs \n diag_save_in    std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \n displacements   std::vector<VariableName, std::allocator<VariableName> >        \n enable  bool    1\n extra_matrix_tags       std::vector<TagName, std::allocator<TagName> >  \n extra_vector_tags       std::vector<TagName, std::allocator<TagName> >  \n implicit        bool    1\n matrix_tags     MultiMooseEnum  system\n pps_c2  PostprocessorName       c2_from_macro\n pps_phi1        PostprocessorName       phi1_from_macro\n pps_phi2        PostprocessorName       phi2_from_macro\n prop_getter_suffix      MaterialPropertyName    \n save_in         std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \n seed    unsigned int    0\n use_displaced_mesh      bool    0\n variable        NonlinearVariableName   Cs\n vector_tags     MultiMooseEnum  nontime\n\nStack frames: 26\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: /home/michael/projects/babbler/lib/libbabbler-opt.so.0(+0x433e4) [0x7fb5db4d43e4]\n3: /home/michael/projects/babbler/lib/libbabbler-opt.so.0(+0x437a4) [0x7fb5db4d47a4]\n4: ParticleBVPostBCKernel::ParticleBVPostBCKernel(InputParameters const&)\n5: RegistryEntry<ParticleBVPostBCKernel>::build(InputParameters const&)\n6: Factory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int, bool)\n7: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x10c565b) [0x7fb5d836465b]\n8: NonlinearSystemBase::addBoundaryCondition(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: Action::timedAct()\n10: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n11: ActionWarehouse::executeAllActions()\n12: MooseApp::runInputFile()\n13: MultiApp::createApp(unsigned int, double)\n14: MultiApp::createLocalApp(unsigned int)\n15: MultiApp::createApps()\n16: FEProblemBase::addMultiApp(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n17: Action::timedAct()\n18: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n19: ActionWarehouse::executeAllActions()\n20: MooseApp::runInputFile()\n21: MooseApp::run()\n22: main\n23: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fb5cffb5d90]\n24: __libc_start_main\n25: ./babbler-opt(+0x33ef) [0x55a1fd86e3ef]\n[0] /home/michael/mambaforge3/envs/moose/libmesh/include/libmesh/parameters.h, line 441, compiled Dec  5 2023 at 11:01:37\n\n\nStack frames: 8\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const*>(char const*&&)\n3: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x8f53f0) [0x7fb5d7b943f0]\n4: main\n5: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fb5cffb5d90]\n6: __libc_start_main\n7: ./babbler-opt(+0x33ef) [0x55a1fd86e3ef]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\nthe Adjustments I have done are the following: .C\n\n//\n// Created by by on 24.10.18.\n//\n\n#include \"ParticleBVPostBCKernel.h\"\n\nregisterMooseObject(\"BabblerApp\", ParticleBVPostBCKernel);\n\n\nInputParameters\nParticleBVPostBCKernel::validParams()\n{\n  InputParameters params = IntegratedBCBase::validParams();\n\n  params.addRequiredParam<PostprocessorName>(\"pps_c2\", \"name of pps for c2\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi1\", \"name of pps for phi1\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi2\", \"name of pps for phi2\");\n\n  params.addRequiredParam<Real>(\"Cm\", \"The maximum concentration of electrolyte phase\");\n  params.addRequiredParam<Real>(\"K2\", \"The reaction rate for Bulter-Volmer reaction\");\n  params.addRequiredParam<int>(\"MateChoice\",\n                               \"1->TiS2,\"\n                               \"2->Mn2O4,\"\n                               \"3->TiS2 new,\"\n                               \"4->LiFePO4,\"\n                               \"5->LiFePO4 from safari,\"\n                               \"6->V2O5\");\n\n  params.addParam<Real>(\"T\", 298.15, \"Temperature(default 298.15)\");\n\n  return params;\n}\n\nParticleBVPostBCKernel::ParticleBVPostBCKernel(const InputParameters &parameters)\n:IntegratedBC(parameters),\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n    _c2_value(getPostprocessorValue(_pps_c2)),\n    _phi1_value(getPostprocessorValue(_pps_phi1)),\n    _phi2_value(getPostprocessorValue(_pps_phi2)),\n    _Cm(getParam<Real>(\"Cm\")),\n    _K2(getParam<Real>(\"K2\")),\n    _MateChoice(getParam<int>(\"MateChoice\")),\n    _T(getParam<Real>(\"T\"))\n\n{}\n\nvoid ParticleBVPostBCKernel::OpenCircuitV(const Real &x, Real &u, Real &dudx)\n{\n    const Real R=8.3144598,F=96485.3329;\n\n\n    if(_MateChoice==1)\n    {\n        // For TiS2\n        // For LiyTiS2  (0.0<x<1.0)\n        u=2.17+(R*_T/F)*(log(fabs((1-x)/x))-16.2*x+8.1);\n        dudx=(-16.2*R*_T/F)*(x*x-x-0.0617284)/(x*(x-1));\n    }\n    else if(_MateChoice==2)\n    {\n        u=4.06279\n          +0.0677504*tanh(12.8268-21.8502*x)\n          -0.105734*(pow(1.00167-x,-0.379571)-1.575994)\n          -0.045*exp(-71.69*pow(x,8))\n          +0.01*exp(-200.0*(x-0.19));\n\n        dudx=-2.0*exp(-200.*(x-0.19))\n             -0.0401336/pow(1.00167-x,1.37957)\n             +25.8084*exp(-71.69*pow(x,8))*pow(x,7)\n             -1.48036*Sech(12.8268-21.8502*x)*Sech(12.8268-21.8502*x);\n    }\n    else if(_MateChoice==3)\n    {\n        u=2.17+R*_T*(-0.000558*x+8.10)/F;\n        dudx=R*_T*-0.000558/F;\n    }\n    else if(_MateChoice==4)\n    {\n        // For LiFePO4\n        // taken from \"Discharge Model for the Lithium Iron-Phosphate Electrode\"\n        // Venkat Srinivasan, DOI: 10.1149/1.1785012\n        u=3.114559\n          +4.438792*atan(-71.7352*x+70.85337)\n          -4.240252*atan(-68.5605*x+67.730082);\n        dudx=4.438792*(-71.7352)/(1+pow(-71.7352*x+70.85337,2))\n            +(-4.240252)*(-68.5605)/(1+pow(-68.5605*x+67.730082,2));\n    }\n    else if(_MateChoice==5)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.4324\n          -0.8428*exp(-80.2493*pow(1-x,1.3198))\n          -(3.2474e-6)*exp(20.2645*pow(1-x,3.8003))\n          +(3.2482e-6)*exp(20.2646*pow(1-x,3.7995));\n\n        dudx=-89.2635*exp(-80.2493*pow(1-x,1.3198))*pow(1-x,0.3198)\n            +0.000250086*exp(20.2645*pow(1-x,3.8003))*pow(1-x,2.8003)\n            -0.000250104*exp(20.2646*pow(1-x,3.7995))*pow(1-x,2.7995);\n    }\n    else if(_MateChoice==6)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.3059\n          +0.092769*tanh(-14.362*x+6.6874)\n          -0.034252*exp(100*(x-0.96))\n          +0.00724*exp(80.0*(0.01-x));\n\n        dudx=1.33235*Sech(6.6874-14.362*x)*Sech(6.6874-14.362*x)\n            -3.4252*exp(100*(x-0.96))\n            -0.5792*exp(80*(0.01-x));\n    }\n\n    u=u*F/(R*_T);\n    dudx=dudx*F/(R*_T);\n}\n\nvoid ParticleBVPostBCKernel::BV(const Real &c, const Real &phi1, const Real &phi2, const Real &cs, Real &J, Real &dJdc)\n{\n    Real U,dUdc;\n\n    OpenCircuitV(cs,U,dUdc);\n\n    Real eta=phi1-phi2-U;\n\n    J=_K2*sqrt((_Cm-c)*c)*(cs*exp(0.5*eta)-(1-cs)*exp(-0.5*eta));\n\n    dJdc=_K2*sqrt((_Cm-c)*c)*\n         (exp(0.5*eta)-0.5*cs*dUdc*exp(0.5*eta)\n          +exp(-0.5*eta)-0.5*(1-cs)*dUdc*exp(-0.5*eta));\n}\n\n\n//*************************\nReal ParticleBVPostBCKernel::computeQpResidual()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return J*_test[_i][_qp];\n}\n\nReal ParticleBVPostBCKernel::computeQpJacobian()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return dJdc*_phi[_j][_qp]*_test[_i][_qp];\n}\n\nand .h file:\n\n#pragma once\n\n//\n// Created by by on 24.10.18.\n//\n\n\n\n\n\n\n#include \"IntegratedBC.h\"\n\nclass ParticleBVPostBCKernel;\n\ntemplate <>\nInputParameters validParams<ParticleBVPostBCKernel>();\n\nclass ParticleBVPostBCKernel:public IntegratedBC\n{\npublic:\n  ParticleBVPostBCKernel(const InputParameters & parameters);\n  static InputParameters validParams();\n\nprotected:\n    virtual Real computeQpResidual() override ;\n    virtual Real computeQpJacobian() override ;\n\n\n     const PostprocessorName &_pps_phi1,&_pps_c2,&_pps_phi2;\n     const Real &_c2_value;\n     const Real &_phi1_value;\n     const Real &_phi2_value;\n\n     const Real &_K2,&_Cm;\n     const Real &_T;\n     const int &_MateChoice;\n\n     Real J,dJdc;\n.....\n\nSo this means that there are just no values coming from the pps to the micro.i (multiapp), right? Is this then again the fault of the execution order? Again, Thanks a lot for the help",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7763870",
+                          "updatedAt": "2023-12-05T12:04:25Z",
+                          "publishedAt": "2023-12-05T12:04:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "You need to order the intializer list in the constructor the same way that things are declared in the header",
+                  "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7764765",
+                  "updatedAt": "2023-12-05T14:23:44Z",
+                  "publishedAt": "2023-12-05T13:42:07Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "so have the list like this\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n    _c2_value(getPostprocessorValue(_pps_c2)),\n    _phi1_value(getPostprocessorValue(_pps_phi1)),\n    _phi2_value(getPostprocessorValue(_pps_phi2)),\n    _K2(getParam<Real>(\"K2\")),\n    _Cm(getParam<Real>(\"Cm\")),\n    _T(getParam<Real>(\"T\")),\n    _MateChoice(getParam<int>(\"MateChoice\"))\n\nif the header is like this\n     const PostprocessorName &_pps_phi1,&_pps_c2,&_pps_phi2;\n     const Real &_c2_value;\n     const Real &_phi1_value;\n     const Real &_phi2_value;\n\n     const Real &_K2,&_Cm;\n     const Real &_T;\n     const int &_MateChoice;\n\n     Real J,dJdc;",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7765255",
+                          "updatedAt": "2023-12-05T14:24:48Z",
+                          "publishedAt": "2023-12-05T14:24:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "Hi! So I have tried this, also tried playing around with different sortings but I always end up with the same error I have given you unless I change the order of\n     const PostprocessorName &_pps_phi1,&_pps_c2,&_pps_phi2;\n\nto something like\n     const PostprocessorName &_pps_c2,&_pps_phi1,&_pps_phi2;\n\nthen I get the error for the first variable.\nAny further ideas?",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7798715",
+                          "updatedAt": "2023-12-08T11:06:25Z",
+                          "publishedAt": "2023-12-08T11:06:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if you do that then in the intializer s list you have to do:\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n\nThis should be a very simple problem to fix. Maybe just make things clearer and avoid defining multiple variables in one line\n     const PostprocessorName & _pps_c2,\n     const PostprocessorName & _pps_phi1,\n     const PostprocessorName & _pps_phi2;\n\nwill be easier to make the order match with the constructor initializers' list",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7799473",
+                          "updatedAt": "2023-12-08T12:44:23Z",
+                          "publishedAt": "2023-12-08T12:44:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "*** ERROR ***\nERROR: no std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > parameter named \"pps_c2\" found.\n\nKnown parameters:\nName     Type    Value\n---------------------\n Cm      double  0.171479\n K2      double  2.286\n MateChoice      int     4\n T       double  298.15\n _dual_restrictable      bool    0\n _eigen_problem  EigenProblem*   0\n _executioner    Transient*      0\n _fe_problem     FEProblem*      0x55cff47ab480\n _fe_problem_base        FEProblemBase*  0x55cff47ab480\n _material_data_type     Moose::MaterialDataType         1\n _moose_app      MooseApp*       0x55cff44aa720\n _moose_base     std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition\n _nl_sys         SystemBase*     0\n _object_name    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         bv_flux\n _residual_object        bool    1\n _subproblem     SubProblem*     0x55cff47ab480\n _sys    SystemBase*     0x55cff47ce8d0\n _tid    unsigned int    0\n _type   std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         ParticleBVPostBCKernel\n _unique_name    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition::bv_flux\n absolute_value_vector_tags      std::vector<TagName, std::allocator<TagName> >  \n boundary        std::vector<BoundaryName, std::allocator<BoundaryName> >        right \n control_tags    std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >         BCs \n diag_save_in    std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \n displacements   std::vector<VariableName, std::allocator<VariableName> >        \n enable  bool    1\n extra_matrix_tags       std::vector<TagName, std::allocator<TagName> >  \n extra_vector_tags       std::vector<TagName, std::allocator<TagName> >  \n implicit        bool    1\n matrix_tags     MultiMooseEnum  system\n pps_c2  PostprocessorName       c2_from_macro\n pps_phi1        PostprocessorName       phi1_from_macro\n pps_phi2        PostprocessorName       phi2_from_macro\n prop_getter_suffix      MaterialPropertyName    \n save_in         std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \n seed    unsigned int    0\n use_displaced_mesh      bool    0\n variable        NonlinearVariableName   Cs\n vector_tags     MultiMooseEnum  nontime\n\nStack frames: 26\n0: libMesh::print_trace(std::ostream&)\n1: libMesh::MacroFunctions::report_error(char const*, int, char const*, char const*, std::ostream&)\n2: /home/michael/projects/babbler/lib/libbabbler-opt.so.0(+0x433e4) [0x7fee213cf3e4]\n3: /home/michael/projects/babbler/lib/libbabbler-opt.so.0(+0x437a4) [0x7fee213cf7a4]\n4: ParticleBVPostBCKernel::ParticleBVPostBCKernel(InputParameters const&)\n5: RegistryEntry<ParticleBVPostBCKernel>::build(InputParameters const&)\n6: Factory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int, bool)\n7: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x10c565b) [0x7fee1e25f65b]\n8: NonlinearSystemBase::addBoundaryCondition(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n9: Action::timedAct()\n10: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n11: ActionWarehouse::executeAllActions()\n12: MooseApp::runInputFile()\n13: MultiApp::createApp(unsigned int, double)\n14: MultiApp::createLocalApp(unsigned int)\n15: MultiApp::createApps()\n16: FEProblemBase::addMultiApp(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\n17: Action::timedAct()\n18: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\n19: ActionWarehouse::executeAllActions()\n20: MooseApp::runInputFile()\n21: MooseApp::run()\n22: main\n23: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fee15eb0d90]\n24: __libc_start_main\n25: ./babbler-opt(+0x33ef) [0x55cff0ee73ef]\n[0] /home/michael/mambaforge3/envs/moose/libmesh/include/libmesh/parameters.h, line 441, compiled Dec 12 2023 at 13:13:47\n\n\nStack frames: 8\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const*>(char const*&&)\n3: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x8f53f0) [0x7fee1da8f3f0]\n4: main\n5: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fee15eb0d90]\n6: __libc_start_main\n7: ./babbler-opt(+0x33ef) [0x55cff0ee73ef]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\nI am still receiving the same error. I have updated the header and C file as you have said. I did get an error when \"make\" so I changed it to:\n     const PostprocessorName & _pps_c2;\n     const PostprocessorName & _pps_phi1;\n     const PostprocessorName & _pps_phi2;\n\nI still dont quite understand why the parameter is not found now. even tho it is mentioned in the C file..\n//created by Armin 29.10.2020\n\n//\n// Created by by on 24.10.18.\n//\n\n#include \"ParticleBVPostBCKernel.h\"\n\nregisterMooseObject(\"BabblerApp\", ParticleBVPostBCKernel);\n\n\nInputParameters\nParticleBVPostBCKernel::validParams()\n{\n  InputParameters params = IntegratedBCBase::validParams();\n\n  params.addRequiredParam<PostprocessorName>(\"pps_c2\", \"name of pps for c2\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi1\", \"name of pps for phi1\");\n  params.addRequiredParam<PostprocessorName>(\"pps_phi2\", \"name of pps for phi2\");\n\n  params.addRequiredParam<Real>(\"Cm\", \"The maximum concentration of electrolyte phase\");\n  params.addRequiredParam<Real>(\"K2\", \"The reaction rate for Bulter-Volmer reaction\");\n  params.addRequiredParam<int>(\"MateChoice\",\n                               \"1->TiS2,\"\n                               \"2->Mn2O4,\"\n                               \"3->TiS2 new,\"\n                               \"4->LiFePO4,\"\n                               \"5->LiFePO4 from safari,\"\n                               \"6->V2O5\");\n\n  params.addParam<Real>(\"T\", 298.15, \"Temperature(default 298.15)\");\n\n  return params;\n}\n\nParticleBVPostBCKernel::ParticleBVPostBCKernel(const InputParameters &parameters)\n:IntegratedBC(parameters),\n    _pps_c2(getParam<std::string>(\"pps_c2\")),\n    _pps_phi1(getParam<std::string>(\"pps_phi1\")),\n    _pps_phi2(getParam<std::string>(\"pps_phi2\")),\n    _c2_value(getPostprocessorValue(_pps_c2)),\n    _phi1_value(getPostprocessorValue(_pps_phi1)),\n    _phi2_value(getPostprocessorValue(_pps_phi2)),\n    _K2(getParam<Real>(\"K2\")),\n    _Cm(getParam<Real>(\"Cm\")),\n    _T(getParam<Real>(\"T\")),\n    _MateChoice(getParam<int>(\"MateChoice\"))\n{}\n\nvoid ParticleBVPostBCKernel::OpenCircuitV(const Real &x, Real &u, Real &dudx)\n{\n    const Real R=8.3144598,F=96485.3329;\n\n\n    if(_MateChoice==1)\n    {\n        // For TiS2\n        // For LiyTiS2  (0.0<x<1.0)\n        u=2.17+(R*_T/F)*(log(fabs((1-x)/x))-16.2*x+8.1);\n        dudx=(-16.2*R*_T/F)*(x*x-x-0.0617284)/(x*(x-1));\n    }\n    else if(_MateChoice==2)\n    {\n        u=4.06279\n          +0.0677504*tanh(12.8268-21.8502*x)\n          -0.105734*(pow(1.00167-x,-0.379571)-1.575994)\n          -0.045*exp(-71.69*pow(x,8))\n          +0.01*exp(-200.0*(x-0.19));\n\n        dudx=-2.0*exp(-200.*(x-0.19))\n             -0.0401336/pow(1.00167-x,1.37957)\n             +25.8084*exp(-71.69*pow(x,8))*pow(x,7)\n             -1.48036*Sech(12.8268-21.8502*x)*Sech(12.8268-21.8502*x);\n    }\n    else if(_MateChoice==3)\n    {\n        u=2.17+R*_T*(-0.000558*x+8.10)/F;\n        dudx=R*_T*-0.000558/F;\n    }\n    else if(_MateChoice==4)\n    {\n        // For LiFePO4\n        // taken from \"Discharge Model for the Lithium Iron-Phosphate Electrode\"\n        // Venkat Srinivasan, DOI: 10.1149/1.1785012\n        u=3.114559\n          +4.438792*atan(-71.7352*x+70.85337)\n          -4.240252*atan(-68.5605*x+67.730082);\n        dudx=4.438792*(-71.7352)/(1+pow(-71.7352*x+70.85337,2))\n            +(-4.240252)*(-68.5605)/(1+pow(-68.5605*x+67.730082,2));\n    }\n    else if(_MateChoice==5)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.4324\n          -0.8428*exp(-80.2493*pow(1-x,1.3198))\n          -(3.2474e-6)*exp(20.2645*pow(1-x,3.8003))\n          +(3.2482e-6)*exp(20.2646*pow(1-x,3.7995));\n\n        dudx=-89.2635*exp(-80.2493*pow(1-x,1.3198))*pow(1-x,0.3198)\n            +0.000250086*exp(20.2645*pow(1-x,3.8003))*pow(1-x,2.8003)\n            -0.000250104*exp(20.2646*pow(1-x,3.7995))*pow(1-x,2.7995);\n    }\n    else if(_MateChoice==6)\n    {\n        // For LiFePO4\n        // taken from Modeling of a Commercial Graphite/LiFePO4 Cell\n        // Safari   doi: 10.1149/1.3567007\n        u=3.3059\n          +0.092769*tanh(-14.362*x+6.6874)\n          -0.034252*exp(100*(x-0.96))\n          +0.00724*exp(80.0*(0.01-x));\n\n        dudx=1.33235*Sech(6.6874-14.362*x)*Sech(6.6874-14.362*x)\n            -3.4252*exp(100*(x-0.96))\n            -0.5792*exp(80*(0.01-x));\n    }\n\n    u=u*F/(R*_T);\n    dudx=dudx*F/(R*_T);\n}\n\nvoid ParticleBVPostBCKernel::BV(const Real &c, const Real &phi1, const Real &phi2, const Real &cs, Real &J, Real &dJdc)\n{\n    Real U,dUdc;\n\n    OpenCircuitV(cs,U,dUdc);\n\n    Real eta=phi1-phi2-U;\n\n    J=_K2*sqrt((_Cm-c)*c)*(cs*exp(0.5*eta)-(1-cs)*exp(-0.5*eta));\n\n    dJdc=_K2*sqrt((_Cm-c)*c)*\n         (exp(0.5*eta)-0.5*cs*dUdc*exp(0.5*eta)\n          +exp(-0.5*eta)-0.5*(1-cs)*dUdc*exp(-0.5*eta));\n}\n\n\n//*************************\nReal ParticleBVPostBCKernel::computeQpResidual()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return J*_test[_i][_qp];\n}\n\nReal ParticleBVPostBCKernel::computeQpJacobian()\n{\n    Real c2 = _c2_value;\n    Real phi1 = _phi1_value;\n    Real phi2 = _phi2_value;\n\n    BV(c2,phi1,phi2,_u[_qp],J,dJdc);\n\n    return dJdc*_phi[_j][_qp]*_test[_i][_qp];\n}",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7830336",
+                          "updatedAt": "2023-12-12T12:21:28Z",
+                          "publishedAt": "2023-12-12T12:21:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You are using PostprocessorName when adding the parameter and std::string when retrieving it\nYou need to be consistent",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7830501",
+                          "updatedAt": "2023-12-12T12:43:32Z",
+                          "publishedAt": "2023-12-12T12:43:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "Thank you! I have updated it and I am left with this error now:\n(moose) michael@mfm176:~/projects/babbler$ ./babbler-opt -i macro.i \nmicro00000: \nmicro00000: \nmicro00000: *** ERROR ***\nmicro00000: The following error occurred in the object \"bv_flux\", of type \"ParticleBVPostBCKernel\".\nmicro00000: \nmicro00000: When getting a Postprocessor, failed to get a parameter with the name \"c2_from_macro\".\nmicro00000: \nmicro00000: Known parameters:\nmicro00000: Name         Type    Value\nmicro00000: ---------------------\nmicro00000:  Cm  double  0.171479\nmicro00000:  K2  double  2.286\nmicro00000:  MateChoice  int     4\nmicro00000:  T   double  298.15\nmicro00000:  _dual_restrictable  bool    0\nmicro00000:  _eigen_problem      EigenProblem*   0\nmicro00000:  _executioner        Transient*      0\nmicro00000:  _fe_problem         FEProblem*      0x559a5177c480\nmicro00000:  _fe_problem_base    FEProblemBase*  0x559a5177c480\nmicro00000:  _material_data_type         Moose::MaterialDataType         1\nmicro00000:  _moose_app  MooseApp*       0x559a5147b720\nmicro00000:  _moose_base         std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition\nmicro00000:  _nl_sys     SystemBase*     0\nmicro00000:  _object_name        std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         bv_flux\nmicro00000:  _residual_object    bool    1\nmicro00000:  _subproblem         SubProblem*     0x559a5177c480\nmicro00000:  _sys        SystemBase*     0x559a5179f8d0\nmicro00000:  _tid        unsigned int    0\nmicro00000:  _type       std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         ParticleBVPostBCKernel\nmicro00000:  _unique_name        std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         BoundaryCondition::bv_flux\nmicro00000:  absolute_value_vector_tags  std::vector<TagName, std::allocator<TagName> >  \nmicro00000:  boundary    std::vector<BoundaryName, std::allocator<BoundaryName> >        right \nmicro00000:  control_tags        std::vector<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::allocator<std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > > >         BCs \nmicro00000:  diag_save_in        std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \nmicro00000:  displacements       std::vector<VariableName, std::allocator<VariableName> >        \nmicro00000:  enable      bool    1\nmicro00000:  extra_matrix_tags   std::vector<TagName, std::allocator<TagName> >  \nmicro00000:  extra_vector_tags   std::vector<TagName, std::allocator<TagName> >  \nmicro00000:  implicit    bool    1\nmicro00000:  matrix_tags         MultiMooseEnum  system\nmicro00000:  pps_c2      std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         c2_from_macro\nmicro00000:  pps_phi1    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         phi1_from_macro\nmicro00000:  pps_phi2    std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >         phi2_from_macro\nmicro00000:  prop_getter_suffix  MaterialPropertyName    \nmicro00000:  save_in     std::vector<AuxVariableName, std::allocator<AuxVariableName> >  \nmicro00000:  seed        unsigned int    0\nmicro00000:  use_displaced_mesh  bool    0\nmicro00000:  variable    NonlinearVariableName   Cs\nmicro00000:  vector_tags         MultiMooseEnum  nontime\nmicro00000: \nmicro00000: \nmicro00000: Stack frames: 29\nmicro00000: 0: libMesh::print_trace(std::ostream&)\nmicro00000: 1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\nmicro00000: 2: callMooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&, MooseApp*)\nmicro00000: 3: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x192bd8d) [0x7fd34b0d2d8d]\nmicro00000: 4: PostprocessorInterface::checkParam(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int) const\nmicro00000: 5: PostprocessorInterface::getPostprocessorNameInternal(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, bool) const\nmicro00000: 6: PostprocessorInterface::getPostprocessorValueInternal(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, unsigned int, unsigned long) const\nmicro00000: 7: ParticleBVPostBCKernel::ParticleBVPostBCKernel(InputParameters const&)\nmicro00000: 8: RegistryEntry<ParticleBVPostBCKernel>::build(InputParameters const&)\nmicro00000: 9: Factory::create(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters const&, unsigned int, bool)\nmicro00000: 10: /home/michael/projects/moose/framework/libmoose-opt.so.0(+0x10c565b) [0x7fd34a86c65b]\nmicro00000: 11: NonlinearSystemBase::addBoundaryCondition(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\nmicro00000: 12: Action::timedAct()\nmicro00000: 13: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\nmicro00000: 14: ActionWarehouse::executeAllActions()\nmicro00000: 15: MooseApp::runInputFile()\nmicro00000: 16: MultiApp::createApp(unsigned int, double)\nmicro00000: 17: MultiApp::createLocalApp(unsigned int)\nmicro00000: 18: MultiApp::createApps()\nmicro00000: 19: FEProblemBase::addMultiApp(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&, InputParameters&)\nmicro00000: 20: Action::timedAct()\nmicro00000: 21: ActionWarehouse::executeActionsWithAction(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> > const&)\nmicro00000: 22: ActionWarehouse::executeAllActions()\nmicro00000: 23: MooseApp::runInputFile()\nmicro00000: 24: MooseApp::run()\nmicro00000: 25: main\nmicro00000: 26: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fd3424bdd90]\nmicro00000: 27: __libc_start_main\nmicro00000: 28: ./babbler-opt(+0x33ef) [0x559a4eac53ef]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\ncan I put a value somewhere for \"c2_from_macro\" ? The execution_on hasn't quite worked for me...",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7832565",
+                          "updatedAt": "2023-12-12T16:02:10Z",
+                          "publishedAt": "2023-12-12T16:02:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "c2_from_macro? is that a postprocessor in your input?\nCan you try checking the docstring for getPostprocessorValue ?\nI think you should be using getPostprocessorValueByName instead here",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7833189",
+                          "updatedAt": "2023-12-12T17:01:43Z",
+                          "publishedAt": "2023-12-12T17:01:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Liserion"
+                          },
+                          "bodyText": "I think it is working now, thank you so much! (At least it is running and there havent been any errors, HURRA)",
+                          "url": "https://github.com/idaholab/moose/discussions/26184#discussioncomment-7853239",
+                          "updatedAt": "2023-12-14T12:44:11Z",
+                          "publishedAt": "2023-12-14T12:44:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "About the Kronecker symbol",
+          "author": {
+            "login": "Nuwanted"
+          },
+          "bodyText": "Hello all\uff0c I have recently been researching the problem of strain.  In the free energy function, I need to calculate the value of the volumetric strain, but I am not sure how to implement the Kronecker symbol in MOOSE.  Thank you very much for your help.",
+          "url": "https://github.com/idaholab/moose/discussions/26333",
+          "updatedAt": "2023-12-14T08:06:42Z",
+          "publishedAt": "2023-12-14T03:36:44Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou could use an \"if\" condition in a parsed expression.\nHowever unless it gets evaluated at just the right point it will never be true.\nIt s a good question for @dschwen",
+                  "url": "https://github.com/idaholab/moose/discussions/26333#discussioncomment-7850755",
+                  "updatedAt": "2023-12-14T08:06:43Z",
+                  "publishedAt": "2023-12-14T08:06:42Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Multiscale FEM Modeling",
+          "author": {
+            "login": "manikumd22"
+          },
+          "bodyText": "I am working on multiscale modeling (computational homogenization scheme), and in multiscale modeling, we apply the PBC to an RVE using a deformation gradient tensor, and that RVE (sub ap) will give first Piola Kirchoff stress using the homogenization technique over RVE for each of the macro gauss points\nIn my case, I have a CSV file that will take the deformation gradient tensor as input and it will give the first Piola stress tensor as output that will be used at each gauss point. I'm struggling with this\nCan you please help me with this?",
+          "url": "https://github.com/idaholab/moose/discussions/26332",
+          "updatedAt": "2023-12-13T23:44:30Z",
+          "publishedAt": "2023-12-13T22:09:13Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@recuero @dschwen on RVE",
+                  "url": "https://github.com/idaholab/moose/discussions/26332#discussioncomment-7848117",
+                  "updatedAt": "2023-12-13T23:44:30Z",
+                  "publishedAt": "2023-12-13T23:44:30Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How does the mass fraction in the Fluid Mass Governing equation get updated in PorousFlow?",
+          "author": {
+            "login": "steam-simulator"
+          },
+          "bodyText": "Hello,\nI wonder how the mass fraction gets updated in the PorousFlowMassFraction material after its initial values get called into this material. There is no equation in the PorousFlowMassFraction documentation in this regard. I\u2019d be grateful if someone could help out.\nThanks.",
+          "url": "https://github.com/idaholab/moose/discussions/26280",
+          "updatedAt": "2023-12-18T18:54:23Z",
+          "publishedAt": "2023-12-08T07:31:45Z",
+          "category": {
+            "name": "Q&A Modules: Porous Flow"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "That material doesn't really do anything except put all of the mass fractions in a multi-dimensional array in the correct positions so every other object (like the kernels) can access mass fractions of each fluid component in each fluid phase. So the mass fraction won't change unless it is a nonlinear variable, or if it is computed in some other object (for example, the brine-CO2 stuff computes the mass fractions of water and CO2 in both phases depending on the conditions).",
+                  "url": "https://github.com/idaholab/moose/discussions/26280#discussioncomment-7797684",
+                  "updatedAt": "2023-12-08T08:55:58Z",
+                  "publishedAt": "2023-12-08T08:55:58Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "steam-simulator"
+                          },
+                          "bodyText": "Hello,\nThe answer to my previous post #26168 suggests that the mass fraction of the primary chemical species in PorousFlow chemistry also represents the primary species concentration. It seems PorousFlow requires primary species concentration to be very small (preferably a minimum of 1 [units]). Correct?\nI expected my primary concentrations to be about 6 [units], which my dissolution rate correctly gave me. As a result, the water mass fraction becomes exceedingly negative (since \\chi^{water}=1-\\chi^{all_components}. Is there a way I can normalize my primary concentration, hence the mass fraction, so that I obtain a positive water mass fraction?\nAlso, if I\u2019m using mass fraction as a non-linear variable for PorousFlow chemistry, how does Porousflow compute the mass fraction\u2019s evolution? The answer to this question will help me know how Porousflow is computing my primary concentrations. Does it depend on the reaction rate? Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/26280#discussioncomment-7846352",
+                          "updatedAt": "2023-12-13T19:23:08Z",
+                          "publishedAt": "2023-12-13T19:23:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Regarding the definition of new material",
+          "author": {
+            "login": "manikumd22"
+          },
+          "bodyText": "I'm working on multiscale modeling and want to input the properties such as stress tensor from outside. As in FEM, we calculate the tangent stiffness matrix (K_T) which consists of two terms K_geometric (function of stress) and K_material(function of material constants) and internal force(function of stress). This stress tensor (input from outside) will evaluate the tangent stiffness matrix and internal force at every iteration.\nI want to define a new material that will take deformation tensor (F) as input from Moose and give stress tensor (S) as output back to MOOSE which will be used for the evaluation of stiffness, the code for this calculation from F to S is based on small scale and I already coded on C++ framework\nI am struggling to do that",
+          "url": "https://github.com/idaholab/moose/discussions/26306",
+          "updatedAt": "2023-12-13T03:22:35Z",
+          "publishedAt": "2023-12-12T18:38:08Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is more of a tensor mechanics question, I m reclassifying this to get it seen by the relevant people\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/26306#discussioncomment-7834198",
+                  "updatedAt": "2023-12-12T18:40:44Z",
+                  "publishedAt": "2023-12-12T18:40:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

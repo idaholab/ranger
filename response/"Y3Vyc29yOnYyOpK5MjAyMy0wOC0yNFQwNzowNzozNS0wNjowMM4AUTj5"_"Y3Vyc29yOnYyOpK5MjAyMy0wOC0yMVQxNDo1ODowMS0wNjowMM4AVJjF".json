@@ -1,0 +1,922 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wOC0yMVQxNDo1ODowMS0wNjowMM4AVJjF"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "How to add this concentration function",
+          "author": {
+            "login": "GuoChi-Li"
+          },
+          "bodyText": "Hello MOOSE experts,\nProblem statement\nI have a 2D phase-field problem, and I want to add this concentration function.\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla{\\cdot\\tilde{D}}[\\nabla{c}+\\frac{(1-k)c}{(1-\\phi+k\\phi)}\\nabla{\\phi}] \\qquad (Eq. 1)$$\n, where $D_s,D_l,\\tau,l_0^2, k$ are constants; $\\phi, c$ are variables; $\\tilde{t}$ is time; $\\tilde{D}$ is shown as follows\n$$\\tilde{D}=(D_s+\\frac{(D_l-Ds)(1-\\phi)}{(1-\\phi+k\\phi)})\\frac{\\tau}{l_0^2}$$\nBy doing some manipulation, I have this function (If this is not right, please let me know)\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla\\tilde{D}\\nabla{c}+\\tilde{D}\\nabla^{2}{c}+\\nabla{\\cdot}(\\frac{\\tilde{D}(1-k)c}{(1-\\phi+k\\phi)})\\nabla{\\phi}+(\\frac{\\tilde{D}(1-k)c}{(1-\\phi+k\\phi)})\\nabla^{2}{\\phi} \\qquad (Eq. 2)$$\nLet $$Dp=\\frac{\\tilde{D}(1-k)c}{(1-\\phi+k\\phi)}$$ and I get\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla\\tilde{D}\\nabla{c}+\\tilde{D}\\nabla^{2}{c}+\\nabla{D_p}\\nabla{\\phi}+D_p\\nabla^{2}{\\phi} \\qquad (Eq. 3)$$\nPart of my code is shown as follows\nIn Materials\n  [./Dba]\n    # This is tilde D\n    type = DerivativeParsedMaterial\n    property_name = Dba\n    coupled_variables = 'phi'\n    material_property_names = 'Ds Dl  k tao l02'\n    expression = '(Ds+(Dl-Ds)*(1-phi)/(1-phi+k*phi))*(tao/l02)'\n    derivative_order = 2\n    outputs = exodus\n  [../]\n  [./Dp]\n    type = DerivativeParsedMaterial\n    property_name = Dp\n    coupled_variables = 'c phi'\n    material_property_names = 'Dba  k'\n    expression = '(Dba*(1-k)/(1-phi+k*phi))*c'\n    derivative_order = 2\n    outputs = exodus\n  [../]\n\nIn Kernel\n  [./c_dot]\n    type = TimeDerivative\n    variable = c\n  [../]\n  [./gradDba_dot_gradC]\n    type = MatDiffusion\n    variable = c\n    diffusivity = Dba\n    args = phi\n  [../]\n  [./Dba_dot_laplaceC]\n    # TODO\n  [../]\n  [./gradDp_dot_gradPhi]\n    type = MatDiffusion\n    variable = c\n    diffusivity = Dp\n    args = 'c phi' # for diffusivity\n    v = 'phi' # Coupled concentration variable for the kernel to operate on \n  [../]\n  [./Dp_dot_laplacePhi]\n    # TODO\n  [../]\n\nQuestion\nI don't know how to add Dba_dot_laplaceC and Dp_dot_laplacePhi. I have tried FunctionDiffusion, but it does not work. I think FunctionDiffusion can not work with variables. Is there any existing method I can use to add these? Or should I code a new one? Any comments are welcome.\nThank you.\nGuo-Chi",
+          "url": "https://github.com/idaholab/moose/discussions/25252",
+          "updatedAt": "2023-08-24T01:21:43Z",
+          "publishedAt": "2023-08-20T13:49:38Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThese terms are a little problematic here. You cant just do integration by parts / divergence theorem anymore because you dont have the divergence on the outside of the $D_p \\nabla^2 c$ term for example.\nYou can make a new kernel to represent them.\nYou can use adCoupledSecond to obtain the second derivative.\nYou ll need c and phi to be at least second order so they dont have a 0 laplacian.\nThe classic solution here though is I think to use the very first form of your equation and use simply 2 kernels, one MatDiffusion for c and a custom one for eta.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25252#discussioncomment-6781537",
+                  "updatedAt": "2023-08-21T14:23:06Z",
+                  "publishedAt": "2023-08-21T14:18:34Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Hello\nThank you for the explanation. I find I have made some TYPOS in the code in Kernel. All the eta should be phi.\nI have the following idea.\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla{\\cdot\\tilde{D}}[\\nabla{c}+\\frac{(1-k)c}{(1-\\phi+k\\phi)}\\nabla{\\phi}] \\qquad (Eq. 1)$$\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla{\\cdot}[\\tilde{D}\\nabla{c}+\\tilde{D}\\frac{(1-k)c}{(1-\\phi+k\\phi)}\\nabla{\\phi}]$$\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla{\\cdot}(\\tilde{D}\\nabla{c})+\\nabla{\\cdot}(\\frac{\\tilde{D}(1-k)c}{(1-\\phi+k\\phi)}\\nabla{\\phi})$$\nAlso, Let $$Dp=\\frac{\\tilde{D}(1-k)c}{(1-\\phi+k\\phi)}$$ and I get\n$$\\frac{\\partial c}{\\partial \\tilde{t}}= \\nabla{\\cdot}(\\tilde{D}\\nabla{c})+\\nabla{\\cdot}(D_{p}\\nabla{\\phi}) \\qquad (Eq. 4)$$\nMaybe I can use two MatDiffusion kernels to implement now?",
+                          "url": "https://github.com/idaholab/moose/discussions/25252#discussioncomment-6787060",
+                          "updatedAt": "2023-08-22T02:53:39Z",
+                          "publishedAt": "2023-08-22T02:53:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nYes both these terms can be done with MatDiffusion and a DerivativeParsedMaterial for the Diffusion coefficients\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/25252#discussioncomment-6791911",
+                          "updatedAt": "2023-08-22T13:26:26Z",
+                          "publishedAt": "2023-08-22T13:26:26Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GuoChi-Li"
+                          },
+                          "bodyText": "Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/25252#discussioncomment-6808082",
+                          "updatedAt": "2023-08-24T01:21:44Z",
+                          "publishedAt": "2023-08-24T01:21:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to transfer data from different material blocks?",
+          "author": {
+            "login": "tqcthai"
+          },
+          "bodyText": "Dear all,\nI am a new user in Moose.\nI am implementing Moose for a mechanical coupling problem. In material block A, I compute the stress and a physical quality _a[_qp]. In material block B, which has type = ParsedMaterial, I need to specify the expression as a function of _a[_qp]. Do you know ho to do that in Moose? Is there any available example for that?\nThank you.\n-T",
+          "url": "https://github.com/idaholab/moose/discussions/25288",
+          "updatedAt": "2023-08-23T23:39:02Z",
+          "publishedAt": "2023-08-23T20:01:09Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhat is _a ? a function ? a material property ? A variable?\nOnce you have the name of a, you can use that name in the ParsedMaterial expression.\nYou can look at the Parsedmaterial documentation for examples:\nhttps://mooseframework.inl.gov/source/materials/ParsedMaterial.html\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806474",
+                  "updatedAt": "2023-08-23T20:03:55Z",
+                  "publishedAt": "2023-08-23T20:03:54Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "Hello GiudGiud,\n_a[_qp] is an intermediated variable computed in the material block A, it is not a global variable specified in the input file.",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806497",
+                          "updatedAt": "2023-08-23T20:07:42Z",
+                          "publishedAt": "2023-08-23T20:07:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You ll have to declare a as a material property to be able to re-use it in another material property.\nThen in material A, you ll need to set _a",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806507",
+                          "updatedAt": "2023-08-23T20:09:15Z",
+                          "publishedAt": "2023-08-23T20:09:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "Yes, I declared it in Material A as _a(declareProperty(_base_name + \"a\"))\n(I tried declareMaterialProperty instead of declareProperty but it was an error)\nWhat is the syntax to set _a here in order to make it can be recognized in Material block B?",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806727",
+                          "updatedAt": "2023-08-23T20:44:52Z",
+                          "publishedAt": "2023-08-23T20:44:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "in B, you can have expression = '<base_name>a + ...'\nwith material_property_names = '<base_name>a' as a parameter as well.\nWhat is the base_name here? you ll need to use it in the expression in B",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806793",
+                          "updatedAt": "2023-08-23T20:54:18Z",
+                          "publishedAt": "2023-08-23T20:54:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "I also don't know what is _base_name here, it exists already in the example file, I removed it and tried as you suggested:\nIn material A, cpp file: _a(declareProperty(\"a\"))\nand header file: MaterialProperty & _a\nMaterial B block in the input file looks like:\ntype = DerivativeParsedMaterial\n    property_name = block_B\n    coupled_variables = 'c'\n    material_property_names = 'a'\n    expression = 'c^(2a)'\n    derivative_order = 2\n\nAnd I got the error: Cyclic dependency detected in object ordering",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806885",
+                          "updatedAt": "2023-08-23T21:11:22Z",
+                          "publishedAt": "2023-08-23T21:10:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "does A depend on B? Or the material that computes A depend on B?\nBecause right now B depend on A",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806893",
+                          "updatedAt": "2023-08-23T21:11:51Z",
+                          "publishedAt": "2023-08-23T21:11:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "it should be block_B = c^(2a)\nWhere 'c' is a basis variable, and 'a' is computed from another basis variable in material A",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806919",
+                          "updatedAt": "2023-08-23T21:15:37Z",
+                          "publishedAt": "2023-08-23T21:15:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "it means 'a' does not depend on block_B or B.",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6806963",
+                          "updatedAt": "2023-08-23T21:23:13Z",
+                          "publishedAt": "2023-08-23T21:23:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Is there any other material property computed at the same time as 'a' that does depend on B?",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6807013",
+                          "updatedAt": "2023-08-23T21:31:35Z",
+                          "publishedAt": "2023-08-23T21:31:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tqcthai"
+                          },
+                          "bodyText": "You are right, they are implicit dependent. But I am doing the transient analysis, let's say  block_B_{n+1} = c_{n+1}^(2a_{n}), now a is frozen as a material parameter of the previous step. I wonder how to do that in Moose.",
+                          "url": "https://github.com/idaholab/moose/discussions/25288#discussioncomment-6807448",
+                          "updatedAt": "2023-08-23T23:09:11Z",
+                          "publishedAt": "2023-08-23T23:09:10Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Civet test failing on \"Build framework\" step",
+          "author": {
+            "login": "smpark7"
+          },
+          "bodyText": "I'm working on a PR for Moltres which introduces new tests and documentation but doesn't touch any source code.\nThe Civet CI keeps failing on the \"Build framework\" step with the following text:\n//: Running in versioned apptainer container moose-dev\n//: Container  not found\n//: Container  not found\nFailed to find a container to run in\n\nThe CI tests for other PRs run fine without any issues. Can I safely ignore this failed test and merge my PR?",
+          "url": "https://github.com/idaholab/moose/discussions/25283",
+          "updatedAt": "2023-08-23T17:13:00Z",
+          "publishedAt": "2023-08-23T16:21:40Z",
+          "category": {
+            "name": "Q&A Tools"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@loganharbour @milljm",
+                  "url": "https://github.com/idaholab/moose/discussions/25283#discussioncomment-6804955",
+                  "updatedAt": "2023-08-23T16:38:03Z",
+                  "publishedAt": "2023-08-23T16:38:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I would say no, you need to run the test suite. The new tests could be failing in a tested configuration and the new docs could have defects that would only be picked up by a documentation test build.",
+                          "url": "https://github.com/idaholab/moose/discussions/25283#discussioncomment-6804966",
+                          "updatedAt": "2023-08-23T16:39:10Z",
+                          "publishedAt": "2023-08-23T16:39:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "The moose in moltres is so old that it doesn't support our CI anymore",
+                          "url": "https://github.com/idaholab/moose/discussions/25283#discussioncomment-6804968",
+                          "updatedAt": "2023-08-23T16:39:11Z",
+                          "publishedAt": "2023-08-23T16:39:11Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "So @smpark7 it sounds like you should update the MOOSE submodule hash as a first step",
+                          "url": "https://github.com/idaholab/moose/discussions/25283#discussioncomment-6805098",
+                          "updatedAt": "2023-08-23T16:52:56Z",
+                          "publishedAt": "2023-08-23T16:52:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "smpark7"
+                          },
+                          "bodyText": "Ah I see. Thanks for checking this!",
+                          "url": "https://github.com/idaholab/moose/discussions/25283#discussioncomment-6805210",
+                          "updatedAt": "2023-08-23T17:06:26Z",
+                          "publishedAt": "2023-08-23T17:06:25Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Query related to ComputeInstantaneousThermalExpansionFunctionEigenstrain vs ComputeMeanThermalExpansionFunctionEigenstrain",
+          "author": {
+            "login": "deepakbiitk"
+          },
+          "bodyText": "Dear MOOSE users,\nI had a query related to input of temperature dependent CTE functions in ComputeInstantaneousThermalExpansionFunctionEigenstrain and ComputeMeanThermalExpansionFunctionEigenstrain.  From the details from the page of ComputeInstantaneousThermalExpansionFunctionEigenstrain, it is clear that one needs to input instantaneous CTE vs temperature curve. However, for the ComputeMeanThermalExpansionFunctionEigenstrain, it is not clear whether one needs to input  instantaneous CTE vs temperature curve or  mean CTE vs temperature curve. I appreciate any help regarding this.\nBest,\nDeepak",
+          "url": "https://github.com/idaholab/moose/discussions/25282",
+          "updatedAt": "2023-08-23T16:33:46Z",
+          "publishedAt": "2023-08-23T16:18:01Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "deepakbiitk"
+                  },
+                  "bodyText": "I figured this out. I needs mean CTE vs temperature curve. Thanks",
+                  "url": "https://github.com/idaholab/moose/discussions/25282#discussioncomment-6804923",
+                  "updatedAt": "2023-08-23T16:33:47Z",
+                  "publishedAt": "2023-08-23T16:33:46Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Tests Failing on prebuilt Moose Instalation",
+          "author": {
+            "login": "bclayto4"
+          },
+          "bodyText": "I am working on bringing MOOSE tools to my university campus. Today I have been working on installing the Pre-Built version of MOOSE for training purposes. I ran into complications while testing the reactor_tutorial, 4 tests failed. I have included their error messages here:\nadv_examples.oversize: Working Directory: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/adv_examples\nadv_examples.oversize: Running command: /home/bclayto4/mambaforge3/envs/moose/moose/share/moose/python/TestHarness/../../../../bin/combined-opt -i oversize.i --mesh-only --error-deprecated --error --error-override --no-gdb-backtrace\nadv_examples.oversize:\nadv_examples.oversize:\nadv_examples.oversize: *** ERROR ***\nadv_examples.oversize: The following parameter error occurred in the object \"xyd\", of type \"XYDelaunayGenerator\".\nadv_examples.oversize:\nadv_examples.oversize: refine_holes: Disable auto refine of any hole boundary to be stitched.\nadv_examples.oversize:\nadv_examples.oversize: application called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nadv_examples.oversize: [unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\nadv_examples.oversize: :\nadv_examples.oversize: system msg for write_line failure : Bad file descriptor\nadv_examples.oversize:\nadv_examples.oversize:\nadv_examples.oversize: Exit Code: 1\nadv_examples.oversize: ################################################################################\nadv_examples.oversize: Tester failed, reason: ERRMSG\nadv_examples.oversize:\nadv_examples.oversize ........................................................................ FAILED (ERRMSG)`\n\n`base_mesh_generators.depletion_id: Working Directory: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/base_mesh_generators\nbase_mesh_generators.depletion_id: Running command: /home/bclayto4/mambaforge3/envs/moose/moose/share/moose/python/TestHarness/../../../../bin/combined-opt -i depletion_id.i --mesh-only --error-deprecated --error --error-override --no-gdb-backtrace\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id: *** ERROR ***\nbase_mesh_generators.depletion_id: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/base_mesh_generators/depletion_id.i:37: (Mesh/assembly1/square_size):\nbase_mesh_generators.depletion_id:     This parameter must not be provided when pattern_boundary is none.\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id: application called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nbase_mesh_generators.depletion_id: [unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\nbase_mesh_generators.depletion_id: :\nbase_mesh_generators.depletion_id: system msg for write_line failure : Bad file descriptor\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id: Exit Code: 1\nbase_mesh_generators.depletion_id: ################################################################################\nbase_mesh_generators.depletion_id: Tester failed, reason: ERRMSG\nbase_mesh_generators.depletion_id:\nbase_mesh_generators.depletion_id ............................................................ FAILED (ERRMSG)`\n\n`reactor_examples.rgmb_lfr_assembly: Working Directory: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/reactor_examples\nreactor_examples.rgmb_lfr_assembly: Running command: /home/bclayto4/mambaforge3/envs/moose/moose/share/moose/python/TestHarness/../../../../bin/combined-opt -i rgmb_lfr/rgmb_lfr_assembly.i --mesh-only --error-deprecated --error --error-override --no-gdb-backtrace\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly: *** ERROR ***\nreactor_examples.rgmb_lfr_assembly: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/reactor_examples/rgmb_lfr/rgmb_lfr_assembly.i:3: (Mesh/final_generator):\nreactor_examples.rgmb_lfr_assembly:     The forced final MeshGenerator 'abtr_mesh' does not exist\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly: application called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nreactor_examples.rgmb_lfr_assembly: [unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\nreactor_examples.rgmb_lfr_assembly: :\nreactor_examples.rgmb_lfr_assembly: system msg for write_line failure : Bad file descriptor\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly: Exit Code: 1\nreactor_examples.rgmb_lfr_assembly: ################################################################################\nreactor_examples.rgmb_lfr_assembly: Tester failed, reason: ERRMSG\nreactor_examples.rgmb_lfr_assembly:\nreactor_examples.rgmb_lfr_assembly ........................................................... FAILED (ERRMSG)`\n\n`base_mesh_generators.alternative_pattern_reporting_id: Working Directory: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/base_mesh_generators\nbase_mesh_generators.alternative_pattern_reporting_id: Running command: /home/bclayto4/mambaforge3/envs/moose/moose/share/moose/python/TestHarness/../../../../bin/combined-opt -i alternative_pattern_reporting_id.i --mesh-only --error-deprecated --error --error-override --no-gdb-backtrace\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id: *** ERROR ***\nbase_mesh_generators.alternative_pattern_reporting_id: /home/bclayto4/projects/examples/combined/combined/reactor_tutorial/tests/base_mesh_generators/alternative_pattern_reporting_id.i:34: (Mesh/assembly1/square_size):\nbase_mesh_generators.alternative_pattern_reporting_id:     This parameter must not be provided when pattern_boundary is none.\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id: application called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\nbase_mesh_generators.alternative_pattern_reporting_id: [unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\nbase_mesh_generators.alternative_pattern_reporting_id: :\nbase_mesh_generators.alternative_pattern_reporting_id: system msg for write_line failure : Bad file descriptor\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id: Exit Code: 1\nbase_mesh_generators.alternative_pattern_reporting_id: ################################################################################\nbase_mesh_generators.alternative_pattern_reporting_id: Tester failed, reason: ERRMSG\nbase_mesh_generators.alternative_pattern_reporting_id:\nbase_mesh_generators.alternative_pattern_reporting_id ........................................ FAILED (ERRMSG)",
+          "url": "https://github.com/idaholab/moose/discussions/25274",
+          "updatedAt": "2023-08-23T15:18:47Z",
+          "publishedAt": "2023-08-22T20:41:40Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWhen is this executable from? And when is the MOOSE folder from?\nFor the former: see the header of any simulation log and report the commit\nFor the latter: git log HEAD and report the commit\nThis could be a mismatch in versions\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6795912",
+                  "updatedAt": "2023-08-22T20:56:26Z",
+                  "publishedAt": "2023-08-22T20:56:26Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bclayto4"
+                          },
+                          "bodyText": "Thanks for the help, I am not sure  where I could find a simulation log, and when I use git log HEAD I get the following: $ git log HEAD\nfatal: not a git repository (or any of the parent directories): .git",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796010",
+                          "updatedAt": "2023-08-22T21:12:53Z",
+                          "publishedAt": "2023-08-22T21:12:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bclayto4"
+                          },
+                          "bodyText": "using '$ moose -v' I get:\nApplication Version: snapshot-20-10-27-34808-g4de053fda8",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796020",
+                          "updatedAt": "2023-08-22T21:15:09Z",
+                          "publishedAt": "2023-08-22T21:15:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "why is moose/ not a git repo?\n20-10-27 ? Is that 3 years old?",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796034",
+                          "updatedAt": "2023-08-22T21:16:54Z",
+                          "publishedAt": "2023-08-22T21:16:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bclayto4"
+                          },
+                          "bodyText": "https://mooseframework.inl.gov/getting_started/installation/moose_conda_binary.html\nThese are the directions I have been following, they seem to be more recent (I think they were posted within the last 2-3 months). They forgo the cloning of moose using the git repository. I am not sure if this is why the git log HEAD command isn't working",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796059",
+                          "updatedAt": "2023-08-22T21:22:19Z",
+                          "publishedAt": "2023-08-22T21:22:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bclayto4"
+                          },
+                          "bodyText": "the moose command used in this \"prebuilt\" version has the following information, if that helps.\nUsage: moose [<options>]\n\nOptions:\n  --allow-test-objects                              Register test objects and syntax.\n  -w --allow-unused                                 Warn about unused input file options instead of erroring.\n  --app <AppName>                                   Specify the application that should be used to run the input file. This must match an application name registered to the application factory. Note that this option is case-sensitive.\n  --type                                            Return the name of the application object.\n  --check-input                                     Check the input file (i.e. requires -i <filename>) and quit.\n  --color [auto,on,off]                             Whether to use color in console output (default 'on').\n  --copy-inputs <dir>                               Copies installed inputs (e.g. tests, examples, etc.) to an directory named  <appname>_<dir>.\n  --definition                                      Shows a SON style input definition dump for input validation\n  --disable-perf-graph-live                         Disables PerfGraph Live Printing.\n  -v --version                                      Print application version\n  --distributed-mesh                                The libMesh Mesh underlying MooseMesh should always be a DistributedMesh\n  --dump [search_string]                            Shows a dump of available input file syntax.\n  --error                                           Turn all warnings into errors\n  --error-deprecated                                Turn deprecated code messages into Errors\n  -o --error-override                               Error when encountering overridden or parameters supplied multiple times\n  -e --error-unused                                 Error when encountering unused input file options\n  --half-transient                                  When true the simulation will only run half of its specified transient (ie half the timesteps).  This is useful for testing recovery and restart\n  -h --help                                         Displays CLI usage statement.\n  -i <input_files>                                  Specify one or multiple input files. Multiple files get merged into a single simulation input.\n  --json                                            Dumps input file syntax in JSON format.\n  --keep-cout                                       Keep standard output from all processors when running in parallel\n  --language-server                                 Starts a process to communicate with development tools using the language server protocol\n  --list-constructed-objects                        List all moose object type names constructed by the master app factory.\n  --mesh-only [mesh_file_name]                      Setup and Output the input mesh only (Default: \"<input_file_name>_in.e\")\n  --minimal                                         Ignore input file and build a minimal application with Transient executioner.\n  --n-threads=<n>                                   Runs the specified number of threads per process\n  --no-color                                        Disable coloring of all Console outputs.\n  --no-timing                                       Disabled performance logging. Overrides -t or --timing if passed in conjunction with this flag\n  --no-trap-fpe                                     Disable Floating Point Exception handling in critical sections of code when using DEBUG mode.\n  --perf-graph-live-all                             Forces printing of ALL progress messages.\n  --recover [file_base]                             Continue the calculation.  If file_base is omitted then the most recent recovery file will be utilized\n  --recoversuffix [suffix]                          Use a different file extension, other than cpr, for a recovery file\n  --redirect-stdout                                 Keep standard output from all processors when running in parallel\n  -r <n>                                            Specify additional initial uniform mesh refinements for grid convergence studies\n  --registry                                        Lists all known objects and actions.\n  --registry-hit                                    Lists all known objects and actions in hit format.\n  --run                                             Runs the inputs in the current directory copied to a user-writable location by \"--copy-inputs\"\n  --show-controls                                   Shows the Control logic available and executed.\n  --docs                                            print url/path to the documentation website\n  --show-input                                      Shows the parsed input file before running the simulation.\n  --show-copyable-inputs                            Shows the directories able to be installed (copied) into a user-writable location\n  --show-outputs                                    Shows the output execution time information.\n  --split-file [filename]                           optional name of split mesh file(s) to write/read\n  --split-mesh [splits]                             comma-separated list of numbers of chunks to split the mesh into\n  --start-in-debugger <debugger>                    Start the application and attach a debugger.  This will launch xterm windows using the command you specify for 'debugger'\n  --stop-for-debugger [seconds]                     Pauses the application during startup for the specified time to allow for connection of debuggers.\n  --syntax                                          Dumps the associated Action syntax paths ONLY\n  -t --timing                                       Enable all performance logging for timing purposes. This will disable all screen output of performance logs for all Console objects.\n  --timpi-sync <sync type>                          Changes the sync type used in spare parallel communitations within the TIMPI library (advanced option).\n  --trap-fpe                                        Enable Floating Point Exception handling in critical sections of code.  This is enabled automatically in DEBUG mode\n  --executor                                        Use the new Executor system instead of Executioners\n  --use-split                                       use split distributed mesh files\n  --yaml                                            Dumps input file syntax in YAML format.",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796074",
+                          "updatedAt": "2023-08-22T21:26:43Z",
+                          "publishedAt": "2023-08-22T21:25:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "did you run git log inside the moose folder? where you got the tests from\ncan you run a simple test with the moose binaries? like in moose/test/tests/kernels/simple_diffusion\nthis will give you a simulation log from which you ca get the commit",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796088",
+                          "updatedAt": "2023-08-22T21:27:56Z",
+                          "publishedAt": "2023-08-22T21:27:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "bclayto4"
+                          },
+                          "bodyText": "This installation of moose does not have the moose file structure you are suggesting I try, though I am familiar with this as it is what I have on my personal device. I am trying to use this newer prebuilt system to prepare to train a few of my fellow students on how to use the provided tools.\nWithout a moose folder, I cannot see a simple diffusion test. I have however located each physics model at ~/mambaforge3/envs/moose/moose/share/moose$\ngit log HEAD still fails, but I tested the reactor, fluid_properties and reactor_training models. Only reactor_training had failed tests, everything else passed without issue\n'~/mambaforge3/envs/moose/moose/share/moose$ ls\npycache         contact                fluid_properties            geochemistry     moose_config.py  phase_field  rdg               scalar_transport  thermal_hydraulics\nbin                 data                   framework                   heat_conduction  navier_stokes    porous_flow  reactor           solid_properties  xfem\nchemical_reactions  electromagnetics       fsi                         level_set        optimization     python       reactor_tutorial  stochastic_tools\ncombined            external_petsc_solver  functional_expansion_tools  misc             peridynamics     ray_tracing  richards          tensor_mechanics'",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796203",
+                          "updatedAt": "2023-08-22T21:48:46Z",
+                          "publishedAt": "2023-08-22T21:48:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ah ok I think I understand now!\nYou re only using the binary, you didnt clone the repo as well.\nThanks for investigating\n@milljm seems we have 4 failures on the installed binaries. Did we start testing those? or is that WIP?",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6796244",
+                          "updatedAt": "2023-08-22T21:56:28Z",
+                          "publishedAt": "2023-08-22T21:56:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "The following modules are known to not work when running from an installed state (the conda moose binary):\n# A list of module(s)/directories that we do not want to include for testing\nNOT_RUNNABLE=(doc module_load combined geochemistry misc navier_stokes tensor_mechanics framework external_petsc_solver reactor_tutorial)\n\nThe above issues you are hitting are the very same reason we don't test them while creating the moose Conda package. Ref: https://github.com/idaholab/moose/blob/next/conda/moose/run_test.sh.\nBasically, you're good to go! Situation normal.",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6802211",
+                          "updatedAt": "2023-08-23T12:31:27Z",
+                          "publishedAt": "2023-08-23T12:31:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "I also realize the very documentation asks you to try to run reactor_tutorial. These instructions were created during a time where folks responsible for this module really wanted a Conda MOOSE package. So I tailored the instructions for them. But then they broke their own tests as soon as the workshop was over. They were informed, and it looks like its still broken.\nI will modify the instructions to remove those bits.",
+                          "url": "https://github.com/idaholab/moose/discussions/25274#discussioncomment-6802287",
+                          "updatedAt": "2023-08-23T12:38:58Z",
+                          "publishedAt": "2023-08-23T12:38:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Applying a force BC",
+          "author": {
+            "login": "ln53"
+          },
+          "bodyText": "Hi,\nI'm making some basic linear elastic models (both shell and solid) and would like to apply a downward force to one end - similar to this question. However I can't find any documentation for applying a Force BC.\nSeveral places mention using a NeumannBC (answer linked above for example), however I can't find much discussion around how this equates to force. And from what I can see the Pressure BC has had the option to specify a component removed.\n\nAs the NeumannBC is integrated over a surface, I am assuming any Force I specify will actually have to be specified per unit area (i.e. as a stress)? With shell elements is this per unit length, or should I calculate an area using the specified shell thickness?\nIn my understanding, a NeumannBC prescribes the derivative of a variable normal to a boundary. In my cases, this is the derivative (wrt y direction) of the z displacement. I think I've convinced myself spatial derivative of displacement is equivalent to strain (i.e. disp / length) - so I'm not quite sure how specifying a NeumannBC can specify stress or force directly?\n\nThanks!",
+          "url": "https://github.com/idaholab/moose/discussions/24561",
+          "updatedAt": "2023-08-22T10:43:55Z",
+          "publishedAt": "2023-06-01T10:27:55Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n\n\nyes for the first question. @jain651 will know for the second part\n\n\nThere's a derivation here for the Jacobian, it should show the relation between force and displacements : https://mooseframework.inl.gov/source/bcs/Pressure.html\n\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6060456",
+                  "updatedAt": "2023-06-01T11:56:11Z",
+                  "publishedAt": "2023-06-01T11:56:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ln53"
+                          },
+                          "bodyText": "Thanks for the reply. Just to be explicit (assuming SI units):\nFor a face with a normal in the y direction, with an area of 1m^2, a NeumannBC with the value of -1 applied to disp_z will produce a total force of 1N downward on that face?\n(And a similar face with an area of 0.1m^2 would require a NeumannBC with a value of -10 to produce the same 1N force?)",
+                          "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6060939",
+                          "updatedAt": "2023-06-01T12:53:39Z",
+                          "publishedAt": "2023-06-01T12:53:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ln53"
+                          },
+                          "bodyText": "@jain651 do you know if I should account for the shell thickness (specified in ADComputeFiniteShellStrain) when I am calculating the NeumannBC value to use? (i.e. if I should divide my desired force by just side length OR side length * shell thickness)\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6111301",
+                          "updatedAt": "2023-06-07T12:59:07Z",
+                          "publishedAt": "2023-06-07T12:59:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jain651"
+                          },
+                          "bodyText": "@neuphris would you please try to answer this. I am a bit busy nowadays.",
+                          "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6121388",
+                          "updatedAt": "2023-06-08T11:15:56Z",
+                          "publishedAt": "2023-06-08T11:15:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@neuphris",
+                          "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6271142",
+                          "updatedAt": "2023-06-24T22:49:51Z",
+                          "publishedAt": "2023-06-24T22:49:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ln53"
+                          },
+                          "bodyText": "To conclude this: I did some basic beam bending test cases, and it seems for shells a NeumannBC is equivalent to force applied per unit length of the sideset. The \"thickness\" of the shell elements isn't taken into account.\nSo to apply a force F over a side of length L, use a NeumannBC with a value of F / L.",
+                          "url": "https://github.com/idaholab/moose/discussions/24561#discussioncomment-6790485",
+                          "updatedAt": "2023-08-22T10:44:40Z",
+                          "publishedAt": "2023-08-22T10:43:44Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "`syntax error, unexpected object name, expecting`, a issue seems simple but I can't solve",
+          "author": {
+            "login": "which-is-my-way"
+          },
+          "bodyText": "It seems a syntax bug in input file , uploaded here\ninput.zip\nand the whole prompt appears on the terminal is that\n*** ERROR ***\n/home/liangxy/projects/moose/modules/phase_field/problems/input.i:264.16-26: syntax error, unexpected object name, expecting ]\n\n\nStack frames: 10\n0: libMesh::print_trace(std::ostream&)\n1: moose::internal::mooseErrorRaw(std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >)\n2: void mooseError<char const*>(char const*&&)\n3: /home/liangxy/projects/moose/framework/libmoose-opt.so.0(+0x8e748d) [0x7fad8aee748d]\n4: MooseApp::setupOptions()\n5: MooseApp::run()\n6: main\n7: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x7fad83229d90]\n8: __libc_start_main\n9: ../phase_field-opt(+0x33ff) [0x558c131d93ff]\napplication called MPI_Abort(MPI_COMM_WORLD, 1) - process 0\n[unset]: write_line error; fd=-1 buf=:cmd=abort exitcode=1\n:\nsystem msg for write_line failure : Bad file descriptor\n\n\nI\u2018m unable to figure out where is the bug. Anyone please help me. Thank you!",
+          "url": "https://github.com/idaholab/moose/discussions/25265",
+          "updatedAt": "2023-08-22T10:32:45Z",
+          "publishedAt": "2023-08-22T03:34:10Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "which-is-my-way"
+                  },
+                  "bodyText": "I got it ,[Mobility coefficient] in line264 and [Migration coefficient] in line 282 missed underline_, they should be modified to [Mobility_coefficient] and [Migration_coefficient] .",
+                  "url": "https://github.com/idaholab/moose/discussions/25265#discussioncomment-6790417",
+                  "updatedAt": "2023-08-22T10:32:41Z",
+                  "publishedAt": "2023-08-22T10:32:41Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "an error occurs while use both official kernels and costum kernels",
+          "author": {
+            "login": "which-is-my-way"
+          },
+          "bodyText": "Hi! All!\nI've recently learned MOOSE for just a few days. i'v noticed a paper ,\nJin \u7b49 - 2022 - Protocol for phase-field simulations of lithium de.pdf\nmade a instruction in detail on Li dendrite simulation by MOOSE. I followed the protocol to the letter, but a few issues blocked me.\nSomething wrong happened in the 7th step. I need to put the *.C and *.h files provided by aurthor in the phase_field/src/kernels and phase_field/include/kernels folders, respectively and then recomplie it. The code is here\ncode.zip\nI'm confused about which directory I should put in.I put them in the corresponding position in the official phase_field directory ~/projects/moose/modules/phase_field or put them in the corresponding position in the directory made by stork.sh\uff0can error always was shown like:\n(moose) liangxy@liangxy:~/projects/moose/modules/phase_field$ make -j10\nCreating Unity /home/liangxy/projects/moose/modules/phase_field/build/unity_src/kernels_Unity.C\nCompiling C++ (in opt mode) /home/liangxy/projects/moose/modules/phase_field/build/unity_src/kernels_Unity.C...\nLinking Library /home/liangxy/projects/moose/modules/phase_field/lib/libphase_field-opt.la...\nLinking Executable /home/liangxy/projects/moose/modules/phase_field/phase_field-opt...\n/home/liangxy/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.4.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/liangxy/projects/moose/modules/phase_field/lib/libphase_field-opt.so: undefined reference to `InputParameters validParams<Kernel>()'\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/liangxy/projects/moose/framework/app.mk:445\uff1a/home/liangxy/projects/moose/modules/phase_field/phase_field-opt] \u9519\u8bef 1\n\nI consulted the author , and he said it's problem concrning register, but no further response. So I add registerMooseObject(\"phase_fieldApp\", Migration);, registerMooseObject(\"phase_fieldApp\", Kinetics);,  registerMooseObject(\"phase_fieldApp\", Conduction); in the corresponding .C files . Modified kernel files again put in the official modules directory or stork.sh made directory. The same error always appears.\nAnyone please help me. Thanks in advance!",
+          "url": "https://github.com/idaholab/moose/discussions/25255",
+          "updatedAt": "2023-08-22T02:30:27Z",
+          "publishedAt": "2023-08-21T14:56:26Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "See these instructions to remove this deprecated syntax:\nhttps://mooseframework.inl.gov/newsletter/2021/2021_11.html#legacy-input-parameter-deprecation",
+                  "url": "https://github.com/idaholab/moose/discussions/25255#discussioncomment-6781970",
+                  "updatedAt": "2023-08-21T14:59:42Z",
+                  "publishedAt": "2023-08-21T14:59:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "which-is-my-way"
+                          },
+                          "bodyText": "Thank you a lot. Perferct answer and replied almost instantly. It bothered me for a week and you are my God!",
+                          "url": "https://github.com/idaholab/moose/discussions/25255#discussioncomment-6786954",
+                          "updatedAt": "2023-08-22T02:30:28Z",
+                          "publishedAt": "2023-08-22T02:30:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "FV vs FE performance",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "Hi. It seems like my FV version of the ferret app is running well and producing output that seems OK. So I am running checks on identical systems to compare execution speed. I was surprised to see that for a small-ish mesh (200 k nodes), the FE version was ~ 3 x faster than the FV version(!). When I make the mesh larger (just doubling the points in all three directions) to 1.6 M nodes, the FE version is still faster, but now by not much. This seems to imply there is a cross-over for sufficiently large meshes at some few million or so nodes. Does this seem OK or does it seem to jive with others' experience with FV?",
+          "url": "https://github.com/idaholab/moose/discussions/25235",
+          "updatedAt": "2023-08-21T22:15:40Z",
+          "publishedAt": "2023-08-17T15:51:37Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "@lindsayad @pbalest\nFor comments on NS experience\nIf there is something special to Ferret at play here we ll want to look at the perfgraph output for these cases",
+                  "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6752977",
+                  "updatedAt": "2023-08-17T15:59:45Z",
+                  "publishedAt": "2023-08-17T15:59:45Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@snschune as well for comments on FE vs FV",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6753512",
+                          "updatedAt": "2023-08-17T16:54:16Z",
+                          "publishedAt": "2023-08-17T16:54:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "I am attaching performance graph outputs for the two runs. In summary, the main difference in performance seems to be in NonlinearSystemBase::Kernels where the FV version consumed 2862.218 s while the FE version consumed only 317.395 s, a difference of about a factor of nine. On the other hand, for FEProblem::solve the FV version used 501.765 s while the FE version needed 1142.818, so here the FV version was much faster.  So it seems I need to try to optimize the FV kernels better.\nHere are the data for the FE version:\nHeaviest Branch:\n--------------------------------------------------------------------------------------------------------------------------------------------------------------------\n|                             Section                            | Calls |   Self(s)  |   Avg(s)   |    %   | Mem(MB) |  Total(s)  |   Avg(s)   |    %   | Mem(MB) |\n--------------------------------------------------------------------------------------------------------------------------------------------------------------------\n| FerretApp (main)                                               |     1 |      0.011 |      0.011 |   0.00 |       3 |   2526.443 |   2526.443 | 100.00 |    2446 |\n|   MooseApp::run                                                |     1 |      0.000 |      0.000 |   0.00 |       0 |   2526.430 |   2526.430 | 100.00 |    2443 |\n|     MooseApp::execute                                          |     1 |      0.000 |      0.000 |   0.00 |       0 |   2522.145 |   2522.145 |  99.83 |    2203 |\n|       MooseApp::executeExecutioner                             |     1 |      0.083 |      0.083 |   0.00 |       0 |   2522.145 |   2522.145 |  99.83 |    2203 |\n|         Transient::PicardSolve                                 |    89 |      6.432 |      0.072 |   0.25 |       0 |   2490.261 |     27.980 |  98.57 |      26 |\n|           FEProblem::solve                                     |    89 |   1142.818 |     12.841 |  45.23 |    -171 |   2340.807 |     26.301 |  92.65 |      26 |\n|             FEProblem::computeJacobianInternal                 |   276 |      0.008 |      0.000 |   0.00 |       0 |    837.776 |      3.035 |  33.16 |     197 |\n|               FEProblem::computeJacobianTags                   |   276 |      6.291 |      0.023 |   0.25 |       0 |    837.768 |      3.035 |  33.16 |     197 |\n|                 NonlinearSystemBase::computeJacobianTags       |   276 |      0.006 |      0.000 |   0.00 |       0 |    831.468 |      3.013 |  32.91 |     197 |\n|                   NonlinearSystemBase::computeJacobianInternal |   276 |    452.490 |      1.639 |  17.91 |     197 |    831.462 |      3.013 |  32.91 |     197 |\n|                     FEProblem::checkExceptionAndStopSolve      |   828 |    378.971 |      0.458 |  15.00 |       0 |    378.971 |      0.458 |  15.00 |       0 |\n--------------------------------------------------------------------------------------------------------------------------------------------------------------------\n\nHeaviest Sections:\n-----------------------------------------------------------------------------------------------------\n|                    Section                   | Calls |   Self(s)  |    Avg.    |    %   | Mem(MB) |\n-----------------------------------------------------------------------------------------------------\n| FEProblem::solve                             |    89 |   1142.818 |     12.841 |  45.23 |    -171 |\n| NonlinearSystemBase::computeJacobianInternal |   277 |    453.955 |      1.639 |  17.97 |     197 |\n| FEProblem::checkExceptionAndStopSolve        |  3643 |    403.867 |      0.111 |  15.99 |       0 |\n| NonlinearSystemBase::Kernels                 |   454 |    317.395 |      0.699 |  12.56 |       0 |\n| FEProblem::computeUserObjects                |  2181 |    137.958 |      0.063 |   5.46 |       0 |\n| Console::outputStep                          |   554 |     15.466 |      0.028 |   0.61 |       0 |\n| FEProblem::computeResidualTags               |   454 |      9.010 |      0.020 |   0.36 |       0 |\n\nHere are the heaviest branch and heaviest sections for the FV version:\nHeaviest Branch:\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n|                               Section                               | Calls |   Self(s)  |   Avg(s)   |    %   | Mem(MB) |  Total(s)  |   Avg(s)   |    %   | Mem(MB) |\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n| FerretApp (main)                                                    |     1 |      0.015 |      0.015 |   0.00 |       4 |   3843.120 |   3843.120 | 100.00 |    1129 |\n|   MooseApp::run                                                     |     1 |      0.000 |      0.000 |   0.00 |       0 |   3843.105 |   3843.105 | 100.00 |    1125 |\n|     MooseApp::execute                                               |     1 |      0.000 |      0.000 |   0.00 |       0 |   3832.625 |   3832.625 |  99.73 |     462 |\n|       MooseApp::executeExecutioner                                  |     1 |      0.081 |      0.081 |   0.00 |       0 |   3832.625 |   3832.625 |  99.73 |     462 |\n|         Transient::PicardSolve                                      |    89 |      0.402 |      0.005 |   0.01 |       0 |   3782.768 |     42.503 |  98.43 |     418 |\n|           FEProblem::solve                                          |    89 |    501.765 |      5.638 |  13.06 |    8321 |   3591.998 |     40.360 |  93.47 |     418 |\n|             NonlinearSystemBase::computeResidualAndJacobianInternal |   358 |      0.057 |      0.000 |   0.00 |       0 |   2613.061 |      7.299 |  67.99 |     388 |\n|               NonlinearSystemBase::Kernels                          |   358 |   2408.305 |      6.727 |  62.67 |     422 |   2408.305 |      6.727 |  62.67 |     422 |\n-------------------------------------------------------------------------------------------------------------------------------------------------------------------------\n\nHeaviest Sections:\n----------------------------------------------------------------------------------------------\n|                Section                | Calls |   Self(s)  |    Avg.    |    %   | Mem(MB) |\n----------------------------------------------------------------------------------------------\n| NonlinearSystemBase::Kernels          |   447 |   2862.218 |      6.403 |  74.48 |     688 |\n| FEProblem::solve                      |    89 |    501.765 |      5.638 |  13.06 |    8321 |\n| FEProblem::checkExceptionAndStopSolve |  1430 |    230.782 |      0.161 |   6.01 |       0 |\n| FEProblem::outputStep                 |   358 |    135.768 |      0.379 |   3.53 |       0 |\n| FEProblem::computeUserObjects         |  1615 |     62.802 |      0.039 |   1.63 |       0 |\n| Console::outputStep                   |   628 |     10.583 |      0.017 |   0.28 |       0 |\n| NonlinearSystemBase::residualSetup    |   447 |      7.236 |      0.016 |   0.19 |   -8591 |\n----------------------------------------------------------------------------------------------",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6754425",
+                          "updatedAt": "2023-08-18T00:18:19Z",
+                          "publishedAt": "2023-08-17T18:26:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "@GiudGiud , @lindsayad, @pbalest, @snschune : it looks like the poorer performance for the FV version comes from worse performance of the preconditioner, so many more linear iterations per nonlinear iteration for the FV system vs. FE system. For the FE system, the bjacobi preconditioner works really well. For FV I am using asm (as suggested by @lindsayad). Tweaking a little does not seem to improve performance; boomeramg does not work well. BTW, I did complete checking Jacobians, and they are OK :-)",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6755599",
+                          "updatedAt": "2023-08-17T21:18:33Z",
+                          "publishedAt": "2023-08-17T21:18:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "@GiudGiud , @lindsayad, @pbalest, @snschune : correction. The asm preconditioner for the FV system does fewer linear iterations than the bjacobi preconditioner for the FE system (by a significant amount). What takes more time in the FV system is the nonlinear solve. I am stumped as to how to improve that.",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6755763",
+                          "updatedAt": "2023-08-17T21:48:52Z",
+                          "publishedAt": "2023-08-17T21:48:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Forming the Jacobian could be the slow step.\nYou could try a few things:\n\ncomputing the Jacobian and the residual together\nhttps://mooseframework.inl.gov/moose/source/systems/NonlinearSystem.html#57f02cde-aa77-4218-a6ac-caf8850d27ca\nre-using the preconditioner inside a solve\nhttps://mooseframework.inl.gov/moose/source/systems/NonlinearSystem.html#b9b3ad4e-c468-4e57-8f4f-328f2b7326f3\n\nHow many variables do you have again? And you are solving them fully coupled right?\nYou have both elemental and flux fv kernels right?\nand in your kernels, you have a bunch of gradient evaluations?",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6756518",
+                          "updatedAt": "2023-08-18T00:24:09Z",
+                          "publishedAt": "2023-08-18T00:23:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "Thanks, Guillaume.\nI am computing the Jacobian and residual together as in the link. I'll try re-using the preconditioner.\nI have four variables (three for the components of the magnetization director, and one for the scalar magnetostatic potential). There is one flux kernel that contains the magnetization directors and their gradients, two volume kernels with magnetization directors and (one of the two) with gradients of the potential, and then there is a diffusion flux kernel for the potential that also has the magnetization directors as source term. I am solving them fully coupled.",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6756931",
+                          "updatedAt": "2023-08-18T01:51:01Z",
+                          "publishedAt": "2023-08-18T01:51:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think we have a paramter on the FV variables to cache gradients. You can try to see if that improves things.\nIf we want to stop shooting in the dark we ll need to profile\nhttps://mooseframework.inl.gov/application_development/profiling.html",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6757437",
+                          "updatedAt": "2023-08-18T03:43:16Z",
+                          "publishedAt": "2023-08-18T03:43:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "cell gradients are cached by default",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6757637",
+                          "updatedAt": "2023-08-18T04:33:26Z",
+                          "publishedAt": "2023-08-18T04:33:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "@heinono1\n\ndo you take more nonlinear iterations with FV or is it that each nonlinear iteration takes longer (or both)?\nAre your finite element Jacobians hand-coded?\nHow large are your finite volume cell stencils? Do you just access data from one neighbor layer away?",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6757641",
+                          "updatedAt": "2023-08-18T04:37:15Z",
+                          "publishedAt": "2023-08-18T04:34:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "The FE and FV systems take the same number of nonlinear iterations almost all the time (typically 2 or 3)\nThe FE Jacobians are hand-coded.\nThe FV stencils are default (eg one ghost layer).\n\nRe-using preconditioner did not make any difference. Maybe slowed things down by epsilon. I am going to try hand-coding a Jacobian in one kernel to see if that makes a difference.\nI can't do the profiling now. I started building new MOOSE but my company in its wisdom had blocked bitbucket so I can't pull libmesh. I have opened a ticket with IT and I should have bitbucket accessible early next week.",
+                          "url": "https://github.com/idaholab/moose/discussions/25235#discussioncomment-6761660",
+                          "updatedAt": "2023-08-18T13:33:08Z",
+                          "publishedAt": "2023-08-18T13:33:07Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "profiling build fails",
+          "author": {
+            "login": "heinono1"
+          },
+          "bodyText": "I am trying to build MOOSE with profiling (gperftools) enabled. I install the gperftools, build petsc and libmesh with the appropriate flags (in particular for libmesh METHOD=oprof). I build MOOSE with METHOD=oprof but the build fails when it comes to the linker stage:\nLinking Library /home/olle/projects2/moose/framework/contrib/pcre/libpcre-oprof.la...\n/usr/bin/ld: cannot find -lmesh_oprof: No such file or directory\n/usr/bin/ld: cannot find -ltimpi_oprof: No such file or directory\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/olle/projects2/moose/framework/moose.mk:371: /home/olle/projects2/moose/framework/contrib/pcre/libpcre-oprof.la] Error 1\nIt seems to me the libmesh_oprof and libtimpi_oprof should be built and installed during the libmesh build, but those libraries simple are not there.\nAny help will be greatly appreciated!",
+          "url": "https://github.com/idaholab/moose/discussions/25260",
+          "updatedAt": "2023-08-21T22:13:37Z",
+          "publishedAt": "2023-08-21T18:55:31Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "libmesh was not built with oprof seemingly.\nI think libmesh obey METHODS not METHOD. Can you check the libmesh folder for what got built?",
+                  "url": "https://github.com/idaholab/moose/discussions/25260#discussioncomment-6784512",
+                  "updatedAt": "2023-08-21T19:05:49Z",
+                  "publishedAt": "2023-08-21T19:05:49Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "heinono1"
+                          },
+                          "bodyText": "Hi Guillaume. You're right that libmesh needs METHODS=oprof, not METHOD=oprof. Maybe not a bad idea to update the profiling build instructions.\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/25260#discussioncomment-6784900",
+                          "updatedAt": "2023-08-21T20:06:17Z",
+                          "publishedAt": "2023-08-21T20:06:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "milljm"
+                          },
+                          "bodyText": "Those instructions are a bit confusing. They don't go to mention how to build libMesh. Unless its assumed the user is using Pre-built Conda moose-libmesh? But then again, they go to mention how to build PETSc, and if you're building PETSc, then you must build libMesh immediately afterwards.\nReading those instructions again, I think the user is supposed to skip most of them, and just use moose-pprof package as part of the standard MOOSE installation instructions... ?",
+                          "url": "https://github.com/idaholab/moose/discussions/25260#discussioncomment-6784947",
+                          "updatedAt": "2023-08-21T20:13:03Z",
+                          "publishedAt": "2023-08-21T20:13:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "No. They are meant for people who are building the stack manually. Yes it would be good to explicitly mention how to build libMesh. The directions, when written, assumed that the users did not specify METHODS in their environment, so when they run the scripts/update_and_rebuild_libmesh.sh script they get oprof automatically (along with opt, devel, and dbg).",
+                          "url": "https://github.com/idaholab/moose/discussions/25260#discussioncomment-6785111",
+                          "updatedAt": "2023-08-21T20:35:55Z",
+                          "publishedAt": "2023-08-21T20:35:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "I've opened #25261. See if that is clearer",
+                          "url": "https://github.com/idaholab/moose/discussions/25260#discussioncomment-6785255",
+                          "updatedAt": "2023-08-21T20:58:02Z",
+                          "publishedAt": "2023-08-21T20:58:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

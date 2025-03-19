@@ -1,0 +1,957 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMS0xMi0xM1QwODoyNToxOS0wNzowMM4AOP2J"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Error using MaterialRealVectorValueAux",
+          "author": {
+            "login": "crb3874"
+          },
+          "bodyText": "At a bit of a loss with this -\nI have a custom Material class InterpolatedMGXSMaterial which produces material property values using interpolation tables read in from a csv file. I'm getting incorrect results from simulations using it, when compared with identical simulations with directly provided material properties. The only difference between these simulations is how the material properties are being calculated, so I'm trying to debug my InterpolatedMGXSMaterial using MaterialRealVectorValueAux.\n**The issue: When using MaterialRealVectorValueAux, I get the error \"Material has no property named: diffusivity\" **\nMy material properties are declared in InterpolatedMGXSMaterial.h as\nMaterialProperty<RealEigenVector> & _diffusivity;\n\nand in InterpolatedMGXSMaterial.C I have\nInterpolatedMGXSMaterial::InterpolatedMGXSMaterial(const InputParameters & parameters), \n... , \n_diffusivity(declareProperty<RealEigenVector>(\"diffusivity\")),\n ... {...}\n\nFor debugging, I'm attempting to fill an AuxVariable with the element-wise values of diffusivity at the zeroth index.\nWithin my input file, I have\n[AuxVariables]\n...\n  [diff_fast]\n    family = MONOMIAL\n    order = CONSTANT\n  []\n...\n[]\n[AuxKernels]\n...\n  [copy_diff]\n    type = MaterialRealVectorValueAux\n    property = diffusivity\n    variable = diff_fast\n    component = 0\n    execute_on = final\n  []\n...\n[]\n\nWhen I run the simulation with these extra options, I get the error \"Material has no property named: diffusivity\". The strange thing is that I'm using custom Kernels as well for my simulation the directly reference the material property as \"diffusivity\" with no issue.\nThis seems like something with a really simple fix, but as far as I can tell I've properly defined the material property, so I'm not sure what the issue is. Any thoughts?\nThanks,\nColin",
+          "url": "https://github.com/idaholab/moose/discussions/19638",
+          "updatedAt": "2022-08-24T12:03:53Z",
+          "publishedAt": "2021-12-15T13:38:18Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "loganharbour"
+                  },
+                  "bodyText": "MaterialRealVectorValueAux is for vector materials. You need one for array materials. I can write one up real quick.",
+                  "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1813308",
+                  "updatedAt": "2022-08-24T12:04:00Z",
+                  "publishedAt": "2021-12-15T14:44:21Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crb3874"
+                          },
+                          "bodyText": "Thank you for the reply, Logan. It seems obvious now that you've said it. I may be able to write up a MaterialRealArrayValueAux on my own - I'll follow up with whether that fixes the issue.",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1813629",
+                          "updatedAt": "2022-08-24T12:04:14Z",
+                          "publishedAt": "2021-12-15T15:15:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crb3874"
+                          },
+                          "bodyText": "This seems to have fixed my issue - I wrote up a quick MaterialRealArrayValueAux and I seem to be able to copy my material properties to an AuxVariable. Thanks for the help!",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814223",
+                          "updatedAt": "2022-08-24T12:04:14Z",
+                          "publishedAt": "2021-12-15T15:56:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nWould you mind making a PR to the framework to add this?\nThis involves adding a test and a basic documentation page if you havent done this before\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814244",
+                          "updatedAt": "2022-08-24T12:04:15Z",
+                          "publishedAt": "2021-12-15T15:58:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "This ended up being a little more complicated than expected - I'm almost done with it. Refs #19639",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814258",
+                          "updatedAt": "2022-08-24T12:04:29Z",
+                          "publishedAt": "2021-12-15T16:01:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crb3874"
+                          },
+                          "bodyText": "One issue that came up is that attempting to check for the provided index being out of bounds for the array material property (from this->_prop[this->_qp].size()) in the constructor results in a segfault, but doing the same error checking in getRealValue() works fine. Is this because the call hierarchy in MOOSE sets up the AuxKernels before Materials, so the MaterialProperty isn't initialized until after the constructor is called for MaterialRealArrayValueAux?",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814280",
+                          "updatedAt": "2022-08-24T12:04:29Z",
+                          "publishedAt": "2021-12-15T16:04:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "loganharbour"
+                          },
+                          "bodyText": "Take a look at #19640. This adds MaterialRealEigenVectorAux (for a single value to a regular aux variable) and VectorMaterialRealEigenVectorAux (for all values to an array aux variable)\nSpecifically, https://github.com/idaholab/moose/blob/e5cdca1326fe035686bd96a09b4c3fc63bbd146e/framework/src/auxkernels/MaterialRealEigenVectorAux.C. You can't check upon construction because you're right, the materials aren't initialized yet. The check has to be done when getting the value.",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814458",
+                          "updatedAt": "2022-08-24T12:04:29Z",
+                          "publishedAt": "2021-12-15T16:25:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "crb3874"
+                          },
+                          "bodyText": "Makes sense. Thank you for adding this functionality!",
+                          "url": "https://github.com/idaholab/moose/discussions/19638#discussioncomment-1814506",
+                          "updatedAt": "2022-08-24T12:05:00Z",
+                          "publishedAt": "2021-12-15T16:33:40Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "ADKernelValue class and ADKernelGrad class",
+          "author": {
+            "login": "rtaylo45"
+          },
+          "bodyText": "Hello,\nI have a situation where i am applying a SUPG stabilization method to a kernel in my moose app. I have my normal kernel class which returns an ADReal for its precomputeQpResidual function. The header file is shown below:\n#pragma once\n\n#include \"ADKernelValue.h\"\n#include \"Function.h\"\n\n/**\n * This class implements the kernel for the gas species part for liquid-gas\n * mass transfer.\n */\nclass LiquidGasMassTransfer : public ADKernelValue\n{\npublic:\n\tstatic InputParameters validParams();\n\tLiquidGasMassTransfer(const InputParameters & parameters);\n\tvirtual ~LiquidGasMassTransfer();\n\nprotected:\n\t// residual for the mass transfer coefficient term\n\tvirtual ADReal precomputeQpResidual() override;\n\n\t// Molar mass of gas species\n\tconst Real _gas_molar_mass;\n\t// Henry's Law Coefficient [kg/Pa/m^3]\n\tconst Function & _henrys_coefficient;\n\t// Interfacial area concentration 1/m\n\tconst ADVariableValue & _interfacial_area_concentration;\n\t// Mass transfer coefficient 1/s\n\tconst Function & _mass_transfer_coefficient;\n\t// Pressure Pa\n\tconst ADVariableValue & _pressure;\n\t// Gas volume fraction\n\tconst ADVariableValue & _gas_volume_fraction;\n\t// Liquid species variable\n\tconst ADVariableValue & _liquid_species;\n\t// Gas species variable\n\tconst ADVariableValue & _gas_species;\n\t// List of all gas species variables\n\tstd::vector<const ADVariableValue *> _gas_species_list;\n\t// List of all gas species molar masses\n\tconst std::vector<Real> _gas_species_molar_mass_list;\n\nprivate:\n\t// Liquid species variable name\n\tVariableName _liquid_species_name;\n\t// Gas species variable name\n\tVariableName _gas_species_name;\n\t// Computes the mole fraction of the gas species\n\tADReal computeGasMoleFraction();\n\n};\n\n\nThe SUPG version looks the exact same but the precomputeQpResidual version returns an ADRealVectorValue. This header file is shown below:\n#pragma once\n\n#include \"ADKernelGrad.h\"\n\n/**\n * This class applied the SUPG stabilization to the liquid gass mass transfer\n * kernel\n */\nclass LiquidGasMassTransferSUPG : public ADKernelGrad\n{\npublic:\n\tstatic InputParameters validParams();\n\tLiquidGasMassTransferSUPG(const InputParameters & parameters);\n\tvirtual ~LiquidGasMassTransferSUPG();\n\nprotected:\n\tvirtual ADRealVectorValue precomputeQpResidual();\n\n\t// Velocity vector variable m/s\n\tconst ADVectorVariableValue & _velocity;\n\t// Molar mass of gas species\n\tconst Real _gas_molar_mass;\n\t// Henry's Law Coefficient [kg/Pa/m^3]\n\tconst Function & _henrys_coefficient;\n\t// Interfacial area concentration 1/m\n\tconst ADVariableValue & _interfacial_area_concentration;\n\t// Mass transfer coefficient 1/s\n\tconst Function & _mass_transfer_coefficient;\n\t// Pressure Pa\n\tconst ADVariableValue & _pressure;\n\t// Gas volume fraction\n\tconst ADVariableValue & _gas_volume_fraction;\n\t// Liquid species variable\n\tconst ADVariableValue & _liquid_species;\n\t// Gas species variable\n\tconst ADVariableValue & _gas_species;\n\t// List of all gas species variables\n\tstd::vector<const ADVariableValue *> _gas_species_list;\n\t// List of all gas species molar masses\n\tconst std::vector<Real> _gas_species_molar_mass_list;\n\nprivate:\n\t// Liquid species variable name\n\tVariableName _liquid_species_name;\n\t// Gas species variable name\n\tVariableName _gas_species_name;\n\t// Computes the mole fraction of the gas species\n\tADReal computeGasMoleFraction();\n\n};\n\nAs you can see the class definitions are nearly identical, except for the velocity variable that needs to be passed. My question is, how can/should i design this class structure so that i don't have redundant code? Should i write a base class for this with the kernel system? If so, what is the base class? Or is there no way around this?\nthanks,\nZack",
+          "url": "https://github.com/idaholab/moose/discussions/19632",
+          "updatedAt": "2022-06-06T07:31:15Z",
+          "publishedAt": "2021-12-15T04:03:46Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI would template this based on either:\n\nthe return type (so ADReal and ADRealVectorValue) and have some template logic to inherit the right class\nthe base class (ADkernelGrad or ADKernelValue) and define the return type inside the class definition\n\nThen every function can pretty much be written the same. There should be some existing templating of operations (+, *, outer_product). Some might be missing and you ll have to define them locally.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19632#discussioncomment-1813199",
+                  "updatedAt": "2022-06-06T07:31:43Z",
+                  "publishedAt": "2021-12-15T14:32:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rtaylo45"
+                          },
+                          "bodyText": "The way i got around this was super simple, i feel dumb that i didn't do this before. I just inherit from ADKernel, use logic to add SUPG stabilization if the user ask for it.",
+                          "url": "https://github.com/idaholab/moose/discussions/19632#discussioncomment-1814200",
+                          "updatedAt": "2022-06-06T07:31:49Z",
+                          "publishedAt": "2021-12-15T15:53:36Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Geometric stiffness (Jacobian) for Pressure BC",
+          "author": {
+            "login": "matthiasneuner"
+          },
+          "bodyText": "Hi, it seems to me that for the Pressure BC in the TensorMechanics module the Jacobian wrt the displacement variables is missing, despite the fact that this BC acts on the deformed mesh.\nI am simulating materials with very large deformations, and accordingly, this Jacobian is essential for me.\nA quick&dirty implementation by implementing the derivative of the boundary _normals wrt the displacement variables in computeQpJacobian() in Pressure got me the desired behavior.\nNow for cleaning up that workaround and pushing that to the MOOSE main repo, I was wondering if Pressure is actually the right place to implement the derivative of the _normals wrt the displacement vector, or if this should be performed at some higher level, since essentially all types of follower loads may use that for computing the exact Jacobian.\nIf so, what would be the ideal place to compute that derivative?",
+          "url": "https://github.com/idaholab/moose/discussions/19566",
+          "updatedAt": "2022-06-16T19:07:30Z",
+          "publishedAt": "2021-12-07T05:07:23Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "@matthiasneuner You are correct that the Jacobian in Pressure BC is not exact. normal and area changes with respect to displacements are not considered. Have you checked your hand-coded Jacobian against finite difference approximation? Are they exact?\nLet me tag @jasondhales since he recently worked on it. He might give you some suggestion on where the derivatives calculation should go.",
+                  "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1762698",
+                  "updatedAt": "2022-06-16T19:07:44Z",
+                  "publishedAt": "2021-12-07T05:30:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "My Jacobian is exact yes. You can find my implementation in my app (https://github.com/matthiasneuner/chamois/blob/master/src/bcs/FiniteStrainPressure.C), making use of an auxiliary material (https://github.com/matthiasneuner/chamois/blob/master/src/materials/ComputeDeformedBoundaryNormalVector.C).\nSince I use Fastor for tensor contractions instead of MOOSE tensors, this implementation is not yetcompatible with the main repo. Maybe I can rewrite that using MOOSE tensors during the holidays, and create a PR.",
+                          "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1786989",
+                          "updatedAt": "2022-06-16T19:07:46Z",
+                          "publishedAt": "2021-12-10T17:11:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "I took a quick look at your implementation of pressure BC. You set use_displaced_mesh = false which means the pressure term is integrated over the undeformed configuration. Shouldn't we account for the area change due to deformation?",
+                          "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1795930",
+                          "updatedAt": "2022-06-16T19:07:46Z",
+                          "publishedAt": "2021-12-13T05:26:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "You are right; This is actually happening; Nanson's formula is applied in ComputeDeformedBoundaryNormalVector (https://github.com/matthiasneuner/chamois/blob/6066b7dfc4d9456dd971f2a91b470899fe98fe78/src/materials/ComputeDeformedBoundaryNormalVector.C#L79), but I just recognized that the name is misleading since the vector is not a normalized vector anymore. I will improve that.",
+                          "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1796274",
+                          "updatedAt": "2022-06-16T19:07:49Z",
+                          "publishedAt": "2021-12-13T07:24:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I think this ought to be handled in \"Assembly\". For example, now in ADIntegratedBC we have\n_normals(_assembly.adNormals()),\nand in IntegratedBC we have\n_normals(_assembly.normals()),\nI think we should add a method to compute the derivative of normal w.r.t to displacements in assembly, and manually request it when needed (for example in the case of pressure BC):\n_d_normals_d_displacements(_assembly.dNormalsDDisplacements()),\nIn the case of AD, these derivatives should come from AD libMesh.\n@lindsayad is this a use case of AD libMesh?",
+                          "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1804554",
+                          "updatedAt": "2022-07-30T03:12:14Z",
+                          "publishedAt": "2021-12-14T11:36:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "lindsayad"
+                          },
+                          "bodyText": "You mean the AD libmesh that doesn't exist? \ud83d\ude04 Yes as @hugary1995 pointed out we do currently have \"manual\" code in Assembly that reproduces mapping calculations from libMesh with displacement information included in order to create an adNormals() that has the correct derivatives with respect to displacements. Someday when we do have AD libMesh, then we can remove that near-duplicate code in Assembly\nBut as far as creating derivatives with respect to displacements for our manual Jacobian objects, I will leave that to you all \ud83d\ude04",
+                          "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1807234",
+                          "updatedAt": "2022-07-30T03:12:28Z",
+                          "publishedAt": "2021-12-14T17:37:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "jasondhales"
+                  },
+                  "bodyText": "My take is that the derivative code ought to go into Pressure.C.  Getting the derivative of the normal would be a good contribution.",
+                  "url": "https://github.com/idaholab/moose/discussions/19566#discussioncomment-1768654",
+                  "updatedAt": "2022-06-16T19:08:01Z",
+                  "publishedAt": "2021-12-07T20:30:05Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Transient Simulation with Peridynamics Module",
+          "author": {
+            "login": "ppandit95"
+          },
+          "bodyText": "Dear MOOSE Community,\nI wish to run a transient simulation using peridynamics module wherein density needs to be provided to create the mass matrix but I couldn't find any test for that and the simulations carried out are quasi static in nature with varying BCs with time.So in this context I wish to know whether it is possible as of now to run the transient simulations with Peridynamics Module .\nMany Thanks\nPushkar",
+          "url": "https://github.com/idaholab/moose/discussions/19608",
+          "updatedAt": "2022-07-14T21:04:15Z",
+          "publishedAt": "2021-12-12T04:26:16Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "Hi @ppandit95, I was having the same problem as well, I don't think MOOSE does have a true quasi-static (reached the steady-state and move on to the next step)\nSo I follow this 'Load step' method: https://mooseframework.inl.gov/source/executioners/Transient.html\nthen pre-define all the BCs, and use [Controls] to activate each BC at each particular time-step (arbitrary)\n... BCs block ...\n     [./stope1]\n       type = PorousFlowPiecewiseLinearSinkTC\n     variable = porepressure\n     boundary = 'stope1'\n     pt_vals = '0 1e9' # x coordinates defining g\n     multipliers = '0 1e9' # y coordinates defining g\n     flux_function =  1e5 #1e5 # Variable C\n     v = min\n     use_mobility = true\n     fluid_phase = 0\n     save_in = flux\n     use_relperm = true\n     [../]\n\n     [./stope2]\n       type = PorousFlowPiecewiseLinearSinkTC\n     variable = porepressure\n     boundary = 'stope2'\n     pt_vals = '0 1e9' # x coordinates defining g\n     multipliers = '0 1e9' # y coordinates defining g\n     flux_function =  1e5 #1e5 # Variable C\n     v = min\n     use_mobility = true\n     fluid_phase = 0\n     use_relperm = true\n     save_in = flux\n     [../]\n\n\n\n...Controls block...\n  [stope1_control]\n    type = ConditionalFunctionEnableControl\n    enable_objects = 'BCs::stope1'\n    conditional_function = 'if(t>=2 ,1,0)'\n    execute_on = 'initial timestep_begin'\n  []\n\n  [stope2_control]\n    type = ConditionalFunctionEnableControl\n    enable_objects = 'BCs::stope2'\n    conditional_function = 'if(t>=3  ,1,0)'\n    execute_on = 'initial timestep_begin'\n  []\n\n[]\n\n\n@GiudGiud I still would like to have a multi-steps steady-state solver (true quasi-SS), not sure if you can suggest it to the MOOSE team?",
+                  "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1795032",
+                  "updatedAt": "2022-07-14T21:04:33Z",
+                  "publishedAt": "2021-12-12T23:25:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ppandit95"
+                          },
+                          "bodyText": "ohh,thats great I have been using time varying BCs but this also seems a alternative way to solve the problem,thanks @Traiwit",
+                          "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1795680",
+                          "updatedAt": "2022-07-14T21:04:37Z",
+                          "publishedAt": "2021-12-13T03:54:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "So you're talking about nested relaxation transient solves inside a global transient?\nOr nested direct steady solves inside a global transient?",
+                          "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1798842",
+                          "updatedAt": "2022-07-14T21:04:36Z",
+                          "publishedAt": "2021-12-13T15:03:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Either way, I think our rework of the Executioner system (currently ongoing) will help us nest solves like this.\nWe ll keep you posted",
+                          "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1798846",
+                          "updatedAt": "2022-07-14T21:04:37Z",
+                          "publishedAt": "2021-12-13T15:04:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Traiwit"
+                          },
+                          "bodyText": "@GiudGiud more like the 2nd case, but yes awesome, thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1801946",
+                          "updatedAt": "2022-09-24T06:50:15Z",
+                          "publishedAt": "2021-12-13T23:06:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Adding the InertialForce kernel is equivalent to creating the mass matrix you are talking about. In the Executioner, you can specify\n[TimeIntegrator]\n  type = NewmarkBeta\n[]\nto use the Newmark-beta time integrator. Generalized-alpha methods are also available if you search the regression tests.",
+                  "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1804459",
+                  "updatedAt": "2022-07-14T21:04:40Z",
+                  "publishedAt": "2021-12-14T11:18:18Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ppandit95"
+                          },
+                          "bodyText": "Thanks @hugary1995 for elaborating on the implementation of mass matrix and the relevant executioner.I will look into it...",
+                          "url": "https://github.com/idaholab/moose/discussions/19608#discussioncomment-1805477",
+                          "updatedAt": "2022-07-14T21:04:40Z",
+                          "publishedAt": "2021-12-14T14:00:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Read Grain tracker object in tensor mechanics",
+          "author": {
+            "login": "ritamcj"
+          },
+          "bodyText": "Hi everyone,\nI wanted to ask whether it is possible to read grain tracker inside tensor mechanics. Grain tracker inherits from a file such as Graintrackerinterface, which is present in the phase field module. When I tried _grain_tracker(getUserObject<GrainTrackerInterface>(\"grain_tracker\")) in a file in tensor mechanics, I got \"fatal error : no such file\", which is expected. I also tried _grain_tracker(getUserObject<GrainTracker>(\"grain_tracker\")), as shown in OutputEulerAngles, but this also led to the same error. I wonder whether this is possible by reading as a string in the input file. Kindly suggest strategies or relevant examples for reading a user object inside a different module.\nWarm regards,\nRitam",
+          "url": "https://github.com/idaholab/moose/discussions/19616",
+          "updatedAt": "2022-11-21T19:11:17Z",
+          "publishedAt": "2021-12-13T06:07:43Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nfatal error : no such file isn't from _grain_tracker(getUserObject<GrainTrackerInterface>(\"grain_tracker\")). It s probably because a header name was misspelled.\nCould you please paste the entire message?\nAlso, _grain_tracker(getUserObject<GrainTracker>(\"grain_tracker\")) is the correct call. GrainTrackerInterface is an interface. Interfaces are inherited when you need their functionalities, not stored as class member attributes.\nFor using objects from a different module, you first need to make sure both modules are being compiled together. This is usually done by creating an application, and adding both modules in the Makefile.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1798794",
+                  "updatedAt": "2022-11-21T19:11:17Z",
+                  "publishedAt": "2021-12-13T14:57:36Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Hi Guillaume,\nThank you for your reply. I got the following error when I added #include \"GrainTrackerInterface.h\" to ComputeElasticitytensorCP.C. I am pasting the error message here:\nIn file included from /home/ritam/projects_new/moose/modules/tensor_mechanics/build/unity_src/materials_crystal_plasticity_Unity.C:2:\n/home/ritam/projects_new/moose/modules/tensor_mechanics/src/materials/crystal_plasticity/ComputeElasticityTensorCP.C:12:10: fatal error: GrainTrackerInterface.h: No such file or directory\n   12 | #include \"GrainTrackerInterface.h\"\n      |          ^~~~~~~~~~~~~~~~~~~~~~~~~\ncompilation terminated.\n/home/ritam/projects_new/moose/framework/build.mk:122: recipe for target '/home/ritam/projects_new/moose/modules/tensor_mechanics/build/unity_src/materials_crystal_plasticity_Unity.x86_64-conda-linux-gnu.opt.lo' failed\nmake: *** [/home/ritam/projects_new/moose/modules/tensor_mechanics/build/unity_src/materials_crystal_plasticity_Unity.x86_64-conda-linux-gnu.opt.lo] Error 1\n\nI got the same corresponding error when I used #include \"GrainTracker.h\" along with _grain_tracker(getUserObject<GrainTracker>(\"grain_tracker\")). Could you elaborate on \"compiling both modules together\"? I am not aware of this. Can I change something in registerMooseObject(\"TensorMechanicsApp\", ComputeElasticityTensorCP)? I am currently using the Combined module for running my input file.\nRitam",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1799333",
+                          "updatedAt": "2021-12-13T15:49:54Z",
+                          "publishedAt": "2021-12-13T15:49:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nBoth those files exist. The compiler is not finding them at compile time though.\nWhat is your setup? Did you create your own app or are you modifying MOOSE directly?\nAre you compiling the combined module directly?\nregistering objects is a different thing. That s for bridging to the input file.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1799926",
+                          "updatedAt": "2021-12-13T17:13:46Z",
+                          "publishedAt": "2021-12-13T17:13:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Hi,\nI didn't create my own app. I am compiling the combined module directly.\nRitam",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1800200",
+                          "updatedAt": "2021-12-13T17:59:32Z",
+                          "publishedAt": "2021-12-13T17:59:32Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Creating your own app is the clean way to do this.\nNow you need to make tensor_mechanics depend on phase_field. I am trying to see if we can get that to compile, since phase_field already depends on tensor_mechanics.\nI ll report back",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1800332",
+                          "updatedAt": "2021-12-13T18:25:21Z",
+                          "publishedAt": "2021-12-13T18:25:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Thank you very much. I'll look into how to create apps.",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1800830",
+                          "updatedAt": "2021-12-13T19:25:30Z",
+                          "publishedAt": "2021-12-13T19:25:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok can confirm you cant easily make tensor_mechanics depend on phase_field since phase_field depends on tensor_mechanics. Getting some errors at link time.\nThe hacky way would be to move the headers you need (GrainTracker.h) in the tensor_mechanics include folder. That way it ll be found by both tensor mechanics and phase field.\nWe would rather you create an app and add the phase field dependency in your Makefile.",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1802011",
+                          "updatedAt": "2022-11-21T19:11:46Z",
+                          "publishedAt": "2021-12-13T23:30:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Thanks for letting me know. I will try create a separate app.",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1803022",
+                          "updatedAt": "2022-11-21T19:11:46Z",
+                          "publishedAt": "2021-12-14T05:13:34Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Hi Guillaume,\nI created a separate app called \"DRX\" as per https://mooseframework.inl.gov/getting_started/new_users.html#create-an-app. As I already have an input file that uses classes from tensor mechanics and phase field, I think I would have to move all .C and .h files (from only these two modules) to DRX and register all classes with the new app. Kindly let me know whether this is correct. Do I also need to move folders with dependent files (such as \"framework\") to DRX?\nRitam",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1804557",
+                          "updatedAt": "2022-11-21T19:11:46Z",
+                          "publishedAt": "2021-12-14T11:37:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nno you dont need to do that.\nJust make sure MOOSE_DIR is set and in the Makefile for DRX, make sure to put yes for phase_field. Maybe tensor_mechanics as well but phase_field should pull it in already.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1804607",
+                          "updatedAt": "2022-11-21T19:11:46Z",
+                          "publishedAt": "2021-12-14T11:51:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "ritamcj"
+                          },
+                          "bodyText": "Hi Guillaume,\nIt did work. When I hit \"make\" in the new app, it compiled with Grain tracker inside ComputeElasticitytensorCP. I now realise that I should've always compiled the combined module instead of compiling tensor mechanics and phase field separately. Many thanks for your guidance. I feel enlightened.\nRitam",
+                          "url": "https://github.com/idaholab/moose/discussions/19616#discussioncomment-1805185",
+                          "updatedAt": "2022-11-21T19:12:44Z",
+                          "publishedAt": "2021-12-14T13:35:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Output from TensorMechanicsHardeningModel",
+          "author": {
+            "login": "Fancyshirts"
+          },
+          "bodyText": "In my application, I've written a new TensorMechanicsHardeningModel. It appears that at present, it is not possible to output the values returned from a TensorMechanicsHardeningModel directly, as they are just GeneralUserObjects. I would like to be able to visualise these values on the mesh, as time progresses in my transient simulation to ensure they are being computed correctly.\nWhat is the most straightforward way of getting these properties out of the simulation? It would be nice to use the material properties output system - perhaps the best way would be to modify the TensorMechanicsPlasticModel I am using (Mohr-Coulomb in this case) to accept a vector of internal values and just store my TensorMechanicsHardeningModel parameters in the later elements of this vector?\nUnless I'm missing some already-existing functionality?",
+          "url": "https://github.com/idaholab/moose/discussions/19607",
+          "updatedAt": "2022-06-10T14:37:03Z",
+          "publishedAt": "2021-12-12T01:49:05Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI can see two possibly existing ways:\n\nthe tensor mechanics action has a lot of direct output-to-exodus shortcuts. Does any of these work for you?https://mooseframework.inl.gov/syntax/Modules/TensorMechanics/Master/index.html#!\nyou can implement spatialValue() for your user object, then use this AuxKernel https://mooseframework.inl.gov/moose/source/auxkernels/SpatialUserObjectAux.html to output the spatial value to an auxiliary variable.\n\nGuillaume\nEDIT: If these quantities you are trying to access are material properties (like stress and strain), there are also auxkernels to do that. Please let us know",
+                  "url": "https://github.com/idaholab/moose/discussions/19607#discussioncomment-1798982",
+                  "updatedAt": "2022-06-10T14:37:50Z",
+                  "publishedAt": "2021-12-13T15:21:09Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "This sounds like a good place to use the compute = false materials (I think they are formally called \"discrete materials\", although I sometimes find that name a little bit confusing). Take a look at the models in this directory. These compute = false materials are very similar to userobject-based models, with a bunch of advantages.",
+                  "url": "https://github.com/idaholab/moose/discussions/19607#discussioncomment-1804492",
+                  "updatedAt": "2022-06-16T19:00:49Z",
+                  "publishedAt": "2021-12-14T11:25:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "... including outputting capabilities, e.g.\n[a_fancy_hardening_model]\n  type = YourDiscreteMaterial\n  output_properties = 'plastic_strain'\n  outputs = 'exodus'\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/19607#discussioncomment-1804498",
+                          "updatedAt": "2022-06-16T19:00:48Z",
+                          "publishedAt": "2021-12-14T11:27:17Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to output strain and stress of one / two elastic system/s live/s on same mesh?",
+          "author": {
+            "login": "aaelmeli"
+          },
+          "bodyText": "Hi\nFirst, let's assume we have a regular 2-D elasticity problem with displacement variables are (ux, uy). The boundary conditions are as follows, both displacements are fixed on the left, and there is traction on the right in the x-direction. I wanted to output the strain. What I have tried, I defined the auxvariable for the strain (e.g. strain_xx), and I used the RankTwoAux to compute the strain (0,0)  analogously to the way stress is computed in one of the example provided by MOOSE. However, I am getting an error telling me that the material is not defined as follows:\n\nMaterial property 'strain', requested by 'strain_xx' is not defined on block 0\n\nthe input file associated with this problem is as follows:\n[Mesh]\n    type = GeneratedMesh\n    dim = 2\n    xmin=0\n    xmax=1\n    ymin=0\n    ymax=1\n    nx = 100\n    ny=100\n[]\n\n[Variables]\n    [ux]\n        order = FIRST\n        family = LAGRANGE\n    []\n    [uy]\n        order = FIRST\n        family = LAGRANGE\n    []\n[]\n\n[AuxVariables]\n    [youngs_modulus_dist_auxvariable]\n        order = CONSTANT\n        family = MONOMIAL\n    []\n    [dummy] #the variable that needed for ComputeVariableIsotropicElasticityTensor \n    []\n    #strain aux variables\n    [strain_xx]\n        order = CONSTANT\n        family = MONOMIAL\n    []\n[]\n[Kernels]\n    [ux]\n    type = StressDivergenceTensors\n    variable = ux\n    displacements='ux uy'\n    component = 0\n    base_name = real\n    #volumetric_locking_correction=True\n    []\n    [uy]\n    type = StressDivergenceTensors\n    variable = uy\n    displacements='ux uy'\n    component = 1\n    base_name = real\n    #volumetric_locking_correction=True\n    []\n[]\n\n[AuxKernels]\n    [youngs_modulus_dist_auxkernel]\n        type = FunctionAux \n        function =  youngs_modulus_dist\n        variable = youngs_modulus_dist_auxvariable\n        execute_on = initial\n    []\n    [strain_xx]\n        type=RankTwoAux\n        variable=strain_xx\n        rank_two_tensor=strain\n        index_i = 0\n        index_j = 0\n    []    \n[]\n\n[Functions]\n    [youngs_modulus_dist]\n        type = PiecewiseMulticonstant\n        data_file = youngs_modulus_dist.txt #this holds the spatial distribution of the youngs_modulus\n        direction = 'left left' \n    []\n[]\n\n[BCs]\n#Left\n  [ux_left]\n        type = DirichletBC\n        variable = ux\n        boundary = '3'\n        value=0\n  []\n  [uy_left]\n        type = DirichletBC\n        variable = uy\n        boundary = '3'\n        value=0\n  []\n#Right\n  [ux_right]\n        type = NeumannBC\n        variable = ux\n        boundary = '1'\n        value=10\n  []\n[]\n[Materials]\n    [youngs_modulus]\n        type = GenericFunctionMaterial\n        prop_names = 'youngs_modulus'\n        prop_values = youngs_modulus_dist\n    []\n    [poissons_ratio]\n        type = GenericConstantMaterial\n        prop_names  = 'poissons_ratio'\n        prop_values = 0.0 #for now, use constant poissons ratio\n    []\n\n    [elasticity_tensor]\n        type = ComputeVariableIsotropicElasticityTensor\n        args = dummy\n        youngs_modulus = youngs_modulus\n        poissons_ratio = poissons_ratio\n        base_name = real\n    []          \n    [strain]\n        type = ComputePlaneSmallStrain\n        base_name = real\n        displacements='ux uy'\n    []\n    [stress]\n        type = ComputeLinearElasticStress\n        base_name = real\n    []\n[]\n\n[VectorPostprocessors]\n    [displacements_field_x]\n        type = NodalValueSampler #if not specified which id, this will return the whole reponse\n        variable = 'ux'\n        sort_by = id\n        execute_on=timestep_end\n        outputs='u_all'\n    []\n    [displacements_field_y]\n        type = NodalValueSampler #if not specified which id, this will return the whole reponse\n        variable = 'uy'\n        sort_by = id\n        execute_on=timestep_end\n        outputs='u_all'\n    []\n[]\n\n\n\n[Outputs]\n    [exodus]\n        file_base = '_synthetic_elastic/syntheticdata'\n        type = Exodus\n        execute_on = final\n    []\n    [u_all]\n        file_base = '_synthetic_elastic/_'\n        type = CSV\n        execute_vector_postprocessors_on = 'final'\n    []                  \n        print_perf_log = true\n[]\n\n\n[Executioner]\n    type = Steady\n    solve_type=LINEAR\n    petsc_options_iname = ' -pc_type'\n    petsc_options_value = 'lu'\n[]\n\nsecond, I have a more complex case where there is another elastic system, where the associated displacements variables are (uxi,uyi) live on the same mesh. Now, I want to output the stresses and strain of each system. The way that I have tried is to define another material, such that, in the end, I will end up with two materials as follows, then use the RankTwoAux auxkernel to compute the stresses and strains, E.g. to compute the stress associated with (ux,uy), I set rank_two_tensor=stress_real and so on. This approach fails, so apparently I am doing something wrong. Any suggestion, correction?\n[Materials]\n    [youngs_modulus]\n        type = GenericFunctionMaterial\n        prop_names = 'youngs_modulus'\n        prop_values = youngs_modulus_dist\n    []\n    [poissons_ratio]\n        type = GenericConstantMaterial\n        prop_names  = 'poissons_ratio'\n        prop_values = 0.0 #for now, use constant poissons ratio\n    []\n    #material definition for ux,uy\n    [elasticity_tensor_real]\n        type = ComputeVariableIsotropicElasticityTensor\n        args = dummy\n        youngs_modulus = youngs_modulus\n        poissons_ratio = poissons_ratio\n        base_name = real\n    []          \n    [strain_real]\n        type = ComputePlaneSmallStrain\n        displacements='ux uy'\n        base_name = real\n    []\n    [stress_real]\n        type = ComputeLinearElasticStress\n        base_name = real\n    []\n    #material definition for uxi,uyi\n    [elasticity_tensor_imaginary]\n        type = ComputeVariableIsotropicElasticityTensor\n        args = dummy\n        youngs_modulus = youngs_modulus\n        poissons_ratio = poissons_ratio\n        base_name = imaginary\n    []          \n    [strain_imaginary]\n        type = ComputePlaneSmallStrain\n        displacements='uxi uyi'\n        base_name = imaginary\n    []\n    [stress_imaginary]\n        type = ComputeLinearElasticStress\n        base_name = imaginary\n    []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/19618",
+          "updatedAt": "2022-07-25T08:48:46Z",
+          "publishedAt": "2021-12-13T21:31:10Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe easy way to output strain and stresses is to use the Tensor Mechanics action\nhttps://mooseframework.inl.gov/syntax/Modules/TensorMechanics/Master/index.html#!\nSee the example input syntax near the bottom. This is the general recommended approach in general, as a lot of things, such as being careful with the displaced mesh parameters, are done right when using the action.\nSince you dont seem to be using that action, your way is valid but strain is the material name, not the material property name. Since you passed a base name when defining the strain material, the name you should use is real_mechanical_strain.\nmechanical must have been added by ComputePlaneSmallStrain\n    [strain_xx]\n        type=RankTwoAux\n        variable=strain_xx\n        rank_two_tensor=real_mechanical_strain\n        index_i = 0\n        index_j = 0\n    []\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19618#discussioncomment-1802088",
+                  "updatedAt": "2022-09-11T19:07:53Z",
+                  "publishedAt": "2021-12-13T23:58:32Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "\"./run_tests error\"",
+          "author": {
+            "login": "snugook1108"
+          },
+          "bodyText": "When I run the \"./run_test\", I received the error message like this.\nour reference and displaced meshes are not in sync with respect to whether we should delete remote elements.\n\nHow to handle this problem after two applications coupled with installation?",
+          "url": "https://github.com/idaholab/moose/discussions/19610",
+          "updatedAt": "2022-08-24T23:57:37Z",
+          "publishedAt": "2021-12-12T04:30:45Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs this for MOOSE? What applications are included?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1798906",
+                  "updatedAt": "2022-08-24T23:57:41Z",
+                  "publishedAt": "2021-12-13T15:12:52Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "snugook1108"
+                          },
+                          "bodyText": "Thank you for the reply, It is the MOLE and SAM coupling.",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1799689",
+                          "updatedAt": "2022-08-24T23:57:44Z",
+                          "publishedAt": "2021-12-13T16:35:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ok seems it s related to #18736\nTagging @rtaylo45\nI think the test that triggers this has been modified?",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1799917",
+                          "updatedAt": "2022-08-24T23:57:44Z",
+                          "publishedAt": "2021-12-13T17:11:10Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "snugook1108"
+                          },
+                          "bodyText": "Before the coupling, the tests of Mole are working ok, but After the coupling, the tests of Mole are not working",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1800187",
+                          "updatedAt": "2022-08-24T23:57:44Z",
+                          "publishedAt": "2021-12-13T17:57:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Unfortunately I dont have access to Mole so I wont be much help here.\nSAM uses the displaced mesh extensively, so they may add by default some custom treatment for it, which you may be missing if the coupled application is not a SAMApp. @travismui do you know what is added in SAM?",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1800347",
+                          "updatedAt": "2022-09-01T06:52:53Z",
+                          "publishedAt": "2021-12-13T18:28:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rtaylo45"
+                          },
+                          "bodyText": "this is related to using periodic boundary conditions with SAM displaced mesh. Basically, you can't use periodic BCs as of now. I did not look into why this was happening exactly. @snugook1108",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1801299",
+                          "updatedAt": "2022-09-01T06:52:53Z",
+                          "publishedAt": "2021-12-13T20:37:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rtaylo45"
+                          },
+                          "bodyText": "You need to run the test as ./run_tests -g sam_coupled. This will skip any mole test that includes the periodic boundary condition. The -g is for group. Its the current way i use to tell mole which specific test to run when SAM is coupled. In the future it would be nice for Mole to only run test based on makefile variables.",
+                          "url": "https://github.com/idaholab/moose/discussions/19610#discussioncomment-1801694",
+                          "updatedAt": "2022-09-01T06:52:54Z",
+                          "publishedAt": "2021-12-13T21:55:00Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Problem with coupled variable in PenaltyInterfaceDiffusion",
+          "author": {
+            "login": "Chaoyue-Liu"
+          },
+          "bodyText": "Hi,\nI am trying to modify PenaltyInterfaceDiffusion to implement Butler-Volmer function on an interface. The residual is following:\neta = _u[_qp] - _neighbor_value[_qp];\nresidual = _F*_k* sqrt(_csmax-_cs[_qp]) * sqrt(_cs[_qp])* sqrt(_cl[_qp])* (exp(C * eta)-exp(-C*eta));\nF, k, C are constant. _cs and _cl are two coupled value exist in the subdomain of _u and _neighbor_value respectively. _cs and _cl are calculated by simple diffusion. Somehow when feeding them to the PenaltyInterfaceDiffusion kernel as coupled value, the result of cs and cl is changed. I want to ask how to let PenaltyInterface kernel only consume the cs and cl value without affecting the calculation of them.\nAnother question is, how does PenaltyInterfaceDiffusion kernel manage to enforce the diffusion flux equality on the interface without explicitly write it in the residual, like in the InterfaceDiffusion kernel? And where should I modify if I want a different flux formula for PenaltyInterfaceDiffusion?\nThank you!\nChao",
+          "url": "https://github.com/idaholab/moose/discussions/19551",
+          "updatedAt": "2022-06-23T14:37:38Z",
+          "publishedAt": "2021-12-06T10:45:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "If your cs and cl couple with u, any changes to u will have an effect on cs and cl.\nPenaltyInterfaceDiffusion does not enforce the flux equality. It simply applies the same flux to either sides of the interface. The residual term is actually the flux you apply.",
+                  "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1759575",
+                  "updatedAt": "2022-07-28T12:09:46Z",
+                  "publishedAt": "2021-12-06T16:27:57Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "So how do I decouple cs and cl with u? I just want to feed the value to the expression of u. For now what I do is in the header file declare cs:\nconst VariableValue _cl;\nIn the C file:\nparams.addRequiredCoupledVar(\"cl\");\n_cl(coupledValue(\"cl\");\nHow do I change it?",
+                          "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1763447",
+                          "updatedAt": "2022-07-28T12:25:11Z",
+                          "publishedAt": "2021-12-07T08:49:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "Are they coupled in your PDEs? It is better to list your equation systems here.",
+                          "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1767259",
+                          "updatedAt": "2022-07-28T12:25:11Z",
+                          "publishedAt": "2021-12-07T16:34:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "The equation on the interface is:\n\nare the variables, others are constants, and i is the flux apply on both sides of the interface.\nI gave the cl and cs a good scaling factor (they are far too large comparing to phis and phil), then I have the good result. It's solved.\nBut I still have another question. Now the PenaltyInterfaceDiffusion assumes that the flux on each side of the interface is :\n\nI would like to change it to:\n\nwhere K is a constant. How can I change that?",
+                          "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1774652",
+                          "updatedAt": "2022-07-28T12:25:16Z",
+                          "publishedAt": "2021-12-08T18:16:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jiangwen84"
+                          },
+                          "bodyText": "As I suggested before, you should write your own interfaceKernel instead of modifying PenaltyInterfaceDiffusion.\nIn your new class, you can apply the residual (which is the flux you gave) to either side of the interface. BTW, you provided the flux in both the first and last equation, which one do you want to use?",
+                          "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1775973",
+                          "updatedAt": "2023-02-16T22:55:57Z",
+                          "publishedAt": "2021-12-08T23:55:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "Yes I am writing my own interfaceKernel, I'm just using PenaltyInterfaceDiffusion code as a template.\nMaybe I'm didn't express myself clear. The PenaltyInterfaceDiffusion kernel deal with following equation set:\n\nWhat I want to do is change P(u-u_neighbor) to i, which is:\n\nwhere  are the variables, others are constants. Also, to change the flux expression  to\n, and  to . This is the part that troubling me because they are not explicitly written in PenaltyInterfaceDiffusion code, so I don't know how to change it.\nThe equation in master domain will be:\n\nin the neighbor domain:\n\nI hope this is clear, thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/19551#discussioncomment-1799744",
+                          "updatedAt": "2023-02-16T22:56:00Z",
+                          "publishedAt": "2021-12-13T16:44:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to transfer adaptive mesh from an app into sub-apps",
+          "author": {
+            "login": "QuangDom"
+          },
+          "bodyText": "Dear Moosers,\nI do not know is it possible or not, but I'm looking a solution / an example to setup a multi-app that the main app or a first sub-app will do the mesh adaptive, then transfers the newly created mesh into another sub-app(s), and then those sub-app will run without doing adaptive mesh.\nThanks in advance,\n/ Dom Q.",
+          "url": "https://github.com/idaholab/moose/discussions/19600",
+          "updatedAt": "2022-09-15T23:01:56Z",
+          "publishedAt": "2021-12-10T17:25:52Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "jiangwen84"
+                  },
+                  "bodyText": "I do not think we can transfer the mesh from main to sub app. One way to do this is to transfer the adaptivity information from main app to the sub app and let the sub app perform the same adaptivity.\nTake a look at:\nhttps://github.com/idaholab/moose/blob/next/modules/level_set/src/transfers/LevelSetMeshRefinementTransfer.C",
+                  "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1787130",
+                  "updatedAt": "2022-09-15T23:02:03Z",
+                  "publishedAt": "2021-12-10T17:31:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "We can clone the mesh from main app to sub app but that is probably only done once at the beginning of the simulation.",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1787255",
+                          "updatedAt": "2022-09-15T23:02:27Z",
+                          "publishedAt": "2021-12-10T17:54:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "QuangDom"
+                          },
+                          "bodyText": "@GiudGiud - Do you mean it can be done at the very first time of the simulation, when the mesh was not refine?\nIs there any ways to save the adaptive mesh from main-app into to file (XDR / Exodus) and the sub-apps will load it in?",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1787325",
+                          "updatedAt": "2022-09-15T23:02:05Z",
+                          "publishedAt": "2021-12-10T18:07:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "QuangDom"
+                          },
+                          "bodyText": "Thanks @jiangwen84 . It seems a solution for me. Do you know is there any input examples?",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1787335",
+                          "updatedAt": "2022-09-15T23:02:05Z",
+                          "publishedAt": "2021-12-10T18:09:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes. I doubt it clones the mesh at every time step, but i havent tried it.\nJust add clone_master_mesh = true in the multiapps block. If it works or doesnt work, please report back. I ll add it to the documentation",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1787388",
+                          "updatedAt": "2022-09-15T23:02:05Z",
+                          "publishedAt": "2021-12-10T18:20:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "QuangDom"
+                          },
+                          "bodyText": "Thanks @GiudGiud - The option clone_master_mesh = true only work for the uniform mesh refirement that we can define from [Mesh] action. It doesn't work for the mesh adaptive that we can define on the [Adaptivity] action.",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1790142",
+                          "updatedAt": "2022-09-15T23:02:05Z",
+                          "publishedAt": "2021-12-11T10:35:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Great thanks for looking at this. I ll add that note to the documentation.\nFor your problem, @jiangwen84 's solution is the way to go. Use adaptivity in the app that knows what to refine (main app?) with an AuxVariable indicator (see https://mooseframework.inl.gov/syntax/Adaptivity/Indicators/index.html), Transfer to the other app (the one that needs the refinement but does not know where to do it) and use Adaptivity there too with this same indicator. This should provide the same degree of refinement.\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/19600#discussioncomment-1799013",
+                          "updatedAt": "2022-09-15T23:02:25Z",
+                          "publishedAt": "2021-12-13T15:25:19Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,1198 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wNS0xNlQwNDo0NDo1MC0wNjowMM4ATx2C"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "Constant porepressure",
+          "author": {
+            "login": "asgauthier"
+          },
+          "bodyText": "Hi everyone, I recently started to use moose to model a geothermal project. However, my results don't seem to be good because the porepressure is constant over time while it should increase progressively and reach a steady state. My input file is based on the injection_production.i file but I changed the injection to be able to impose an injection flow rate of 18.05 kg/s. Can anyone help me ? Thank you a lot !\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 3\n    nx = 20\n    ny = 20\n    nz = 20\n    xmin = -2500\n    xmax = 2500\n    ymin = -2500\n    ymax = 2500\n    zmin = -4000\n    zmax = 0\n  []\n  [central_nodes]\n    input = gen\n    type = ExtraNodesetGenerator\n    new_boundary = central_nodes\n    coord = '0 0 0; 0 0 -4000'\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n[]\n\n[Variables]\n  [porepressure]\n    initial_condition = 38.3E6\n  []\n  [temperature]\n    initial_condition = 401.15\n    scaling = 1E-6 # fluid enthalpy is roughly 1E6\n  []\n[]\n\n[BCs]\n  [porepressure]\n    type = DirichletBC #Imposes the essential boundary condition u=g\n    value = 38.3E6 #pression initiale du fluide en Pascal\n    variable = porepressure\n    boundary = 'right left top bottom back front'\n  []\n[]\n\n[DiracKernels]\n  [fluid_injection]\n    type = PorousFlowPointSourceFromPostprocessor\n    point = '0 0 -3800'\n    mass_flux = 18.05\n    variable = porepressure\n  []\n  [source_h]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = 18.05\n    point = '0 0 -3800'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [fluid_production]\n    type = PorousFlowPeacemanBorehole\n    variable = porepressure\n    SumQuantityUO = produced_mass\n    point_file = production_.bh\n    function_of = pressure\n    fluid_phase = 0\n    bottom_p_or_t = 11.5E6\n    unit_weight = '0 0 0'\n    use_mobility = true\n    character = 1\n  []\n  [remove_heat_at_production_well]\n    type = PorousFlowPeacemanBorehole\n    variable = temperature\n    SumQuantityUO = produced_heat\n    point_file = production_.bh\n    function_of = pressure\n    fluid_phase = 0\n    bottom_p_or_t = 11.5E6\n    unit_weight = '0 0 0'\n    use_mobility = true\n    use_enthalpy = true\n    character = 1\n  []\n[]\n\n[UserObjects]\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_heat]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Postprocessors]\n  [heat_joules_extracted_this_timestep]\n    type = PorousFlowPlotQuantity\n    uo = produced_heat\n  []\n  [produced_mass_this_timestep]\n    type=PorousFlowPlotQuantity\n    uo=produced_mass\n  []\n  [total_mass]\n    type = PorousFlowFluidMass\n    execute_on = 'initial timestep_end'\n  []\n  [total_heat]\n    type = PorousFlowHeatEnergy\n  []\n  [mass_injected]\n    type = ScalePostprocessor\n    value = 18.05\n    execute_on = 'initial timestep_end'\n  []\n  [mass_injected_cumulative]\n    type = CumulativeValuePostprocessor\n    postprocessor = mass_injected\n    execute_on = 'initial timestep_end'\n  []\n  [T_in]\n    type = ScalePostprocessor\n    value = 333.15\n    execute_on = 'initial timestep_end'\n  []\n  [avg_temp]\n    type = ElementAverageValue\n    variable = temperature\n    execute_on = 'initial timestep_end'\n  [] \n  [porepressure_injection]\n      type = PointValue\n      point = '0 0 -3800'\n      variable = porepressure\n  [ ]\n  [porepressure_production]\n    type = PointValue\n    point = '-808 -1417 -3610'\n    variable = porepressure\n  []\n  [temperature_injection]\n    type = PointValue\n    point = '0 0 -3800'\n    variable = temperature\n  []\n  [temperature_production]\n    type = PointValue\n    point = '-808 -1417 -3610'\n    variable = temperature\n  []\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    thermal_expansion = 2E-4\n    bulk_modulus = 2E9\n    viscosity = 1E-3\n    density0 = 1000\n    cv = 4000.0\n    cp = 4000.0\n  []\n[]\n\n[PorousFlowBasicTHM]\n  porepressure = porepressure\n  temperature = temperature\n  coupling_type = ThermoHydro\n  gravity = '0 0 0'\n  fp = the_simple_fluid\n  multiply_by_density=true\n[]\n\n[Materials]\n  [porosity]\n    type = PorousFlowPorosityConst # only the initial value of this is ever used\n    porosity = 0.024\n  []\n  [biot_modulus]\n    type = PorousFlowConstantBiotModulus\n    solid_bulk_compliance = 1E-10\n    fluid_bulk_modulus = 2E9\n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '1.5E-12 0 0   0 1.5E-12 0   0 0 1.5E-12'\n  []\n  [thermal_expansion]\n    type = PorousFlowConstantThermalExpansionCoefficient\n    biot_coefficient=0.85\n    fluid_coefficient = 5E-6\n    drained_coefficient = 2E-4\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '1 0 0  0 1 0  0 0 1'\n  []\n  [rock_heat]\n    type = PorousFlowMatrixInternalEnergy\n    density = 2700.0\n    specific_heat_capacity = 1200.0\n  []\n[]\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  []\n  [preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  end_time = 1200\n  dt = 300\n[]\n\n[Outputs]\n  perf_graph = false\n  exodus = true\n  csv = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/24326",
+          "updatedAt": "2023-05-17T08:26:28Z",
+          "publishedAt": "2023-05-11T10:35:39Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\n@WilkAndy will know more than me\nI find it odd that porepressure is constrained on all surfaces around the system\n[BCs]\n  [porepressure]\n    type = DirichletBC #Imposes the essential boundary condition u=g\n    value = 38.3E6 #pression initiale du fluide en Pascal\n    variable = porepressure\n    boundary = 'right left top bottom back front'\n  []\n[]\n\nwhere do you expect pressure to build up?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5873858",
+                  "updatedAt": "2023-05-11T14:15:37Z",
+                  "publishedAt": "2023-05-11T14:15:36Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "asgauthier"
+                          },
+                          "bodyText": "Hello! thanks for your reply :) The pressure is supposed to build up at the injection point and the pressure on all surfaces is the pressure far away the wells so it's supposed to not be influenced by the wells\nAstrid",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5876337",
+                          "updatedAt": "2023-05-11T18:02:58Z",
+                          "publishedAt": "2023-05-11T18:02:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I think @GiudGiud might be right. Your injection point is right next to a boundary, so the pressure can't really increase much. I'm sure you would see an increase if you extend the mesh domain to be further from the wells.",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5883818",
+                          "updatedAt": "2023-05-12T11:02:43Z",
+                          "publishedAt": "2023-05-12T11:02:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "asgauthier"
+                          },
+                          "bodyText": "The pore pressure indeed changed a bit but it decreased instead of increasing :/",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5892119",
+                          "updatedAt": "2023-05-13T13:49:29Z",
+                          "publishedAt": "2023-05-13T13:49:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Hmm, doesn't sound right.  I changed the mesh a bit so that is basically half the model (so symmetrical in y direction so no bc applied to this face), and got this.\n\nNote: the injection mass is pretty small compared to the size of the grid blocks so the pressure doesn't go up much, but it does increase at the injection well (and likewise decreases at the production well).",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5914679",
+                          "updatedAt": "2023-05-16T10:08:05Z",
+                          "publishedAt": "2023-05-16T10:05:48Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Input file\n[Mesh]\n  [gen]\n    type = GeneratedMeshGenerator\n    dim = 3\n    nx = 60\n    ny = 20\n    nz = 20\n    xmin = -2000\n    xmax = 4000\n    ymin = 0\n    ymax = 2000\n    zmin = -4000\n    zmax = -2000\n  []\n  # [central_nodes]\n  #   input = gen\n  #   type = ExtraNodesetGenerator\n  #   new_boundary = central_nodes\n  #   coord = '0 0 0; 0 0 -4000'\n  # []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n[]\n\n[Variables]\n  [porepressure]\n    initial_condition = 38.3E6\n  []\n  [temperature]\n    initial_condition = 401.15\n    scaling = 1E-6 # fluid enthalpy is roughly 1E6\n  []\n[]\n\n[BCs]\n  [porepressure]\n    type = DirichletBC #Imposes the essential boundary condition u=g\n    value = 38.3E6 #pression initiale du fluide en Pascal\n    variable = porepressure\n    boundary = 'right left top'\n  []\n[]\n\n[DiracKernels]\n  [fluid_injection]\n    type = PorousFlowPointSourceFromPostprocessor\n    point = '0 0 -3000'\n    mass_flux = 18.05\n    variable = porepressure\n  []\n  [source_h]\n    type = PorousFlowPointEnthalpySourceFromPostprocessor\n    variable = temperature\n    mass_flux = 18.05\n    point = '0 0 -3000'\n    T_in = T_in\n    pressure = porepressure\n    fp = the_simple_fluid\n  []\n  [fluid_production]\n    type = PorousFlowPeacemanBorehole\n    variable = porepressure\n    SumQuantityUO = produced_mass\n    point_file = production.bh\n    function_of = pressure\n    fluid_phase = 0\n    bottom_p_or_t = 38.2E6\n    unit_weight = '0 0 0'\n    use_mobility = true\n    character = 1\n  []\n  [remove_heat_at_production_well]\n    type = PorousFlowPeacemanBorehole\n    variable = temperature\n    SumQuantityUO = produced_heat\n    point_file = production.bh\n    function_of = pressure\n    fluid_phase = 0\n    bottom_p_or_t = 38.2E6\n    unit_weight = '0 0 0'\n    use_mobility = true\n    use_enthalpy = true\n    character = 1\n  []\n[]\n\n[UserObjects]\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n  [produced_heat]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Postprocessors]\n  [heat_joules_extracted_this_timestep]\n    type = PorousFlowPlotQuantity\n    uo = produced_heat\n  []\n  [produced_mass_this_timestep]\n    type = PorousFlowPlotQuantity\n    uo = produced_mass\n  []\n  [total_mass]\n    type = PorousFlowFluidMass\n    execute_on = 'initial timestep_end'\n  []\n  [total_heat]\n    type = PorousFlowHeatEnergy\n  []\n  [mass_injected]\n    type = ScalePostprocessor\n    value = 18.05\n    execute_on = 'initial timestep_end'\n  []\n  [mass_injected_cumulative]\n    type = CumulativeValuePostprocessor\n    postprocessor = mass_injected\n    execute_on = 'initial timestep_end'\n  []\n  [T_in]\n    type = ScalePostprocessor\n    value = 333.15\n    execute_on = 'initial timestep_end'\n  []\n  [avg_temp]\n    type = ElementAverageValue\n    variable = temperature\n    execute_on = 'initial timestep_end'\n  []\n  [porepressure_injection]\n    type = PointValue\n    point = '0 0 -3000'\n    variable = porepressure\n    execute_on = 'initial timestep_end'\n  []\n  [porepressure_production]\n    type = PointValue\n    point = '2000 0 -3000'\n    variable = porepressure\n    execute_on = 'initial timestep_end'\n  []\n  [temperature_injection]\n    type = PointValue\n    point = '0 0 -3000'\n    variable = temperature\n    execute_on = 'initial timestep_end'\n  []\n  [temperature_production]\n    type = PointValue\n    point = '2000 0 -3000'\n    variable = temperature\n    execute_on = 'initial timestep_end'\n  []\n[]\n\n[FluidProperties]\n  [the_simple_fluid]\n    type = SimpleFluidProperties\n    thermal_expansion = 2E-4\n    bulk_modulus = 2E9\n    viscosity = 1E-3\n    density0 = 1000\n    cv = 4000.0\n    cp = 4000.0\n  []\n[]\n\n[PorousFlowBasicTHM]\n  porepressure = porepressure\n  temperature = temperature\n  coupling_type = ThermoHydro\n  gravity = '0 0 0'\n  fp = the_simple_fluid\n  multiply_by_density = true\n[]\n\n[Materials]\n  [porosity]\n    type = PorousFlowPorosityConst # only the initial value of this is ever used\n    porosity = 0.024\n  []\n  [biot_modulus]\n    type = PorousFlowConstantBiotModulus\n    solid_bulk_compliance = 1E-10\n    fluid_bulk_modulus = 2E9\n  []\n  [permeability]\n    type = PorousFlowPermeabilityConst\n    permeability = '1.5E-12 0 0   0 1.5E-12 0   0 0 1.5E-12'\n  []\n  [thermal_expansion]\n    type = PorousFlowConstantThermalExpansionCoefficient\n    biot_coefficient = 0.85\n    fluid_coefficient = 5E-6\n    drained_coefficient = 2E-4\n  []\n  [thermal_conductivity]\n    type = PorousFlowThermalConductivityIdeal\n    dry_thermal_conductivity = '1 0 0  0 1 0  0 0 1'\n  []\n  [rock_heat]\n    type = PorousFlowMatrixInternalEnergy\n    density = 2700.0\n    specific_heat_capacity = 1200.0\n  []\n[]\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      ilu           NONZERO                   2'\n  []\n  [preferred_but_might_not_be_installed]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  end_time = 5e4\n  dt = 1e4\n[]\n\n[Outputs]\n  perf_graph = false\n  exodus = true\n  csv = true\n[]\n\nand production.bh containing\n0.25 2000 0 -3000\n0.25 2000 0 -3010",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5914695",
+                          "updatedAt": "2023-05-16T10:07:19Z",
+                          "publishedAt": "2023-05-16T10:07:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "asgauthier"
+                          },
+                          "bodyText": "Thanks for your help !",
+                          "url": "https://github.com/idaholab/moose/discussions/24326#discussioncomment-5924877",
+                          "updatedAt": "2023-05-17T08:26:29Z",
+                          "publishedAt": "2023-05-17T08:26:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Question on stochastic module LibtorchANNTrainer example input file GFunction",
+          "author": {
+            "login": "chongxiyuan"
+          },
+          "bodyText": "Hi MOOSE community,\nI recently installed MOOSE with libtorch, and I am trying to learn how to train and evaluate neural networks on MOOSE. I just started running given examples. I run into an error for modules/stochastic_tools/test/tests/surrogates/libtorch_nn/train.i file that says: A 'GFunction' is not a registered object.\nIt seems like GFunction is a vectorpostprocessor, but I didn't find it in the MOOSE website documentation. Is this a custom postprocessor? Please point me to the right direction.\nThe example input file is\n[StochasticTools]\n\n[]\n\n[Samplers]\n  [sample]\n    type = CartesianProduct\n    linear_space_items = '0 0.0125 5\n                          0 0.0125 5\n                          0 0.0125 5'\n  []\n[]\n\n[VectorPostprocessors]\n  [values]\n    type = GFunction\n    sampler = sample\n    q_vector = '0 0 0'\n    execute_on = INITIAL\n    outputs = none\n  []\n[]\n\n[Trainers]\n  [train]\n    type = LibtorchANNTrainer\n    sampler = sample\n    response = values/g_values\n    num_epochs = 40\n    num_batches = 10\n    num_neurons_per_layer = '64 32'\n    learning_rate = 0.001\n    nn_filename = mynet.pt\n    read_from_file = false\n    print_epoch_loss = 10\n    activation_function = 'relu relu'\n    max_processes = 1\n  []\n[]\n\n[Outputs]\n  [out]\n    type = SurrogateTrainerOutput\n    trainers = 'train'\n    execute_on = FINAL\n  []\n[]\n\nThank you!\nChongxi Yuan",
+          "url": "https://github.com/idaholab/moose/discussions/24368",
+          "updatedAt": "2023-05-16T19:54:48Z",
+          "publishedAt": "2023-05-15T20:48:03Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is a test object for the stochastic tools module.\nIf you want to use it, you need to\n\nuse the stochastic_tools module executable\npass on the command line: --allow-test-objects\n\nIt wont have documentation as it s a test object. But you can find it in modules/stochastic_tools/test/src/functions\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24368#discussioncomment-5916435",
+                  "updatedAt": "2023-05-16T13:16:33Z",
+                  "publishedAt": "2023-05-16T13:16:32Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@zachmprince fyi in case it needs to be promoted",
+                          "url": "https://github.com/idaholab/moose/discussions/24368#discussioncomment-5916447",
+                          "updatedAt": "2023-05-16T13:17:42Z",
+                          "publishedAt": "2023-05-16T13:17:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chongxiyuan"
+                          },
+                          "bodyText": "Thank you so much, I found the function in modules/stochastic_tools/test/src/functions and manually copied the function to my executable folder, and it worked as well.",
+                          "url": "https://github.com/idaholab/moose/discussions/24368#discussioncomment-5919985",
+                          "updatedAt": "2023-05-16T19:00:00Z",
+                          "publishedAt": "2023-05-16T18:59:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "zachmprince"
+                          },
+                          "bodyText": "GFunction is something commonly used for verification of global sensitivity methods. I don't think it has any physical meaning. So I think having it as a test-only object is appropriate. You can probably replicate it using a ParsedPostprocessor in a sub-application.",
+                          "url": "https://github.com/idaholab/moose/discussions/24368#discussioncomment-5920379",
+                          "updatedAt": "2023-05-16T19:54:48Z",
+                          "publishedAt": "2023-05-16T19:54:48Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Query related to use of different time steps in Multiapp",
+          "author": {
+            "login": "deepakbiitk"
+          },
+          "bodyText": "Hi all,\nI am solving a weakly coupled thermomechanical problem. I adopted the use of Multiapp. In the main app, I solve heat conduction and I am then transferring the   temperature data to the sub app and solve for deformation. I want to use two different time steps. like a staggered approach i.e., solve heat equation with a time step dt and transfer the data to sub app in the intervals of 10dt, 20dt, 30*dt, .... and solve for deformation.\nAny suggestions how can I set this in my input file in the MultiApps and Transfer section. Thanks.",
+          "url": "https://github.com/idaholab/moose/discussions/24395",
+          "updatedAt": "2023-05-16T19:48:46Z",
+          "publishedAt": "2023-05-16T17:30:11Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nTypically you would flip the two apps, then you could run the subapp more often than the parent app.\nThis is the main criterion for deciding which app is the main app, it s the one running the longest time step.\nIf you dont want to do that, you can turn on and off transfers and multiapps using the controls system.\nhttps://mooseframework.inl.gov/source/controls/TimePeriod.html\nYou ll have to create this frequency (once every 10 dt) yourself, I dont think we have that one\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24395#discussioncomment-5919266",
+                  "updatedAt": "2023-05-16T17:33:44Z",
+                  "publishedAt": "2023-05-16T17:33:43Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "deepakbiitk"
+                  },
+                  "bodyText": "Hello Guillaume,\nThank you for the prompt response. I flipped my two apps. However, I am still not able to make it run with 2 different time steps.\nThis is the section in my parent app:\n[AuxVariables]\n[./temperature]\n[../]\n[]\n[MultiApps]\n[sub_app]\ntype = TransientMultiApp\ninput_files = 'transient_thermal_main.i'\nexecute_on = 'timestep_begin'\n[]\n[]\n[Transfers]\n[from_sub]\ntype = MultiAppCopyTransfer\nfrom_multi_app = sub_app\nvariable = temperature\nsource_variable= temperature\nexecute_on = 'timestep_begin'\n[]\n[]\nMy time step in sub app is dt =1 and time step in parent app is dt = 10. When I run it, both the apps run with dt =1. Thanks",
+                  "url": "https://github.com/idaholab/moose/discussions/24395#discussioncomment-5920167",
+                  "updatedAt": "2023-05-16T19:27:12Z",
+                  "publishedAt": "2023-05-16T19:27:12Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "turn on sub_cycling in the MultiApp sub_app block",
+                          "url": "https://github.com/idaholab/moose/discussions/24395#discussioncomment-5920174",
+                          "updatedAt": "2023-05-16T19:28:36Z",
+                          "publishedAt": "2023-05-16T19:28:35Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "deepakbiitk"
+                          },
+                          "bodyText": "Thanks, It worked.",
+                          "url": "https://github.com/idaholab/moose/discussions/24395#discussioncomment-5920330",
+                          "updatedAt": "2023-05-16T19:48:47Z",
+                          "publishedAt": "2023-05-16T19:48:46Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "ADParsedMaterial",
+          "author": {
+            "login": "nourriahi"
+          },
+          "bodyText": "Hello,\nI have one variable that varies along the y axis, so for this I want to use ADParsedMaterial to define a function:\n[Materials]\n    [./qs]\n    type = ADParsedMaterial\n    property_name = 'surface_heat_flux'\n    function = '99.98*((1.000088*(y-283.2))/(1-(y-1.0e5)/2.15e9))'\n    outputs = exodus\n    []\n  []\n\nUnfortunately, I received this error message that I couldn't find a way to fix it:\n*** ERROR ***\nqs: Coupled variable 'y' was not found",
+          "url": "https://github.com/idaholab/moose/discussions/24389",
+          "updatedAt": "2023-05-16T18:33:33Z",
+          "publishedAt": "2023-05-16T15:52:27Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Use ADGenericFunctionMaterial.",
+                  "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5918265",
+                  "updatedAt": "2023-05-16T15:55:17Z",
+                  "publishedAt": "2023-05-16T15:55:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "x,y,z cannot be used in ParsedMaterial. They can be used in Functions.\nA simple function like this can be parsed directly, or you can define a ParsedFunction then use it in ADGenericFunctionMaterial",
+                          "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5918305",
+                          "updatedAt": "2023-05-16T15:59:52Z",
+                          "publishedAt": "2023-05-16T15:59:51Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nourriahi"
+                          },
+                          "bodyText": "I am trying to apply what you suggested, but, first I needed to make some changes to the source file to be able to declare my variable \"qs\" as a function in the input file :\nparams.addParam<FunctionName>(\n    \"qs\", \"3e10\", \"the laser source input function\");\n  return params;\n}\n\nHeatConductionOutFlow::HeatConductionOutFlow(const InputParameters & parameters)\n    : ADIntegratedBC(parameters), \n       _value(getParam<Real>(\"value\")),\n       _T_infinity(getADMaterialProperty<Real>(\"T_infinity\")),\n       _chtc(getADMaterialProperty<Real>(\"convective_heat_transfer_coefficient\")),\n       _rhtc(getADMaterialProperty<Real>(\"radiation_heat_transfer_coefficient\")),\n       _qs(getFunction(\"surface_heat_flux\"))\n\n{ \n}\n\nADReal\nHeatConductionOutFlow::computeQpResidual()\n{\nreturn - _test[_i][_qp] * _qs[_qp] + _test[_i][_qp] * ((_chtc[_qp] * (_T_infinity[_qp] - _u[_qp])) + (_rhtc[_qp] * ((_T_infinity[_qp] * _T_infinity[_qp] * _T_infinity[_qp] * _T_infinity[_qp]) - (_u[_qp] * _u[_qp] * _u[_qp] * _u[_qp]))));\n}\n\n\nUnfortunately, I got this error message: \n\n error: no match for 'operator[]' (operand types are 'const Function' and 'unsigned int')\n   41 | return - _test[_i][_qp] * _qs[_qp] + _test[_i][_qp] * ((_chtc[_qp] * (_T_infinity[_qp] - _u[_qp])) + (_rhtc[_qp] * ((_T_infinity[_qp] * _T_infinity[_qp] * _T_infinity[_qp] * _T_infinity[_qp]) - (_u[_qp] * _u[_qp] * _u[_qp] * _u[_qp]))));",
+                          "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5919630",
+                          "updatedAt": "2023-05-16T18:20:57Z",
+                          "publishedAt": "2023-05-16T18:20:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Functions are not indexed by quadrature point.\nYou evaluate Functions at points and time.\nFor example:\n_function.value(_t, _q_point[_qp])\nhere your function is _qps\nBtw, qps is not a great name for a function",
+                          "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5919649",
+                          "updatedAt": "2023-05-16T18:22:50Z",
+                          "publishedAt": "2023-05-16T18:22:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I'm a little confused. Why can't you use\n  [qs]\n    type = ADGenericFunctionMaterial\n    prop_names = 'surface_heat_flux'\n    prop_values = '99.98*((1.000088*(y-283.2))/(1-(y-1.0e5)/2.15e9))'\n  []",
+                          "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5919691",
+                          "updatedAt": "2023-05-16T18:27:38Z",
+                          "publishedAt": "2023-05-16T18:27:38Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "nourriahi"
+                          },
+                          "bodyText": "Thanks both for you help",
+                          "url": "https://github.com/idaholab/moose/discussions/24389#discussioncomment-5919750",
+                          "updatedAt": "2023-05-16T18:33:34Z",
+                          "publishedAt": "2023-05-16T18:33:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Questions about using MOOSE Materials with custom Material files",
+          "author": {
+            "login": "richmondodufisan"
+          },
+          "bodyText": "I read through the documentation and believe I understand how the material file system works. Within an input file, you can declare a block with your material values, e.g\n  [block_name]\n    type = customMaterial\n    constant1= 0.2\n  []\n\nand then within the custom material, you get the value from the user, i.e\n /// Get Parameter from user, name in input file is in quotes\n_user_constant1(getParam<Real>(\"constant1\")),\n\nthe variable _user_constant1 can now be used within the computeQpProperties() e.g\nauto _calc_in_method = _user_constant1*5;\nto compute whatever you want, and then you send it back out with, say\n_calc_in_method(declareADProperty<Real>(\"calculated_value\")),\nIn this case, any kernel that wants to use the value we calculated here will do this:\n_necessary_constant(getADMaterialPropertyByName<Real>(\"calculated_value\"))\nthen, _necessary_constant can be used within the computeQpresidual method.\nDo I understand how this works correctly? And in the above, is the \"block_name\" relevant or just for the user using the input file? I asked because of the following questions.\n\nNow for my first question- how can I use/get material properties defined by MOOSE already? I saw the following in someone's custom code:\n    _base_name(isParamValid(\"base_name\") ? getParam<std::string>(\"base_name\") + \"_\" : \"\"),\n\n    _stress(getADMaterialPropertyByName<RankTwoTensor>(_base_name + \"stress\")),\n    _cto(getADMaterialPropertyByName<RankFourTensor>(_base_name + \"elasticity_tensor\")),\n    _strain(getADMaterialPropertyByName<RankTwoTensor>(_base_name + \"mechanical_strain\")),\n\nIn the input file, they have this:\n  [elasticity_tensor]\n    type = ADComputeIsotropicElasticityTensor\n    youngs_modulus = 30000\n    poissons_ratio = 0.2\n  []\n  \n  [strain]\n    type = ADComputeSmallStrain\n  []\n  \n  [stress]\n    type = ADComputeLinearElasticStress\n  []\n\nI want to understand how/why this code works. In the constructor, they \"get\" those material properties, which I assume are declared somewhere. However, those names- \"stress\", \"elasticity_tensor\", and \"mechanical_strain\". Where are they defined? I initially thought that \"elasticity_tensor\" was gotten from the name of the block, and same for \"stress\", but then that wouldn't make sense since \"mechanical_strain\" is not the name of the block in the input file, but they used that name to get the property. Is the block name relevant at all? Or how were these material values gotten?\nI tried to look through the source code, but in ComputeSmallStrain.C, I do not see any declareProperty in the constructor. So I'm not sure how to know what name to call the material by when \"getting\" it.\nAlso, could you break down the possible use/purpose of the whole \"base_name\" thing? I don't understand its purpose.\n\nFollowing up on this question, if I were to want to declare a RankFourTensor tensor to use in my custom material file, how would I do so in the input file? I'm not very clear on the documentation (https://mooseframework.inl.gov/docs/doxygen/moose/classRankFourTensorTempl.html) but I'm assuming it would be something along the lines of:\n[./material1_elasticitytensor]\n  type = RankFourTensor\n  input= '1.684e5 0.176e5 0.176e5 1.684e5 0.176e5 1.684e5 0.754e5 0.754e5 0.754e5'\n  fill_method = symmetric9\n  property =  betaphase_elasticity_tensor\n[../]\n\nSo that in my custom material file, I can now do:\n_betaphase(getParam<RankFourTensor>(\"betaphase_elasticity_tensor\")),\nIs this the correct syntax?",
+          "url": "https://github.com/idaholab/moose/discussions/24358",
+          "updatedAt": "2023-05-16T17:19:34Z",
+          "publishedAt": "2023-05-14T05:56:42Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nFor question 1, this\n_stress(getADMaterialPropertyByName(_base_name + \"stress\")),\nis retrieving a stress material property that is known to be declared with this name by the stress model.\nThe tensor mechanics module is using this convention for naming the stress, so materials are using that same name as well, without an explicit declaration in the input file of what the stress name will be\nsame for strain, elasticity tensor etc\nThe base_name is to disambiguate if there are multiple stress models. One can then pass different a base_name to retrieve the stress material property of interest.\nQuestion 2:\n_betaphase(getParam(\"betaphase_elasticity_tensor\")),\nthis is not correct. This retrieves a tensor directly, not through the material property system.\nYou want:\n_betaphase(getMaterialPropertyByName(\"betaphase_elasticity_tensor\")),\nand _betaphase must be declared in the header as a material property\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5899646",
+                  "updatedAt": "2023-05-15T00:36:45Z",
+                  "publishedAt": "2023-05-15T00:36:45Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "So essentially all stress-related materials can be retrieved with \"stress\", and to differentiate them if I use multiple, I can add a base_name to each's material block? Is this convention explained anywhere in the documentation? Asking because I was wondering about materials in other modules, are their naming conventions also explained anywhere?\nApart from clarity for the user of the input file, is the block name relevant?",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5907249",
+                          "updatedAt": "2023-05-15T16:15:16Z",
+                          "publishedAt": "2023-05-15T16:15:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "the block name is generally not relevant, it s the name of the Material not the Material Property.\nNaming conventions will depend on the module, there's no universal rule",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5907713",
+                          "updatedAt": "2023-05-15T17:07:50Z",
+                          "publishedAt": "2023-05-15T17:07:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thank you. A few more questions:\n\nI believe I followed the steps properly and cannot figure out why I am getting this error:\n\nerror: 'MaterialProperty< <template-parameter-1-1> >::MaterialProperty(const MaterialProperty< <template-parameter-1-1> >&) [with T = RankFourTensorTempl<double>]' is private within this context\nI have this in my custom material file header:\n#pragma once\n\n#include \"DerivativeMaterialInterface.h\"\n#include \"RankTwoTensor.h\"\n#include \"RankFourTensor.h\"\n#include \"Eigen/Core\"\n#include \"Eigen/Dense\"\n#include <unsupported/Eigen/CXX11/Tensor>\n#include \"Material.h\"\n\nclass Custom : public DerivativeMaterialInterface<Material>\n{\npublic:\n  static InputParameters validParams();\n\n  CustomMaterial(const InputParameters & parameters);\n\nprotected:\n  ...\n  \n  // just for debugging\n  MaterialProperty<Real> & _seeoutput;\n\n  // Materials calculated by this custom material\n  MaterialProperty<RankTwoTensor> & _cust_eigenstr;\n  MaterialProperty<RankFourTensor> & _elasticity_eta;\n  \n};\n\nAnd in my source file, I have this:\n#include \"CustomMaterial.h\"\n#include <Eigen/Dense>\n#include <cmath>\n\nregisterMooseObject(\"myApp\", CustomMaterial);\n\nInputParameters\nCustomMaterial::validParams()\n{\n  ...\n  \n  return params;\n}\n\nCustomMaterial::CustomMaterial(const InputParameters & parameters)\n  : DerivativeMaterialInterface<Material>(parameters),\n\t\n         ...\n\n\t_seeoutput(declareProperty<Real>(\"debug_purposes\")),\n\t_cust_eigenstr(declareProperty<RankTwoTensor>(\"e_ij_0\")),\n\t_elasticity_eta(declareProperty<RankFourTensor>(\"c_ijkl\"))\n\t\n{\n}\n\nHowever, I get an error when I try to compile, saying\nerror: 'MaterialProperty< <template-parameter-1-1> >::MaterialProperty(const MaterialProperty< <template-parameter-1-1> >&) [with T = RankFourTensorTempl<double>]' is private within this context\n   32 |  _elasticity_eta(declareProperty<RankFourTensor>(\"elasticity_eta\"))\n\nI am not really sure what this means. I tried to follow the format in the documentation. Should the variable/attribute \"_elasticity_eta\" have been declared publicly?\nAlso, I got a similar error for a kernel trying to \"get\" these properties.\n\nSecondly, I wanted to ask about the \"MaterialADConverter\" system. I am making non-AD materials because one of the kernels is a slightly edited version of a kernel from the phase-field module, and I derived the Jacobian and coded it there. However, I do not want to derive the Jacobian for another custom kernel I created from scratch, and so I want to convert the materials in my custom Material file from non-AD to AD.\nI have this in my input file:\n[convert_to_AD]\n    type = MaterialADConverter\n\tad_props_in = 'c_ijkl e_ij_0 mechanical_strain'\n\tad_props_out = 'ADc_ijkl ADe_ij_0 ADmechanical_strain'\n[]\n\nIn the AD Kernel, will I then \"get\" the AD version using the new name like this?\n_e_ij_0(getADMaterialPropertyByName<Real>(\"ADe_ij_0\")),\nAnd for the ADmechanical_strain, would it be better to just make another material block for ADComputeSmallStrain? The \"mechanical_strain\" there is intended to be from ComputeSmallStrain which already exists in my input file",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5909976",
+                          "updatedAt": "2023-05-15T22:05:07Z",
+                          "publishedAt": "2023-05-15T22:05:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For the second question, I would not recommend doing that.\nThe outgoing \"AD\" version does not contain the derivaties, it's just passing the Real as an ADReal, with 0 for all derivatives",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5911349",
+                          "updatedAt": "2023-05-16T02:54:16Z",
+                          "publishedAt": "2023-05-16T02:54:16Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Thanks! I should probably just work on the Jacobians then (or is there a way to convert from AD to non-AD so I can make my material class AD)?\nAlso, I figured out the first one- for posterity's sake, there was a missing \"&\" in the header of one of the kernels that used that material, and when I fixed that the error somehow disappeared.",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5912516",
+                          "updatedAt": "2023-05-16T06:12:26Z",
+                          "publishedAt": "2023-05-16T06:12:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok I m not surprised for the first one.\nThis is what I was looking for in the code you pasted, but it seemed correct there, there was no copy?\nMaterialPropertyValues may not be copied, you can only take a reference to them. This was accomplished by making the copy-constructor private, hence the compilation error message.\nIt's very easy to convert from AD to non AD, in fast the same MaterialADConverter can do that (using ad_props_in and reg_props_out)",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5916595",
+                          "updatedAt": "2023-05-16T13:29:14Z",
+                          "publishedAt": "2023-05-16T13:29:13Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "Got it, that makes sense. I think I didn't update the compiled version or something.\nI'll try the MaterialADConverter, thanks.\nAlso, another follow up on the use of RankFourTensor & RankTwoTensor. As stated earlier, I have a block in my input file:\n[./material1_elasticitytensor]\n  type = RankFourTensor\n  input= '1.684e5 0.176e5 0.176e5 1.684e5 0.176e5 1.684e5 0.754e5 0.754e5 0.754e5'\n  fill_method = symmetric9\n  property =  betaphase_elasticity_tensor\n[../]\n\nHowever, I get this error\n*** ERROR ***\nA 'RankFourTensor' is not a registered object.\n\nIf you are trying to find this object in a dynamically linked library, make sure that\nthe library can be found either in your \"Problem/library_path\" parameter or in the\nMOOSE_LIBRARY_PATH environment variable.\n\nwhat do I need to do to be able to use this?\n\nAlternatively, I could use the ComputeElasticityTensor. The reason I didn't use it earlier was because I still had some confusion over the \"base_name\" syntax, and I have multiple elasticity tensors.\nIf I change the above to ComputeElasticityTensor, is this the correct syntax to send and retrieve it in the material file system?\n[./beta_elasticity_tensor]\n  type = ComputeElasticityTensor\n  C_ijkl = '1022726 113636 113636 1022726 454545'\n  fill_method = beta_phase\n[../]\n\n[./alpha_elasticity_tensor]\n  type = ComputeElasticityTensor\n  C_ijkl = '1022726 113636 113636 1022726 454545'\n  fill_method = axisymmetric_rz\n  base_name = alpha_phase\n[../]\n\nand then I can \"get\" them with\n_c_beta(getADMaterialPropertyByName<RankFourTensor>(\"beta_phase_\" + \"elasticity_tensor\")),\n_c_alpha(getADMaterialPropertyByName<RankFourTensor>(\"alpha_phase_\" + \"elasticity_tensor\")),\n\nsince I wrote the \"base_name\" directly, would I still need the below code?\n_base_name(isParamValid(\"base_name\") ? getParam<std::string>(\"base_name\") + \"_\" : \"\"),\nI realize I still don't fully understand how it works.",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5917259",
+                          "updatedAt": "2023-05-16T14:23:58Z",
+                          "publishedAt": "2023-05-16T14:23:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I was looking but I cant recall how to input a RankFourTensor directly in the input. It s not with type = RankFourTensor\nfill_method = beta_phase\nis not what you want. Maybe\n  fill_method = axisymmetric_rz\n  base_name = beta_phase\n\nSo you have two base_names essentially? Like you are getting the same property but for two phases in the same object.\nI think it s fine to hardcode beta/alpha_base instead of base_name",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5917317",
+                          "updatedAt": "2023-05-16T14:29:43Z",
+                          "publishedAt": "2023-05-16T14:29:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "richmondodufisan"
+                          },
+                          "bodyText": "oh yeah that was a typo. I meant:\n[./beta_elasticity_tensor]\n  type = ComputeElasticityTensor\n  fill_method = symmetric9\n  C_ijkl = '1111 1122 1133 2222 2233 3333 2323 1313 1212'\n  base_name = beta_phase\n[../]\n\n[./alpha_elasticity_tensor]\n  type = ComputeElasticityTensor\n  C_ijkl = '6 7 8 9 10'\n  fill_method = axisymmetric_rz\n  base_name = alpha_phase\n[../]\n\nas in, I have two completely different elasticity tensors that I do some operations on in the material file. And just so I get you, is that the proper way to hardcode the custom name? As in, whatever I type for base_name + \"_\" + \"elasticity_tensor\"?",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5917373",
+                          "updatedAt": "2023-05-16T14:35:33Z",
+                          "publishedAt": "2023-05-16T14:34:29Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Yes this seems fine.\nThe proper way would be to have two parameters:\nbase_name_phase_1\nbase_name_phase_2\nretrieve them in two strings, and use that to retrieve the tensors.\nThis will let you change the base name in alpha_elasticity_tensor in the future for example",
+                          "url": "https://github.com/idaholab/moose/discussions/24358#discussioncomment-5917448",
+                          "updatedAt": "2023-05-16T14:41:58Z",
+                          "publishedAt": "2023-05-16T14:41:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How can I solve this equation in couple with tensor mechanics module?",
+          "author": {
+            "login": "K-Komal-98"
+          },
+          "bodyText": "Here sigma_h is the hydrostatic stress. The terms two terms are straightforward. I can use TimeDerivative and Diffusion kernel. How can I solve for the last term where there is derivative of hydrostatic stress?",
+          "url": "https://github.com/idaholab/moose/discussions/24361",
+          "updatedAt": "2023-05-16T16:03:57Z",
+          "publishedAt": "2023-05-15T00:41:09Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs the stress a single-valued field (=variable) here?\nOr a tensor?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5899682",
+                  "updatedAt": "2023-05-15T00:44:32Z",
+                  "publishedAt": "2023-05-15T00:44:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "K-Komal-98"
+                          },
+                          "bodyText": "sigma_h is an average of normal stress components of a stress tensor i.e. sigma_11, sigma_22, sigma_33. I think it can be defined as an AuxVariable. Am I right?",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5899806",
+                          "updatedAt": "2023-05-15T01:11:58Z",
+                          "publishedAt": "2023-05-15T01:11:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "AuxVariable will likely be problematic because you will miss the derivatives of the stress tensor component with regards to each variable, to form the Jacobian later down the line\nA material property is likely the way to go here",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5899826",
+                          "updatedAt": "2023-05-15T01:18:50Z",
+                          "publishedAt": "2023-05-15T01:18:30Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "K-Komal-98"
+                          },
+                          "bodyText": "Thanks!\nIs there any example file where I can look into?",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5899875",
+                          "updatedAt": "2023-05-15T01:29:43Z",
+                          "publishedAt": "2023-05-15T01:29:42Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Your best best is the tensor mechanics module.\nI'm not sure which model in particular though",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5900086",
+                          "updatedAt": "2023-05-15T02:18:06Z",
+                          "publishedAt": "2023-05-15T02:18:06Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "K-Komal-98"
+                          },
+                          "bodyText": "Hi @GiudGiud !\nIn this discussion (#22910), the hydrostatic stress has been taken as an aux variable. You have suggested to use a material property. Are these two different approaches?",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5912156",
+                          "updatedAt": "2023-05-16T05:18:32Z",
+                          "publishedAt": "2023-05-16T05:18:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I think we suggested material property there too",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5915157",
+                          "updatedAt": "2023-05-16T10:56:38Z",
+                          "publishedAt": "2023-05-16T10:56:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "avtarsinghh1991"
+                  },
+                  "bodyText": "Hello there\nFollow this discussion (#22910) for incorporating the hydrostatic stress coupling.\nThanks,\nAvtar",
+                  "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5909891",
+                  "updatedAt": "2023-05-15T21:48:24Z",
+                  "publishedAt": "2023-05-15T21:46:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "K-Komal-98"
+                          },
+                          "bodyText": "Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5912139",
+                          "updatedAt": "2023-05-16T05:16:24Z",
+                          "publishedAt": "2023-05-16T05:16:23Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "In addition to what I suggested in #22910, there is a cheaper way of getting the gradient using a local projection. See for example this code snippet: https://github.com/hugary1995/eel/blob/main/src/materials/chemistry/ChemicalPotential.C#L56-L78\nMOOSE doesn't support ADRealEigenMatrix and ADRealEigenVector yet, so I defined those utils in my app.This is the third or fourth time I see this question pop up, I can create a PR or a gist to demonstrate this capability. @GiudGiud this might be a good side project for an intern. Ideally, this would be a material object called something like MaterialPropertyGradient which takes a scalar-valued material property, does the local projection, and interpolates its gradients onto the qps.",
+                  "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5918071",
+                  "updatedAt": "2023-05-16T15:59:54Z",
+                  "publishedAt": "2023-05-16T15:37:57Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Let s create an issue to keep track of this.\nI agree this would make a good project. Once we have interns started on their main project we can consider it",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5918289",
+                          "updatedAt": "2023-05-16T15:58:24Z",
+                          "publishedAt": "2023-05-16T15:58:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Sounds good. Let me know if anyone starts working on this. I could also have someone here do it.",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5918322",
+                          "updatedAt": "2023-05-16T16:01:33Z",
+                          "publishedAt": "2023-05-16T16:01:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "My interns wont be up and running for another month.\n@permcody might have a resource",
+                          "url": "https://github.com/idaholab/moose/discussions/24361#discussioncomment-5918346",
+                          "updatedAt": "2023-05-16T16:03:58Z",
+                          "publishedAt": "2023-05-16T16:03:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Restarting MALAMUTE Simulation",
+          "author": {
+            "login": "raj-anant"
+          },
+          "bodyText": "Dear MOOSE Team,\nI am trying to resume a MOOSE simulation using the results of a previous simulation as the initial state. I am following the strategy given in the following example:\nhttps://mooseframework.inl.gov/application_usage/restart_recover.html\nI read in the mesh from the previous result:\n[Mesh]\n    file = previous.e\n[]\n\nI am running a MLAMUTE simulation and need to read the temperature and velocity profiles from the previous results. Temperature is a scalar, and so works easily using the following:\n[temp]\n    initial_from_file_var = temp\n  []\n\nHowever, velocity is a vector, and the results save the velocity as veloctiy_x and velocity_y. How can I read the two components from the previous results using the same format? The following two formats do not work\n[velocity]\n    family = LAGRANGE_VEC\n    initial_from_file_var = velocity\n []\n\n[velocity]\n    family = LAGRANGE_VEC\n    initial_from_file_var = velocity_x velocity_y\n []\n\nPlease let me know how I can get this to work.\nThanks,\nAnant",
+          "url": "https://github.com/idaholab/moose/discussions/24347",
+          "updatedAt": "2023-05-16T16:01:32Z",
+          "publishedAt": "2023-05-12T20:17:19Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "What did you generate them with ? In the first simulation, was velocity a lagrange_vec?\nIn the Mesh block, did you remember to set use_for_exodus_restart = true?",
+                  "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5888657",
+                  "updatedAt": "2023-05-12T20:41:33Z",
+                  "publishedAt": "2023-05-12T20:41:32Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "raj-anant"
+                  },
+                  "bodyText": "The first simulation also had velocity as a lagrange_evc.\nI did not use the use_forexodus_restart = true in the mesh block in the previous simulation.\nI tried using that in a fresh run, but it gave me an error: \"unused parameter 'Mesh/use_for_exodus_restart'\"",
+                  "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5888809",
+                  "updatedAt": "2023-05-12T21:06:11Z",
+                  "publishedAt": "2023-05-12T21:06:10Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "use a FileMeshGenerator to load the mesh\nThe parameter might be mispelled too. This parameter must be used to restart from an exodus file",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5888848",
+                          "updatedAt": "2023-05-12T21:12:01Z",
+                          "publishedAt": "2023-05-12T21:12:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "raj-anant"
+                          },
+                          "bodyText": "I used that tag as you suggested\n[Mesh]\n  [file_mesh]\n     type = FileMeshGenerator\n     file = melt_pool_old.e\n     use_for_exodus_restart = true\n   []\n[]\n\n[velocity]\n    family = LAGRANGE_VEC\n    initial_from_file_var = velocity\n[]\n\nThe velocity was a LAGRANGE_VEC in the initial simulation as well. I still get the same error when trying to read the velocity:\nAvailable variables:\ncurvature\ngrad_ls_x\ngrad_ls_y\nls\np\ntemp\nvelocity_x\nvelocity_y\nlibMesh terminating:\nUnable to locate variable named: velocity\nWhat do you think?",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5908957",
+                          "updatedAt": "2023-05-15T19:35:54Z",
+                          "publishedAt": "2023-05-15T19:31:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Looks like we dont support exodus restart of vector variables then\n@cticenhour what did you use for restart in EM? for loading variables into other variables at initialization",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909000",
+                          "updatedAt": "2023-05-15T19:37:55Z",
+                          "publishedAt": "2023-05-15T19:37:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "I simply don't do restarts in the EM module right now because of this incompatibility. It's a pretty serious (and frustrating) gap, in my opinion. I am hopeful that the milestone work I am doing for the initial condition system this summer will help address this.",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909016",
+                          "updatedAt": "2023-05-15T19:40:34Z",
+                          "publishedAt": "2023-05-15T19:40:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "raj-anant"
+                          },
+                          "bodyText": "Is there any other way of reading the initial conditions for a variable from a .csv file or any other format? Or maybe you could give me some pointers as to how I could write some custom scripts inside MOOSE to read initial data from any file? I need to be able to read in randomly perturbed initial states for the problem I am working on.",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909135",
+                          "updatedAt": "2023-05-15T19:55:03Z",
+                          "publishedAt": "2023-05-15T19:55:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "raj-anant"
+                          },
+                          "bodyText": "ChatGPT suggested the following round about solution:\n[ICs]\n  [./velocity_x_ic]\n    type = FunctionIC\n    variable = velocity_x\n    function = 'fromfile_x'\n  [../]\n  [./velocity_y_ic]\n    type = FunctionIC\n    variable = velocity_y\n    function = 'fromfile_y'\n  [../]\n[]\n\n[Functions]\n  [./fromfile_x]\n    type = ParsedFunction\n    value = 'restartable_data_x'\n  [../]\n  [./fromfile_y]\n    type = ParsedFunction\n    value = 'restartable_data_y'\n  [../]\n[]\n\n[RestartableData]\n  [./restartable_data_x]\n    type = ExodusReader\n    file = 'previous_simulation.e'\n    variable = 'velocity_x'\n  [../]\n  [./restartable_data_y]\n    type = ExodusReader\n    file = 'previous_simulation.e'\n    variable = 'velocity_y'\n  [../]\n[]\n\nIs something along these lines possible? I tried it but got an error: '[RestartableData]' does not have an associated \"Action\"",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909229",
+                          "updatedAt": "2023-05-16T16:00:42Z",
+                          "publishedAt": "2023-05-15T20:09:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cticenhour"
+                          },
+                          "bodyText": "You could try using the VectorFunctionIC object and define functions for each component given the requirements you have. Example input files using this are listed at the bottom of that page. You then might be able to define a suitable function from CSV for each by using the PiecewiseConstantFromCSV object. Note on the latter page a section containing links to other function objects that can take CSV data if this one isn't adequate.",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909296",
+                          "updatedAt": "2023-05-15T20:20:14Z",
+                          "publishedAt": "2023-05-15T20:19:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "ChatGPT is making up syntax here. We dont have that one",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5909462",
+                          "updatedAt": "2023-05-15T20:36:31Z",
+                          "publishedAt": "2023-05-15T20:36:30Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "Don't do variable reinitialization then... You can do Problem/restart_file_base=xxxxx or something like that (I don't recall the exact syntax).",
+                  "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5918142",
+                  "updatedAt": "2023-05-16T15:44:27Z",
+                  "publishedAt": "2023-05-16T15:44:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Instead of using the 'Exodus' restart, you should use the 'Checkpoint' restart. It s less flexible but it will support the vector variables",
+                          "url": "https://github.com/idaholab/moose/discussions/24347#discussioncomment-5918321",
+                          "updatedAt": "2023-05-16T16:01:33Z",
+                          "publishedAt": "2023-05-16T16:01:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Implementation of polar decomposition, sqrt for rank two tensor",
+          "author": {
+            "login": "jessecarterMOOSE"
+          },
+          "bodyText": "After poking around a bit, I'm happy to see there is already a method that does polar decomposition of a rank two tensor (in tensor mechanics here).\nI know that a lot of the heavy lifting when doing the polar decomposition is in taking the square root of the tensor. I'd like to know how this is implemented in MOOSE. Looks like that polar decomposition method is calling MathUtils::sqrt(), but I'm having trouble finding where that is defined. Can anyone point me in the right direction?",
+          "url": "https://github.com/idaholab/moose/discussions/24388",
+          "updatedAt": "2023-06-24T22:20:35Z",
+          "publishedAt": "2023-05-16T13:45:25Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "That (and a few other common unary operators) is defined in FactorizedRankTwoTensor.h. It's just an eigenvalue decomposition behind the scenes.",
+                  "url": "https://github.com/idaholab/moose/discussions/24388#discussioncomment-5917894",
+                  "updatedAt": "2023-05-16T15:22:04Z",
+                  "publishedAt": "2023-05-16T15:22:04Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Why not convergence",
+          "author": {
+            "login": "Nuwanted"
+          },
+          "bodyText": "Dear MOOSE expert,\nRecently I have been studying the effect of grain orientation on pore drift in polycrystals. In the simulation, when the grain boundary migration coefficient Mgb is 0, the calculation can converge, but when it is not 0, the calculation cannot converge in the first step. As for the grain orientation, I modified it according to kobyashi's file. The following is my code. I would like to know whether this is a problem set in the anisotropic module part.\n1.txt",
+          "url": "https://github.com/idaholab/moose/discussions/24386",
+          "updatedAt": "2023-05-16T13:21:15Z",
+          "publishedAt": "2023-05-16T13:21:15Z",
+          "category": {
+            "name": "Q&A Modules: Phase field"
+          },
+          "comments": {
+            "edges": []
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "PorousFlow: Convergence problem",
+          "author": {
+            "login": "sinaomrani96"
+          },
+          "bodyText": "Dear all,\nHope you are doing well.\nI wanted to convert an example of flow through fractured media from 1-phase (water+tracer) into a 2-phase (water+CO2) problem. Unfortunately, I have convergence issue in linear solver. I followed various instructions and changing the preconditioning but still no improvement. Here is the log of convergence with options below which is advised on PETSc website for determining condition number of the matrix:\n-pc_type none -ksp_type gmres -ksp_monitor_singular_value -ksp_gmres_restart 1000\n\nSo it seems it is a ill-condition matrix but do not know why and nothing seems to help. I appreciate your help on this.\nAlso here is the input file based on the example:\nhttps://github.com/sinaomrani96/Fracture/tree/main\nTime Step 0, time = 0\n\nTime Step 1, time = 1, dt = 1\n 0 Nonlinear |R| = 3.480331e-07\n    |residual|_2 of individual variables:\n                        pp:  1.00779e-13\n                        sat: 3.48033e-07\n      0 Linear |R| = 3.480331e-07\n    0 KSP Residual norm 3.480331261471e-07 % max 1.000000000000e+00 min 1.000000000000e+00 max/min 1.000000000000e+00\n      1 Linear |R| = 3.480331e-07\n    1 KSP Residual norm 3.480331261471e-07 % max 1.052019939202e+08 min 1.052019939202e+08 max/min 1.000000000000e+00\n      2 Linear |R| = 3.480331e-07\n    2 KSP Residual norm 3.480331261471e-07 % max 1.052019939202e+08 min 8.568223196557e-05 max/min 1.227815750206e+12\n      3 Linear |R| = 3.480331e-07\n    3 KSP Residual norm 3.480331261471e-07 % max 1.052019939202e+08 min 8.423199255803e-05 max/min 1.248955304574e+12\n      4 Linear |R| = 3.480331e-07\n    4 KSP Residual norm 3.480331261463e-07 % max 1.052019939202e+08 min 5.622449586431e-06 max/min 1.871106042001e+13\n      5 Linear |R| = 3.480331e-07\n    5 KSP Residual norm 3.480331261463e-07 % max 1.052019939202e+08 min 5.598175091163e-06 max/min 1.879219427885e+13\n      6 Linear |R| = 3.480331e-07\n    6 KSP Residual norm 3.480331256075e-07 % max 1.052019939202e+08 min 2.129195344834e-07 max/min 4.940927293280e+14\n      7 Linear |R| = 3.480331e-07\n    7 KSP Residual norm 3.480331250125e-07 % max 1.052019939202e+08 min 1.468415489804e-07 max/min 7.164320633407e+14\n      8 Linear |R| = 3.480331e-07\n    8 KSP Residual norm 3.480331233139e-07 % max 1.052019939202e+08 min 9.292115168725e-08 max/min 1.132164119901e+15\n      9 Linear |R| = 3.480323e-07\n    9 KSP Residual norm 3.480323148637e-07 % max 1.052019939202e+08 min 5.491093059080e-09 max/min 1.915866163408e+16\n     10 Linear |R| = 3.480323e-07\n   10 KSP Residual norm 3.480323075004e-07 % max 1.052019939202e+08 min 5.466339135247e-09 max/min 1.924542025610e+16\n     11 Linear |R| = 3.475345e-07\n   11 KSP Residual norm 3.475345177108e-07 % max 1.052019939202e+08 min 2.215740374049e-10 max/min 4.747938664308e+17\n     12 Linear |R| = 3.455605e-07\n   12 KSP Residual norm 3.455604508601e-07 % max 1.052019939202e+08 min 9.963964860885e-11 max/min 1.055824617900e+18\n     13 Linear |R| = 3.450964e-07\n   13 KSP Residual norm 3.450963848848e-07 % max 1.052019939202e+08 min 9.145936460488e-11 max/min 1.150259400715e+18\n     14 Linear |R| = 2.942476e-07\n   14 KSP Residual norm 2.942475764518e-07 % max 1.052019939202e+08 min 2.220102672717e-11 max/min 4.738609399151e+18\n     15 Linear |R| = 2.821310e-07\n   15 KSP Residual norm 2.821309547099e-07 % max 1.052019939202e+08 min 2.024844007557e-11 max/min 5.195560424779e+18\n     16 Linear |R| = 2.631171e-07\n   16 KSP Residual norm 2.631170500106e-07 % max 1.052019939202e+08 min 1.811337162382e-11 max/min 5.807974136732e+18\n     17 Linear |R| = 2.403752e-07\n   17 KSP Residual norm 2.403751953924e-07 % max 1.052019939202e+08 min 1.639478966905e-11 max/min 6.416794362345e+18\n     18 Linear |R| = 2.361593e-07\n   18 KSP Residual norm 2.361593061440e-07 % max 1.052019939202e+08 min 1.614083907036e-11 max/min 6.517752482483e+18\n     19 Linear |R| = 2.229293e-07\n   19 KSP Residual norm 2.229292657910e-07 % max 1.052019939202e+08 min 1.543935301054e-11 max/min 6.813886167920e+18\n     20 Linear |R| = 2.089479e-07\n   20 KSP Residual norm 2.089478676019e-07 % max 1.052019939202e+08 min 1.482543412833e-11 max/min 7.096048116336e+18\n     21 Linear |R| = 1.986148e-07\n   21 KSP Residual norm 1.986148265740e-07 % max 1.052019939202e+08 min 1.443817999279e-11 max/min 7.286375012135e+18\n     22 Linear |R| = 1.942826e-07\n   22 KSP Residual norm 1.942825645143e-07 % max 1.052019939202e+08 min 1.429005660374e-11 max/min 7.361901834078e+18\n     23 Linear |R| = 1.893130e-07\n   23 KSP Residual norm 1.893130489736e-07 % max 1.052019939202e+08 min 1.412944882795e-11 max/min 7.445583702605e+18\n     24 Linear |R| = 1.819915e-07\n   24 KSP Residual norm 1.819914936107e-07 % max 1.052019939202e+08 min 1.390950774479e-11 max/min 7.563315384729e+18\n     25 Linear |R| = 1.751653e-07\n   25 KSP Residual norm 1.751652821219e-07 % max 1.052019939202e+08 min 1.372075132798e-11 max/min 7.667363936963e+18\n     26 Linear |R| = 1.690068e-07\n   26 KSP Residual norm 1.690068401710e-07 % max 1.052019939202e+08 min 1.356275087219e-11 max/min 7.756685565600e+18\n     27 Linear |R| = 1.634555e-07\n   27 KSP Residual norm 1.634554988184e-07 % max 1.052019939202e+08 min 1.342952778340e-11 max/min 7.833633141608e+18\n     28 Linear |R| = 1.584115e-07\n   28 KSP Residual norm 1.584115343163e-07 % max 1.052019939202e+08 min 1.331552540388e-11 max/min 7.900701679372e+18\n     29 Linear |R| = 1.538102e-07\n   29 KSP Residual norm 1.538101580565e-07 % max 1.052019939202e+08 min 1.321703103762e-11 max/min 7.959578336520e+18\n     30 Linear |R| = 1.495844e-07\n   30 KSP Residual norm 1.495844222762e-07 % max 1.052019939202e+08 min 1.313095062651e-11 max/min 8.011757633735e+18\n     31 Linear |R| = 1.456900e-07\n   31 KSP Residual norm 1.456900336137e-07 % max 1.052019939202e+08 min 1.305517021770e-11 max/min 8.058262907792e+18\n     32 Linear |R| = 1.420838e-07\n   32 KSP Residual norm 1.420837586463e-07 % max 1.052019939202e+08 min 1.298789211280e-11 max/min 8.100005220744e+18\n     33 Linear |R| = 1.387331e-07\n   33 KSP Residual norm 1.387330571799e-07 % max 1.052019939202e+08 min 1.292776663663e-11 max/min 8.137677363549e+18\n     34 Linear |R| = 1.356085e-07\n   34 KSP Residual norm 1.356085388741e-07 % max 1.052019939202e+08 min 1.287373005831e-11 max/min 8.171834693103e+18\n     35 Linear |R| = 1.326861e-07\n   35 KSP Residual norm 1.326861288213e-07 % max 1.052019939202e+08 min 1.282487326967e-11 max/min 8.202965573858e+18\n     36 Linear |R| = 1.299448e-07\n   36 KSP Residual norm 1.299448272386e-07 % max 1.052019939202e+08 min 1.278050597202e-11 max/min 8.231442021972e+18\n     37 Linear |R| = 1.273667e-07\n   37 KSP Residual norm 1.273667131232e-07 % max 1.052019939202e+08 min 1.274002922569e-11 max/min 8.257594394528e+18\n     38 Linear |R| = 1.249362e-07\n   38 KSP Residual norm 1.249361969260e-07 % max 1.052019939202e+08 min 1.270295508808e-11 max/min 8.281694549870e+18\n     39 Linear |R| = 1.226397e-07\n   39 KSP Residual norm 1.226397177586e-07 % max 1.052019939202e+08 min 1.266888440699e-11 max/min 8.303966674615e+18\n     40 Linear |R| = 1.204654e-07\n   40 KSP Residual norm 1.204653903992e-07 % max 1.052019939202e+08 min 1.263742815208e-11 max/min 8.324636362254e+18\n     41 Linear |R| = 1.184028e-07\n   41 KSP Residual norm 1.184027567925e-07 % max 1.052019939202e+08 min 1.260831797368e-11 max/min 8.343856344656e+18\n     42 Linear |R| = 1.164426e-07\n   42 KSP Residual norm 1.164425702770e-07 % max 1.052019939202e+08 min 1.258131693098e-11 max/min 8.361763279417e+18\n     43 Linear |R| = 1.145766e-07\n   43 KSP Residual norm 1.145766217681e-07 % max 1.052019939202e+08 min 1.255619414055e-11 max/min 8.378493733258e+18\n     44 Linear |R| = 1.127976e-07\n   44 KSP Residual norm 1.127975944751e-07 % max 1.052019939202e+08 min 1.253274803786e-11 max/min 8.394168110809e+18\n     45 Linear |R| = 1.110989e-07\n   45 KSP Residual norm 1.110989430166e-07 % max 1.052019939202e+08 min 1.251081069586e-11 max/min 8.408887039992e+18\n     46 Linear |R| = 1.094748e-07\n   46 KSP Residual norm 1.094747918913e-07 % max 1.052019939202e+08 min 1.249027546781e-11 max/min 8.422712068383e+18\n     47 Linear |R| = 1.079198e-07\n   47 KSP Residual norm 1.079198498374e-07 % max 1.052019939202e+08 min 1.247096890817e-11 max/min 8.435751439591e+18\n     48 Linear |R| = 1.064293e-07\n   48 KSP Residual norm 1.064293371996e-07 % max 1.052019939202e+08 min 1.245279419754e-11 max/min 8.448063322281e+18\n     49 Linear |R| = 1.049989e-07\n   49 KSP Residual norm 1.049989240369e-07 % max 1.052019939202e+08 min 1.243568796192e-11 max/min 8.459684276600e+18\n     50 Linear |R| = 1.036247e-07\n   50 KSP Residual norm 1.036246771427e-07 % max 1.052019939202e+08 min 1.241953909730e-11 max/min 8.470684225559e+18\n     51 Linear |R| = 1.023030e-07\n   51 KSP Residual norm 1.023030144985e-07 % max 1.052019939202e+08 min 1.240427326182e-11 max/min 8.481109025871e+18\n     52 Linear |R| = 1.010307e-07\n   52 KSP Residual norm 1.010306659600e-07 % max 1.052019939202e+08 min 1.238977216344e-11 max/min 8.491035390514e+18\n     53 Linear |R| = 9.980464e-08\n   53 KSP Residual norm 9.980463919170e-08 % max 1.052019939202e+08 min 1.237605479203e-11 max/min 8.500446684183e+18\n     54 Linear |R| = 9.862219e-08\n   54 KSP Residual norm 9.862219004107e-08 % max 1.052019939202e+08 min 1.236300200628e-11 max/min 8.509421406445e+18\n     55 Linear |R| = 9.748080e-08\n   55 KSP Residual norm 9.748079668566e-08 % max 1.052019939202e+08 min 1.235060705919e-11 max/min 8.517961377603e+18\n     56 Linear |R| = 9.637814e-08\n   56 KSP Residual norm 9.637813699667e-08 % max 1.052019939202e+08 min 1.233879618688e-11 max/min 8.526114892150e+18\n     57 Linear |R| = 9.531207e-08\n   57 KSP Residual norm 9.531206865746e-08 % max 1.052019939202e+08 min 1.232752788570e-11 max/min 8.533908411778e+18\n     58 Linear |R| = 9.428061e-08\n   58 KSP Residual norm 9.428061164890e-08 % max 1.052019939202e+08 min 1.231678701662e-11 max/min 8.541350416972e+18\n     59 Linear |R| = 9.328193e-08\n   59 KSP Residual norm 9.328193277567e-08 % max 1.052019939202e+08 min 1.230656544002e-11 max/min 8.548444684495e+18\n     60 Linear |R| = 9.231433e-08\n   60 KSP Residual norm 9.231433195847e-08 % max 1.052019939202e+08 min 1.229668347730e-11 max/min 8.555314456486e+18\n     61 Linear |R| = 9.137623e-08\n   61 KSP Residual norm 9.137623005843e-08 % max 1.052019939202e+08 min 1.228731583746e-11 max/min 8.561836882179e+18\n     62 Linear |R| = 9.046616e-08\n   62 KSP Residual norm 9.046615803577e-08 % max 1.052019939202e+08 min 1.227830905398e-11 max/min 8.568117438454e+18\n     63 Linear |R| = 8.958275e-08\n   63 KSP Residual norm 8.958274727292e-08 % max 1.052019939202e+08 min 1.226967254363e-11 max/min 8.574148458005e+18\n     64 Linear |R| = 8.872472e-08\n   64 KSP Residual norm 8.872472091740e-08 % max 1.052019939202e+08 min 1.226134609676e-11 max/min 8.579970999103e+18\n     65 Linear |R| = 8.789089e-08\n   65 KSP Residual norm 8.789088611959e-08 % max 1.052019939202e+08 min 1.225340722088e-11 max/min 8.585529887628e+18\n     66 Linear |R| = 8.708013e-08\n   66 KSP Residual norm 8.708012705833e-08 % max 1.052019939202e+08 min 1.224578711645e-11 max/min 8.590872348161e+18\n     67 Linear |R| = 8.629140e-08\n   67 KSP Residual norm 8.629139866136e-08 % max 1.052019939202e+08 min 1.223841137631e-11 max/min 8.596049820958e+18\n     68 Linear |R| = 8.552372e-08\n   68 KSP Residual norm 8.552372094033e-08 % max 1.052019939202e+08 min 1.223132027028e-11 max/min 8.601033379508e+18\n     69 Linear |R| = 8.477617e-08\n   69 KSP Residual norm 8.477617387060e-08 % max 1.052019939202e+08 min 1.222444760603e-11 max/min 8.605868936627e+18\n     70 Linear |R| = 8.404789e-08\n   70 KSP Residual norm 8.404789275481e-08 % max 1.052019939202e+08 min 1.221790192615e-11 max/min 8.610479487890e+18\n     71 Linear |R| = 8.333806e-08\n   71 KSP Residual norm 8.333806401728e-08 % max 1.052019939202e+08 min 1.221149381462e-11 max/min 8.614997928770e+18\n     72 Linear |R| = 8.264592e-08\n   72 KSP Residual norm 8.264592138263e-08 % max 1.052019939202e+08 min 1.220540664833e-11 max/min 8.619294461162e+18\n     73 Linear |R| = 8.197074e-08\n   73 KSP Residual norm 8.197074239781e-08 % max 1.052019939202e+08 min 1.219944388848e-11 max/min 8.623507340322e+18\n     74 Linear |R| = 8.131185e-08\n   74 KSP Residual norm 8.131184526167e-08 % max 1.052019939202e+08 min 1.219368775293e-11 max/min 8.627578141395e+18\n     75 Linear |R| = 8.066859e-08\n   75 KSP Residual norm 8.066858593050e-08 % max 1.052019939202e+08 min 1.218819311214e-11 max/min 8.631467597551e+18\n     76 Linear |R| = 8.004036e-08\n   76 KSP Residual norm 8.004035547145e-08 % max 1.052019939202e+08 min 1.218282565327e-11 max/min 8.635270413800e+18\n     77 Linear |R| = 7.942658e-08\n   77 KSP Residual norm 7.942657763926e-08 % max 1.052019939202e+08 min 1.217760627519e-11 max/min 8.638971530430e+18\n     78 Linear |R| = 7.882671e-08\n   78 KSP Residual norm 7.882670665430e-08 % max 1.052019939202e+08 min 1.217257970767e-11 max/min 8.642538923273e+18\n     79 Linear |R| = 7.824023e-08\n   79 KSP Residual norm 7.824022516251e-08 % max 1.052019939202e+08 min 1.216771100207e-11 max/min 8.645997090351e+18\n     80 Linear |R| = 7.766664e-08\n   80 KSP Residual norm 7.766664235977e-08 % max 1.052019939202e+08 min 1.216299184243e-11 max/min 8.649351679507e+18\n     81 Linear |R| = 7.710549e-08\n   81 KSP Residual norm 7.710549226545e-08 % max 1.052019939202e+08 min 1.215843067851e-11 max/min 8.652596433037e+18\n     82 Linear |R| = 7.655633e-08\n   82 KSP Residual norm 7.655633213115e-08 % max 1.052019939202e+08 min 1.215391536899e-11 max/min 8.655810965130e+18\n     83 Linear |R| = 7.601874e-08\n   83 KSP Residual norm 7.601874097239e-08 % max 1.052019939202e+08 min 1.214962195032e-11 max/min 8.658869745112e+18\n     84 Linear |R| = 7.549232e-08\n   84 KSP Residual norm 7.549231821215e-08 % max 1.052019939202e+08 min 1.214539613228e-11 max/min 8.661882475825e+18\n     85 Linear |R| = 7.497668e-08\n   85 KSP Residual norm 7.497668242632e-08 % max 1.052019939202e+08 min 1.214137702139e-11 max/min 8.664749783725e+18\n     86 Linear |R| = 7.447147e-08\n   86 KSP Residual norm 7.447147018216e-08 % max 1.052019939202e+08 min 1.213738567562e-11 max/min 8.667599162762e+18\n     87 Linear |R| = 7.397633e-08\n   87 KSP Residual norm 7.397633496168e-08 % max 1.052019939202e+08 min 1.213352618873e-11 max/min 8.670356191910e+18\n     88 Linear |R| = 7.349095e-08\n   88 KSP Residual norm 7.349094616278e-08 % max 1.052019939202e+08 min 1.212978765635e-11 max/min 8.673028489920e+18\n     89 Linear |R| = 7.301499e-08\n   89 KSP Residual norm 7.301498817148e-08 % max 1.052019939202e+08 min 1.212612255821e-11 max/min 8.675649896754e+18\n     90 Linear |R| = 7.254816e-08\n   90 KSP Residual norm 7.254815949949e-08 % max 1.052019939202e+08 min 1.212257393369e-11 max/min 8.678189507903e+18\n     91 Linear |R| = 7.209017e-08\n   91 KSP Residual norm 7.209017198158e-08 % max 1.052019939202e+08 min 1.211909235024e-11 max/min 8.680682585776e+18\n     92 Linear |R| = 7.164075e-08\n   92 KSP Residual norm 7.164075002807e-08 % max 1.052019939202e+08 min 1.211572585930e-11 max/min 8.683094611243e+18\n     93 Linear |R| = 7.119963e-08\n   93 KSP Residual norm 7.119962992791e-08 % max 1.052019939202e+08 min 1.211238638429e-11 max/min 8.685488605004e+18\n     94 Linear |R| = 7.076656e-08\n   94 KSP Residual norm 7.076655919837e-08 % max 1.052019939202e+08 min 1.210917344331e-11 max/min 8.687793135734e+18\n     95 Linear |R| = 7.034130e-08\n   95 KSP Residual norm 7.034129597781e-08 % max 1.052019939202e+08 min 1.210611868461e-11 max/min 8.689985342200e+18\n     96 Linear |R| = 6.992361e-08\n   96 KSP Residual norm 6.992360845799e-08 % max 1.052019939202e+08 min 1.210307287193e-11 max/min 8.692172230423e+18\n     97 Linear |R| = 6.951327e-08\n   97 KSP Residual norm 6.951327435311e-08 % max 1.052019939202e+08 min 1.210009093031e-11 max/min 8.694314325907e+18\n     98 Linear |R| = 6.911008e-08\n   98 KSP Residual norm 6.911008040273e-08 % max 1.052019939202e+08 min 1.209715310293e-11 max/min 8.696425764396e+18\n     99 Linear |R| = 6.871382e-08\n   99 KSP Residual norm 6.871382190599e-08 % max 1.052019939202e+08 min 1.209430563797e-11 max/min 8.698473237674e+18\n    100 Linear |R| = 6.832430e-08\n  100 KSP Residual norm 6.832430228489e-08 % max 1.052019939202e+08 min 1.209152607025e-11 max/min 8.700472819475e+18\n  Linear solve did not converge due to DIVERGED_ITS iterations 100\n 1 Nonlinear |R| = 3.480331e-07\n    |residual|_2 of individual variables:\n                        pp:  2.5294e-13\n                        sat: 3.48033e-07\n      0 Linear |R| = 3.480331e-07\n    0 KSP Residual norm 3.480331261470e-07 % max 1.000000000000e+00 min 1.000000000000e+00 max/min 1.000000000000e+00\n  Linear solve did not converge due to DIVERGED_NANORINF iterations 0\nNonlinear solve did not converge due to DIVERGED_LINEAR_SOLVE iterations 1\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nSolve failed, cutting timestep.",
+          "url": "https://github.com/idaholab/moose/discussions/24327",
+          "updatedAt": "2023-06-24T22:38:23Z",
+          "publishedAt": "2023-05-11T11:12:01Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nOne thing that can help with conditioning is using scaling for your equations.\nYou could try: scaling = 1e6 for the porepressure variable, it will even out the residuals for both variables.\nHow many dofs do you have in the problem?\nUsing the ksp_monitor to compute the ratio of eigenvalues helps but is only approximating the condition number.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5873981",
+                  "updatedAt": "2023-05-11T14:26:39Z",
+                  "publishedAt": "2023-05-11T14:26:39Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Hi @GiudGiud,\nThanks for the tip. This is the DOFs in this example:\nFramework Information:\nMOOSE Version:           git commit a344e45df7 on 2023-04-20\nLibMesh Version:         \nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\nCurrent Time:            Thu May 11 16:00:40 2023\nExecutable Timestamp:    Tue May  2 17:37:13 2023\n\nParallelism:\n  Num Processors:          1\n  Num Threads:             1\n\nMesh: \n  Parallel Type:           replicated\n  Mesh Dimension:          2\n  Spatial Dimension:       2\n  Nodes:                   451\n  Elems:                   440\n  Num Subdomains:          3\n\nNonlinear System:\n  Num DOFs:                902\n  Num Local DOFs:          902\n  Variables:               { \"pp\" \"sat\" } \n  Finite Element Types:    \"LAGRANGE\" \n  Approximation Orders:    \"FIRST\" \n\nAuxiliary System:\n  Num DOFs:                880\n  Num Local DOFs:          880\n  Variables:               { \"massfrac1\" \"massfrac2\" } \n  Finite Element Types:    \"MONOMIAL\" \n  Approximation Orders:    \"CONSTANT\" \n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  TimeIntegrator:          ImplicitEuler\n  Solver Mode:             NEWTON\n  MOOSE Preconditioner:    SMP (auto)\n\nThanks.\nBest regards,\nSina",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5874409",
+                          "updatedAt": "2023-05-11T15:30:39Z",
+                          "publishedAt": "2023-05-11T15:02:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "900 is reasonable. you could just use pc_type lu to solve this",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5874800",
+                          "updatedAt": "2023-05-11T15:30:55Z",
+                          "publishedAt": "2023-05-11T15:30:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Dear @GiudGiud,\nI have tried different preconditioning and below are some of them:\n[Preconditioning]\nactive = 'preferred'\n[andy]\ntype = SMP\nfull = true\npetsc_options = '-snes_converged_reason -ksp_diagonal_scale -ksp_diagonal_scale_fix -ksp_gmres_modifiedgramschmidt -snes_linesearch_monitor'\npetsc_options_iname = '-ksp_type -pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap -snes_atol -snes_rtol -snes_max_it'\npetsc_options_value = 'gmres     asm       ilu           NONZERO                   2               1E-20      1E-19      10000'\n[]\n[basic]\ntype = SMP\nfull = true\npetsc_options = '-snes_converged_reason -ksp_diagonal_scale -ksp_diagonal_scale_fix -ksp_gmres_modifiedgramschmidt -snes_linesearch_monitor'\npetsc_options_iname = '-ksp_type -pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\npetsc_options_value = 'gmres asm lu NONZERO 2'\n[]\n[preferred]\ntype = SMP\nfull = true\npetsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\npetsc_options_value = 'lu mumps'\n[]\n[]\nstill I can't get results from very beginning. I tried convergence criteria suggestions i.e. using simple fluid, changing BCs, using PP instead of PS method in PorousFlow (as @WilkAndy suggested before in #24235) but none of them worked. I do not know how I can understand where is the problem. Here is the result for when \"preferred\" is active:\nTime Step 0, time = 0\nTime Step 1, time = 1, dt = 1\n0 Nonlinear |R| = 1.033048e-06\n|residual|_2 of individual variables:\npp:  9.72656e-07\nsat: 3.48033e-07\n0 Linear |R| = 1.033048e-06\n0 KSP Residual norm 1.033047689164e-06\n1 Linear |R| = 5.554038e-07\n1 KSP Residual norm 5.554038062355e-07\n2 Linear |R| = 3.997493e-08\n2 KSP Residual norm 3.997492583117e-08\n3 Linear |R| = 6.821240e-10\n3 KSP Residual norm 6.821239899350e-10\n4 Linear |R| = 4.480871e-12\n4 KSP Residual norm 4.480871191574e-12\n1 Nonlinear |R| = 1.028771e-06\n|residual|_2 of individual variables:\npp:  9.68113e-07\nsat: 3.48033e-07\n0 Linear |R| = 1.028771e-06\n0 KSP Residual norm 1.028771270060e-06\nLinear solve did not converge due to DIVERGED_PC_FAILED iterations 0\nPC failed due to FACTOR_NUMERIC_ZEROPIVOT\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\nSolve Did NOT Converge!\nAborting as solve did not converge\nSolve failed, cutting timestep.\nTime Step 1, time = 0.5, dt = 0.5\n0 Nonlinear |R| = 1.033048e-06\n|residual|_2 of individual variables:\npp:  9.72656e-07\nsat: 3.48033e-07\n0 Linear |R| = 1.033048e-06\n0 KSP Residual norm 1.033047689164e-06\n1 Linear |R| = 1.031716e-06\n1 KSP Residual norm 1.031715617885e-06\n2 Linear |R| = 3.448307e-07\n2 KSP Residual norm 3.448306613117e-07\n3 Linear |R| = 3.862457e-09\n3 KSP Residual norm 3.862456922560e-09\n4 Linear |R| = 1.363942e-11\n4 KSP Residual norm 1.363941925042e-11\n5 Linear |R| = 1.052338e-13\n5 KSP Residual norm 1.052338243574e-13\n1 Nonlinear |R| = 1.028771e-06\n|residual|_2 of individual variables:\npp:  9.68113e-07\nsat: 3.48033e-07\n0 Linear |R| = 1.028771e-06\n0 KSP Residual norm 1.028771270060e-06\nLinear solve did not converge due to DIVERGED_PC_FAILED iterations 0\nPC failed due to FACTOR_NUMERIC_ZEROPIVOT\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\nSolve Did NOT Converge!\nAborting as solve did not converge\nSolve failed, cutting timestep.\nThanks for your time,\nBest regards,\nSina",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5874991",
+                          "updatedAt": "2023-05-11T15:45:40Z",
+                          "publishedAt": "2023-05-11T15:45:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "for  FACTOR_NUMERIC_ZEROPIVOT with LU you can use a -pc_factor_shift of NONZERO to avoid the zero pivot",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5875006",
+                          "updatedAt": "2023-05-11T15:47:31Z",
+                          "publishedAt": "2023-05-11T15:47:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "I have tried that too. It does not work with -sub_pc_factor_shift either.\nTime Step 1, time = 1, dt = 1\n 0 Nonlinear |R| = 1.039583e-06\n    |residual|_2 of individual variables:\n                        pp:  9.79594e-07\n                        sat: 3.48033e-07\n      0 Linear |R| = 1.039583e-06\n    0 KSP Residual norm 1.039582588754e-06 \n      1 Linear |R| = 8.001024e-07\n    1 KSP Residual norm 8.001023741984e-07 \n      2 Linear |R| = 3.090084e-08\n    2 KSP Residual norm 3.090083746363e-08 \n      3 Linear |R| = 1.659801e-11\n    3 KSP Residual norm 1.659800617289e-11 \n      4 Linear |R| = 3.427233e-13\n    4 KSP Residual norm 3.427232684124e-13 \n 1 Nonlinear |R| = 1.036498e-06\n    |residual|_2 of individual variables:\n                        pp:  9.7632e-07\n                        sat: 3.48033e-07\n      0 Linear |R| = 1.036498e-06\n    0 KSP Residual norm 1.036498154102e-06 \n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to FACTOR_NUMERIC_ZEROPIVOT \nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 1\n Solve Did NOT Converge!\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nif I change my solve type from Newton to other ones like JFNK or PJFNK the error of  FACTOR_NUMERIC_ZEROPIVOT disappear but linear solver do not converge and reaches its iteration limit.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5875136",
+                          "updatedAt": "2023-05-11T16:04:06Z",
+                          "publishedAt": "2023-05-11T16:00:27Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if I change my solve type from Newton to other ones like JFNK or PJFNK the error of FACTOR_NUMERIC_ZEROPIVOT disappear but linear solver do not converge and reaches its iteration limit.\n\nThat's interesting. Did you try a direct solve with PJFNK?\nDId you check your Jacobian was correct? (with the finite differencing tool)",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5875187",
+                          "updatedAt": "2023-05-11T16:04:53Z",
+                          "publishedAt": "2023-05-11T16:04:53Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "sinaomrani96"
+                  },
+                  "bodyText": "Sorry I did not get your first advice but I did not check the Jacobian as well. I will check it. Thanks.",
+                  "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5875229",
+                  "updatedAt": "2023-05-11T16:09:03Z",
+                  "publishedAt": "2023-05-11T16:09:02Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "sinaomrani96"
+                  },
+                  "bodyText": "Dear @GiudGiud,\nHope you are well.\nI am not sure if this is exactly what you suggested, but I used analyze_jacobian.py tool to check the Jacobian and this is the result:\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is questionable (off by 15.17 %)\n(0,1) Off-diagonal Jacobian for variable 'sat' is slightly off (by 0.011359 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is wrong (off by 100.0 %)\n(0,1) Off-diagonal Jacobian for variable 'sat' is slightly off (by 0.011522 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is inexact (off by 2.611 %)\n(0,1) Off-diagonal Jacobian for variable 'sat' should just return  zero\nKernel for variable 'sat':\n(1,1) On-diagonal Jacobian is slightly off (by 0.696295 %)\nIt seems that the jacobian is not right but I do not know where is the problem in the input file. I appreciate your help. Thanks.\nBest regards,\nSina",
+                  "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5903341",
+                  "updatedAt": "2023-05-15T09:45:40Z",
+                  "publishedAt": "2023-05-15T09:45:40Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nindeed it seems there are a lot of errors.\nThis wont be fixable from the input file, something is up with the kernels for 'pp'.\n@cpgr can you please have a look at\nhttps://github.com/sinaomrani96/Fracture/blob/main/test\nfor issues?\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5904184",
+                          "updatedAt": "2023-05-15T11:31:45Z",
+                          "publishedAt": "2023-05-15T11:31:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "@sinaomrani96 - can you upload your coarse.e mesh to that branch so I can try and run it?",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5904498",
+                          "updatedAt": "2023-05-15T12:11:12Z",
+                          "publishedAt": "2023-05-15T12:11:11Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Hi @cpgr, it is the same mesh in the porous flow example in folder \"flow_through_fractured_media\". However, I uploaded it.\nhttps://github.com/sinaomrani96/Fracture\nThanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5904553",
+                          "updatedAt": "2023-05-15T12:15:55Z",
+                          "publishedAt": "2023-05-15T12:15:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Oh, I didn't read that! I'll take a look tomorrow morning.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5904576",
+                          "updatedAt": "2023-05-15T12:18:25Z",
+                          "publishedAt": "2023-05-15T12:18:24Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "That would be great. Thanks.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5904581",
+                          "updatedAt": "2023-05-15T12:18:57Z",
+                          "publishedAt": "2023-05-15T12:18:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I'm guessing that you want to model CO2 coming in from the left of the fracture to the right like this:\n\nI made a couple of changes to your input file to make it run (reduced the time as this happens quickly, loosened the tolerances as they are too tight, simplified the kernels so that it is quicker, etc). One thing that causes a lot of issues is setting sg=1 at the left - this sends Pc off to a high value. If you want to do this, you might need to have no capillary pressure. Otherwise, you need sg < 1 at the left boundary in order to get convergence.\nI also added a small pressure gradient so that there is flow from left to right to make convergence a bit better.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5910423",
+                          "updatedAt": "2023-05-16T00:01:48Z",
+                          "publishedAt": "2023-05-16T00:01:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "[Mesh]\n  type = FileMesh\n  file = 'coarse.e'\n  block_id = '1 2 3'\n  block_name = 'fracture matrix1 matrix2'\n\n  boundary_id = '1 2'\n  boundary_name = 'bottom top'\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  gravity = '0 0 0'\n[]\n\n[Variables]\n  [pp]\n    initial_condition = 1e6\n    # scaling = 1e7\n  []\n  [sat]\n    initial_condition = 0\n    # scaling = 1e-8\n  []\n[]\n\n[AuxVariables]\n\n  [massfrac1]\n    # family = MONOMIAL\n    # order = CONSTANT\n    initial_condition = 1\n  []\n  [massfrac2]\n    # family = MONOMIAL\n    # order = CONSTANT\n    initial_condition = 0\n  []\n[]\n\n[BCs]\n  [co2_injection1]\n    type = DirichletBC\n    boundary = bottom\n    variable = sat\n    value = 1\n  []\n  [rp]\n    type = DirichletBC\n    value = 1e6\n    variable = pp\n    boundary = top\n  []\n  [lp]\n    type = DirichletBC\n    value = 1.01e6\n    variable = pp\n    boundary = bottom\n  []\n  [topco2]\n    type = DirichletBC\n    boundary = top\n    variable = sat\n    value = 0\n  []\n[]\n\n[Kernels]\n  [mass0]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = pp\n  []\n  [adv0]\n    # type = PorousFlowFluxLimitedTVDAdvection\n    # advective_flux_calculator = advective_flux_calculator_0\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = pp\n  []\n  [mass1]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 1\n    variable = sat\n  []\n  [adv1]\n    # type = PorousFlowFluxLimitedTVDAdvection\n    # advective_flux_calculator = advective_flux_calculator_1\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 1\n    variable = sat\n  []\n[]\n\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'pp sat'\n    number_fluid_phases = 2\n    number_fluid_components = 2\n  []\n  [pc]\n    # type = PorousFlowCapillaryPressureBC\n    # pe = 1e4\n    # lambda = 2\n    type = PorousFlowCapillaryPressureConst\n  []\n  # [advective_flux_calculator_0]\n  #   type = PorousFlowAdvectiveFluxCalculatorUnsaturatedMultiComponent\n  #   flux_limiter_type = VanLeer\n  #   fluid_component = 0\n  #   phase = 0\n  # []\n  # [advective_flux_calculator_1]\n  #   type = PorousFlowAdvectiveFluxCalculatorUnsaturatedMultiComponent\n  #   flux_limiter_type = VanLeer\n  #   fluid_component = 1\n  #   phase = 1\n  # []\n[]\n\n[FluidProperties]\n  # [true_water]\n  #   type = Water97FluidProperties\n  # []\n  # [tabulated_water]\n  #   type = TabulatedFluidProperties\n  #   fp = true_water\n  #   temperature_min = 275\n  #   pressure_max = 1E8\n  #   interpolated_properties = 'density viscosity enthalpy internal_energy'\n  #   fluid_property_file = water97_tabulated_11.csv\n  # []\n  # [true_co2]\n  #   type = CO2FluidProperties\n  # []\n  # [tabulated_co2]\n  #   type = TabulatedFluidProperties\n  #   fp = true_co2\n  #   temperature_min = 275\n  #   pressure_max = 1E8\n  #   interpolated_properties = 'density viscosity enthalpy internal_energy'\n  #   fluid_property_file = co2_tabulated_11.csv\n  # []\n  [simple_fluid1]\n    type = SimpleFluidProperties\n    bulk_modulus = 2e9\n    density0 = 1000\n    thermal_expansion = 0\n    viscosity = 1e-3\n  []\n  [simple_fluid2]\n    type = SimpleFluidProperties\n    bulk_modulus = 2e9\n    density0 = 700\n    thermal_expansion = 0\n    viscosity = 1e-5\n  []\n[]\n\n[Materials]\n  [permeability_fracture]\n    type = PorousFlowPermeabilityConst\n    permeability = '1.8e-11 0 0 0 1.8e-11 0 0 0 1.8e-11' # 1.8e-11 = a * kf\n    block = 'fracture'\n  []\n  [permeability_matrix]\n    type = PorousFlowPermeabilityConst\n    permeability = '1e-20 0 0 0 1e-20 0 0 0 1e-20'\n    block = 'matrix1 matrix2'\n  []\n  [poro_fracture]\n    type = PorousFlowPorosityConst\n    porosity = 6e-4 # = a * phif\n    block = 'fracture'\n  []\n  [poro_matrix]\n    type = PorousFlowPorosityConst\n    porosity = 0.1\n    block = 'matrix1 matrix2'\n  []\n  [temperature]\n    type = PorousFlowTemperature\n    temperature = 323.15\n  []\n  [saturation_calculator]\n    type = PorousFlow2PhasePS\n    phase0_porepressure = pp\n    phase1_saturation = sat\n    capillary_pressure = pc\n  []\n  [massfrac1]\n    type = PorousFlowMassFraction\n    mass_fraction_vars = 'massfrac1 massfrac2'\n  []\n  [simple_fluid_qpw]\n    type = PorousFlowSingleComponentFluid\n    fp = simple_fluid1\n    phase = 0\n  []\n  [simple_fluid_qp]\n    type = PorousFlowSingleComponentFluid\n    fp = simple_fluid2\n    phase = 1\n  []\n  [relperm_water]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 1\n    phase = 0\n    s_res = 0.1\n    sum_s_res = 0.1\n  []\n\n  [relperm_gas]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 1\n    s_res = 0\n    sum_s_res = 0.1\n    phase = 1\n  []\n\n[]\n\n[Debug]\n  show_var_residual_norms = true\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = NEWTON\n  # petsc_options_iname = '-pc_type -ksp_type  -ksp_gmres_restart'\n  # petsc_options_value = 'none gmres 1000'\n  end_time = 10\n  dtmax = 1\n  [TimeStepper]\n    type = IterationAdaptiveDT\n    dt = 1e-2\n  []\n  l_max_its = 100\n  l_abs_tol = 1e-12\n  nl_max_its = 40\n  nl_rel_tol = 1e-8\n  nl_abs_tol = 1e-10\n[]\n\n[Outputs]\n  [out]\n    type = Exodus\n    execute_on = 'initial timestep_end'\n  []\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5910433",
+                          "updatedAt": "2023-05-16T00:02:40Z",
+                          "publishedAt": "2023-05-16T00:02:40Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Dear @cpgr,\nThank you so much for your time and help. I did test it with no capillary pressure before but it didn't work. I guess the change here that led to convergence was commenting mass fraction family and order type. Can I ask why did you do this and how it helped the convergence?",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5914699",
+                          "updatedAt": "2023-05-16T10:07:26Z",
+                          "publishedAt": "2023-05-16T10:07:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "I did this because it sometimes causes an assertion for a reason that I haven't worked out when I run it locally in devel mode rather than opt mode (I pretty much troubleshoot in devel only https://mooseframework.inl.gov/moose/application_development/build_system.html). I wonder if this causes problems in opt. Could you check whether changing them back to CONSTANT MONOMIAL but keeping everything else the same?",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5914754",
+                          "updatedAt": "2023-05-16T10:13:25Z",
+                          "publishedAt": "2023-05-16T10:13:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "sinaomrani96"
+                          },
+                          "bodyText": "Oh, I see. Thanks for your clarification and great help. Yes, I checked your modified version of input file and found that changing it back to CONSTANT MONOMIAL will fail the convergence.",
+                          "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5914814",
+                          "updatedAt": "2023-05-16T10:20:17Z",
+                          "publishedAt": "2023-05-16T10:20:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "sinaomrani96"
+                  },
+                  "bodyText": "Sure. This is the output when I don't use constant monomial and it converges:\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nNo errors detected. :-)\nthis is when I use it and convergence fails:\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)\nKernel for variable 'pp':\n(0,0) On-diagonal Jacobian is slightly off (by 0.000000 %)\nKernel for variable 'sat':\n(1,0) Off-diagonal Jacobian for variable 'pp' is slightly off (by 0.000000 %)",
+                  "url": "https://github.com/idaholab/moose/discussions/24327#discussioncomment-5915052",
+                  "updatedAt": "2023-05-16T10:44:51Z",
+                  "publishedAt": "2023-05-16T10:44:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

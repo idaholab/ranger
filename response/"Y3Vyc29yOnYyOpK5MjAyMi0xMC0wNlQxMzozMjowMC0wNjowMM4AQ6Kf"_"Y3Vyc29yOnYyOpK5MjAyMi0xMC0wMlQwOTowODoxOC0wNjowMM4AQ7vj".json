@@ -1,0 +1,876 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0xMC0wMlQwOTowODoxOC0wNjowMM4AQ7vj"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "PorousFlow multyphase - not converge due to DIVERGED_PC_FAILED",
+          "author": {
+            "login": "wangshengwa"
+          },
+          "bodyText": "Hi all,\nI have a system of two layers; and aquitard that confines and aquifer. A well extract water from the aquitard. I would like, in a first step, to desaturate the aquitard and after that, in a second step,  inject a gas fluid. However, the input file with two phases does not converge, even though the model is only extracting water in the first step.\nLooks like the problem comes from the Preconditioning system. I get\n Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0 PC failed due to SUBPC_ERROR  Nonlinear solve did not converge due to DIVERGED_FNORM_NAN iterations 0 Solve Did NOT Converge! Aborting as solve did not converge\nLooks like activating hypre boomeramg converges, but to a wrong result and diverges after a while.\nA previous issue suggest that this happens because a variable is declare but not used https://github.com/idaholab/moose/issues/18893 . In my case the gas pressure is not used in the first step.\nHas anyone seen something similar before?\nYou can find my codes here: https://github.com/wangshengwa/PorousFlow-stuff/tree/main/2pf\nCheers and thanks in advance\nWang",
+          "url": "https://github.com/idaholab/moose/discussions/22251",
+          "updatedAt": "2022-10-13T13:39:05Z",
+          "publishedAt": "2022-09-28T14:50:38Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "cpgr"
+                  },
+                  "bodyText": "You might benefit from using the s_scale parameter in the capillary pressure function to avoid the derivative blowing up in the fully-saturated initial step - see https://mooseframework.inl.gov/modules/porous_flow/nonlinear_convergence_problems.html and https://mooseframework.inl.gov/modules/porous_flow/capillary_pressure.html\nAlso, you probably want to include some PorousFlowMassTimeDerivative kernels to make sure that the fluid masses balance.",
+                  "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3757896",
+                  "updatedAt": "2022-09-29T00:52:53Z",
+                  "publishedAt": "2022-09-29T00:52:19Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangshengwa"
+                          },
+                          "bodyText": "Hi @cpgr . Thanks for your help is really nice. I forgot to add PorousFlowMassTimeDerivative, I was doing steady state tests. Now I fix that. Thanks.\nI also studied the s_scale factor. However, for me is unclear what value should it take. Looks like different values of s_scale take the model to converge to different results. However, non of them seems correct.\nHere, you will find a comparison of the \"first stage\" of my 2 phase model with a model that uses one phase and actions If you run them, you will see that the extraction rate in both models is different.\ncodes: https://github.com/wangshengwa/PorousFlow-stuff/tree/main/2pf\nCan you advise how to proceed?\nCheers and thanks!\nWang",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3798805",
+                          "updatedAt": "2022-10-04T18:53:37Z",
+                          "publishedAt": "2022-10-04T18:53:36Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "Oh, I think I see the difference. Your single-phase unsaturated case (action.i) withdraws mass from the aquifer, but doesn't replace it with anything - so water saturation drops below 1, but the remaining pore space is empty (there is no gas phase).\nYour two-phase case (kernels2p.i) withdraws mass from phase 0, so that the saturation decreases below 1. In this case, however, there is another phase (phase 1) which fills the empty pore space  automatically (phase 1). This is different from the unsaturated case above. This case isn't unsaturated!\nSo I guess it depends on what you want to achieve here.\nYou could make your two-phase case be identical to the unsaturated case by setting the density of the phase 1 fluid equal to zero (this is a bit of a hack)\n    [the_simple_fluid2]\n      type = SimpleFluidProperties\n      density0 = 0\n    []\n\nand you should now get the same results as action.i (note: you should make the nl tolerances identical to those in action.i).",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3800903",
+                          "updatedAt": "2022-10-05T02:07:48Z",
+                          "publishedAt": "2022-10-05T02:07:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "cpgr"
+                          },
+                          "bodyText": "And the following is what action.i really is doing (with the kernels explicitly included)\n[Mesh]\n  [the_mesh]\n    type = GeneratedMeshGenerator\n    dim = 2\n    nx = 5\n    ny = 100\n    xmin = 0\n    xmax = 5\n    ymin = 0\n    ymax = 100\n  []\n  [aquitard]\n    type = SubdomainBoundingBoxGenerator\n    block_id = 1\n    bottom_left = '0 50 0'\n    top_right = '5 100 0'\n    input = the_mesh\n  []\n  [aquifer]\n    type = SubdomainBoundingBoxGenerator\n    block_id = 2\n    bottom_left = '0 0 0'\n    top_right = '5 50 0'\n    input = aquitard\n  []\n[]\n\n[GlobalParams]\n  PorousFlowDictator = dictator\n  biot_coefficient = 1.0\n[]\n\n[Variables]\n  [ppwater]\n  []\n[]\n\n[ICs]\n  [ppwater]\n    type = FunctionIC\n    variable = ppwater\n    function = '10000*(100-y)'\n  []\n[]\n\n\n[BCs]\n  [ppwater_top]\n    type = FunctionDirichletBC\n    variable = ppwater\n    function = 0\n    boundary = top\n  []\n[]\n\n[Modules]\n  [FluidProperties]\n    [the_simple_fluid]\n      type = SimpleFluidProperties\n    []\n  []\n[]\n\n[AuxVariables]\n  [swater]\n    family = MONOMIAL\n    order = FIRST\n  []\n[]\n\n[UserObjects]\n  [dictator]\n    type = PorousFlowDictator\n    porous_flow_vars = 'ppwater'\n    number_fluid_phases = 1\n    number_fluid_components = 1\n  []\n  [pc]\n    type = PorousFlowCapillaryPressureVG\n    m = 0.6\n    alpha = 1e-5\n    sat_lr = 0.0\n  []\n  [produced_mass]\n    type = PorousFlowSumQuantity\n  []\n[]\n\n[Kernels]\n  [mass0]\n    type = PorousFlowMassTimeDerivative\n    fluid_component = 0\n    variable = ppwater\n  []\n  [flux0]\n    type = PorousFlowAdvectiveFlux\n    fluid_component = 0\n    variable = ppwater\n    gravity = '0 -10 0'\n  []\n[]\n\n[AuxKernels]\n  [swater]\n    type = PorousFlowPropertyAux\n    property = saturation\n    phase = 0\n    variable = swater\n  []\n[]\n\n[Materials]\n  [temperature]\n    type = PorousFlowTemperature\n  []\n  [simple_fluid0]\n    type = PorousFlowSingleComponentFluid\n    fp = the_simple_fluid\n    phase = 0\n  []\n  [ppss]\n    type = PorousFlow1PhaseP\n    porepressure = ppwater\n    capillary_pressure = pc\n  []\n  [massfrac]\n    type = PorousFlowMassFraction\n  []\n\n  [porosity_clay]\n    type = PorousFlowPorosity\n    porosity_zero = 0.3\n    block = 1\n  []\n  [permeability_clay]\n    type = PorousFlowPermeabilityConst\n    permeability = '1E-20 0 0   0 1E-20 0   0 0 1E-20'\n    block = 1\n  []\n  [porosity_rock]\n    type = PorousFlowPorosity\n    porosity_zero = 0.05\n    block = 2\n  []\n  [permeability_rock]\n    type = PorousFlowPermeabilityConst\n    permeability = '1E-13 0 0   0 1E-13 0   0 0 1E-14'\n    block = 2\n  []\n  [relperm_water]\n    type = PorousFlowRelativePermeabilityCorey\n    n = 3\n    phase = 0\n  []\n[]\n\n[DiracKernels]\n   [produce]\n     type = PorousFlowPeacemanBorehole\n     variable = ppwater\n     SumQuantityUO = produced_mass\n     mass_fraction_component = 0\n     point_file = action.bh\n     bottom_p_or_t = 1E-8\n     unit_weight = '0 0 0'\n     use_mobility = true\n     character = 1\n   []\n[]\n\n[Postprocessors]\n  [bh_report]\n    type = PorousFlowPlotQuantity\n    uo = produced_mass\n    execute_on = 'initial timestep_end'\n  []\n  [fluid_mass]\n    type = PorousFlowFluidMass\n    execute_on = 'initial timestep_end'\n  []\n[]\n\n\n[Preconditioning]\n  active = basic\n  [basic]\n    type = SMP\n    full = true\n    petsc_options = '-ksp_diagonal_scale -ksp_diagonal_scale_fix'\n    petsc_options_iname = '-pc_type -sub_pc_type -sub_pc_factor_shift_type -pc_asm_overlap'\n    petsc_options_value = ' asm      lu           NONZERO                   2'\n  []\n  [lu]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n  []\n  [moose]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_hypre_type -ksp_gmres_restart'\n    petsc_options_value = 'hypre boomeramg 500'\n  []\n[]\n\n[Executioner]\n  type = Transient\n  solve_type = Newton\n  start_time = -3600\n  dt = 3600\n  end_time = 172800\n  nl_abs_tol = 1E-12\n  nl_rel_tol = 1e-08\n[]\n\n[Outputs]\n  print_linear_residuals = false\n  exodus = true\n[]",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3800906",
+                          "updatedAt": "2022-10-05T02:08:53Z",
+                          "publishedAt": "2022-10-05T02:08:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangshengwa"
+                          },
+                          "bodyText": "Thanks! Setting density of the phase 1 to zero works! However, I would like to in a first stage desaturate the medium of the phase 0 (leave it empty) and in a second stage inject the phase 1.\nIf I understood correctly, by setting density0 = 0 we are still replacing the empty space with the phase 1 is just that this phase has no mass. But in the second stage I would like to inject fluid with mass, how can I solve this?\nCheers!\nWang",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3802362",
+                          "updatedAt": "2022-10-05T07:28:22Z",
+                          "publishedAt": "2022-10-05T07:28:21Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "This is just an opinion, not necessarily fact.... i think that your concept of withdrawing water and then replacing the vacuum with air is flawed.  It will be difficult to run PorousFlow like this because it is unphysical (an aquifer never contains a vacuum - always air or some other gas).  If i were you, i'd attempt to reproduce the physical situation with your model.  Having said this, PorousFlow was used to simulate water+vacuum in a carbon-fibre composite, where there truly was a vacuum, so it's not impossible, but care had to be taken with the capillary curve.  Almost definitely you are getting problems from the end-points of the capillary pressure curve, and probably the boundary conditions in your present setup (eg, you are extracting a fluid component from a region where it doesn't exist).",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3808483",
+                          "updatedAt": "2022-10-05T19:37:49Z",
+                          "publishedAt": "2022-10-05T19:37:48Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangshengwa"
+                          },
+                          "bodyText": "Hi and thanks for your reply. Indeed my approach seems wrong. Thanks for your comment.\nIn other words, only makes physical sense to keep the aquifer saturated at all times.\nAfter some testing, I noticed that as soon as the aquifer desaturates MOOSE has problems converging.\nThanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3816015",
+                          "updatedAt": "2022-10-06T16:16:13Z",
+                          "publishedAt": "2022-10-06T16:16:12Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "My suggestion would be to either use the MultiApp system plus the FullSolveMultiApp to do the initial phase... or to do this as a restart problem.\nhttps://mooseframework.inl.gov/source/multiapps/FullSolveMultiApp.html\nhttps://mooseframework.inl.gov/application_usage/restart_recover.html",
+                  "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3790929",
+                  "updatedAt": "2022-10-03T21:15:16Z",
+                  "publishedAt": "2022-10-03T21:15:16Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "wangshengwa"
+                          },
+                          "bodyText": "Hi @friedmud I will try this tomorrow and come back to you. Thanks!\nWang",
+                          "url": "https://github.com/idaholab/moose/discussions/22251#discussioncomment-3798814",
+                          "updatedAt": "2022-10-04T18:54:14Z",
+                          "publishedAt": "2022-10-04T18:54:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Postprocessor for verifying mass flow rate conservation",
+          "author": {
+            "login": "js-jixu"
+          },
+          "bodyText": "Hi, experts.\nI have a model of fluid-solid conjugate heat transfer. Now I want to verify that the mass flow rate is conserved within the fluid region. That is, whether the mass flow rate at the inlet is equal to the mass flow rate at the outlet. Is there any way in MOOSE to do this?\nI know that VolumetricFlowRate might be able to do it. But the advised_mat_prop parameter in VolumetricFlowRate requires that the material property be Functor, but my material type is ADParsedMaterial, so VolumetricFlowRate is not suitable.\nActually I've used the following syntax to do a simple calculation:\n[AuxKernels]\n  [./speed_auxk]\n    type = VectorVariableMagnitudeAux\n    variable = speed\n    vector_variable = velocity\n    block = 'fluid'\n  [../]\n[]\n\n[Materials]\n  [./rho_fluid-nonAD]\n    type = ParsedMaterial\n    f_name = rho_fluid_noAD\n    function = '(11096 - 1.3236 * Tf) * 1e-6'\n    args = 'Tf'\n    block = 'fluid'\n  [../]\n  [./mass_flow_rate_density_mat]\n    type = ParsedMaterial\n    block = 'fluid'\n    f_name = mass_flow_rate_density\n    args = speed\n    material_property_names = rho_fluid_noAD\n    function = 'rho_fluid_noAD * speed'\n  [../]\n[]\n\n[Postprocessors]\n  [./outlet_mass_flow_rate]\n    type = SideIntegralMaterialProperty\n    boundary = 'fluid_top'\n    property = mass_flow_rate_density\n  [../]\n  [./inlet_mass_flow_rate]\n    type = SideIntegralMaterialProperty\n    boundary = 'fluid_bottom'\n    property = mass_flow_rate_density\n  [../]\n[]\n\nHowever, the relative error of outlet_mass_flow_rate and inlet_mass_flow_rate is around one thousandth, which is obviously not a satisfactory accuracy. So I want to ask if there is any Postprocessor that can calculate mass flow rate directly?",
+          "url": "https://github.com/idaholab/moose/discussions/22307",
+          "updatedAt": "2022-10-06T06:22:57Z",
+          "publishedAt": "2022-10-05T15:27:12Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThis is the same issue as in the previous discussion around energy conservation\n#22074\nSide integrals are not appropriate to look at conservation with FE. You will need to make a mass conservation version of the INSElementIntegralEnergyAdvection.C\nBut really if energy is conserved you can trust that mass is conserved as well\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3806719",
+                  "updatedAt": "2022-10-05T15:48:42Z",
+                  "publishedAt": "2022-10-05T15:48:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "I'm doing thermomechanical coupling, and the expansion of the solid will cause the outlet channel to narrow and the outlet velocity to increase. So I need to verify that the outlet mass flow rate is the same as the inlet mass flow rate.\n\nBut really if energy is conserved you can trust that mass is conserved as well\n\nIf I use INSElementIntegralEnergyAdvvection to verify the energy conservation of thermomechanical coupling, does it mean that mass is naturally conserved\uff1f Then the mass flow rate is also conserved.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3806826",
+                          "updatedAt": "2022-10-05T15:58:00Z",
+                          "publishedAt": "2022-10-05T15:57:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It would be hard to conserve energy if mass was not conserved.\nIf energy is not conserved, then I would investigate if mass is conserved",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3806876",
+                          "updatedAt": "2022-10-05T16:04:00Z",
+                          "publishedAt": "2022-10-05T16:04:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "You probably want to review thermodynamics. For incompressible flow the mass balance reduces to div(u) = 0, where u is the fluid velocity.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810274",
+                          "updatedAt": "2022-10-06T02:10:48Z",
+                          "publishedAt": "2022-10-06T02:10:47Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Thanks for your advice @hugary1995 @GiudGiud . I've used [INSElementIntegralEnergyAdvection] to verifiy energy conservation, which relative error is 3e-10. Does it  mean that mass is naturally conserved?\n\nFor incompressible flow the mass balance reduces to div(u) = 0, where u is the fluid velocity.\n\nAnd how can I verify whether div(u) equals to 0?",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810807",
+                          "updatedAt": "2022-10-06T04:42:12Z",
+                          "publishedAt": "2022-10-06T04:36:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It means energy is conserved. As I mentioned it would be hard not conserving mass, while conserving energy. However, I'm sure you could engineer a solution which does one without the other.\nIf you care to check, then you need to create the object I mentioned\nThere is a divergence auxkernel you can use, though it wont account for stabilization terms.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810850",
+                          "updatedAt": "2022-10-06T04:45:09Z",
+                          "publishedAt": "2022-10-06T04:45:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "So if say it without jargon: You don't check mass conservation for INS... You are not solving for density.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810880",
+                          "updatedAt": "2022-10-06T04:50:45Z",
+                          "publishedAt": "2022-10-06T04:50:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "It looks like creating the object is necessary to solve this problem. I will give it a try.\ud83d\udc40",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810891",
+                          "updatedAt": "2022-10-06T04:53:29Z",
+                          "publishedAt": "2022-10-06T04:53:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": ":-/\nAgain, feel free to go over the derivation of navier stokes equations yourself. Mass balance is an assumption not a consequence.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810932",
+                          "updatedAt": "2022-10-06T05:03:09Z",
+                          "publishedAt": "2022-10-06T05:03:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You are solving that equation for conservation of mass. If you dont converge it much, you can see mass not being converged because velocities entering the cell are larger than exiting the cell (for finite volume, for FE it s more a volumetric problem). Mass balance is the residual of mass equation pretty much\nWith the time-dependent modification of the meshes, I can understand their desire to check mass conservation.",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3810977",
+                          "updatedAt": "2022-10-06T05:20:52Z",
+                          "publishedAt": "2022-10-06T05:19:57Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "I'm a little confused and dizzy now... What I can understand now is that if I want to verify that the mass flow rate is conserved, in another words, the inlet mass flow rate and the outlet mass flow rate are equal, I need to create an object like INSElementIntegralEnergyAdvection . And this object needs to take density and speed into consideration. The product of density and velocity is then integrated over the boundary. If the integral at the inlet boundary is equal to the integral at the outlet boundary, then it is proved that the mass flow rate is conserved. Is there something wrong with my understanding?",
+                          "url": "https://github.com/idaholab/moose/discussions/22307#discussioncomment-3811046",
+                          "updatedAt": "2022-10-06T05:34:15Z",
+                          "publishedAt": "2022-10-06T05:34:14Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "error when i make",
+          "author": {
+            "login": "CGH20171006"
+          },
+          "bodyText": "This error occurs after I use  make -j4, especially for apps in the modules folder (I don't get this error for apps I create myself),I guess it's because I changed some files in the modules/phase_field folder,\nwhat should  i do right now, is there any easy way to overwrite the moose files in GitHub to my computer again.\nthe error is:\n(moose) cgh@LAPTOP-8KAA4L1I:~/projects/moose/modules/phase_field$ make -j4\nLinking Executable /home/cgh/projects/moose/modules/phase_field/phase_field-opt...\n/home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/cgh/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so: undefined reference to non-virtual thunk to SideIntegralPostprocessor::getValue()' /home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/cgh/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so: undefined reference to MooseVariableData::vectorTagValue(unsigned int) const'\n/home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/cgh/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so: undefined reference to non-virtual thunk to ElementIntegralPostprocessor::getValue()' /home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/cgh/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so: undefined reference to MooseVariableData::vectorTagDofValue(unsigned int) const'\n/home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/../../../../x86_64-conda-linux-gnu/bin/ld: /home/cgh/projects/moose/modules/tensor_mechanics/lib/libtensor_mechanics-opt.so: undefined reference to `non-virtual thunk to Material::resolveOptionalProperties()'\ncollect2: error: ld returned 1 exit status\nmake: *** [/home/cgh/projects/moose/framework/app.mk:416: /home/cgh/projects/moose/modules/phase_field/phase_field-opt] Error 1\n(ps:I am a Chinese undergraduate student and my English is very poor, I am sorry!)",
+          "url": "https://github.com/idaholab/moose/discussions/21675",
+          "updatedAt": "2022-10-05T13:38:37Z",
+          "publishedAt": "2022-07-24T15:31:06Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "CGH20171006"
+                  },
+                  "bodyText": "i have been overwrite the moose file,and the error has gone.",
+                  "url": "https://github.com/idaholab/moose/discussions/21675#discussioncomment-3216763",
+                  "updatedAt": "2022-07-24T17:05:41Z",
+                  "publishedAt": "2022-07-24T17:05:40Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tangweinuaa"
+                          },
+                          "bodyText": "the same error i meat, can you find the dir /home/cgh/mambaforge3/envs/moose/bin/../lib/gcc/x86_64-conda-linux-gnu/10.3.0/.\nAnd, how do you overwrite the moose file",
+                          "url": "https://github.com/idaholab/moose/discussions/21675#discussioncomment-3793156",
+                          "updatedAt": "2022-10-04T06:20:27Z",
+                          "publishedAt": "2022-10-04T06:20:26Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "By overwrite the moose files they mean they deleted the whole folder and cloned it again.\nI dont think this is the same error. Could you please make your own post regardless?",
+                          "url": "https://github.com/idaholab/moose/discussions/21675#discussioncomment-3799244",
+                          "updatedAt": "2022-10-04T20:02:56Z",
+                          "publishedAt": "2022-10-04T20:02:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "tangweinuaa"
+                          },
+                          "bodyText": "ok, i did it by running update conda --all\nFurther, there are some conflicts or differences between the updated and old moose, which may lead to the same error.",
+                          "url": "https://github.com/idaholab/moose/discussions/21675#discussioncomment-3800964",
+                          "updatedAt": "2022-10-05T02:27:25Z",
+                          "publishedAt": "2022-10-05T02:27:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Once you have updated packages and an updated moose, please let us know if you get errors make-ing moose and your application",
+                          "url": "https://github.com/idaholab/moose/discussions/21675#discussioncomment-3805330",
+                          "updatedAt": "2022-10-05T13:38:38Z",
+                          "publishedAt": "2022-10-05T13:38:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Difficulty Solving FEA Problem with Higher Numerical Values",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "I am using MOOSE to solve a numerical problem that involves solving a steady state pressure driven flow problem. I have had success in getting a numerical solutions for pressures in the range of 1e-4 Pa.For My actual problem I require the solutions for much higher pressure on the order of 1e7 Pa. For the expected flow velocities the relative pressure drop for each case is expected to be the same. I have come to realized the issue that I am experiencing is related to the residual errors of each variable being calculated. At the1e-4 pressure my initial residuals are as follows: T_fluid:  13.5975, velocity: 1.60189e-08, p_fluid:  6.19058e-06. At the 1e-4 pressure my initial residuals are: T_fluid:  13.5975, velocity: 448.259,  p_fluid:  56047.1. Since the problem is being solved as a steady state problem I do not have the ability to gradually increase the pressure. How can I resolve this solution issue without having to use a transient method using lots of computational resources?",
+          "url": "https://github.com/idaholab/moose/discussions/22180",
+          "updatedAt": "2022-10-04T20:45:37Z",
+          "publishedAt": "2022-09-23T17:34:41Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIf you dont want to use a relaxation to steady state transient, then your options are to:\n\ninitialize close to the steady solution\nuse more robust solver methods\n\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3721683",
+                  "updatedAt": "2022-09-24T04:26:44Z",
+                  "publishedAt": "2022-09-24T04:26:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Would a potential resolution to the problem be a steady state solution at a lower pressure, then the use of that solution scaled for all previously solved variables (velocity and pressure) as the initial guess to the higher pressure solve?",
+                          "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3792606",
+                          "updatedAt": "2022-10-04T04:25:14Z",
+                          "publishedAt": "2022-10-04T04:25:14Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It could work.",
+                          "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3799524",
+                          "updatedAt": "2022-10-04T20:44:56Z",
+                          "publishedAt": "2022-10-04T20:44:55Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "There is NO guarantee though. Another common technique is to ramp down viscosity through a pseudo transient",
+                          "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3799528",
+                          "updatedAt": "2022-10-04T21:42:21Z",
+                          "publishedAt": "2022-10-04T20:45:37Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "Firstly, using a \"Transient\" solve where you slowly step to steady state can actually be faster...\nBut setting that aside you should try to use some of our scaling options to get the residual / jacobian entries around the same size for all physics.\nThe first option is \"manual\" scaling.  This will scale the residual for a variable using syntax like:\n[Variables]\n  [myvar]\n    order = FIRST\n    family = LAGRANGE\n    scaling = 1e-7\n  []\n[]\n\nSee the documentation here: https://mooseframework.inl.gov/syntax/Variables/index.html\nThe other option is automatic scaling.  You turn it on by setting automatic_scaling = true in your Executioner block.  You can see all of the options for automatic scaling at the bottom of the page under \"Solver Variable Scaling Parameters\" here: https://mooseframework.inl.gov/source/executioners/Steady.html",
+                  "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3796574",
+                  "updatedAt": "2022-10-04T14:26:38Z",
+                  "publishedAt": "2022-10-04T14:26:37Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "Thank you. I have had some success using automatic scaling. Manual scaling resulted either in no solution due to convergence prior to the start of the iteration process due to very small initial residual error, or iteration divergence due to subsequent iteration not being scaled. I also changed the units so that the pressure (Pa to GPa) variable does not dominate the others, the result of this method is similar to the manual scaling, where there is no iterations due to low initial residual error.\nMy automatic scaling use has been with the transient version of my problem. I will try it on the steady state to see the result.",
+                          "url": "https://github.com/idaholab/moose/discussions/22180#discussioncomment-3796767",
+                          "updatedAt": "2022-10-04T14:47:51Z",
+                          "publishedAt": "2022-10-04T14:47:50Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to define a cyclic loading in BC block",
+          "author": {
+            "login": "xchengood"
+          },
+          "bodyText": "Dear Moose experts or users,\nHow to define a cyclic loading in BC block? Any developed examples? Thank you.",
+          "url": "https://github.com/idaholab/moose/discussions/22302",
+          "updatedAt": "2022-10-14T03:29:13Z",
+          "publishedAt": "2022-10-04T20:41:55Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou can use a function to specify a known time-varying displacement.\nhttps://mooseframework.inl.gov/source/bcs/FunctionDirichletBC.html\nNot sure about examples, you should search the repository for tensor mechanics inputs doing this.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22302#discussioncomment-3799518",
+                  "updatedAt": "2022-10-04T20:44:14Z",
+                  "publishedAt": "2022-10-04T20:44:01Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "MooseRevision.h is missing",
+          "author": {
+            "login": "yangbai90"
+          },
+          "bodyText": "In the moose/modules folder, when executing make all, it will fail due to the missing header file, where the header file MooseRevision.h can not be found.\nIn the moose/moose.mk config file, at line 302, it still requires this header file:\nmoose_revision_header := $(FRAMEWORK_DIR)/include/base/MooseRevision.h\n\nCopy the MooseRevision.h file from previous version into that folder can solve this issue.\nShould we either remove the line-302 of moose/moose.mk or recovery the MooseRevision.h?\nBest,\nYang",
+          "url": "https://github.com/idaholab/moose/discussions/22294",
+          "updatedAt": "2022-10-14T03:20:16Z",
+          "publishedAt": "2022-09-14T10:09:45Z",
+          "category": {
+            "name": "Q&A Getting Started"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nSorry we missed this, we dont use issues for user support.\nYour python installation is missing some packages. See similar posts in the discussions forum\n#22035\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22294#discussioncomment-3797747",
+                  "updatedAt": "2022-10-04T16:37:51Z",
+                  "publishedAt": "2022-10-04T16:37:50Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How MasterAPP transfers displacement information to SubAPP",
+          "author": {
+            "login": "js-jixu"
+          },
+          "bodyText": "Hi, experts.\nThere is an initial mesh file, a MasterApp input file and a SubApp input file. First, MaterApp uses the initial mesh file to calculate, and calculates disp_x/y/z. Then I hope that when SubApp calculates it can use the displaced mesh calculated by MasterApp.\nI am worried that my expression might not be very clear, so I would like to give a concrete example. MasterApp will calculate disp_x/y/z and SubApp will calculate temperature distribution. The displacement of the mesh affects the temperature distribution, so I want to calculate the temperature distribution on the latest displacement mesh. The temperature distribution also causes mesh displacement through thermal expansion:\n\nI thought of two ways. The first is to use the latest output file of the MasterApp as the mesh file of the SubApp. SubApp needs to use the latest file every time, can this be done?\nThe second method is to set auxiliary variables of disp_x/y/z in SubApp. MasterApp passes disp_x/y/z information to SubApp in Transfers. Then SubApp applies the disp_x/y/z information to the initial mesh file, and SubApp can also use the displaced mesh. The difficulty with this approach is how to apply the disp_x/y/z information to the initial mesh file. Does using use_displaced_mesh=true in SubApp do the trick?",
+          "url": "https://github.com/idaholab/moose/discussions/22285",
+          "updatedAt": "2022-10-04T03:36:32Z",
+          "publishedAt": "2022-10-03T15:50:03Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "Your \"second method\" is the right one.  In MOOSE disp_x/y/z are field variables, just like any other variable.  Therefore they can be transferred just like any other variable.\nIn the sub-app, all you need to do is add disp_x,y,z as Auxiliary variables and set displacements = 'disp_x disp_y disp_z' in the mesh block.  You can see the documentation for the displacements option under Mesh Displacements here: https://mooseframework.inl.gov/syntax/Mesh/index.html\nNote: if you are using one of the fancier Actions to setup your solid mechanics problem in the master... it's effectively doing this step for you (adding the variables and setting those variables as the variables to use for displacements).\nAlso note: that MOOSE doesn't care whether the displacement field is a nonlinear variable you solve for - or an Auxiliary variable.  This is actually really handy since it makes it easy to define functional forms of the displacements (or make them constants).",
+                  "url": "https://github.com/idaholab/moose/discussions/22285#discussioncomment-3789858",
+                  "updatedAt": "2022-10-03T18:33:00Z",
+                  "publishedAt": "2022-10-03T18:32:59Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "js-jixu"
+                          },
+                          "bodyText": "Thank you, Derke. I've sucessfully applied your suggestion to my input file and it works well.",
+                          "url": "https://github.com/idaholab/moose/discussions/22285#discussioncomment-3792458",
+                          "updatedAt": "2022-10-04T03:36:33Z",
+                          "publishedAt": "2022-10-04T03:36:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Derivative size too big?",
+          "author": {
+            "login": "czadeh"
+          },
+          "bodyText": "Hi,\nThis is related to my previous post: #22033\nWhile I am able to run an input file with the new material property I created, coupling it with other variables and physics requires a larger derivative size. I keep getting the error telling me to increase the derivative size. I kept increasing it because I have not yet found a size that lets me run my input file. Derivative size of 800 did not work, so I doubled it to 1600 and ran into this error when compiling my project.\nIn file included from /home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/Core:164,\n                 from /home/cameron/mambaforge3/envs/moose/libmesh/include/libmesh/dense_vector.h:31,\n                 from /home/cameron/projects/moose/framework/build/header_symlinks/MooseTypes.h:28,\n                 from /home/cameron/projects/moose/framework/build/header_symlinks/RankTwoTensor.h:13,\n                 from /home/cameron/projects/moose/framework/build/header_symlinks/RankTwoTensorImplementation.h:10,\n                 from /home/cameron/projects/moose/framework/src/utils/RankTwoTensor.C:11:\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/DenseStorage.h: In instantiation of 'void Eigen::internal::check_static_allocation_size() [with T = MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<1600> >, true>; int Size = 9]':\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/DenseStorage.h:51:41:   required from 'Eigen::internal::plain_array<T, Size, MatrixOrArrayOptions, Alignment>::plain_array() [with T = MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<1600> >, true>; int Size = 9; int MatrixOrArrayOptions = 0; int Alignment = 0]'\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/DenseStorage.h:211:38:   required from 'Eigen::DenseStorage<T, Size, _Rows, _Cols, _Options>::DenseStorage() [with T = MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<1600> >, true>; int Size = 9; int _Rows = 3; int _Cols = 3; int _Options = 0]'\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/PlainObjectBase.h:476:55:   required from 'Eigen::PlainObjectBase<Derived>::PlainObjectBase() [with Derived = Eigen::Matrix<MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<1600> >, true>, 3, 3>]'\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/Matrix.h:259:21:   required from 'Eigen::Matrix<_Scalar, _Rows, _Cols, _Options, _MaxRows, _MaxCols>::Matrix() [with _Scalar = MetaPhysicL::DualNumber<double, MetaPhysicL::SemiDynamicSparseNumberArray<double, long unsigned int, MetaPhysicL::NWrapper<1600> >, true>; int _Rows = 3; int _Cols = 3; int _Options = 0; int _MaxRows = 3; int _MaxCols = 3]'\n/home/cameron/projects/moose/framework/build/header_symlinks/RankTwoTensorImplementation.h:891:17:   required from here\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/DenseStorage.h:33:40: error: static assertion failed: OBJECT_ALLOCATED_ON_STACK_IS_TOO_BIG\n   33 |   EIGEN_STATIC_ASSERT(Size * sizeof(T) <= EIGEN_STACK_ALLOCATION_LIMIT, OBJECT_ALLOCATED_ON_STACK_IS_TOO_BIG);\n/home/cameron/mambaforge3/envs/moose/libmesh/include/Eigen/src/Core/DenseStorage.h:33:3: note: in expansion of macro 'EIGEN_STATIC_ASSERT'\n   33 |   EIGEN_STATIC_ASSERT(Size * sizeof(T) <= EIGEN_STACK_ALLOCATION_LIMIT, OBJECT_ALLOCATED_ON_STACK_IS_TOO_BIG);\n      |   ^~~~~~~~~~~~~~~~~~~\nmake: *** [/home/cameron/projects/moose/framework/build.mk:144: /home/cameron/projects/moose/framework/src/utils/RankTwoTensor.x86_64-conda-linux-gnu.opt.lo] Error 1\nmake: *** Waiting for unfinished jobs....\n\nIs 1600 not possible? Is this number absurdly high?\nIs there any way to reduce the derivative size requirement? Could this be caused by suboptimal code, and are there any tips to optimize?\nThanks,\nCameron",
+          "url": "https://github.com/idaholab/moose/discussions/22287",
+          "updatedAt": "2022-10-03T22:02:55Z",
+          "publishedAt": "2022-10-03T20:46:33Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "You run out of stack space, 1600 is indeed too big.\nYou should not need that much.\nI m thinking you are hitting the previous error (the one telling you to resize bigger) not because you are running out of derivative size, but because you are outside the range of differentiability or definition of an AD function (think sqrt(x) with x<=0)",
+                  "url": "https://github.com/idaholab/moose/discussions/22287#discussioncomment-3790773",
+                  "updatedAt": "2022-10-03T22:14:19Z",
+                  "publishedAt": "2022-10-03T20:51:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "This error is pretty clear: eigen has a stack size limit and you are exceeding that limit. We put in that static check so that it fails at compile time not runtime.\nYou hit this error NOT because your derivative size is too small, but opposite -- your derivative size is too large.",
+                          "url": "https://github.com/idaholab/moose/discussions/22287#discussioncomment-3791146",
+                          "updatedAt": "2022-10-03T22:02:56Z",
+                          "publishedAt": "2022-10-03T22:02:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Multiple Variables and Solvers",
+          "author": {
+            "login": "czadeh"
+          },
+          "bodyText": "Hi,\nI am working on a simulation where I have multiple variables.\nThe first variable is best solved by PJFNK. It is temperature in a heat transfer problem.\nThe second can be solved explicitly with Euler's method. The equation is a first order ODE coupled to temperature.\nHowever, in my current implementation I solve it with PJFNK which is overkill for this task. It may be more appropriate to solve this as a material property or aux variable but I am not sure if that is technically possible or what the tradeoff is.\nThe third could be solved with Newton's method. The equation is a first order ODE coupled to temperature.\nI have not implemented it yet or decided if it should be a variable, aux variable, or material property.\nMy main question is: is there a way to use different solvers in the same simulation (i.e., PJFNK, Euler's method, and Newton's method)?\nAlternatively, is it advantageous to implement variables 2 and 3 as aux variables or material properties? Would it be possible to solve ODEs in this case?\nThank you,\nCameron",
+          "url": "https://github.com/idaholab/moose/discussions/21918",
+          "updatedAt": "2022-10-03T21:35:28Z",
+          "publishedAt": "2022-08-22T22:58:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou may use NodalKernels to write ODEs in MOOSE.\nThe easiest approach to have these varied solve methods would be to use the MultiApps system and have each solve in a different application.\nVariable 2 and 3 may be auxvariables or material properties if you can write down the entire solve in a single auxkernel / material. if you need to use the main nonlinear solve for it, then that wont work.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3451737",
+                  "updatedAt": "2022-08-22T23:39:15Z",
+                  "publishedAt": "2022-08-22T23:39:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "I'm looking into the NodalKernels system but there is not much documentation about it so it seems more difficult.\nThe MultiApp system could be the best solution. Could I make it so that the main app and each of the MultiApps cover the same domain but just solve independently and exchange information?\nThe last option of writing the entire solve in the kernel seems possible but unnecessarily difficult when the MultiApp system can be used.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3459954",
+                          "updatedAt": "2022-08-23T20:06:33Z",
+                          "publishedAt": "2022-08-23T20:06:33Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "Also, if I wish to use mesh adaptivity in the main app, then will it cause problems when exchanging information between the main app and sub apps?",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3459960",
+                          "updatedAt": "2022-08-23T20:07:45Z",
+                          "publishedAt": "2022-08-23T20:07:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Documentation is poor but this is the way. please have a look at examples in the test folder.\nEven within the MultiApps system you will want to use NodalKrnels for the ODEs\nYes you can have the different apps cover the same domain. It will make things easy to transfer between apps actually\nno mesh adaptivity should be naturally handled. You just wont be able to use some classes of transfers",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3460237",
+                          "updatedAt": "2022-08-23T20:58:44Z",
+                          "publishedAt": "2022-08-23T20:58:43Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "I have set up a MultiApp: main app with temperature, sub-app with my second variable. Initial testing checks out.\nNow I need to convert my Kernel for the second variable into a NodalKernel. I have my Kernel return the residual of the variable involving the time derivative so I had it inherit from ADTimeDerivative.h.\nCan I use a similar approach for the NodalKernel? i.e., have it inherit from TimeDerivativeNodalKernel.h and run Real TimeDerivativeNodalKernel::computeQpResidual() in the source file to return the residual.\nThis also ties into my last question: do I need to include the computeQpJacobian() method as well in my NodalKernel.C because it was there in TimeDerivativeNodalKernel.C?\nI want to solve using an explicit method like the ones in the timeintegrators system, so I do not need to solve the Jacobian, right?\nThanks,\nCameron",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3519284",
+                          "updatedAt": "2022-08-31T15:57:18Z",
+                          "publishedAt": "2022-08-31T15:57:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "for fully explicit time stepping you should be able to not implement the Jacobian. The 'solve' on every time step becomes very simple, no nonlinear solve anymore",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3519632",
+                          "updatedAt": "2022-08-31T16:33:36Z",
+                          "publishedAt": "2022-08-31T16:33:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "but if you want to do implicit later on, you must be careful to make sure everything is implemented, not just inherited from the base class. This could be a hard one to debug if you loose track of it.\nI would include the method and add a warning in there.",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3519645",
+                          "updatedAt": "2022-08-31T16:34:36Z",
+                          "publishedAt": "2022-08-31T16:34:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "I just made my first attempt at the NodalKernel for the second variable (var2). My problem now is that\n\nThe residual for var2 in the NodalKernel must be a Real type because I need to use Real computeQpResidual()\nvar2 is coupled to temperature which is an ADVariableValue\nIn my previously existing Kernel for var2, I was using ADReal precomputeQpResidual()\n\nSince temperature is passed through the transfer system and ends up as an AuxVariable in the sub-app for var2, is it an ADVariableValue at that point still? If not, what is the data type? If I can treat it as a Real that would solve this problem.",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3529699",
+                          "updatedAt": "2022-09-01T18:40:36Z",
+                          "publishedAt": "2022-09-01T18:40:35Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "AuxVariables are not AD. So it's a regular variable at this point.\nIf it's retrieved as an AD variable for any reason, you can always do .value() to get the Real out of the ADReal.",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3530088",
+                          "updatedAt": "2022-09-01T19:39:42Z",
+                          "publishedAt": "2022-09-01T19:39:41Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "Thank you, I got my NodalKernel to compile. I set up my new MultiApp system with it, updating the main-app to run the new sub-app and changing the sub-app to use the NodalKernel and the Executioner to use the TimeIntegrator system with ActuallyExplicitEuler. When I run it, it converges for time step 0 and time step 1, but after that I get a ton of these printf(\"Jacobian warning\") messages in the terminal and it does not converge. I put that print statement inside of the computeQpJacobian() method along with return 0;\nI am surprised to see those messages because I would think that ActuallyExplicitEuler would not call that method, but now I am confused.\nThe final error is\n*** ERROR ***\nThe following error occurred in the object \"TimeStepper\", of type \"ConstantDT\".\n\nSolve failed and timestep already at or below dtmin, cannot continue!",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3530680",
+                          "updatedAt": "2022-09-01T21:09:06Z",
+                          "publishedAt": "2022-09-01T21:09:05Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "I'm confused too.\n@friedmud @joshuahansel what are we missing here? Why is the Jacobian used for explicit time-stepping?",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3530702",
+                          "updatedAt": "2022-09-01T21:12:45Z",
+                          "publishedAt": "2022-09-01T21:12:44Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "joshuahansel"
+                  },
+                  "bodyText": "Just curious, it seems like your question is motivated by the idea that solving everything in a single system with a single solver is \"overkill\" (and I suppose, not as efficient). Have you tried this already, and you're not satisfied with the performance?\nTo use different solvers, you'll need to use the MultiApp system as @GiudGiud suggested, but as you may realize, it does come at the cost of the full coupling of your 3 variables (you'll need to either loosely couple or tightly couple through Picard iterations). The question of which is ultimately the most efficient approach will depend on your system and size, and I don't have enough experience to say what the most efficient approach is, but it's a consideration to make.",
+                  "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3537252",
+                  "updatedAt": "2022-09-02T14:51:08Z",
+                  "publishedAt": "2022-09-02T14:50:12Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "czadeh"
+                          },
+                          "bodyText": "You raise a very good point. I have compared them and seen some modest improvement in speed. My most recent test was with a MultiApp:\n\n1 variable in the main\n1 variable in the sub\n10 x 10 x 10 nodes\n100 time steps\n3 material properties\nUsing my ADTimeDerivative Kernel for the variable in the sub app\n\nAnd the difference was one was solved with PJFNK in the sub app while the other was solved with ActuallyExplicitEuler in the sub app.\nI saw a time of 21.40 s for PJFNK and 17.52 s for ActuallyExplicitEuler. The global truncation error was around 3% for Euler's method compared to PJFNK after 100 iterations.\nSolving with everything in one app under the same conditions with PJFNK took 22.51 s (compared to 21.40 s for just splitting it into a MultiApp) and there was a negligible difference in results.\nOnce all the systems are in place, I plan to scale up the number of nodes and timesteps to what is required for my problem and maybe the performance difference will matter more.\nMaybe you are right that it may not be worth giving up full coupling for a ~20% improvement in performance.",
+                          "url": "https://github.com/idaholab/moose/discussions/21918#discussioncomment-3538069",
+                          "updatedAt": "2022-09-02T15:33:29Z",
+                          "publishedAt": "2022-09-02T15:33:28Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "A question about the template class MooseVariableInterface",
+          "author": {
+            "login": "TJT-post95"
+          },
+          "bodyText": "MooseVariableInterface.h is included and inherited in the Kernel class. MooseVariableInterface is a template class, and the code is written in two files. However, from my understanding, this approach usually does not work properly. Because for the template class, maybe all the code should be written in the MooseVariableInterface.h, or MooseVariableInterface.C is supposed to be included. So, I'm curious if MOOSE does any additional setup?\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/22278",
+          "updatedAt": "2022-10-03T20:44:42Z",
+          "publishedAt": "2022-10-02T13:38:56Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe explicitly instantiate every template in the source file for that template.\nIt's not the most portable option, as someone compiling a new app with a new instantiation needed would need to modify MOOSE, but that can be an advantage too. It works for many of our templates because we know what we support and this is helpful in disallowing what we do not support.\nFor example for MooseVariableInterface,\ntemplate class MooseVariableInterface<Real>;\ntemplate class MooseVariableInterface<RealVectorValue>;\ntemplate class MooseVariableInterface<RealEigenVector>;\n\nwe know we would not support MooseVariableInterface<Matrix>; without a lot of work elsewhere in the framework to handle the matrices, even though that particular template would compile just fine.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22278#discussioncomment-3781839",
+                  "updatedAt": "2022-10-02T15:00:58Z",
+                  "publishedAt": "2022-10-02T14:46:04Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "TJT-post95"
+                  },
+                  "bodyText": "Got! Thank you!",
+                  "url": "https://github.com/idaholab/moose/discussions/22278#discussioncomment-3781903",
+                  "updatedAt": "2022-10-02T15:08:19Z",
+                  "publishedAt": "2022-10-02T15:08:18Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

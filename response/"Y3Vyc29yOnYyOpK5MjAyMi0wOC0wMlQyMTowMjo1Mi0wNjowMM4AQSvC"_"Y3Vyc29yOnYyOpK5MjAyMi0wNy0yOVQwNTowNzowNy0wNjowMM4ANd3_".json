@@ -1,0 +1,586 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMi0wNy0yOVQwNTowNzowNy0wNjowMM4ANd3_"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "MultiApp System: Having a main app with no nonlinear variables at all",
+          "author": {
+            "login": "matthiasneuner"
+          },
+          "bodyText": "Hi there,\nI am currently trying to set up a MOOSE multi app system, where one main app provides two sub apps with data,\nbut the main app itself actually should not solve anythig ( it should just move around the data). Hence,\nit requires no nonlinear variables, just an aux system.\nHowever, running a MOOSE .i file without nonlinear variables gives me\n No variables specified in the FEProblemBase 'MOOSE Problem'\nIs there a way to have a MOOSE app which just passes around data to/from sub apps in a transient simulation?",
+          "url": "https://github.com/idaholab/moose/discussions/21755",
+          "updatedAt": "2022-08-02T16:46:25Z",
+          "publishedAt": "2022-08-02T16:12:53Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nJust add a dummy one\n[Variables]\n  [dummy] []\n[]\n\nOR skip the checks\n[Problem]\n  skip_nl_system_check = true\n  solve = false\n[]",
+                  "url": "https://github.com/idaholab/moose/discussions/21755#discussioncomment-3309653",
+                  "updatedAt": "2022-08-02T16:38:49Z",
+                  "publishedAt": "2022-08-02T16:38:48Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "Great, thank you !",
+                          "url": "https://github.com/idaholab/moose/discussions/21755#discussioncomment-3309706",
+                          "updatedAt": "2022-08-02T16:46:25Z",
+                          "publishedAt": "2022-08-02T16:46:24Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Create solution from AuxVariables",
+          "author": {
+            "login": "matthiasneuner"
+          },
+          "bodyText": "Assuming that 2 sub apps (all identical meshes, also the main app) are computing 2 solutions,\nI would like to add (or subtract) them in an AuxVariable, and set them as a new solution for the next iteration step, e.g.,\n  / - > solution_n -> sub_app_1 -> sub_sol_1 \n /  - > solution_n -> sub_app_2 -> sub_sol_2\n|\n|                       V\n|\n|        aux_sol = sub_sol_1 + sub_sol_2\n|\n|                       V  \n|\n \\---- solution_n+1 = aux_sol\n\nIs that possible in Moose? Which modules would be relevant for this case?\nIn particular, how can I set the current solution from the AuxVariable?\nThank you in advance!",
+          "url": "https://github.com/idaholab/moose/discussions/21746",
+          "updatedAt": "2022-08-02T16:46:38Z",
+          "publishedAt": "2022-08-02T02:19:04Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nYou could:\n1)\n\nwrite your own transfer which does that directly\n\n\n\n\nOR (I am assuming by solution you mean a NON LINEAR, eg a main, variable here btw)\n\nadd an auxvariables for storage on sub app 1\ntransfer the other auxvariable from subapp 2 to subapp 1, using the CopyTransfer since you have the same meshes\nuse a ParsedAux to compute the difference and store it in a third variable on subapp1\ntransfer it to the main app to overwrite the initial condition\nThe tricky thing is that the subapps will have to be executed on different schedules for this to work, because we currently do not support this: execute main app, execute app2, transfer from 2 to 1, execute app1. So use TIMESTEP_BEGIN/END/ other execute_on to stagger everything in the right order.\nPlease consider using the verbose_multiapps parameter of the FEProblem to check the execution order.\nHere we are working around the fact that auxkernels cannot initialize main variables\n\n\n\n\nOR\n\nadd two auxvariables for storage on main app\ntransfer the auxvariables from subapps to main app, using the CopyTransfer since you have the same meshes\nwrite a user object yourself (should not be too hard in terms of UOs) that does the difference and stores in the nonlinear variable\nThis has the advantage that the execution schedule is a lot more natural. But you ll have to write code\n\nHope this helps,\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21746#discussioncomment-3307779",
+                  "updatedAt": "2022-08-02T12:48:31Z",
+                  "publishedAt": "2022-08-02T12:48:30Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "Thank you very much; it seems approach 3) is the way to go.\nI think that using such an approach my main_app actually needs no 'nonlinear variables' at all, since the main app should not solve directly.\nCurrently, this gives me an error message  No variables specified in the FEProblemBase 'MOOSE Problem'.\nI hope that this is supported, but I will create another question for this.",
+                          "url": "https://github.com/idaholab/moose/discussions/21746#discussioncomment-3309415",
+                          "updatedAt": "2022-08-02T16:09:56Z",
+                          "publishedAt": "2022-08-02T16:09:54Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh the main app isnt solving a NL system?\nThen just use a ParsedAux in option 3) to store the difference in the 3rd AuxVariable",
+                          "url": "https://github.com/idaholab/moose/discussions/21746#discussioncomment-3309646",
+                          "updatedAt": "2022-08-02T16:58:59Z",
+                          "publishedAt": "2022-08-02T16:37:19Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "matthiasneuner"
+                          },
+                          "bodyText": "Yes, I think that will be the best solution :-) . Thank you again!",
+                          "url": "https://github.com/idaholab/moose/discussions/21746#discussioncomment-3309704",
+                          "updatedAt": "2022-08-02T16:46:04Z",
+                          "publishedAt": "2022-08-02T16:46:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Kernel TotalLagrangianStressDivergence and DerivativeParsedMaterial",
+          "author": {
+            "login": "rcontinuum"
+          },
+          "bodyText": "Hello,\nI'm struggling a bit with the new TotalLagrangianStressDivergence kernel. I want to couple this kernel to a Phase Field Kernel which uses/accesses a DerivativeParsedMaterial (e.g., like in crack2d_iso.i from Phase Field Fracture)\n[Materials]\n  [degradation]\n    type = DerivativeParsedMaterial\n    f_name = 'degradation'\n    args = 'c'\n    function = '(1.0-c)^2'\n    derivative_order = 2\n  []\n  ...\n\nTo retrieve the first derivative of this Material function I need to do something like (see ComputePFFractureStressBase.C, old TensorMechanics)\nComputePFFractureStressBase::ComputePFFractureStressBase(const InputParameters & parameters)\n  : ComputeStressBase(parameters),\n  ...\n  _dDdc(getMaterialPropertyDerivative<Real>(\"D_name\", getVar(\"c\", 0)->name())),   // get first derivative wrt 'c'\n\nNow, in   ComputeStressBase.h (old TensorMechanics) we have\nclass ComputeStressBase : public DerivativeMaterialInterface<Material>\nwhereas in ComputeLagrangianStressBase.h (new TensorMechanics)  we have\nclass ComputeLagrangianStressBase : public Material\nIf I understand correct, but I have little experience with MOOSE, then this : public Material prevents me from accessing the first derivative by  getMaterialPropertyDerivative<Real>\nI could try to change in ComputeLagrangianStressBase.h to\nclass ComputeLagrangianStressBase : public DerivativeMaterialInterface<Material>\nand in ComputeLagrangianStressBase.C change ***Material***\nComputeLagrangianStressBase::ComputeLagrangianStressBase(const InputParameters & parameters)\n: ***Material***(parameters),\n\nbut before I go this route (and \"get lost\") I like to ask the experts in the field for some advise.\nCheers and thank you",
+          "url": "https://github.com/idaholab/moose/discussions/21749",
+          "updatedAt": "2022-08-02T14:14:03Z",
+          "publishedAt": "2022-08-02T09:16:38Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "I have plan to change add derivative interface in the new stress calculators, so this will work out-of-the-box in the future.\nMeanwhile, you can add the derivative interface decorator anywhere you like, i.e. in the class you are actually retrieving the derivatives.",
+                  "url": "https://github.com/idaholab/moose/discussions/21749#discussioncomment-3307508",
+                  "updatedAt": "2022-08-02T12:11:08Z",
+                  "publishedAt": "2022-08-02T12:11:07Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "I have plan to change add derivative interface in the new stress calculators, so this will work out-of-the-box in the future.\n\nThat sounds good. It's not really urgent, so I simply wait.\nMeanwhile I just \"hard code\" the functions and their derivatives into the material model. But I thought DerivativeParsedMaterial would give me a bit more flexibility in the input file.\nThank you",
+                          "url": "https://github.com/idaholab/moose/discussions/21749#discussioncomment-3307806",
+                          "updatedAt": "2022-08-02T12:54:03Z",
+                          "publishedAt": "2022-08-02T12:54:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Yeah, my point was you don't have to wait. I assume you have something like this in your stress calculator:\nclass MyStressCalculator : public ParentStressCalculator\nsimply change it to\nclass MyStressCalculator : public DerivativeMaterialInterface<ParentStressCalculator>\nand you'll get all the interface apis.",
+                          "url": "https://github.com/idaholab/moose/discussions/21749#discussioncomment-3307883",
+                          "updatedAt": "2022-08-02T13:04:53Z",
+                          "publishedAt": "2022-08-02T13:04:52Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "rcontinuum"
+                          },
+                          "bodyText": "Ah, this is how it works.\nThanks",
+                          "url": "https://github.com/idaholab/moose/discussions/21749#discussioncomment-3308485",
+                          "updatedAt": "2022-08-02T14:14:04Z",
+                          "publishedAt": "2022-08-02T14:14:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Any reason you can't get the material property derivative as a material property directly, with the \"dCdXXX\" name directly?\nSorry if this doesnt make sense, not necessarily super familiar with this system",
+                  "url": "https://github.com/idaholab/moose/discussions/21749#discussioncomment-3307691",
+                  "updatedAt": "2022-08-02T12:35:15Z",
+                  "publishedAt": "2022-08-02T12:35:14Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Outputting a material property at the nodes of an element",
+          "author": {
+            "login": "Aayush-T"
+          },
+          "bodyText": "Hi everyone,\nI am trying to output a material property such as resolved shear stress (RSS) (in tensor mechanics module) at each node of an element. I tried various approaches such as:\n\nDefining RSS as an elemental variable (constant Monomial) and using Pointvalue in the postprocessor.\nDefining RSS as a nodal variable (first order Lagrange) and using \"selected_qp\" in the auxkernel (throws an error).\nDefining RSS as an elemental variable (constant Monomial) and using \"selected_qp\" in the auxkernel.\nOutputting .vtk\n\nI am getting exactly the same values of RSS at all nodes in an element. This seems incorrect to me because the displacement differs at each node due to which shear stress should also be different. I suspect that the output is actually the Element average value in both exodus (Paraview) and csv files. I would really appreciate if someone can confirm whether the RSS should be the same at all nodes or different.\nThanks and regards,\nAayush Trivedi",
+          "url": "https://github.com/idaholab/moose/discussions/21594",
+          "updatedAt": "2022-08-02T10:45:26Z",
+          "publishedAt": "2022-07-15T14:10:01Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "sapitts"
+                  },
+                  "bodyText": "Hi @Aayush-T,\nThe resolved shear stress is a material property and is thus computed at each of the quadrature points, see \n  \n    \n      moose/modules/tensor_mechanics/src/materials/crystal_plasticity/CrystalPlasticityStressUpdateBase.C\n    \n    \n         Line 416\n      in\n      4cb06f1\n    \n  \n  \n    \n\n        \n          \n           _tau[_qp][i] = pk2.doubleContraction(_flow_direction[_qp][i]); \n        \n    \n  \n\n\nGetting the different quadrature point values as output is a bit trickier. When I want to create a \"pretty picture\" of the resolved shear stress, I use a first order Monomial value, which paraview will interpret as a variable value, e.g. the auxvariable setting produces the following picture (from one of our regression tests)\n  [twin_tau_4]\n    order = FIRST\n    family = MONOMIAL\n  []\n\n\nI am less sure of how to get the different quadrature point values in the CSV file. We do have the  ElementVariableValue postprocessor, but that will still give the average of the material property across the single element. Your selected_qp approach may work here\n@GiudGiud do you know of a way to output the value of a material property at a specific _qp to a csv?",
+                  "url": "https://github.com/idaholab/moose/discussions/21594#discussioncomment-3193490",
+                  "updatedAt": "2022-07-21T00:05:09Z",
+                  "publishedAt": "2022-07-21T00:05:09Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nActually you're in luck, because the MaterialVPP is the ONLY object I know that outputs CSVs on qps\nhttps://mooseframework.inl.gov/source/vectorpostprocessors/MaterialVectorPostprocessor.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/21594#discussioncomment-3194008",
+                          "updatedAt": "2022-07-21T02:31:15Z",
+                          "publishedAt": "2022-07-21T02:31:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Aayush-T"
+                          },
+                          "bodyText": "Thank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/21594#discussioncomment-3306766",
+                          "updatedAt": "2022-08-02T10:45:26Z",
+                          "publishedAt": "2022-08-02T10:45:26Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Coupling between structural elements (beam and shell) and 3D solid elements",
+          "author": {
+            "login": "Kavan-Khaledi"
+          },
+          "bodyText": "Dear MOOSE team,\nI have successfully used the PorousFlow module to simulate tunneling in fully saturated porous rocks. Now, I am trying to add support elements such as rock bolts (beam elements) and shotcrete lining (shell elements) to the model. However, the structural elements (beam and shell) have 3 additional degrees of freedom (bending moments). Is it at all possible to couple (tie) a beam or shell element to a 3D solid element? I would be very grateful for your help.\nBest Regards,\nKavan",
+          "url": "https://github.com/idaholab/moose/discussions/21734",
+          "updatedAt": "2022-08-02T08:23:11Z",
+          "publishedAt": "2022-08-01T09:27:14Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "There is an EqualValueEmbeddedConstraint you might find useful. https://mooseframework.inl.gov/source/constraints/EqualValueEmbeddedConstraint.html",
+                  "url": "https://github.com/idaholab/moose/discussions/21734#discussioncomment-3297053",
+                  "updatedAt": "2022-08-01T13:16:45Z",
+                  "publishedAt": "2022-08-01T13:16:44Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Kavan-Khaledi"
+                          },
+                          "bodyText": "Thank you very much @hugary1995 :) The displacements of a solid element can be easily coupled to the displacements of a Beam element with this EmbeddedConstraint. Thanks;)",
+                          "url": "https://github.com/idaholab/moose/discussions/21734#discussioncomment-3305602",
+                          "updatedAt": "2022-08-02T08:23:11Z",
+                          "publishedAt": "2022-08-02T08:23:11Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Convergence issue at the transition between two blocks",
+          "author": {
+            "login": "ZoeyChen1993"
+          },
+          "bodyText": "Dear experts,\nI am setting up a simulation of a coupled thermal-chemical problem, the domain is a standard rectangle with two parts, the two parts are using different material properties, there is a heating source from the bottom, then the heat generated a reaction front, both heat and reaction front propagate along the blocks, then when they travel to the boundary between the two blocks, the mesh starts to adaptive and the time step goes to extremely small then solve does not converge.  Could some one help me to solve the convergence issue? The figure attached is a temperature contour when the simulation aborted. And the code from executioner to adaptivity blocks are attached below.\n\n[Executioner]\n  type = Transient\n  num_steps = 80000\n  nl_rel_tol = 1e-6\n\n  end_time=1000\n\n  nl_max_its=10\n  l_max_its=10\n  \n  [./TimeStepper]\n    type = ConstantDT    \n    dt = 0.5\n    # dt = 3.6e14   \n  [../]\n  \n  [./TimeIntegrator]\n   type = ImplicitEuler\n[../]\n  \n  #Preconditioned JFNK (default)\n  solve_type = 'PJFNK'\n  petsc_options_iname = '-pc_type -pc_hypre_type'\n  petsc_options_value = 'hypre boomeramg'\n[]\n\n\n[Adaptivity]\n  marker = combo #this line when commented, switches off adaptivity\n  max_h_level = 3\n  #steps = 2 #this line gets ignored in a transient run\n  [./Indicators]\n    [./Aerror]\n      type = GradientJumpIndicator\n      variable = Cure\n      outputs = none\n    [../]\n\n    [./Terror]\n      type = GradientJumpIndicator\n      variable = Temperature\n      outputs = none\n    [../]\n    [./error]\n      type = GradientJumpIndicator\n      variable = Temperature\n      outputs = none\n    [../]\n    \n  [../]\n  [./Markers]\n    [./Marker1]\n      type = ErrorFractionMarker\n      refine = 0.5\n      coarsen = 0.1\n      indicator = Aerror\n      outputs = none\n    [../]\n\n    [./Marker3]\n      type = ErrorFractionMarker\n      refine = 0.5\n      coarsen = 0.1\n      indicator = Terror\n      outputs = none\n    [../]\n\n    [./combo]\n      type = ComboMarker\n      markers = 'Marker1 Marker3'\n    [../]\n    \n  [../]\n  [./Markers]\n    [./errorfrac]\n      type = ErrorFractionMarker\n      refine = 0.5\n      coarsen = 0.1\n      indicator = error\n      outputs = none\n    [../]\n    \n  [../]\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/21742",
+          "updatedAt": "2022-08-13T16:06:00Z",
+          "publishedAt": "2022-08-01T22:17:16Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIt could be multiple things. Here are a few things I could see as issues\n\nThe rel_tol of 1e-6 on non-linear can be very coarse for some problems. Typically you would want to look at adding automatic scaling to make sure (a little bit, you still need to verify yourself) you are converged for all variables in the simulation\nThe vast differences in cell sizes can be an issue for some physics. Maybe you should limit the adaptivity more to see if you can get a solution. You may need to refine the time step to be able to handle very small cells (again, depends on the pjysics)\nThe max number of iterations in your solve are small, so the solver does not get a lot of iterations to try to converge the problem before declaring a solve failure. You will want to raise both of these 10x to see if it can do better with more iterations\n\n  nl_max_its=10\n  l_max_its=10\n\nFinally, if you have coded your Jacobian well, you should give the Newton method a try instead of PJFNK. It usually converges better\nHope this helps,\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21742#discussioncomment-3303241",
+                  "updatedAt": "2022-08-02T00:34:44Z",
+                  "publishedAt": "2022-08-02T00:34:13Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to adjust height of a cylinder",
+          "author": {
+            "login": "Sam777Sam"
+          },
+          "bodyText": "Hi,\nI am using the \"file=cyl-tet.e\" as my mesh. However the height of the cylinder is given as 5 cm and I would like to make it 15 cm. How can I do that? also is there a link would elaborate more about mesh adjustments? Your help is appreciated. Thank you!\nRegards,\nSam",
+          "url": "https://github.com/idaholab/moose/discussions/21715",
+          "updatedAt": "2022-08-13T16:09:41Z",
+          "publishedAt": "2022-07-28T19:15:46Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nthere s a few ways you could do this. You could load the file several times and stitch it top to bottom\nyou could generate a 2D circle then extrude it.\nPlease look at our mesh generators to find the basic operations you can use to generate cylinders\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21715#discussioncomment-3273326",
+                  "updatedAt": "2022-07-28T20:07:04Z",
+                  "publishedAt": "2022-07-28T20:07:03Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Sam777Sam"
+                          },
+                          "bodyText": "Thank you Guillaume!\n1- I'm using ParaView program to open the \"file=cyl-tet.e\" and I couldn't  stich it top to bottom. How can I do that? and do you suggest me to use another program to do that (what is the best program for editing the shapes)?\n2- Also, I did the 2D circle which is same as the rectangular one. I was following a 2D circle example in Moose and here is my code for the mesh:\n[Mesh]\ntype = GeneratedMesh\nxmin = 0.0\nymin = 0.0\nxmax = 0.5\nymax = 15\nnx = 5\nny = 150\n[]\nIs this correct? and does the Moose understand that this is a circle not a rectangle?\n3- I looked at the mesh generators and unfortunately things doesn't seem clear to me, is there a good source or videos talking about mesh adjustments and what kind of functions that can be added in order to edit the meshes.\nI'm new to Moose and your help is highly appreciated. Thank you for your time!\nBest,\nSam",
+                          "url": "https://github.com/idaholab/moose/discussions/21715#discussioncomment-3293038",
+                          "updatedAt": "2022-07-31T22:30:05Z",
+                          "publishedAt": "2022-07-31T22:30:04Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\n\n\nTo stitch you may use MOOSE mesh generators. I dont know how to do this with paraview.\n\n\nThis is not a circle mesh, this is a rectangle mesh. I recommend you look more at the mesh generator system:\nhttps://mooseframework.inl.gov/syntax/Mesh/index.html#20d24524-c90b-462f-b4da-e1208cc17dcb\n\n\nyou may generate a circle with this one:\nhttps://mooseframework.inl.gov/source/meshgenerators/ConcentricCircleMeshGenerator.html\nYou should try to run some of the inputs in moose/test/tests/mesh_generators to get familiar with that system. Go in each folder, run the input and look at the output exodus to see what the mesh generators (nested in the [Mesh] block) did\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/21715#discussioncomment-3298598",
+                          "updatedAt": "2022-08-01T14:22:56Z",
+                          "publishedAt": "2022-08-01T14:22:55Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Libmesh compilation failed on HPC",
+          "author": {
+            "login": "aashiquear"
+          },
+          "bodyText": "I am using the following to setup MOOSE on HPC,\ngcc 9.3.1\npython 3.6.5\ncmake 3.22.3\nopenmpi-gnu 3.1\nAfter PETSc compilation I am getting the following error during libmesh compilation,\n../../tests/mesh/mesh_triangulation.C: In member function \u2018void MeshTriangulationTest::testTriangulatorBase(libMesh::MeshBase&, libMesh::TriangulatorInterface&)\u2019: ../../tests/mesh/mesh_triangulation.C:148:9: error: \u2018CPPUNIT_ASSERT_GREATER\u2019 was not declared in this scope; did you mean \u2018CPPUNIT_ASSERT_EQUAL\u2019? 148 |         CPPUNIT_ASSERT_GREATER(Real(0), cross_prod(2)); |         ^~~~~~~~~~~~~~~~~~~~~~ |         CPPUNIT_ASSERT_EQUAL\nHow can I resolve the setup?",
+          "url": "https://github.com/idaholab/moose/discussions/21727",
+          "updatedAt": "2022-08-13T16:11:27Z",
+          "publishedAt": "2022-07-29T21:38:52Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nDid you update recently?\nSeems you have an old CPPUNIT with a recent libmesh\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21727#discussioncomment-3289153",
+                  "updatedAt": "2022-07-31T04:30:51Z",
+                  "publishedAt": "2022-07-31T04:30:50Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Difficulty in Convergence of Fluid in Conjugate Heat Transfer",
+          "author": {
+            "login": "Krystalfang"
+          },
+          "bodyText": "Dear experts\uff0c\nI'm recently trying to make a model of a cold plate with heat sources, radiant elements, power, cold plate, S-shaped channel. This is about 33w grids. I want to achieve fluid-heat coupling via conjugate heat transfer.\n\nHowever, in the calculation process, I found that nonlinear iteration is difficult to converge, but linear iteration is easy to converge. Basically, each step of nonlinear iteration can only be calculated in two steps before jumping out of the loop, and the decline rate can reach 10-8. And the nonlinear The main problem of iteration focuses on the fluid. When I do a rough mesh, the fluid doesn't have that much mesh and it converges very quickly.\n\n# Fluid properties\nmu = 0.001   # Pa*s\nrho = 998.2    #kg/m3\ncp = 4128      #j/kg-k\nk = 0.6     #w/m-k\n\n\n[Mesh]\n  type = FileMesh #Read in mesh from file\n  file = liure2.e\n[]\n\n\n[Variables]\n   [T_s]\n    block = '1 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'\n    initial_condition = 293\n  []\n  [T1]\n    block = '2'\n    initial_condition = 293\n  []\n   [./velocity]\n    family = LAGRANGE_VEC\n    block='2'\n  [../]\n  [./p]\n    order = FIRST\n    family = LAGRANGE\n    block='2'\n  [../]\n[]\n\n[ICs]\n  [velocity]\n    type = VectorConstantIC\n    x_value = 1e-15\n    y_value = 1\n    z_value = 1e-15\n    variable = velocity\n  []\n[]\n\n\n[Kernels]\n  # Diffusion kernel for each block's variable\n  [diff_0]\n    type = ADHeatConduction\n    variable = T_s\n    block ='1 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'\n  []\n  [fluid_conduction]\n    type = ADHeatConduction\n    variable = T1\n    block = '2'\n    thermal_conductivity = 'k'\n  []\n  [source]\n    type = HeatSource\n    variable = T_s\n    value = 1e8\n    block ='3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'\n  []\n\n [./mass]\n    type = INSADMass\n    variable = p\n  [../]\n  [./mass_pspg]\n    type = INSADMassPSPG\n    variable = p\n  [../]\n  [./momentum_convection]\n    type = INSADMomentumAdvection\n    variable = velocity\n  [../]\n  [./momentum_viscous]\n    type = INSADMomentumViscous\n    variable = velocity\n  [../]\n  [./momentum_pressure]\n    type = INSADMomentumPressure\n    variable = velocity\n    pressure = p\n    integrate_p_by_parts = true\n  [../]\n  [./momentum_supg]\n    type = INSADMomentumSUPG\n    variable = velocity\n    velocity = velocity\n  [../]\n [./temperature_advection]\n   type = INSADEnergyAdvection\n   variable = T1\n [../]\n  [temperature_supg]\n    type = INSADEnergySUPG\n    variable = T1\n    velocity = velocity\n  []\n[]\n\n[InterfaceKernels]\n   [fluid_to_plate_10]\n    type = ConjugateHeatTransfer\n    variable = T1\n    T_fluid = T1\n    neighbor_var = 'T_s'\n    boundary = '2'\n    htc = 5000\n  []\n[]\n\n[AuxVariables]\n  [T]\n  []\n[]\n\n[AuxKernels]\n  [temp_0]\n    type = NormalizationAux\n    variable = T\n    source_variable = T_s\n    block = '1 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'\n  []\n  [temp_1]\n    type = NormalizationAux\n    variable = T\n    source_variable = T1\n    block = '2'\n  []\n[]\n\n[BCs]\n [./plane_wall]#PCB\n  type = ADConvectiveHeatFluxBC\n  variable = T_s\n  boundary = '1'\n  T_infinity = 293\n  heat_transfer_coefficient = 7.62\n  [../]\n  [./vec_inlet]\n    type = VectorFunctionDirichletBC\n    variable = velocity\n    boundary = '3'\n    function_y = 1  #m/s\n  [../]\n  [./inlet_temp]\n    type = DirichletBC\n    variable =T1\n    boundary = '3'\n    value = 293\n  [../]\n  [./outlet_p]\n    type = DirichletBC\n    variable = p\n    boundary = '4'\n    value = 0\n  [../]\n[]\n\n[Materials]\n  [./const_fluid]\n    type = ADGenericConstantMaterial\n    prop_names = 'rho mu cp k'\n    prop_values = '${rho} ${mu}  ${cp}  ${k}'\n    block = '2'\n  [../]\n  [ins_mat]\n    type = INSADStabilized3Eqn\n    velocity = velocity\n    pressure = p\n    temperature = T1\n    block='2'\n  []\n\n  [./plate]\n    type = ADHeatConductionMaterial\n    thermal_conductivity = 202.4    # W/m k\n    specific_heat = 871  # J/kg k\n    block = '1'\n  [../]\n\n  [./fluid]\n    type = ADHeatConductionMaterial\n    thermal_conductivity = .6  # W/m k\n    specific_heat = 4128    # J/kg K\n    block = '2'\n  [../]\n\n\n  [./source]\n    type = ADHeatConductionMaterial\n    thermal_conductivity = 54    # W/m k\n    specific_heat = 330    # J/kg k\n    block = '3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18'\n  [../]\n[]\n\n[Preconditioning]\n  [Newton_SMP]\n    type = SMP\n    full = true\n    petsc_options_iname = '-pc_type -pc_factor_mat_solver_package'\n    petsc_options_value = ' lu       mumps'\n    solve_type = 'NEWTON'\n  []\n[]\n\n[Executioner]\n  type = Steady\n  l_max_its = 5\n  nl_max_its =1000\n  nl_rel_tol = 1e-8\n  l_tol = 1e-5\n  petsc_options_iname = '-pc_type -pc_factor_mat_solver_package -ksp_gmres_restart'\n  petsc_options_value = 'lu       superlu_dist                  200'\n  automatic_scaling = true\n  scheme = bdf2\n[]\n[Debug]\n  show_var_residual_norms = true\n[]\n\n[Outputs]\n  exodus = true\n  file_base = liure_out3\n  perf_graph = true\n[]\n\nAlso, what does the htc stand for in conjugate heat transfer, since it seems to me that conjugate heat transfer doesn't require the definition of the convective heat transfer coefficient, I'm confused",
+          "url": "https://github.com/idaholab/moose/discussions/21605",
+          "updatedAt": "2022-07-29T14:11:16Z",
+          "publishedAt": "2022-07-18T01:53:26Z",
+          "category": {
+            "name": "Q&A Modules: Navier-Stokes"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI would try reducing the flow rate to make it an easier problem and see if you can get convergence\nYou can also turn remove part of the physics, like the conjugate heat transfer, and see if you get better convergence that way\nlinear convergence working fine is not surprising given that you are using LU, a direct method.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/21605#discussioncomment-3271259",
+                  "updatedAt": "2022-07-28T16:24:56Z",
+                  "publishedAt": "2022-07-28T16:24:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Krystalfang"
+                  },
+                  "bodyText": "Hi Guillaume\nThank you very much for your reply, I think your statement is correct. I have also tried this recently, and I found that when I set the flow rate to 0.1m/s, MOOSE can converge, but when I try to adjust the flow rate to 0.5m/s, it does not converge and appears the following question:\n\nThis problem is also encountered in general simulation software, but how to solve this problem in MOOSE,because the flow velocity required by this model is 2.6m/s. I would like to hear your suggestions.\nIn addition, as to what you said to remove the conjugate coupling module, I will try further.\nKrystal",
+                  "url": "https://github.com/idaholab/moose/discussions/21605#discussioncomment-3276461",
+                  "updatedAt": "2022-07-29T02:16:29Z",
+                  "publishedAt": "2022-07-29T02:16:29Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "For a zero pivot error, you should add this parameter to your preconditioning\n-pc_factor_shift\nNONZERO\nYou can also experiment with different LU solver packages",
+                          "url": "https://github.com/idaholab/moose/discussions/21605#discussioncomment-3281021",
+                          "updatedAt": "2022-07-29T14:11:17Z",
+                          "publishedAt": "2022-07-29T14:11:16Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Visualizing State Variable from Abaqus UMAT Interface",
+          "author": {
+            "login": "edwardXZ06"
+          },
+          "bodyText": "I have successfully run a Neo-Hookean umat and a hyperelastic model with Mullin effects umat, both of which work great and save me tons of time developing the relevant material model in C++ separately. Right now, I really like this interface, while I think it can be further improved by adding the feature of visualizing state variables (STATEV).\nInspecting user-defined state variables is usually more important than reviewing only the total stress/strain in terms of constitutive model development. I am not sure if it is easy to pass STATEV information from materials module to Auxkernals for visualization purpose?\nThank you!",
+          "url": "https://github.com/idaholab/moose/discussions/18651",
+          "updatedAt": "2022-07-29T11:07:07Z",
+          "publishedAt": "2021-08-09T16:36:00Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "dschwen"
+                  },
+                  "bodyText": "This is super easy using a MaterialStdVectorAux AuxKernel. This object allows you to pick a component from the state variable vector property to visualize it.",
+                  "url": "https://github.com/idaholab/moose/discussions/18651#discussioncomment-1209729",
+                  "updatedAt": "2022-06-29T04:38:49Z",
+                  "publishedAt": "2021-08-20T03:17:06Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Traiwit"
+                  },
+                  "bodyText": "Hi @edwardXZ06 and @dschwen are those UMAT available anywhere online, I'm just curious how to implement them into moose?\nis it simply just use AbaqusUMATStress under [Materials]? is there any other section that I need to consider?\n  [constant]\n    type = AbaqusUMATStress\n    #                      Young's modulus,  Poisson's Ratio, Yield, Hardening\n    constant_properties = '1000 0.3 10 100'\n    plugin = ../../plugins/xxxxxx ##(UMAT file)\n    num_state_vars = 3\n  []\n\nThanks guys!",
+                  "url": "https://github.com/idaholab/moose/discussions/18651#discussioncomment-1219857",
+                  "updatedAt": "2022-06-29T04:39:06Z",
+                  "publishedAt": "2021-08-22T23:49:27Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "afaik yes",
+                          "url": "https://github.com/idaholab/moose/discussions/18651#discussioncomment-1359945",
+                          "updatedAt": "2022-06-29T04:39:06Z",
+                          "publishedAt": "2021-09-21T00:31:01Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "BilelELLAFI"
+                  },
+                  "bodyText": "Hello Mr edrwarXZ06\nCould tout please send me the python code of Neo-Hookean umat and a hyperelastic model with Mullin effects umat ?\nThanks",
+                  "url": "https://github.com/idaholab/moose/discussions/18651#discussioncomment-3279497",
+                  "updatedAt": "2022-07-29T11:07:07Z",
+                  "publishedAt": "2022-07-29T11:07:06Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

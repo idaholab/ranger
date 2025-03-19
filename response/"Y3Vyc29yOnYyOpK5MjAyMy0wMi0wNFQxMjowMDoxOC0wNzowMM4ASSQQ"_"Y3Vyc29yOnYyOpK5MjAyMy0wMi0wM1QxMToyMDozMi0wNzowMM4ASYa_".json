@@ -1,0 +1,991 @@
+{
+  "discussions": {
+    "pageInfo": {
+      "hasNextPage": true,
+      "endCursor": "Y3Vyc29yOnYyOpK5MjAyMy0wMi0wM1QxMToyMDozMi0wNzowMM4ASYa_"
+    },
+    "edges": [
+      {
+        "node": {
+          "title": "(Quasi)Static solve to generate initial fields with given traction separation law for cohesive zone model",
+          "author": {
+            "login": "chunhuizhao478"
+          },
+          "bodyText": "Hi all, I'm trying to do a static solve (steady) or quasi-static solve (Transient, implicit) in order to generate the correct fields (displacements, stress etc for the domain)\ngiven the known boundary loading (use Neumann BC for specifying tractions and Dirichlet BC for fix corner points to remove rigid body motion .\nThe geometry of the problem consists of two blocks separated by an interface (see the first attached picture), which is a cohesive zone interface quantified by a specific slip weakening law (tangential traction as a function of displacement jump, see the second attached picture).\nI expect the stress field should be close the prescribed normal/tangent traction on the outer boundaries and along the interface some of the _qp points whose traction exceeds static friction strength would follow the slip weakening friction law and adjust their traction according (but most of the nodes should remain fixed). However, there seems to be a convergence /results not correct issue. I'm wondering if there is a better way to deal with the problem?\nBelow I attach the geometry & loading, slip weakening friction law, input file.\n\n\n[Mesh]\n    [./msh]\n      type = GeneratedMeshGenerator\n      dim = 2\n      nx = 300\n      ny = 300\n      xmin = -15000\n      xmax = 15000\n      ymin = -15000\n      ymax = 15000\n    []\n    [./new_block]\n        type = ParsedSubdomainMeshGenerator\n        input = msh\n        combinatorial_geometry = 'y<0'\n        block_id = 1\n    []\n    [./split]\n        type = BreakMeshByBlockGenerator\n        input = new_block\n        split_interface = true\n    []\n    [interface]\n        type = SideSetsBetweenSubdomainsGenerator\n        input = split\n        primary_block = 0\n        paired_block = 1\n        new_boundary = 'interface'\n    []\n    [secondary_interface]\n        type = SideSetsBetweenSubdomainsGenerator\n        input = interface\n        primary_block = 1\n        paired_block = 0\n        new_boundary = 'secondary_interface'\n    []\n    [sideset1]\n        type = SideSetsFromNodeSetsGenerator\n        input = secondary_interface\n    []\n    [extranodeset2]\n        type = ExtraNodesetGenerator\n        coord = '-15000   -15000  0; 15000    15000  0;'\n        new_boundary = 2ptrs\n        input = sideset1\n    []\n    [extranodeset4]\n        type = ExtraNodesetGenerator\n        coord = '-15000  -15000  0;\n                 -15000   15000  0;\n                  15000  -15000  0;\n                  15000   15000  0;'\n        new_boundary = 4ptrs\n        input = extranodeset2\n    []\n[]\n\n[GlobalParams]\n    displacements = 'disp_x disp_y'\n[]\n\n[Modules/TensorMechanics/CohesiveZoneMaster]\n    [./czm_ik]\n        boundary = 'Block0_Block1'\n        strain = SMALL\n        generate_output='traction_x traction_y jump_x jump_y normal_traction tangent_traction normal_jump tangent_jump'\n    [../]\n[]\n\n[Modules]\n    [./TensorMechanics]\n        [./Master]\n        [./all]\n            strain = SMALL\n            add_variables = true\n            planar_formulation = PLANE_STRAIN\n            generate_output = 'stress_xx stress_yy stress_xy'\n            save_in = 'resid_x resid_y'\n        [../]\n        [../]\n    [../]\n[]\n\n[Materials]\n    [elasticity]\n        type = ComputeIsotropicElasticityTensor\n        lambda = 32.04e9\n        shear_modulus = 32.04e9\n        use_displaced_mesh = false\n    []\n    [stress]\n        type = ComputeLinearElasticStress\n    []\n    [density]\n        type = GenericConstantMaterial\n        prop_names = density\n        prop_values = 2670\n    []\n    [./czm_mat]\n        type = SlipWeakeningTotalFormv2\n        disp_slipweakening_x = disp_x\n        disp_slipweakening_y = disp_y\n        mu_d = mu_d\n        mu_s = mu_s\n        boundary = 'Block0_Block1'\n    [../]\n[]\n\n[BCs]\n    #outer boundaries\n    [./fix_r_x]\n        type = NeumannBC\n        variable = disp_x\n        boundary = right\n        value = -120e6\n    []\n    [./fix_r_y]\n        type = NeumannBC\n        variable = disp_y\n        boundary = right\n        value = 70e6\n    []\n    [./fix_l_x]\n        type = NeumannBC\n        variable = disp_x\n        boundary = left\n        value = 120e6\n    []  \n    [./fix_l_y]\n        type = NeumannBC\n        variable = disp_y\n        boundary = left\n        value = -70e6\n    []       \n    [./fix_t_x]\n        type = NeumannBC\n        variable = disp_x\n        boundary = top\n        value = 70e6\n    []\n    [./fix_t_y]\n        type = NeumannBC\n        variable = disp_y\n        boundary = top\n        value = -120e6\n    []    \n    [./fix_b_x]\n        type = NeumannBC\n        variable = disp_x\n        boundary = bottom\n        value = -70e6\n    []\n    [./fix_b_y]\n        type = NeumannBC\n        variable = disp_y\n        boundary = bottom\n        value = 120e6\n    []\n    [./fix_ptrs_x]\n        type = DirichletBC\n        variable = disp_x\n        boundary = 4ptrs\n        value = 0\n    []\n    [./fix_ptrs_y]\n        type = DirichletBC\n        variable = disp_y\n        boundary = 4ptrs\n        value = 0\n    []\n[]\n\n[Executioner]\n    type = Transient\n    solve_type = 'NEWTON'\n    petsc_options_iname = '-pc_type -pc_hypre_type'\n    petsc_options_value = ' hypre    boomeramg'\n    nl_rel_tol = 1e-11\n    nl_abs_tol = 1e-50\n    num_steps = 1\n[]\n\n[Outputs]\n    exodus = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23139",
+          "updatedAt": "2023-06-24T19:57:39Z",
+          "publishedAt": "2023-01-12T06:27:12Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "hugary1995"
+                  },
+                  "bodyText": "You can read the documentation on restart and recover, and also my comment in this PR: #21886 (comment).",
+                  "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4671635",
+                  "updatedAt": "2023-01-13T00:39:52Z",
+                  "publishedAt": "2023-01-12T20:48:33Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Hi Gary, thanks for the comment. Could you elaborate more about how this functionality is useful here? Do you mean the loading should be incremental buildup with restart?",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4671818",
+                          "updatedAt": "2023-01-12T21:13:31Z",
+                          "publishedAt": "2023-01-12T21:13:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I'm sorry I didn't read your question correctly. I suspect the convergence issue is coming from the traction-separation law. How do you define the traction-separation law when [[u]] is negative?",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4673228",
+                          "updatedAt": "2023-01-13T00:40:59Z",
+                          "publishedAt": "2023-01-13T00:40:58Z",
+                          "isAnswer": true
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "The easiest way for me to help is to setup a repository which I can pull down.",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4673239",
+                          "updatedAt": "2023-01-13T00:42:40Z",
+                          "publishedAt": "2023-01-13T00:42:39Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Hi Gary, I think you make a good point, I don't know how to enforce [[u]] to be positive (no penetration is allowed) in czm, I do see there are some support in the contact module in the normal direction. I share this repo here if you want to take a look:  https://github.com/chunhuizhao478/czm_static_solve.",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4673766",
+                          "updatedAt": "2023-01-13T02:41:18Z",
+                          "publishedAt": "2023-01-13T02:41:17Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "Thanks for setting up the repo. The way you obtain the local normal stress and shear stress doesn't seem quite right to me. You'll want to rotate the stress tensor first. You are also providing the wrong Jacobian, e.g., _dinterface_traction_djump. A correct Jacobian is critical to convergence. My suggestion for you right now is to first jot down the set of equations for the traction-separation law (and the Jacobian if you know how to derive it). This is helpful in many ways: 1. It will help me better understand your constitutive model. 2. It will be easier to derive the Jacobian. 3. You can later write code strictly following your equations.",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4679925",
+                          "updatedAt": "2023-01-13T16:53:10Z",
+                          "publishedAt": "2023-01-13T16:53:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Much Thanks for your help! Sure, I will provide more information on the traction separation law by the end of this weekend.",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4680267",
+                          "updatedAt": "2023-01-13T17:30:20Z",
+                          "publishedAt": "2023-01-13T17:30:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "chunhuizhao478"
+                          },
+                          "bodyText": "Hi, I have update the reference in czm_static_solve/reference folder, I also modify the computation for local normal stress and shear stress, however I don't know how to come up with the correct Jacobin since the algorithm contains if-else condition. The repo is re-phrased below: https://github.com/chunhuizhao478/czm_static_solve. Thanks for your time!",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4699465",
+                          "updatedAt": "2023-01-16T17:17:07Z",
+                          "publishedAt": "2023-01-16T17:17:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Any update on this?\nIf the jacobian is wrong you should not use NEWTON for the solve. PJFNK will be more resilient to a bad jacobian",
+                          "url": "https://github.com/idaholab/moose/discussions/23139#discussioncomment-4870091",
+                          "updatedAt": "2023-02-04T15:52:34Z",
+                          "publishedAt": "2023-02-04T15:52:33Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Element Activation gets stuck on \"Handling Mesh Changes\" after 76539 steps, DT, core count and mesh independent",
+          "author": {
+            "login": "Edward-Eth"
+          },
+          "bodyText": "As the title says, I am testing out various components of MOOSE to find issues I've been experiencing in larger simulations. One thing I've been checking is the long-duration/high step stability of various functionalities.\nAs part of this I've been running my 'simulation' physics-less, just with the element activation component active. This means in the model no physics is occurring but the mesh is being continually changed according to my input file.\nMy \"goal\" total sim time is around 1 million seconds. Initially I ran at a dt of 10, and the simulation failed at 765390 seconds, or 76539 steps. However, when I start at 760000 seconds, it runs to the end without issue. When I start at zero but with a time step of 5 instead of 10, I again fail at 76539 steps. This means there is no link between the issue and the state of my mesh/simulation, just the time step number itself...\nThis is very odd behaviour that I am at a loss to explain. 76539 isn't even a power of 2!\nAny advice would be much appreciated!",
+          "url": "https://github.com/idaholab/moose/discussions/22868",
+          "updatedAt": "2023-06-24T19:57:19Z",
+          "publishedAt": "2022-12-05T11:01:31Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nIs the memory consumption growing? (There s postprocessors and VPP) to measure that\nCan you share your input file?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4312891",
+                  "updatedAt": "2022-12-05T12:44:14Z",
+                  "publishedAt": "2022-12-05T12:44:13Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "I'm running now with memory postprocessors, will update.\nI can potentially share the input file, but in essence all I'm doing is:\n\nloading a mesh from a file\nsetting up \"timer\" aux variables on each element of the mesh which count down (ie designated_Time - time)\nusing ActivateElementsCoupled on the timer aux variables to move elements from block 0 to block 1 when the timer goes below 0\nI have a few variables defined, but no active kernels, BCs etc so that the residual is always zero, meaning that each time step instantly converges once mesh changes have been handled.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4321122",
+                          "updatedAt": "2022-12-06T09:16:21Z",
+                          "publishedAt": "2022-12-06T09:16:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "at 76539, is this when one of the blocks disappear by any chance?",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4323345",
+                          "updatedAt": "2022-12-06T13:57:28Z",
+                          "publishedAt": "2022-12-06T13:57:28Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "It's not no, even if a block disappeared in the first simulation at 765390 seconds, the second simulation failed at a time value half of that as I halved my dt and it failed at the same step count. A run with memory post processors (total, max proc and per proc average) is still running but at 15k steps the memory uses are actually a hair under the memory use at t=0.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4324022",
+                          "updatedAt": "2022-12-06T15:15:57Z",
+                          "publishedAt": "2022-12-06T15:04:31Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok this rules out two potential causes.\nAt this point I would remove components from the simulation one by one and try to find what causes a failure at 76539 time steps.\nIs the mesh changing every time step?",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4324332",
+                          "updatedAt": "2022-12-06T15:39:08Z",
+                          "publishedAt": "2022-12-06T15:39:07Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "There are no physics components to the simulation currently, just some variables with no assigned kernels. The mesh is changing most if not all time steps, with the current mesh+timings it's hard to be sure. I'm working out a more generic example I can use to test this out in a more controlled way.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4324702",
+                          "updatedAt": "2022-12-06T16:12:54Z",
+                          "publishedAt": "2022-12-06T16:12:53Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "So the memory usage postprocessor job just failed at the same point as the others. Here's the first and last memory usage postprocessor lines:\n+----------------+----------------+----------------+----------------+\n| time           | max_proc       | per_proc       | total          |\n+----------------+----------------+----------------+----------------+\n:                :                :                :                :\n|   0.000000e+00 |   1.244000e+03 |   1.123990e+03 |   5.395130e+05 |\n|   3.826900e+05 |   1.231000e+03 |   1.107627e+03 |   5.316610e+05 |\n+----------------+----------------+----------------+----------------+\n\nA normal time step looks like this:\nTime Step 1, time = 5, dt = 5\n\n\nPerforming automatic scaling calculation\n\n\n 0 Nonlinear |R| = 0.000000e+00\n\n    |residual|_2 of individual variables:\n                     disp_x: 0\n                     disp_y: 0\n                     disp_z: 0\n                     Temp:   0\n\n Solve Converged!\n\nWhereas the frozen step looks like this:\nTime Step 76539, time = 382695, dt = 5\n\n\n Computing User Objects\n   Handling Mesh Changes.......\n\nIt will continue printing dots to the output for as long as the job is left running, so something is still \"working\" in there, it's not a total freeze up.\nStill trying to figure out a share-able MWE, got a few things on my plate atm so might be a post christmas thing potentially.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4343353",
+                          "updatedAt": "2022-12-08T13:38:51Z",
+                          "publishedAt": "2022-12-08T13:38:09Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Ok this rules out memory for sure again.\nsounds good. We ll wait on the MWE to look at this then",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4344555",
+                          "updatedAt": "2022-12-08T15:44:59Z",
+                          "publishedAt": "2022-12-08T15:44:58Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "friedmud"
+                  },
+                  "bodyText": "Are you running in parallel?  It could be that we're exhausting an MPI resource.",
+                  "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4361354",
+                  "updatedAt": "2022-12-10T06:46:45Z",
+                  "publishedAt": "2022-12-10T06:46:44Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "I'm running in parallel and with distributed mesh. How would I monitor MPI resources?",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4377564",
+                          "updatedAt": "2022-12-12T10:48:38Z",
+                          "publishedAt": "2022-12-12T10:48:37Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "hugary1995"
+                          },
+                          "bodyText": "I don't think we set up the element activation UO to work with distributed mesh.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4378911",
+                          "updatedAt": "2022-12-12T13:25:19Z",
+                          "publishedAt": "2022-12-12T13:25:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "It's definitely working differently in distributed vs serial, the time to handle mesh changes is vastly longer with replicated mesh and does not change with the number of cores, whereas it scales perfectly with core count on distributed, and produces the expected result in terms of mesh changes.\nExample of changing core count and mesh size on replicated mesh:\n\nExample with distributed mesh:\n\nEDIT: Apologies didn't notice that this somehow ended up dual axis, the distributed mesh is plotted against the right axis, showing that it is lower at all local DOF counts and decreases in line with local DOFs/elements/nodes\nThese graphs show that using distributed mesh is definitely accelerating the element activation object, meaning it must be running in parallel when distributed mesh is being used.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4379080",
+                          "updatedAt": "2022-12-12T14:47:07Z",
+                          "publishedAt": "2022-12-12T13:48:38Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "author": {
+                    "login": "Edward-Eth"
+                  },
+                  "bodyText": "Post christmas estimate was correct for the MWE, but I've now run it and it also fails at the same number of time steps. To recap this means a mesh generated using an inhouse generation tool, with element activation timing governed by a CSV read into an aux-variable, and a mesh generated using GeneratedMeshGenerator with the activation timing governed by element z position fail at the exact same time step. The meshes have different numbers of elements and nodes, and previous testing has shown the time step size to be an irrelevant factor. What this points to I have no idea.\nThe MWE makes a single element base, and a 1 million element \"tower\", with the base starting in block 1 and the tower in block 0. This mesh is generated in the first file, MakeMesh.i, using the --mesh-only argument to generate an exodus file:\n\n  MakeMesh.i\n[Mesh]\n[Tower]\n type = GeneratedMeshGenerator\n dim = 3\n elem_type = HEX8\n nx = 1\n ny = 1\n nz = 1000000\n xmax = 1\n ymax = 1\n zmax = 1000000\n[]\n[Foundation]\n type = GeneratedMeshGenerator\n dim = 3\n element_type = HEX8\n nx = 1\n ny = 1\n nz = 1\n xmax = 1\n ymax = 1\n zmin = -1\n zmax = 0\n[]\n[Stitch]\n type = StitchedMeshGenerator\n inputs = 'Tower Foundation'\n stitch_boundaries_pairs = 'back front'\n[]\n[FoundationInBlock1]\n type = ParsedSubdomainMeshGenerator\n combinatorial_geometry = z<0\n block_id = 1\n input = Stitch\n[]\n[SurfaceOfBlock1]\n type = SideSetsAroundSubdomainGenerator\n block = 1\n input = FoundationInBlock1\n new_boundary = 'surface'\n[]\n[]\n\n\nThis generated exodus file is then loaded into ActivateMesh.i, in which the elements in the tower block are slowly added into the foundation block, and variables added to them. This is analogous to a piece of material being added to the model, from a non-physical \"placeholder\" element to a physical one with variables and physics. This is the input file:\n\n    ActivateMesh.i\n# Tell MOOSE to ignore the physics-less deactivated domain.\n[Problem]\n  kernel_coverage_check = false\n  material_coverage_check = false\n[]\n\n# Load the prepped mesh from an exodus file.\n[Mesh]\n  [Distributed_File]\n    type = FileMeshGenerator\n    file = ${Mesh_File}\n    allow_renumbering = false\n  []\n  allow_renumbering = false\n  parallel_type = DISTRIBUTED\n[]\n\n[Variables]\n  [disp_x]\n    block = 1\n    order = FIRST\n    family = LAGRANGE\n  []\n  [disp_y]\n    block = 1\n    order = FIRST\n    family = LAGRANGE\n  []\n  [disp_z]\n    block = 1\n    order = FIRST\n    family = LAGRANGE\n  []\n  [Cure]\n    block = 1\n    order = FIRST\n    family = LAGRANGE\n  []\n[]\n\n[AuxVariables]\n  [Activation_Time]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n  [Time_Until_Activation]\n    order = CONSTANT\n    family = MONOMIAL\n  []\n[]\n\n[ICs]\n  [Set_Activation_Time]\n    type = FunctionIC\n    variable = 'Activation_Time'\n    function = z\n  []\n[]\n\n[AuxKernels]\n  [Activation_Countdown]\n    type = ParsedAux\n    variable = Time_Until_Activation\n    args = 'Activation_Time'\n    use_xyzt = true\n    function = 'Activation_Time - t'\n    execute_on = 'TIMESTEP_BEGIN TIMESTEP_END'\n    block = 0\n  []\n[]\n\n[UserObjects]\n  [Activation]\n    type = ActivateElementsCoupled\n    execute_on = TIMESTEP_BEGIN\n    coupled_var = Time_Until_Activation\n    activate_value = 0.0\n    activate_type = below\n    active_subdomain_id = 1\n    expand_boundary_name = 'surface'\n    force_postaux = true\n  []\n[]\n\n[Preconditioning]\n  [SMP]\n    type = SMP\n    full = true\n  []\n[]\n\n[Executioner]\n  type = Transient\n\n  start_time = 0\n\n  end_time = 1220000\n  \n  dt = 5\n  \n  solve_type = 'NEWTON'\n  automatic_scaling = true\n[]\n\n[Outputs]\n  [Performance_Graph]\n    type = PerfGraphOutput\n    level = 1\n    heaviest_branch = true\n    heaviest_sections = 10\n  []\n[]\n\n\nThe files are run one after the other using a slurm script, key information is as follows:\n\n5 Nodes\n24 Cores per node\n120 Cores total\nRun with mpirun",
+                  "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4579739",
+                  "updatedAt": "2023-01-03T09:05:50Z",
+                  "publishedAt": "2023-01-03T09:05:50Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "i ll be delayed a bit in looking at this.\nHopefully the issue is still visible with a few elements by changing the mesh, so I can look on a single node at most",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4612780",
+                          "updatedAt": "2023-01-06T14:17:01Z",
+                          "publishedAt": "2023-01-06T14:17:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Yeah I would assume given my experience to date that it has had the same issue on 40, 20, 10 and 5 nodes, and with two totally unrelated meshes, that it should occur on one node with a smaller mesh of the same time, maybe 100,000 elements with 1 activating per step.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4631384",
+                          "updatedAt": "2023-01-09T09:11:38Z",
+                          "publishedAt": "2023-01-09T09:11:38Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "we really need to have a MWE. 1M elements is not a MWE.\nI've run it in serial with 100 elements up to 800,000 time steps without issue.\nSame 112,000 time steps with 2 procs with no issue\nSame 93k time steps with 2 procs with distributed mesh no issue",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4680818",
+                          "updatedAt": "2023-01-13T19:52:26Z",
+                          "publishedAt": "2023-01-13T18:47:18Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Edward-Eth"
+                          },
+                          "bodyText": "Okay, I will look into creating something smaller that shows the issue I'm having.",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4698479",
+                          "updatedAt": "2023-01-16T15:29:22Z",
+                          "publishedAt": "2023-01-16T15:29:22Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "any luck with that?",
+                          "url": "https://github.com/idaholab/moose/discussions/22868#discussioncomment-4870086",
+                          "updatedAt": "2023-02-04T15:51:33Z",
+                          "publishedAt": "2023-02-04T15:51:33Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "importing .msh files and setting boundary conditions",
+          "author": {
+            "login": "jakpatel"
+          },
+          "bodyText": "Hi!\nI'm trying to setup a simple square mesh for the Laplace Young problem in the tutorials using gmsh. When I run the code without any boundary conditions, it runs fine but as soon as I try to set BCs, it keeps telling me:\n(BCs/left/boundary):  the following node sets (ids) do not exist on the mesh: left (1)\nI have a very simple 4-element mesh currently but I've been stuck on this for a while and I don't know how to proceed. Any help is very highly appreciated.\nThanks,\nJ\n.msh:\n$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$PhysicalNames\n4\n1 1 \"left\"\n1 2 \"right\"\n1 3 \"top\"\n1 4 \"bottom\"\n$EndPhysicalNames\n$Nodes\n4\n1 0 0 0\n2 0 1 0\n3 1 1 0\n4 1 0 0\n$EndNodes\n$Elements\n4\n1 1 2 4 1 1 4\n2 1 2 2 2 4 3\n3 1 2 3 3 3 2\n4 1 2 1 4 2 1\n$EndElements\n\n\n.geo:\n\n//+\nPoint(1) = {0, 0, 0, 1.0};\n//+\nPoint(2) = {0, 1, 0, 1.0};\n//+\nPoint(3) = {1, 1, 0, 1.0};\n//+\nPoint(4) = {1, 0, 0, 1.0};\n//+\nPoint(5) = {1, 0, 0, 1.0};\n//+\nLine(1) = {1, 4};\n//+\nLine(2) = {4, 3};\n//+\nLine(3) = {3, 2};\n//+\nLine(4) = {2, 1};\n//+\nCurve Loop(1) = {4, 1, 2, 3};\n//+\nPlane Surface(1) = {1};\n//+\nPhysical Curve(\"left\") = {4};\n//+\nPhysical Curve(\"right\") = {2};\n//+\nPhysical Curve(\"top\") = {3};\n//+\nPhysical Curve(\"bottom\") = {1};\n\nMOOSE Input:\n[Mesh]\n  file = 'squarev2.msh'\n[]\nconstruct_side_list_from_node_list=true\n[Variables]\n  [u]\n  []\n[]\n\n[Kernels]\n  [diffusion]\n    type = LaplaceYoungDiffusion\n    variable = u\n  []\n  [source]\n  \ttype = LaplaceYoungSource\n  \tvariable = u\n  \tkappa = 0.9\n  []\n[]\n\n[BCs]\n  [left]\n    type = DirichletBC\n    variable = u\n    value = 0.2\n    boundary = \"left\"\n  []\n[]\n\n[Executioner]\n  type = Steady\n  solve_type = Newton\n  petsc_options_iname = '-pc_type'\n  petsc_options_value = 'hypre'\n[]\n\n[Outputs]\n  vtk = true\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23129",
+          "updatedAt": "2023-02-04T15:48:13Z",
+          "publishedAt": "2023-01-10T20:06:24Z",
+          "category": {
+            "name": "Q&A Meshing"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nShould this be a 2D mesh? It looks 1D (multiple 1D segments). If it's 1D then a boundary is not a segment, it's a point\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4649806",
+                  "updatedAt": "2023-01-10T21:00:56Z",
+                  "publishedAt": "2023-01-10T21:00:55Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jakpatel"
+                          },
+                          "bodyText": "Hi GuidGuid, thanks for your reply. I'm basically just trying to make a square. I did a lot of different permutations on the input file. This was the simplest one. But the idea is to draw a 2D square, discretize it, and then have moose read it and run a problem. I eventually need to be able to read in large unstructured grids with multiple materials scattered randomly in the system but I'm currently not even able to do a square. Help?",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4649924",
+                          "updatedAt": "2023-01-10T21:15:12Z",
+                          "publishedAt": "2023-01-10T21:15:12Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "This is a problem with your gmsh mesh though. You are not making a  filled square here, just the outer boundary.\nIf you need a square mesh\nhttps://mooseframework.inl.gov/source/meshgenerators/CartesianMeshGenerator.html",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4649974",
+                          "updatedAt": "2023-01-10T21:22:00Z",
+                          "publishedAt": "2023-01-10T21:22:00Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jakpatel"
+                          },
+                          "bodyText": "I refined the mesh slightly:\n$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$PhysicalNames\n4\n1 1 \"left\"\n1 2 \"right\"\n1 3 \"top\"\n1 4 \"bottom\"\n$EndPhysicalNames\n$Nodes\n8\n1 0 0 0\n2 0 1 0\n3 1 1 0\n4 1 0 0\n5 0.4999999999986718 0 0\n6 1 0.4999999999986718 0\n7 0.5000000000013305 1 0\n8 0 0.5000000000013305 0\n$EndNodes\n$Elements\n8\n1 1 2 4 1 1 5\n2 1 2 4 1 5 4\n3 1 2 2 2 4 6\n4 1 2 2 2 6 3\n5 1 2 3 3 3 7\n6 1 2 3 3 7 2\n7 1 2 1 4 2 8\n8 1 2 1 4 8 1\n$EndElements\nsqr_mesh_ex.pdf",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4649993",
+                          "updatedAt": "2023-01-10T21:23:45Z",
+                          "publishedAt": "2023-01-10T21:23:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It still reads as a 1D multi-segment mesh in MOOSE\nI m not sure what's wrong, I dont use gmsh.",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4650119",
+                          "updatedAt": "2023-01-10T21:38:20Z",
+                          "publishedAt": "2023-01-10T21:38:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "jakpatel"
+                          },
+                          "bodyText": "No worries! I'll keep trying and see if I'm doing something wrong with gmsh. Plmk if you think of a workaround. Thanks! :)",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4650181",
+                          "updatedAt": "2023-01-10T21:45:02Z",
+                          "publishedAt": "2023-01-10T21:45:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "@grmnptr do you see why his mesh isnt 2D ?",
+                          "url": "https://github.com/idaholab/moose/discussions/23129#discussioncomment-4650836",
+                          "updatedAt": "2023-01-10T23:29:44Z",
+                          "publishedAt": "2023-01-10T23:29:43Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Problem with calculation result",
+          "author": {
+            "login": "Chaoyue-Liu"
+          },
+          "bodyText": "Dear Moose Team,\nI built a model for lithium ion battery electrochemistry, and I got this wierd problem. You can find the header files, source files, and input files in here https://github.com/Chaoyue-Liu/model.\nIf you 3D_full_model.i, even though it converge really quick, the result doesn't make sense. Especially if you change the phis_neumann boundary condition value from negative to positive, the result doesn't change at all. But if I delete the Volum3_TET4 domain at the bottom, which is a current conductor with equation of ohm's law, the result is right. I wonder why this is happening, could you check it? Many thanks!",
+          "url": "https://github.com/idaholab/moose/discussions/23258",
+          "updatedAt": "2023-06-24T19:56:38Z",
+          "publishedAt": "2023-01-26T17:06:13Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nI looked at your mesh and there's very high ratios between the element volumes. That could have been an issue.\nCan you attach the convergence log please?\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4800237",
+                  "updatedAt": "2023-01-27T19:45:25Z",
+                  "publishedAt": "2023-01-27T19:45:24Z",
+                  "isAnswer": false,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "Hello,\nI regenerated the meshes with a lower element volume ratio and run the simulations. The screenshots of results and convergence log are attached in the problem folder https://github.com/Chaoyue-Liu/model. The issue is still the same.\n\nFor both simulation with or without current conductor, they cannot proceed to the end of calculation.\nWith the same boundary condition, adding the current conductor will cause the calculation totally inversed. Also changing the sign of the boundary condition doesn't take any effect on the result as you can see in the screenshots.\nThe model no_cc (no current conductor) can calculate the correct initial potential of phis=4.2, but the model with cc cannot, the initial phis=3.9 which is just my input initial value\nFor the model no_cc, the output terminal_potential, which you can find in the log, seems turbulating instead of monotonically decreases as cs_integral increases\nThank you!",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4821123",
+                          "updatedAt": "2023-01-30T17:14:46Z",
+                          "publishedAt": "2023-01-30T16:58:15Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nWhich log in particular should I look at?\nI looked at this one:\nlog\nIt seems the linear solve does not converge. You can see it stabilize at a given residual and stop improving.\nPlease have a look at using a different preconditioner\nhttps://mooseframework.inl.gov/syntax/Preconditioning/\nThis has more on preconditionig (this is an executioner though, but these info on preconditioning are valid outside of it)\nhttps://mooseframework.inl.gov/source/executioners/Steady.html\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4821608",
+                          "updatedAt": "2023-01-30T17:56:46Z",
+                          "publishedAt": "2023-01-30T17:56:46Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "Hello\nI'll look into the preconditioner, thank you. I hope that you could take a look at both two models so I attached the two logs. The biggest problem of the model is not just convergence, but also the problem that adding the current conductor domain(which only applies a laplacian equation for static potential calculation) will totally change the calculation result, and the sign of neumann boundary condition doesn't take effect. Could you check what is causing this?",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4821670",
+                          "updatedAt": "2023-01-30T18:03:26Z",
+                          "publishedAt": "2023-01-30T18:03:25Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "if the solution is not converged, the results can be whatever. There is no guarantee. I think we should focus on getting a clean linear then non linear convergence.",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4821928",
+                          "updatedAt": "2023-01-30T18:32:45Z",
+                          "publishedAt": "2023-01-30T18:32:45Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "I see. I will try the different preconditioners to see if I can get a better linear convergence. Thanks!",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4832462",
+                          "updatedAt": "2023-01-31T17:32:57Z",
+                          "publishedAt": "2023-01-31T17:32:56Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "Chaoyue-Liu"
+                          },
+                          "bodyText": "Hello Guillaume, I've got it run properly by changing the preconditioner. Many thanks! There is still one problem.\n\nHere are the domains that calculate the variable phis by ADMatDiffusion. The diffusivity of the bottom blue cube should 3.5e7, which is much higher than the rest, which is of the magnitude of 0.1 or 1. This will cause a calculation fail to converge. But if I change 3.5e7 to a value of much smaller magnitude, the model is able to run. Is there any way to make it possible to run with value of 3.5e7?\nThe following is the error message:\nFramework Information:\nMOOSE Version:           git commit 58950ae311 on 2022-09-22\nLibMesh Version:\nPETSc Version:           3.16.6\nSLEPc Version:           3.16.2\nCurrent Time:            Wed Feb  1 14:05:00 2023\nExecutable Timestamp:    Wed Feb  1 11:06:28 2023\n\nParallelism:\n  Num Processors:          4\n  Num Threads:             1\n\nMesh:\n  Parallel Type:           replicated\n  Mesh Dimension:          3\n  Spatial Dimension:       3\n  Nodes:\n    Total:                 30399\n    Local:                 7790\n    Min/Max/Avg:           6820/8021/7599\n  Elems:\n    Total:                 163571\n    Local:                 40893\n    Min/Max/Avg:           40892/40893/40892\n  Num Subdomains:          5\n  Num Partitions:          4\n  Partitioner:             metis\n\nNonlinear System:\n  Num DOFs:                76287\n  Num Local DOFs:          19153\n  Variables:               \"phis\" { \"phil\" \"cl\" } \"cs\"\n  Finite Element Types:    \"LAGRANGE\" \"LAGRANGE\" \"LAGRANGE\"\n  Approximation Orders:    \"FIRST\" \"FIRST\" \"FIRST\"\n\nExecution Information:\n  Executioner:             Transient\n  TimeStepper:             IterationAdaptiveDT\n  Solver Mode:             NEWTON\n  MOOSE Preconditioner:    SMP (auto)\n\nLEGACY MODES ENABLED:\n This application uses the legacy material output option: material properties are output only on TIMESTEP_END, not INITIAL. To remove this message, set 'use_legacy_material_output' to false in this application. If there are gold output files that contain material property output for which output occurs on INITIAL, then these will generate diffs due to zero values being stored, and these tests should be re-golded.\n\n\n    Building SemiLocalElemMap                                                            [  5.25 s] [    0 MB]\n  Finished Performing Initial Setup                                                      [  9.48 s] [    1 MB]\nStill Executing\nTime Step 0, time = 0\n\nPostprocessor Values:\n+----------------+----------------+--------------------+\n| time           | cs_integral    | terminal_potential |\n+----------------+----------------+--------------------+\n|   0.000000e+00 |   0.000000e+00 |       0.000000e+00 |\n+----------------+----------------+--------------------+\n\n\nTime Step 1, time = 10, dt = 10\n\nPerforming automatic scaling calculation\n\n 0 Nonlinear |R| = 2.549927e+02\n      0 Linear |R| = 2.549927e+02\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to FACTOR_OUTMEMORY\nNonlinear solve did not converge due to DIVERGED_LINE_SEARCH iterations 0\n Solve Did NOT Converge!\n  Finished Solving                                                                       [ 20.82 s] [   86 MB]\nAborting as solve did not converge\n\nSolve failed, cutting timestep.\n\nTime Step 1, time = 5, dt = 5\n 0 Nonlinear |R| = 2.549927e+02\n      0 Linear |R| = 2.549927e+02\n  Linear solve did not converge due to DIVERGED_PC_FAILED iterations 0\n                 PC failed due to FACTOR_OUTMEMORY",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4840350",
+                          "updatedAt": "2023-02-01T13:06:50Z",
+                          "publishedAt": "2023-02-01T13:06:49Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "You ll want to look at preconditioning again\nWhat s happening is that the conditioning of your matrix is likely becoming poor as the coeficients in part of the system are becoming much larger than in others.\nYou could try to separate the variables there, using interface kernels to make the connection between the sets of variables, and using automatic scaling to scale the equations.\nI m afraid we dont have spatially dependent preconditioning",
+                          "url": "https://github.com/idaholab/moose/discussions/23258#discussioncomment-4868019",
+                          "updatedAt": "2023-02-04T06:51:14Z",
+                          "publishedAt": "2023-02-04T06:51:13Z",
+                          "isAnswer": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "can we change nl_abs_tol over time?",
+          "author": {
+            "login": "mortezaaesmaeilpour"
+          },
+          "bodyText": "Hi\nIs it possible to define absolute tolerance (nl_abs_tol) as a time function? (vary over time)",
+          "url": "https://github.com/idaholab/moose/discussions/23318",
+          "updatedAt": "2023-02-04T06:39:57Z",
+          "publishedAt": "2023-02-02T14:15:34Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nWe currently cannot. It's something we have had a lot of interest for, but there's no dedicated funding/resource to do that right now\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23318#discussioncomment-4853088",
+                  "updatedAt": "2023-02-02T15:46:43Z",
+                  "publishedAt": "2023-02-02T15:46:42Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "If you use automatic scaling and set compute_scaling_once = false, the absolute nonlienar tolerance will vary along with the problem , so that is some way to get it to vary if it s becoming too loose with time.\nThe other option is to rely on relative tolerances as much as possible",
+                          "url": "https://github.com/idaholab/moose/discussions/23318#discussioncomment-4867989",
+                          "updatedAt": "2023-02-04T06:39:57Z",
+                          "publishedAt": "2023-02-04T06:39:57Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "How to save solution and plot solution at every iteration",
+          "author": {
+            "login": "salaudeen-ya"
+          },
+          "bodyText": "Hello,\nI am trying to solve a simple laplace equation in 2D through MultiAPP coupling. I have a working input file but I would like to save the solution at every iteration and then be able to plot it. How best to do that?\n\nParaview Question\nI am trying to plot two different systems beside each other. The variation of the temperature in these systems should vary accordingly. However, Paraview is given me different color map and I need these two images (attached) to look exactly like the single image(also attached). How do I do that?\nND: The magnitude in the two images are exactly the same. Only that the color representation in the first two images made it look like the image on the right has zero values.",
+          "url": "https://github.com/idaholab/moose/discussions/23320",
+          "updatedAt": "2023-02-04T06:38:28Z",
+          "publishedAt": "2023-02-02T17:25:17Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "In Paraview you can use the colobar scaling with the \"C\" on it (for custom) to set the same manual bounds for both visualizations",
+                  "url": "https://github.com/idaholab/moose/discussions/23320#discussioncomment-4854144",
+                  "updatedAt": "2023-02-02T17:26:42Z",
+                  "publishedAt": "2023-02-02T17:26:41Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Oh I missed the main question\nYou can output on linear and nonlinear iterations by setting the execute_on parameter of the Outputs block (or the exodus subblock of the [Ouputs]).\nSo something like: execute_on = 'linear nonlinear timestep_end'\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23320#discussioncomment-4867984",
+                          "updatedAt": "2023-02-04T06:38:27Z",
+                          "publishedAt": "2023-02-04T06:38:27Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "MOOSE for plastic forming processes (forging, rolling)",
+          "author": {
+            "login": "CinekPoland"
+          },
+          "bodyText": "Hello everyone. Can the \"moose\" software effectively simulate plastic forming processes such as forging, rolling? Does the software scale well?",
+          "url": "https://github.com/idaholab/moose/discussions/23281",
+          "updatedAt": "2023-06-24T19:56:20Z",
+          "publishedAt": "2023-01-30T21:30:49Z",
+          "category": {
+            "name": "Q&A General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThe software scales very well overall, see our publications for this. It will depend on the particular application.\nI dont think we have plastic industrial processes implemented, but we are able to model plasticity. It might just be a single step missing, I am ignorant about this\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23281#discussioncomment-4867971",
+                  "updatedAt": "2023-02-04T06:33:34Z",
+                  "publishedAt": "2023-02-04T06:33:33Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": []
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Performaning Plastic Deformation Visualization",
+          "author": {
+            "login": "TLWise"
+          },
+          "bodyText": "I am running the sample model \"(modules/combined/test/tests/combined_plasticity_temperature/ad_plasticity_temperature_dep_yield.i)\". Is there a way to visualize the mesh deformation of the object in relation to the displacements?",
+          "url": "https://github.com/idaholab/moose/discussions/23337",
+          "updatedAt": "2023-02-03T18:50:03Z",
+          "publishedAt": "2023-02-03T18:30:32Z",
+          "category": {
+            "name": "Q&A Modules: Solid mechanics"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hello\nThere should be a use_displaced-mesh parameter you can use to output the exodus with the displacement.\nOtherwise you can also look at the displacement as a field variable\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23337#discussioncomment-4864955",
+                  "updatedAt": "2023-02-03T18:36:56Z",
+                  "publishedAt": "2023-02-03T18:36:56Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "TLWise"
+                          },
+                          "bodyText": "That was a quick and simple fix. Thank you very much for your continued support.",
+                          "url": "https://github.com/idaholab/moose/discussions/23337#discussioncomment-4865067",
+                          "updatedAt": "2023-02-03T18:50:04Z",
+                          "publishedAt": "2023-02-03T18:50:03Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Spherical particles within a medium: modelling heat flows",
+          "author": {
+            "login": "WilkAndy"
+          },
+          "bodyText": "Hi everyone,\nA collaborator of mine is considering the problem in which a hot fluid flows through a medium that contains a number of cool, solid spheres.  Let's call the space in which the fluid flows the \"interstellar space\" and the spheres \"planets\".  The fluid slowly heats the planets, via heat transfer and heat conduction through the spherical body, which cools the fluid via heat transfer.   Let's think of ways this could be modelled.\nHere's one way: create a conforming mesh (so the mesh contains the interstellar space (eg block=1) and the planets (eg block=2)).  Use NavierStokes or PorousFlow to flow through the interstellar space, use heat conduction to solve heat conduction in the planets, and a heat-transfer coefficient between them both.\nBut my collaborator is wondering: what if the planets are spherical and small, so that perhaps their temperature distribution can be considered a function of radius alone?  (If they were big then the parts facing the fluid source would heat first, but in this Discussion, let's assume this is unimportant.)  Then perhaps we could treat them in a separate MultiApp, with a spherically-symmetric type of Problem?   Ideas?",
+          "url": "https://github.com/idaholab/moose/discussions/23262",
+          "updatedAt": "2023-02-03T18:48:49Z",
+          "publishedAt": "2023-01-26T22:32:46Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "Hi Andy\nBoth these approaches are feasible.\nIn fact something similar is performed using the NEAMS tools for pebble bed reactors.\nThe first idea seems feasible though maybe a tad computationally expensive, depending on the fluid flow regime and the size of the meshes for heat conduction and for fluid flow.\nThe second idea is performed in this example on the Virtual Test Bed for pebble bed reactor simulations\nYou need Pronghorn to run these inputs, but taking a look it's fairly obvious what is being done\nhttps://github.com/idaholab/virtual_test_bed/blob/devel/pbfhr/steady/ss1_combined.i\nThe fluid flow is the ss1 input, then the ss3 input is a coarse mesh representing the pebble locations, and ss4 inputs are pebbles (planets here) that exchange surface boundary conditions.\nThe MultiApp are 1D spherical calculations. They receive the surface fluid temperature for the heat conduction problem.\nThey do not send back any info to the fluid solve. They would be sending a heat flux, but we do that separately here.\nGuillaume",
+                  "url": "https://github.com/idaholab/moose/discussions/23262#discussioncomment-4800084",
+                  "updatedAt": "2023-01-27T19:23:29Z",
+                  "publishedAt": "2023-01-27T19:23:28Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "WilkAndy"
+                          },
+                          "bodyText": "Wow, this is great, thank you @GiudGiud .  My collaborator (Julia) will be studying that input file in lots of detail!",
+                          "url": "https://github.com/idaholab/moose/discussions/23262#discussioncomment-4801042",
+                          "updatedAt": "2023-01-27T21:54:04Z",
+                          "publishedAt": "2023-01-27T21:54:03Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "JuliaHLee"
+                          },
+                          "bodyText": "Thanks a lot, @WilkAndy  and @GiudGiud!\nI am the collaborator who asked for help. It is great to know that there is an example for this kind of problem. I would like to try to run this input files using MultiApp. But when I tried to get information about Pronghorn on the MOOSE website, I found that the access seems to be protected. I assume that I will need to install Pronghorn first to run these input files, right? Could you let me know if I can get access to the information about Pronghorn and installation of the app?\nI hope the discussion is still opened to ask further on this issue. It would be great if I get a clue about using the app.\nBest regards,\nJulia",
+                          "url": "https://github.com/idaholab/moose/discussions/23262#discussioncomment-4860107",
+                          "updatedAt": "2023-02-03T09:19:59Z",
+                          "publishedAt": "2023-02-03T09:19:58Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "Hello\nPronghorn is export controlled. You ll have to ask for access here and let us know\nIt can take a couple weeks depending on when you apply and when they meet to consider your application\nhttps://ncrcaims.inl.gov/Identity/Account/Login\n@aprilnovak 's thesis has all the equations that are implemented in Pronghorn wrt to porous media with \"pebbles\", including the distributed spherical simulations\nPronghorn manual can help too\nhttps://inldigitallibrary.inl.gov/sites/sti/sti/Sort_24425.pdf\nGuillaume",
+                          "url": "https://github.com/idaholab/moose/discussions/23262#discussioncomment-4864121",
+                          "updatedAt": "2023-02-03T16:55:59Z",
+                          "publishedAt": "2023-02-03T16:55:20Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "aprilnovak"
+                          },
+                          "bodyText": "Hi all, thanks for the interest in this! I want to note that the heterogeneous heat conduction method in Pronghorn (i.e. the multiscale method used to approximate particle temperatures distributed through a medium) is almost entirely accessible through open-source parts of MOOSE. I believe there is just one object in Pronghorn (a LinearCombinationMatchedValueBC that sets a dirichlet value as coupled Variable + Postprocessor) that you'd need to do this open-source.\nAs part of other work at ANL, I was planning in the next few months to move that one object into the open-source part of MOOSE (because it's so generic it has nothing to do with nuclear physics), effectively making the heterogeneous heat conduction approach open-source.",
+                          "url": "https://github.com/idaholab/moose/discussions/23262#discussioncomment-4865058",
+                          "updatedAt": "2023-02-03T18:48:50Z",
+                          "publishedAt": "2023-02-03T18:48:49Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "title": "Auxvariable as a function of position along a specified distance/length in the model",
+          "author": {
+            "login": "batodon"
+          },
+          "bodyText": "Hello, I\u2019m using the ParsedFunction to implement an Auxvariable that depends on a specific execution time (e.g., timestep_end) and position along a distance (e.g., along the x-axis) in the model. My function should look like this:\nZ= R/sqrt(t), where R is the position along the specified length and t is the execution time. Could anyone please help with possible leads? Here is a snippet of my code. Thank you.\n[Functions]\n  [sol_variable]\n   type = ParsedFunction \n   value = ??\n  []\n[] \n\n[AuxKernels]\n [Z]\n    type = FunctionAux\n    variable = Z\n    function = sol_variable\n []\n[]\n\n[AuxVariables]\n [Z]\n    order = FIRST\n    family = LAGRANGE\n  []\n[]",
+          "url": "https://github.com/idaholab/moose/discussions/23333",
+          "updatedAt": "2023-02-03T18:41:39Z",
+          "publishedAt": "2023-02-02T23:30:36Z",
+          "category": {
+            "name": "Q&A Modules: General"
+          },
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "author": {
+                    "login": "GiudGiud"
+                  },
+                  "bodyText": "timestep_end is not a variable\nIt should be t for time",
+                  "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856749",
+                  "updatedAt": "2023-02-02T23:41:11Z",
+                  "publishedAt": "2023-02-02T23:41:10Z",
+                  "isAnswer": true,
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Sure @GiudGiud. Sorry, that value in the ParsedFunction is not correct. It is just an 'example' to show what I really want to implement \ud83d\ude0a.",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856817",
+                          "updatedAt": "2023-02-02T23:56:22Z",
+                          "publishedAt": "2023-02-02T23:54:59Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "do this then (with a new version of MOOSE, we changed the parameters)\n[Functions]\n  [sol_variable]\n   type = ParsedFunction \n   expression = R/sqrt(t)\n   symbol_names = R\n   symbol_values = \"${R}\"\n  []\n[] \n\nR being defined somewhere else in the input file as\nR = some_value\n\nif R is not a constant. you ll need to adapt this",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856839",
+                          "updatedAt": "2023-02-02T23:58:51Z",
+                          "publishedAt": "2023-02-02T23:58:50Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Ok. I got you. How will I define R, though? R is the position along the entire length of my domain (for example, the x-axis). I want to output my final result at (let's say) 10 positions/points along the x-axis.",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856935",
+                          "updatedAt": "2023-02-03T00:09:15Z",
+                          "publishedAt": "2023-02-03T00:08:23Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "oh then use x instead of R\nyou can then get rid of these two lines\nsymbol_names = R\nsymbol_values = \"${R}\"\nfor output, use a vectorpostprocessor\nhttps://mooseframework.inl.gov/source/vectorpostprocessors/LineFunctionSampler.html",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856950",
+                          "updatedAt": "2023-02-03T00:11:45Z",
+                          "publishedAt": "2023-02-03T00:11:44Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Great, this is exactly what I want (the vectorpostprocessor). Thanks, Guillaume.  \ud83d\udc4d",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4856977",
+                          "updatedAt": "2023-02-03T00:15:09Z",
+                          "publishedAt": "2023-02-03T00:15:08Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "batodon"
+                          },
+                          "bodyText": "Hello @GiudGiud, probably trivial, but I tried using the log function in my ParsedFunction, but the input file did not accept it. How could I do this, please? I want a function like Z= log(x/sqrt(t)). Thank you.",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4864668",
+                          "updatedAt": "2023-02-03T17:59:03Z",
+                          "publishedAt": "2023-02-03T17:59:02Z",
+                          "isAnswer": false
+                        }
+                      },
+                      {
+                        "node": {
+                          "author": {
+                            "login": "GiudGiud"
+                          },
+                          "bodyText": "It should\nsee this manual for what is supported\nhttp://warp.povusers.org/FunctionParser/fparser.html",
+                          "url": "https://github.com/idaholab/moose/discussions/23333#discussioncomment-4864826",
+                          "updatedAt": "2023-02-03T18:20:33Z",
+                          "publishedAt": "2023-02-03T18:20:32Z",
+                          "isAnswer": false
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}
