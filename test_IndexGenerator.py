@@ -34,7 +34,7 @@ class TestIndexGenerator(unittest.TestCase):
 
       # load_local needs to be true within INL network because Zscalar block Huggingface online mode
       self.load_local = True
-      self.model_path = Path('../../../../../../LLM/pretrained_models/')
+      self.model_path = Path('model')
       self.model_name = 'all-MiniLM-L12-v2'
       self.show_progress = False
       self.database = Path("testdatabase")

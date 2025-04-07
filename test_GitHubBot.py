@@ -14,7 +14,7 @@ class TestGitHubBot(unittest.TestCase):
     def setUp(self):
 
         self.db_dir = Path("testdatabase")
-        self.model_path = Path('../../../../../../LLM/pretrained_models/')
+        self.model_path = Path('model')
         self.top_n = 5
         self.threshold = 0.2
         self.model_name = 'all-MiniLM-L12-v2'
