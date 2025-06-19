@@ -4,6 +4,7 @@
 [![GitHub contributors](https://img.shields.io/github/contributors/MengnanLi91/moose-discussion-bot)](https://github.com/MengnanLi91/moose-discussion-bot/graphs/contributors)
 
 
+
 This repository contains a Python-based auto-response bot that leverages the GitHub API and the open-source LlamaIndex package to automatically generate responses to discussions on GitHub. The bot monitors GitHub MOOSE repository discussions and provides the most relevant posts when a new discussion is initiated by users. We call it R.A.N.G.E.R. – "Responsive Assistant for Navigating and Guiding Engineering with Rigor"
 
 ## How It Works
