@@ -7,8 +7,18 @@ import os
 import certifi
 from typing import Optional, Dict, Any
 
+
 class GitHubAPI:
-    def __init__(self, end_point: str, num_discussion: int, num_comment: int, num_reply: int, min_credit: int, out_dir: str, dry_run: bool) -> None:
+    def __init__(
+        self,
+        end_point: str,
+        num_discussion: int,
+        num_comment: int,
+        num_reply: int,
+        min_credit: int,
+        out_dir: str,
+        dry_run: bool,
+    ) -> None:
         """
         Initialize the GitHubAPI class with endpoint, query parameters, output directory, and dry run mode.
 
@@ -33,12 +43,14 @@ class GitHubAPI:
         self.end_cursor: str = "null"
         self.dry_run: bool = dry_run
         load_dotenv()
-        self.query_template: str = Path("query.gql.in").read_text()
+        self.query_template: str = Path("src/moose_discussion_bot/query.gql.in").read_text()
         self.GITHUB_TOKEN: Optional[str] = os.getenv("GITHUB_TOKEN")
         self.headers: dict = {"Authorization": f"bearer {self.GITHUB_TOKEN}"}
         self.out_dir.mkdir(exist_ok=True)
 
-    def log(self, begin_cursor: str, end_cursor: str, remaining: int, has_next_page: bool) -> None:
+    def log(
+        self, begin_cursor: str, end_cursor: str, remaining: int, has_next_page: bool
+    ) -> None:
         """
         Log the details of the current API request.
 
@@ -66,10 +78,19 @@ class GitHubAPI:
                 self.num_reply,
             )
             if self.dry_run:
-                print("Dry run: would execute query with cursor {}".format(self.end_cursor))
+                print(
+                    "Dry run: would execute query with cursor {}".format(
+                        self.end_cursor
+                    )
+                )
                 break
 
-            response: requests.Response = requests.post(self.end_point, headers=self.headers, json={"query": query}, verify=certifi.where())
+            response: requests.Response = requests.post(
+                self.end_point,
+                headers=self.headers,
+                json={"query": query},
+                verify=certifi.where(),
+            )
             if response.status_code == self.STATUS_SUCCESS:
                 result: dict = response.json()
                 if "data" not in result:
@@ -78,13 +99,17 @@ class GitHubAPI:
                     exit()
 
                 begin_cursor: str = self.end_cursor
-                page_info: dict = result["data"]["repository"]["discussions"]["pageInfo"]
+                page_info: dict = result["data"]["repository"]["discussions"][
+                    "pageInfo"
+                ]
                 self.has_next_page = page_info["hasNextPage"]
                 self.end_cursor = '"' + page_info["endCursor"] + '"'
                 remaining: int = result["data"]["rateLimit"]["remaining"]
                 self.has_remaining_credit = remaining >= self.min_credit
                 self.log(begin_cursor, self.end_cursor, remaining, self.has_next_page)
-                out_file: Path = self.out_dir / "{}_{}.json".format(begin_cursor, self.end_cursor)
+                out_file: Path = self.out_dir / "{}_{}.json".format(
+                    begin_cursor, self.end_cursor
+                )
                 with out_file.open("w") as file:
                     json.dump(result["data"]["repository"], file, indent=2)
             else:
@@ -95,15 +120,48 @@ class GitHubAPI:
         if not self.has_next_page:
             print("All discussions have been fetched.")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch data from GitHub API.")
-    parser.add_argument('--end_point', type=str, default="https://api.github.com/graphql", help="The GitHub GraphQL API endpoint.")
-    parser.add_argument('--num_discussion', type=int, default=10, help="Number of discussions to retrieve.")
-    parser.add_argument('--num_comment', type=int, default=10, help="Number of comments per discussion to retrieve.")
-    parser.add_argument('--num_reply', type=int, default=10, help="Number of replies per comment to retrieve.")
-    parser.add_argument('--min_credit', type=int, default=100, help="Minimum credit required to continue making API requests.")
-    parser.add_argument('--out_dir', type=str, default="response", help="Directory to save the response files.")
-    parser.add_argument('--dry_run', action='store_true', help="Run the script in dry run mode.")
+    parser.add_argument(
+        "--end_point",
+        type=str,
+        default="https://api.github.com/graphql",
+        help="The GitHub GraphQL API endpoint.",
+    )
+    parser.add_argument(
+        "--num_discussion",
+        type=int,
+        default=10,
+        help="Number of discussions to retrieve.",
+    )
+    parser.add_argument(
+        "--num_comment",
+        type=int,
+        default=10,
+        help="Number of comments per discussion to retrieve.",
+    )
+    parser.add_argument(
+        "--num_reply",
+        type=int,
+        default=10,
+        help="Number of replies per comment to retrieve.",
+    )
+    parser.add_argument(
+        "--min_credit",
+        type=int,
+        default=100,
+        help="Minimum credit required to continue making API requests.",
+    )
+    parser.add_argument(
+        "--out_dir",
+        type=str,
+        default="response",
+        help="Directory to save the response files.",
+    )
+    parser.add_argument(
+        "--dry_run", action="store_true", help="Run the script in dry run mode."
+    )
 
     args = parser.parse_args()
 
@@ -114,6 +172,6 @@ if __name__ == "__main__":
         num_reply=args.num_reply,
         min_credit=args.min_credit,
         out_dir=args.out_dir,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
     )
     api.fetch_data()

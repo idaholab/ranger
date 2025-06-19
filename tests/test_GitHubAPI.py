@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from GitHubAPI import GitHubAPI
+from moose_discussion_bot import GitHubAPI
 
 
 def fake_read_text(self):
@@ -66,7 +66,7 @@ class TestGitHubAPI(unittest.TestCase):
         for call, expected in zip(actual_calls, expected_calls):
             self.assertEqual(call, expected)
 
-    @patch("GitHubAPI.Path.read_text", new=fake_read_text)
+    @patch("pathlib.Path.read_text", new=fake_read_text)
     @patch("builtins.print")
     def test_fetch_data_dry_run(self, mock_print):
         # Set dry_run to True so that no network call is made.
@@ -78,7 +78,7 @@ class TestGitHubAPI(unittest.TestCase):
             "Dry run: would execute query with cursor {}".format(self.api.end_cursor)
         )
 
-    @patch("GitHubAPI.Path.read_text", new=fake_read_text)
+    @patch("pathlib.Path.read_text", new=fake_read_text)
     @patch("requests.post")
     @patch("builtins.print")
     def test_fetch_data_success(self, mock_print, mock_post):
@@ -105,7 +105,12 @@ class TestGitHubAPI(unittest.TestCase):
         self.api.fetch_data()
 
         # Check that a log was printed.
-        self.assertTrue(any("Remaining credit:" in call.args[0] for call in mock_print.call_args_list))
+        self.assertTrue(
+            any(
+                "Remaining credit:" in call.args[0]
+                for call in mock_print.call_args_list
+            )
+        )
 
         # Check that a file was written in the out_dir.
         # The filename is created from the begin and new end cursor values.
@@ -113,7 +118,7 @@ class TestGitHubAPI(unittest.TestCase):
         file_path = Path(self.out_dir) / expected_filename
         self.assertTrue(file_path.exists())
 
-    @patch("GitHubAPI.Path.read_text", new=fake_read_text)
+    @patch("moose_discussion_bot.GitHubAPI.Path.read_text", new=fake_read_text)
     @patch("requests.post")
     @patch("builtins.print")
     def test_fetch_data_error_status(self, mock_print, mock_post):
