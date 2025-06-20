@@ -1,5 +1,5 @@
 """
-This package contains all the unit tests for MyPackage.
+This package contains all the unit tests.
 """
 
 __all__ = []
