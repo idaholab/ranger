@@ -1,10 +1,10 @@
-# moose-discussion-bot
+# RANGER
 
 [![GitHub license](https://img.shields.io/github/license/MengnanLi91/moose-discussion-bot)](https://github.com/MengnanLi91/moose-discussion-bot/blob/main/LICENSE)
 [![GitHub contributors](https://img.shields.io/github/contributors/MengnanLi91/moose-discussion-bot)](https://github.com/MengnanLi91/moose-discussion-bot/graphs/contributors)
 
 
-This repository contains a Python-based auto-response bot that leverages the GitHub API and the open-source LlamaIndex package to automatically generate responses to discussions on GitHub. The bot monitors GitHub MOOSE repository discussions and provides the most relevant posts when a new discussion is initiated by users.
+This repository contains a Python-based auto-response bot that leverages the GitHub API and the open-source LlamaIndex package to automatically generate responses to discussions on GitHub. The bot monitors GitHub MOOSE repository discussions and provides the most relevant posts when a new discussion is initiated by users. We call it R.A.N.G.E.R. – "Responsive Assistant for Navigating and Guiding Engineering with Rigor"
 
 ## How It Works
 The bot uses the GitHub API to fetch discussions from a MOOSE repository and store the data in a vector database. When a new discussion is initiated, the algorithm compares the discussion title with the content of all previous discussions (title + discussions) in the database and provides the most relevant posts to the user. The database is updated regularly to include all new posts, potentially on a monthly basis.
