@@ -246,7 +246,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_path",
         type=str,
-        default=Path("../../../../../../LLM/pretrained_models/"),
+        default=Path("models"),
         help="Path to the local model.",
     )
     parser.add_argument(

@@ -157,7 +157,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--show_progress", action="store_true", help="Show embedding progress."
     )
-    # The transformer model needed to be downloaded locally due to INL block huggingface online mode. While running on Github workflow, it can successfully pull the model from Huggingface website
     parser.add_argument(
         "--model_path",
         type=str,
