@@ -85,6 +85,11 @@ Separate unit tests are developed for each class in the repository using `unitte
 2. `test_IndexGenerator.py`: Contains unit tests for `IndexGenerator.py`.
 3. `test_GitHubBot.py`: Contains unit tests for `GitHubBot.py`. The `testdatabase` in the repository is needed to complete the `test_load_database` unit test.
 
+To run the tests:
+```bash
+PYTHONPATH=src/ pytest tests/
+```
+
 ## Contact
 If you have any questions or suggestions, feel free to contact @MengnanLi91.
 
