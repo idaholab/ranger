@@ -17,7 +17,7 @@ import json
 import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from moose_discussion_bot import GitHubAPI
+from RANGER import GitHubAPI
 
 
 def fake_read_text(self):

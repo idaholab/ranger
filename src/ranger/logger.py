@@ -11,14 +11,8 @@
 # All Rights Reserved.
 # -----------------------------------------------------------------------------
 
-__version__ = "0.1.0"
+import logging
 
-from .GitHubAPI import GitHubAPI
-from .IndexGenerator import IndexGenerator
-from .GitHubBot import GitHubBot
-
-__all__ = [
-    "GitHubAPI",
-    "IndexGenerator",
-    "GitHubBot",
-]
+def setup_logger():
+  logging.basicConfig(level=logging.INFO)
+  return logging.getLogger("RANGER")

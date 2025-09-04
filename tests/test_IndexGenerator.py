@@ -16,7 +16,7 @@ from unittest.mock import patch, mock_open, MagicMock
 import json
 from llama_index.core import Document
 from pathlib import Path
-from moose_discussion_bot import IndexGenerator
+from RANGER import IndexGenerator
 import tempfile
 import os
 
@@ -192,7 +192,7 @@ class TestIndexGenerator(unittest.TestCase):
             "--dry_run",
         ]
         with patch("sys.argv", ["IndexGenerator.py"] + test_args):
-            from moose_discussion_bot import IndexGenerator
+            from RANGER import IndexGenerator
 
             IndexGenerator.generate_index()
             mock_generate_index.assert_called_once()

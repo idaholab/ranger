@@ -1,3 +1,16 @@
+# -----------------------------------------------------------------------------
+# This file is part of RANGER
+#
+# A Python‑based auto‑response bot to monitor and generate relevant responses
+# for new discussions in the GitHub MOOSE repository.
+#
+# Licensed under the MIT License; see LICENSE for details:
+#     https://spdx.org/licenses/MIT.html
+#
+# Copyright (c) 2025 Battelle Energy Alliance, LLC.
+# All Rights Reserved.
+# -----------------------------------------------------------------------------
+
 from pathlib import Path
 import requests
 import os
@@ -14,7 +27,7 @@ from llama_index.core import (
 )
 from llama_index.core.retrievers import VectorIndexRetriever
 from llama_index.core.postprocessor import SimilarityPostprocessor
-from typing import List
+from typing import List, Dict, Any, Tuple
 
 
 class GitHubBot:
@@ -42,8 +55,7 @@ class GitHubBot:
             print("Loading model from HuggingFace")
             self.embed_model = HuggingFaceEmbedding(model_name = f'sentence-transformers/{model_name}')
 
-        self.index = self.load_database(db_dir)
-
+        self.index = None
 
     def load_database(self, db_dir: Path) -> SimpleVectorStore:
         Settings.embed_model = self.embed_model
@@ -56,23 +68,70 @@ class GitHubBot:
         return index
 
     def generate_solution(self, title: str, top_n: int, index: SimpleVectorStore, threshold: float) -> str:
-        retriever = VectorIndexRetriever(index=index, similarity_metric='cosine', similarity_top_k=top_n, embed_model=self.embed_model)
-        retrieved_nodes = retriever.retrieve(QueryBundle(title))
+        if index is None:
+            retrieved_nodes = VectorIndexRetriever.retrieve(None, QueryBundle(title))
+        else:
+            retriever = VectorIndexRetriever(
+                index=index,
+                similarity_metric="cosine",
+                similarity_top_k=top_n,
+                embed_model=self.embed_model,
+            )
+            retrieved_nodes = retriever.retrieve(QueryBundle(title))
 
         processor = SimilarityPostprocessor(similarity_cutoff=threshold)
         filtered_nodes = processor.postprocess_nodes(retrieved_nodes)
+        filtered_nodes = self._deduplicate_nodes(filtered_nodes)
 
         result: List[str] = []
         result.append(f"Here are some previous posts that may relate to your question: \n\n")
 
         for idx, node in enumerate(filtered_nodes):
-            result.append(f"{idx + 1}. Title: {node.metadata['title']}")
-            result.append(f"URL: [{node.metadata['url']}]({node.metadata['url']})")
-            result.append(f"Similarity: {node.score:.4f}\n")
+            result.append(
+                f"{idx + 1}. [{node.metadata['url']}]({node.metadata['url']})"
+            )
 
         return "\n".join(result)
 
+
+    def _deduplicate_nodes(self, nodes: List[Any]) -> List[Any]:
+        """
+        Deduplicate by (metadata['url'], metadata['title']).
+        Keeps the item with the highest .score for each pair.
+        """
+        def canon(s: str) -> str:
+            # normalize whitespace + case; trim trailing slash/hash in URLs
+            return " ".join((s or "").split()).strip().lower()
+
+        def canon_url(u: str) -> str:
+            u = (u or "").strip()
+            # drop trailing "/" and fragment-only hashes to collapse trivial variants
+            while u.endswith("/"):
+                u = u[:-1]
+            if "#" in u:
+                u = u.split("#", 1)[0]
+            return canon(u)
+
+        best: Dict[Tuple[str, str], Any] = {}
+        for nws in nodes or []:
+            node = getattr(nws, "node", nws)
+            meta = getattr(node, "metadata", {}) or {}
+            key = (canon_url(meta.get("url", "")), canon(meta.get("title", "")))
+
+            score = getattr(nws, "score", 0) or 0
+            prev = best.get(key)
+            prev_score = (getattr(prev, "score", 0) or 0) if prev is not None else None
+            if prev is None or score > prev_score:
+                best[key] = nws
+
+        # Optional: sort by score, highest first
+        return sorted(best.values(), key=lambda n: getattr(n, "score", 0) or 0, reverse=True)
+
     def query_response(self) -> None:
+
+        if self.index is None:
+            self.index = self.load_database(self.db_dir)
+
         query = '''
         query($owner: String!, $repo: String!, $first: Int!) {
         repository(owner: $owner, name: $repo) {
@@ -161,27 +220,3 @@ class GitHubBot:
             print(response.text)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='GitHub Bot for replying to discussions.')
-
-    default_db_dir = Path(os.getenv('DB_DIR', 'database'))
-    default_top_n = int(os.getenv('TOP_N', 5))
-    default_threshold = float(os.getenv('THRESHOLD', 0.2))
-    default_model_name = os.getenv('MODEL_NAME', 'all-MiniLM-L12-v2')
-
-    parser.add_argument('--load_local', action='store_true', help="Load embedding model locally.")
-    parser.add_argument('--db_dir', type=Path, default=default_db_dir, help='Path to the database directory.')
-    parser.add_argument('--model_path', type=str, default=Path('../../../../../../LLM/pretrained_models/'), help="Path to the local model.")
-    parser.add_argument('--top_n', type=int, default=default_top_n, help='Top N most similar posts to retrieve.')
-    parser.add_argument('--threshold', type=float, default=default_threshold, help='Cutoff threshold for similarity.')
-    parser.add_argument('--model_name', type=str, default=default_model_name, help='Model name for HuggingFace embedding.')
-    parser.add_argument('--dry_run', action='store_true', help='Run the bot in dry run mode without posting comments.')
-
-    args = parser.parse_args()
-
-    bot = GitHubBot(db_dir=args.db_dir, model_path=args.model_path, top_n=args.top_n, threshold=args.threshold, model_name=args.model_name, dry_run=args.dry_run, load_local=args.load_local)
-    bot.query_response()
-
-
-## Reference
-# 1. https://github.com/dhrubasaha08/Discuss-Bot

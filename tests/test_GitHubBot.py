@@ -15,7 +15,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
-from moose_discussion_bot import GitHubBot
+from RANGER import GitHubBot
 import os
 import requests
 

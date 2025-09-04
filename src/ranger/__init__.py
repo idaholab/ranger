@@ -11,8 +11,15 @@
 # All Rights Reserved.
 # -----------------------------------------------------------------------------
 
-import logging
+__version__ = "0.1.0"
 
-def setup_logger():
-  logging.basicConfig(level=logging.INFO)
-  return logging.getLogger("moose_discussion_bot")
+
+from .GitHubAPI import GitHubAPI
+from .IndexGenerator import IndexGenerator
+from .GitHubBot import GitHubBot
+
+__all__ = [
+    "GitHubAPI",
+    "IndexGenerator",
+    "GitHubBot",
+]
