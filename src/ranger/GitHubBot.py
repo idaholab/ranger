@@ -45,6 +45,7 @@ class GitHubBot:
         self.load_local = load_local
         self.model_path = model_path
         self.model_name = model_name
+        self.db_dir = str(db_dir)
 
         # Load the embedding model
         if self.load_local:

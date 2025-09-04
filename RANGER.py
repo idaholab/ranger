@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
 from typing import Any, Dict, Optional, Iterable, Tuple
 import io
@@ -63,56 +63,11 @@ import difflib
 import re as _re
 
 try:
-    import yaml  # pyyaml
+    import yaml
 except Exception:
     yaml = None
 
 import inspect
-
-# -----------------------------------------------------------------------------
-# Helper functions
-# -----------------------------------------------------------------------------
-
-def _normalize_text_for_compare(s: str) -> str:
-    # Collapse whitespace and trim lines for robust comparisons
-    lines = [line.strip() for line in s.strip().splitlines()]
-    normalized = "\n".join(_re.sub(r"\s+", " ", ln) for ln in lines if ln != "")
-    return normalized.strip()
-
-
-def _read_pin_file(path: Path) -> Tuple[str | None, str | None, list[int]]:
-    """
-    Read lines like:
-      owner/repo#123
-      https://github.com/owner/repo/discussions/123
-    Returns (owner, repo, [numbers]) when consistent; owner/repo may be None if not detectable.
-    """
-    owner = repo = None
-    numbers: list[int] = []
-    for raw in Path(path).read_text().splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("http"):
-            m = _re.fullmatch(r"https?://github\.com/([^/]+)/([^/]+)/discussions/(\d+)", line)
-            if not m:
-                raise ValueError(f"Unrecognized pin entry: {line}")
-            o, r, n = m.group(1), m.group(2), int(m.group(3))
-        else:
-            m2 = _re.fullmatch(r"([^/]+)/([^#]+)#(\d+)", line)
-            if not m2:
-                raise ValueError(f"Unrecognized pin entry: {line}")
-            o, r, n = m2.group(1), m2.group(2), int(m2.group(3))
-        if owner is None and repo is None:
-            owner, repo = o, r
-        elif (o != owner) or (r != repo):
-            # For simplicity we only support one repo in the pin file
-            raise ValueError("Pin file must reference a single owner/repo.")
-        numbers.append(n)
-    if not numbers:
-        raise ValueError("Pin file is empty or has no valid lines.")
-    return owner, repo, numbers
-
 
 # -----------------------------------------------------------------------------
 # Import project modules
@@ -125,7 +80,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 # Now you can import modules that live directly under src/
-from ranger import GitHubAPI, IndexGenerator, GitHubBot
+from ranger import GitHubAPI, IndexGenerator, GitHubBot, utils
 
 
 # -------------------------------
@@ -185,36 +140,23 @@ class AppConfig:
 
     @classmethod
     def from_yaml(cls, path: Optional[Path]) -> "AppConfig":
-        if path is None and yaml is None:
+        if not path or not yaml:
             return cls()
-        if path is None:
-            return cls()
-        data = yaml.safe_load(Path(path).read_text()) if yaml else {}
-        # Merge user YAML over defaults of a fresh instance
-        merged = cls()
-        merged_dict = asdict(merged)
-        merged_dict = cls._deep_update(merged_dict, data or {})
-        # Apply "default" to each section where the key is absent
-        default_dict = asdict(merged.default)
-
-        def section_with_defaults(section_data: Dict[str, Any], section_class):
-            d = dict(default_dict)
-            d.update(section_data or {})
-            # Filter keys to those accepted by section_class
-            field_names = {f.name for f in section_class.__dataclass_fields__.values()}
-            return {k: v for k, v in d.items() if k in field_names}
-
+        data = yaml.safe_load(Path(path).read_text()) or {}
         cfg = cls()
-        # Use user-specified sections (falling back to default values)
-        user_default = data.get("default", {}) if isinstance(data, dict) else {}
-        if user_default:
-            cfg.default = CommonConfig(**{k: v for k, v in user_default.items() if k in CommonConfig.__dataclass_fields__})
-        user_api = data.get("github_api", {}) if isinstance(data, dict) else {}
-        cfg.github_api = GitHubAPIConfig(**section_with_defaults(user_api, GitHubAPIConfig))
-        user_idx = data.get("index", {}) if isinstance(data, dict) else {}
-        cfg.index = IndexGeneratorConfig(**section_with_defaults(user_idx, IndexGeneratorConfig))
-        user_bot = data.get("bot", {}) if isinstance(data, dict) else {}
-        cfg.bot = GitHubBotConfig(**section_with_defaults(user_bot, GitHubBotConfig))
+        # Merge defaults per section with top-level defaults applied
+        def apply(section_cls, section_name: str):
+            section = getattr(cfg, section_name)
+            incoming = (data.get(section_name) or {})
+            merged = {**asdict(cfg.default), **asdict(section), **incoming}
+            # Filter unknown keys
+            field_names = {f.name for f in section_cls.__dataclass_fields__.values()}
+            merged = {k: v for k, v in merged.items() if k in field_names}
+            setattr(cfg, section_name, section_cls(**merged))
+        apply(GitHubAPIConfig, "github_api")
+        apply(IndexGeneratorConfig, "index")
+        apply(GitHubBotConfig, "bot")
+
         return cfg
 
     def override_with_cli(self, args: argparse.Namespace, command: str) -> "AppConfig":
@@ -228,88 +170,11 @@ class AppConfig:
         # Apply global dry_run if set (only stored under default)
         if getattr(args, "dry_run", False):
             cfg.default = CommonConfig(dry_run=True)
-        # Apply overrides per command
-        if command == "github-api":
-            d = asdict(cfg.github_api)
-            for k in d.keys():
-                if getattr(args, k, None) is not None:
-                    d[k] = getattr(args, k)
-            cfg.github_api = GitHubAPIConfig(**d)
-        elif command == "index":
-            d = asdict(cfg.index)
-            for k in d.keys():
-                if getattr(args, k, None) is not None:
-                    d[k] = getattr(args, k)
-            cfg.index = IndexGeneratorConfig(**d)
-        elif command == "bot":
-            d = asdict(cfg.bot)
-            for k in d.keys():
-                if getattr(args, k, None) is not None:
-                    d[k] = getattr(args, k)
-            cfg.bot = GitHubBotConfig(**d)
+        target = getattr(cfg, {"github-api": "github_api", "index": "index", "bot": "bot"}.get(command, "default"))
+        for k in asdict(target).keys():
+            if getattr(args, k, None) is not None:
+                setattr(target, k, getattr(args, k))
         return cfg
-
-
-# -----------------------------------------------------------------------------
-# Bot call helper (offline‑first)
-# -----------------------------------------------------------------------------
-
-def _call_bot_and_capture(bot, prompt: str | None) -> str:
-    """Return a response string without hitting GitHub.
-
-    Preference order:
-      1) If the bot exposes `generate_solution(prompt, top_n, index, threshold)`,
-         call that directly using the loaded validation index.
-      2) Otherwise, attempt to call `query_response(prompt?)` and capture stdout.
-    """
-    # --- Prefer an offline path if available (no network side-effects) ---
-    if prompt and hasattr(bot, "generate_solution"):
-        try:
-            # Ensure the validation index is loaded
-            if getattr(bot, "index", None) is None and hasattr(bot, "load_database"):
-                _index = bot.load_database(getattr(bot, "db_dir", None))
-                bot.index = _index
-            top_n = getattr(bot, "top_n", 8)
-            threshold = getattr(bot, "threshold", 0.0)
-            text = bot.generate_solution(prompt, top_n, getattr(bot, "index", None), threshold)
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-        except Exception:
-            # Fall back to query_response path below
-            pass
-
-    # --- Fallback: call query_response and capture output ---
-    result_text = None
-    try:
-        if hasattr(bot, "query_response"):
-            sig = inspect.signature(bot.query_response)
-            if len(sig.parameters) >= 1 and prompt is not None:
-                ret = bot.query_response(prompt)
-            else:
-                ret = bot.query_response()
-            if isinstance(ret, str):
-                result_text = ret
-    except Exception:
-        # Fall through to stdout capture with a second call
-        result_text = None
-
-    if result_text is None and hasattr(bot, "query_response"):
-        buf = io.StringIO()
-        old = sys.stdout
-        try:
-            sys.stdout = buf
-            if prompt is not None:
-                try:
-                    bot.query_response(prompt)
-                except TypeError:
-                    bot.query_response()
-            else:
-                bot.query_response()
-        finally:
-            sys.stdout = old
-        result_text = buf.getvalue()
-    return (result_text or "").strip()
-
 
 # -------------------------------
 # CLI parser
@@ -363,7 +228,6 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--pin-file", dest="pin_file", type=Path, default="pinned.txt", help="Text file with owner/repo on first line and discussion numbers below.")
     pv.add_argument("--golden", dest="golden_path", type=Path, default="golden.txt", help="Path to an existing golden file to compare against.")
     pv.add_argument("--write-golden", dest="write_golden", type=Path, help="Write the produced output to this golden file (overwrites).")
-    pv.add_argument("--compare", dest="compare_mode", choices=["normalize", "exact"], default="normalize", help="Comparison mode for golden check.")
     pv.add_argument("--fail-on-mismatch", dest="fail_on_mismatch", action="store_true", help="Exit non-zero if comparison fails.")
 
     return p
@@ -384,10 +248,10 @@ def run_github_api(cfg: GitHubAPIConfig) -> int:
         dry_run=cfg.dry_run,
     )
     # Expect the implementation to provide a fetch_data() method as in the original script
-    if hasattr(api, "fetch_data"):
-        api.fetch_data()
-    else:
-        raise AttributeError("GitHubAPI is missing a 'fetch_data()' method.")
+    if not hasattr(api, "fetch_data"):
+        raise AttributeError("GitHubAPI is missing a 'fetch_data()' method")
+    api.fetch_data()
+
     return 0
 
 
@@ -401,10 +265,10 @@ def run_index(cfg: IndexGeneratorConfig) -> int:
         database=cfg.database,
         dry_run=cfg.dry_run,
     )
-    if hasattr(idx, "generate_index"):
-        idx.generate_index()
-    else:
-        raise AttributeError("IndexGenerator is missing a 'generate_index()' method.")
+    if not hasattr(idx, "generate_index"):
+        raise AttributeError("IndexGenerator is missing a 'generate_index()' method")
+    idx.generate_index()
+
     return 0
 
 
@@ -418,16 +282,15 @@ def run_bot(cfg: GitHubBotConfig) -> int:
         dry_run=cfg.dry_run,
         load_local=cfg.load_local,
     )
-    if hasattr(bot, "query_response"):
-        bot.query_response()
-    else:
-        raise AttributeError("GitHubBot is missing a 'query_response()' method.")
+    if not hasattr(bot, "query_response"):
+        raise AttributeError("GitHubBot is missing a 'query_response()' method")
+    bot.query_response()
+
     return 0
 
 
 def run_validation(cfg_api: GitHubAPIConfig, cfg_idx: IndexGeneratorConfig, cfg_bot: GitHubBotConfig, prompt: str | None = None,
-                   pin_file: Path | None = None, golden_path: Path | None = None, write_golden: Path | None = None,
-                   compare_mode: str = "normalize", fail_on_mismatch: bool = False) -> int:
+                   pin_file: Path | None = None, golden_path: Path | None = None, write_golden: Path | None = None, fail_on_mismatch: bool = False) -> int:
     """
     Validation pipeline:
       1) Read pinned.txt (if provided) to determine exact discussions to fetch.
@@ -452,17 +315,9 @@ def run_validation(cfg_api: GitHubAPIConfig, cfg_idx: IndexGeneratorConfig, cfg_
         out_dir=str(out_dir),
         dry_run=cfg_api.dry_run,
     )
-    if pin_file is not None:
-        owner = repo = None
-        try:
-            owner, repo, numbers = _read_pin_file(pin_file)
-        except Exception as e:
-            raise RuntimeError(f"Failed to parse pin file {pin_file}: {e}")
-        if hasattr(api, "fetch_discussions_by_numbers"):
-            api.fetch_discussions_by_numbers(owner=owner, repo=repo, numbers=numbers, out_dir=str(out_dir))
-        else:
-            # Fallback to generic fetch if the specialized method is missing
-            api.fetch_data()
+    if pin_file is not None and hasattr(api, "fetch_discussions_by_numbers"):
+        owner, repo, numbers = utils.read_pin_file(pin_file)
+        api.fetch_discussions_by_numbers(owner=owner, repo=repo, numbers=numbers, out_dir=str(out_dir))
     else:
         api.fetch_data()
 
@@ -476,36 +331,21 @@ def run_validation(cfg_api: GitHubAPIConfig, cfg_idx: IndexGeneratorConfig, cfg_
         database=str(db_dir),
         dry_run=cfg_idx.dry_run,
     )
-    if hasattr(idx, "generate_index"):
-        idx.generate_index()
-    else:
-        raise AttributeError("IndexGenerator is missing a 'generate_index()' method.")
+    idx.generate_index()
 
     # --- Step 3: Load DB and answer prompt (offline) ---
-    bot = GitHubBot(
-        db_dir=str(db_dir),
-        model_path=cfg_bot.model_path,
-        top_n=cfg_bot.top_n,
-        threshold=cfg_bot.threshold,
-        model_name=cfg_bot.model_name,
-        dry_run=cfg_bot.dry_run,
-        load_local=cfg_bot.load_local,
-    )
     response_text = ""
     if prompt:
-        # Prefer offline retrieval API if available
-        if hasattr(bot, "load_database"):
-            index = bot.load_database(db_dir)
-        else:
-            index = None
-        if hasattr(bot, "generate_solution"):
-            response_text = bot.generate_solution(prompt, cfg_bot.top_n, index, cfg_bot.threshold)
-        elif hasattr(bot, "query_response"):
-            # Last resort
-            maybe = bot.query_response(prompt)
-            response_text = maybe if isinstance(maybe, str) else str(maybe)
-    else:
-        response_text = ""
+        bot = GitHubBot(
+            db_dir=str(db_dir),
+            model_path=cfg_bot.model_path,
+            top_n=cfg_bot.top_n,
+            threshold=cfg_bot.threshold,
+            model_name=cfg_bot.model_name,
+            dry_run=cfg_bot.dry_run,
+            load_local=cfg_bot.load_local,
+        )
+        response_text = utils.call_bot_offline(bot, prompt, index=None, top_n=cfg_bot.top_n, threshold=cfg_bot.threshold, db_dir=db_dir)
 
     # --- Step 4: Golden write/compare ---
     if write_golden:
@@ -513,17 +353,13 @@ def run_validation(cfg_api: GitHubAPIConfig, cfg_idx: IndexGeneratorConfig, cfg_
         print(f"Wrote golden → {write_golden}")
 
     if golden_path:
-        try:
-            expected = Path(golden_path).read_text()
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Golden file not found: {golden_path}")
+        expected = Path(golden_path).read_text()
 
-        if compare_mode == "normalize":
-            got_norm = _normalize_text_for_compare(response_text)
-            exp_norm = _normalize_text_for_compare(expected)
-            match = (got_norm == exp_norm)
-        else:
-            match = (response_text == expected)
+
+        got_norm = utils.normalize_text_for_compare(response_text)
+        exp_norm = utils.normalize_text_for_compare(expected)
+        match = (got_norm == exp_norm)
+
 
         if not match:
             print("Validation mismatch against golden.")
@@ -559,91 +395,56 @@ def main(argv: Optional[list[str]] = None) -> int:
     cfg = cfg_from_yaml.override_with_cli(args, args.command)
 
     if args.print_config:
-        # Only print the config for the active subcommand
+        to_dump: dict[str, Any]
         if args.command == "github-api":
-            print(yaml.safe_dump({"github_api": asdict(cfg.github_api)}, sort_keys=False) if yaml else asdict(cfg.github_api))
+            to_dump = {"github_api": asdict(cfg.github_api)}
         elif args.command == "index":
-            print(yaml.safe_dump({"index": asdict(cfg.index)}, sort_keys=False) if yaml else asdict(cfg.index))
+            to_dump = {"index": asdict(cfg.index)}
         elif args.command == "bot":
-            print(yaml.safe_dump({"bot": asdict(cfg.bot)}, sort_keys=False) if yaml else asdict(cfg.bot))
-        elif args.command == "validation":
-            # When invoked as a subcommand, set the same pipeline
-            val_out_dir = getattr(args, "val_out_dir", "./validation/raw")
-            val_db = getattr(args, "val_db", "./validation_db")
-            prompt = getattr(args, "prompt", None)
+            to_dump = {"bot": asdict(cfg.bot)}
+        else:
+            to_dump = {}
+        print(yaml.safe_dump(to_dump, sort_keys=False) if yaml else to_dump)
+        return 0
 
-            from dataclasses import replace
-            cfg_api = replace(cfg.github_api, out_dir=val_out_dir)
-            cfg_idx = replace(cfg.index, rawdata=val_out_dir, database=val_db)
-            cfg_bot = replace(cfg.bot, db_dir=val_db)
-
-            if getattr(args, "model_path", None):
-                cfg_idx = replace(cfg_idx, model_path=args.model_path)
-                cfg_bot = replace(cfg_bot, model_path=args.model_path)
-            if getattr(args, "model_name", None):
-                cfg_idx = replace(cfg_idx, model_name=args.model_name)
-                cfg_bot = replace(cfg_bot, model_name=args.model_name)
-            if getattr(args, "load_local", False):
-                cfg_idx = replace(cfg_idx, load_local=True)
-                cfg_bot = replace(cfg_bot, load_local=True)
-            if getattr(args, "dry_run", False):
-                cfg_api = replace(cfg_api, dry_run=True)
-                cfg_idx = replace(cfg_idx, dry_run=True)
-                cfg_bot = replace(cfg_bot, dry_run=True)
-
-            return run_validation(
-            cfg_api, cfg_idx, cfg_bot, prompt,
-            pin_file=getattr(args, "pin_file", None),
-            golden_path=getattr(args, "golden_path", None),
-            write_golden=getattr(args, "write_golden", None),
-            compare_mode=getattr(args, "compare_mode", "normalize"),
-            fail_on_mismatch=getattr(args, "fail_on_mismatch", False),
-        )
-
-    # Dispatch
     if args.command == "github-api":
         return run_github_api(cfg.github_api)
-    elif args.command == "index":
+    if args.command == "index":
         return run_index(cfg.index)
-    elif args.command == "bot":
+    if args.command == "bot":
         return run_bot(cfg.bot)
-    elif args.command == "validation":
-        # When invoked as a subcommand, set the same pipeline
-        val_out_dir = getattr(args, "val_out_dir", "./validation/raw")
-        val_db = getattr(args, "val_db", "./validation_db")
-        prompt = getattr(args, "prompt", None)
 
-        from dataclasses import replace
-        cfg_api = replace(cfg.github_api, out_dir=val_out_dir)
-        cfg_idx = replace(cfg.index, rawdata=val_out_dir, database=val_db)
-        cfg_bot = replace(cfg.bot, db_dir=val_db)
+    # validation: compose per-step configs based on overrides
+    val_out_dir = getattr(args, "val_out_dir", "./validation/raw")
+    val_db = getattr(args, "val_db", "./validation_db")
+    prompt = getattr(args, "prompt", None)
 
-        if getattr(args, "model_path", None):
-            cfg_idx = replace(cfg_idx, model_path=args.model_path)
-            cfg_bot = replace(cfg_bot, model_path=args.model_path)
-        if getattr(args, "model_name", None):
-            cfg_idx = replace(cfg_idx, model_name=args.model_name)
-            cfg_bot = replace(cfg_bot, model_name=args.model_name)
-        if getattr(args, "load_local", False):
-            cfg_idx = replace(cfg_idx, load_local=True)
-            cfg_bot = replace(cfg_bot, load_local=True)
-        if getattr(args, "dry_run", False):
-            cfg_api = replace(cfg_api, dry_run=True)
-            cfg_idx = replace(cfg_idx, dry_run=True)
-            cfg_bot = replace(cfg_bot, dry_run=True)
+    cfg_api = replace(cfg.github_api, out_dir=val_out_dir, dry_run=getattr(args, "dry_run", cfg.github_api.dry_run))
+    cfg_idx = replace(
+        cfg.index,
+        rawdata=val_out_dir,
+        database=val_db,
+        model_path=getattr(args, "model_path", cfg.index.model_path) or cfg.index.model_path,
+        model_name=getattr(args, "model_name", cfg.index.model_name) or cfg.index.model_name,
+        load_local=cfg.index.load_local or getattr(args, "load_local", False),
+        dry_run=getattr(args, "dry_run", cfg.index.dry_run),
+    )
+    cfg_bot = replace(
+        cfg.bot,
+        db_dir=val_db,
+        model_path=getattr(args, "model_path", cfg.bot.model_path) or cfg.bot.model_path,
+        model_name=getattr(args, "model_name", cfg.bot.model_name) or cfg.bot.model_name,
+        load_local=cfg.bot.load_local or getattr(args, "load_local", False),
+        dry_run=getattr(args, "dry_run", cfg.bot.dry_run),
+    )
 
-        return run_validation(
-            cfg_api, cfg_idx, cfg_bot, prompt,
-            pin_file=getattr(args, "pin_file", None),
-            golden_path=getattr(args, "golden_path", None),
-            write_golden=getattr(args, "write_golden", None),
-            compare_mode=getattr(args, "compare_mode", "normalize"),
-            fail_on_mismatch=getattr(args, "fail_on_mismatch", False),
-        )
-
-    # Shouldn't get here
-    parser.error("Unknown command")
-    return 2
+    return run_validation(
+        cfg_api, cfg_idx, cfg_bot, prompt,
+        pin_file=getattr(args, "pin_file", None),
+        golden_path=getattr(args, "golden_path", None),
+        write_golden=getattr(args, "write_golden", None),
+        fail_on_mismatch=getattr(args, "fail_on_mismatch", False),
+    )
 
 
 if __name__ == "__main__":
