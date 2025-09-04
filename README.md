@@ -36,7 +36,6 @@ This script embeds the relevant discussion information into a vector database us
 
 **Prerequisites:**
 - Transformer model (default: all-MiniLM-L6-v2)
-- JSON format discussion data (`\rawdata`)
 
 ### GitHubBot.py
 This script loads the vector database, generates the most relevant posts according to the title of a new post, and posts the result as a reply.
@@ -52,7 +51,7 @@ This script loads the vector database, generates the most relevant posts accordi
 **Note:** It is recommended to use the same transformer model for vector database embedding and retrieval for best performance.
 
 ## Submodule
-- `all-MiniLM-L6-v2` is a sentence-transformer model used to embed content into a vector index. It maps sentences and paragraphs to a 384-dimensional dense vector space for tasks like clustering or semantic search.
+- `all-MiniLM-L12-v2` is a sentence-transformer model used to embed content into a vector index. It maps sentences and paragraphs to a 384-dimensional dense vector space for tasks like clustering or semantic search.
 
 ## Installation
 To install and set up the `moose-discussion-bot`, follow these steps:
@@ -96,15 +95,12 @@ Use the `validation` subcommand to run a small, reproducible, **offline** check 
 2. Fetch those discussions into a raw folder (`--val-out-dir`).
 3. Build a fresh vector database (`--val-db`).
 4. Answer a one-off `--prompt` using the offline index.
-5. Optionally write and/or compare a golden result (`--write-golden`, `--golden`, `--compare`).
+5. Optionally write and/or compare a golden result (`--write-golden`, `--golden`).
 
 **Example**
 ```bash
-python RANGER.py --config config.yaml validation   --pin-file pinned.txt   --val-out-dir ./validation/raw   --val-db ./validation_db   --prompt "Summarize key issues"   --write-golden golden.txt   --compare normalize   --fail-on-mismatch
+python RANGER.py --config config.yaml validation   --pin-file pinned.txt   --val-out-dir ./validation/raw   --val-db ./validation_db   --prompt "Summarize key issues"   --write-golden golden.txt  --fail-on-mismatch
 ```
-
-## Contact
-If you have any questions or suggestions, feel free to contact @MengnanLi91.
 
 ## References
 1. [MOOSE GitHub Mining](https://github.com/hugary1995/moose-gh-mining)
