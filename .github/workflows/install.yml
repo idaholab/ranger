@@ -1,0 +1,59 @@
+name: CI - Install Package
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Upgrade pip and wheel
+        run: |
+          python -m pip install --upgrade pip wheel
+
+      - name: Install project (editable if available)
+        run: |
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install -e .
+          else
+            echo "::error::No pyproject.toml or setup.py found; cannot install as a package."
+            exit 1
+          fi
+
+      - name: Install extra dependencies (optional)
+        run: |
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+
+      - name: Sanity import
+        env:
+          PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/src"
+        run: |
+          python - << 'PY'
+          import sys, importlib
+          sys.path.extend([".", "src"])
+          import RANGER
+          print("RANGER imported OK; version:", getattr(RANGER, "__name__", "n/a"))
+          # Try importing package modules if present
+          try:
+              pkg = importlib.import_module("ranger")
+              print("ranger package imported OK")
+          except Exception as e:
+              print("Note: 'ranger' package not present or not importable:", e)
+          PY

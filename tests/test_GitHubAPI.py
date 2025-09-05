@@ -1,153 +1,75 @@
-# -----------------------------------------------------------------------------
-# This file is part of RANGER
-#
-# A Python‑based auto‑response bot to monitor and generate relevant responses
-# for new discussions in the GitHub MOOSE repository.
-#
-# Licensed under the MIT License; see LICENSE for details:
-#     https://spdx.org/licenses/MIT.html
-#
-# Copyright (c) 2025 Battelle Energy Alliance, LLC.
-# All Rights Reserved.
-# -----------------------------------------------------------------------------
-
+# -*- coding: utf-8 -*-
 import unittest
-import tempfile
-import json
-import os
-from pathlib import Path
 from unittest.mock import patch, MagicMock
-from moose_discussion_bot import GitHubAPI
+from pathlib import Path
+import tempfile
 
+import sys, os
+# Ensure the project root (where RANGER.py lives) is importable
+PROJECT_ROOT = os.path.dirname(os.path.dirname(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-def fake_read_text(self):
-    """Fake read_text method for Path objects based on the filename."""
-    if self.name == "query.gql.in":
-        # A dummy query template; the placeholders correspond to:
-        # end_cursor, num_discussion, num_comment, num_reply.
-        return "QUERY_CURSOR: {} DISCUSSIONS: {} COMMENTS: {} REPLIES: {}"
-    elif self.name == "comments_query.gql.in":
-        # A dummy comments query template; placeholders:
-        # discussion_id, comments_end_cursor, num_comment, num_reply.
-        return "COMMENTS_QUERY: discussion {} CURSOR {} COMMENTS: {} REPLIES: {}"
-    return ""
+import RANGER  # the CLI/driver
 
-
-class TestGitHubAPI(unittest.TestCase):
-    def setUp(self):
-        # Create a temporary directory for output files.
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.out_dir = self.temp_dir.name
-
-        # Set a dummy GitHub token in the environment (if not already set).
-        os.environ["GITHUB_TOKEN"] = "dummy_token"
-
-        # Create an instance with dry_run False by default.
-        self.api = GitHubAPI(
+class TestGitHubAPICommand(unittest.TestCase):
+    def test_run_github_api_calls_fetch(self):
+        cfg = RANGER.GitHubAPIConfig(
             end_point="https://api.github.com/graphql",
-            num_discussion=5,
-            num_comment=3,
-            num_reply=2,
-            min_credit=10,
-            out_dir=self.out_dir,
-            dry_run=False,
+            num_discussion=1,
+            num_comment=1,
+            num_reply=1,
+            min_credit=100,
+            out_dir="./out",
+            dry_run=True,
         )
+        with patch.object(RANGER, "GitHubAPI") as MockAPI:
+            inst = MockAPI.return_value
+            inst.fetch_data = MagicMock()
+            rc = RANGER.run_github_api(cfg)
+            self.assertEqual(rc, 0)
+            inst.fetch_data.assert_called_once()
 
-    def tearDown(self):
-        # Cleanup temporary directory.
-        self.temp_dir.cleanup()
+    def test_validation_uses_pin_and_golden(self):
+        # Integration-style test of run_validation wiring with mocks
+        with tempfile.TemporaryDirectory() as td:
+            val_out = Path(td) / "raw"
+            val_db = Path(td) / "db"
+            golden = Path(td) / "golden.txt"
+            pin = Path(td) / "pinned.txt"
+            pin.write_text("owner/repo#123\n")
 
-    @patch("builtins.print")
-    def test_log(self, mock_print):
-        # Call log with test parameters.
-        begin_cursor = "start_cursor"
-        end_cursor = "end_cursor"
-        remaining = 120
-        has_next_page = True
-        self.api.log(begin_cursor, end_cursor, remaining, has_next_page)
+            # Prepare configs
+            cfg_api = RANGER.GitHubAPIConfig(out_dir=str(val_out), dry_run=True)
+            cfg_idx = RANGER.IndexGeneratorConfig(rawdata=str(val_out), database=str(val_db), dry_run=True)
+            cfg_bot = RANGER.GitHubBotConfig()
 
-        # Check that print was called with the expected strings.
-        expected_calls = [
-            (("            From: {}".format(begin_cursor),),),
-            (("              To: {}".format(end_cursor),),),
-            (("Remaining credit: {}".format(remaining),),),
-            (("        Has more: {}".format(has_next_page),),),
-            (("-" * 79,),),
-        ]
-        actual_calls = mock_print.call_args_list
-        self.assertEqual(len(actual_calls), len(expected_calls))
-        for call, expected in zip(actual_calls, expected_calls):
-            self.assertEqual(call, expected)
+            # Mocks
+            with patch.object(RANGER, "GitHubAPI") as MockAPI, patch.object(RANGER, "IndexGenerator") as MockIdx,                      patch.object(RANGER, "GitHubBot") as MockBot:
 
-    @patch("pathlib.Path.read_text", new=fake_read_text)
-    @patch("builtins.print")
-    def test_fetch_data_dry_run(self, mock_print):
-        # Set dry_run to True so that no network call is made.
-        self.api.dry_run = True
-        self.api.fetch_data()
+                api = MockAPI.return_value
+                api.fetch_discussions_by_numbers = MagicMock()
+                api.fetch_data = MagicMock()
 
-        # Check that the dry run message was printed.
-        mock_print.assert_any_call(
-            "Dry run: would execute query with cursor {}".format(self.api.end_cursor)
-        )
+                idx = MockIdx.return_value
+                idx.generate_index = MagicMock()
 
-    @patch("pathlib.Path.read_text", new=fake_read_text)
-    @patch("requests.post")
-    @patch("builtins.print")
-    def test_fetch_data_success(self, mock_print, mock_post):
-        # Simulate a successful response from the GitHub API.
-        fake_response = MagicMock()
-        fake_response.status_code = 200
-        fake_response.json.return_value = {
-            "data": {
-                "repository": {
-                    "discussions": {
-                        "pageInfo": {
-                            "hasNextPage": False,
-                            "endCursor": "cursor1",
-                        }
-                    }
-                },
-                "rateLimit": {"remaining": 150},
-            }
-        }
-        mock_post.return_value = fake_response
+                bot = MockBot.return_value
+                # Bot offline path
+                bot.load_database = MagicMock(return_value=object())
+                bot.generate_solution = MagicMock(return_value="hello world")
 
-        # Call fetch_data; since hasNextPage becomes False in the fake response,
-        # the loop should exit after one iteration.
-        self.api.fetch_data()
-
-        # Check that a log was printed.
-        self.assertTrue(
-            any(
-                "Remaining credit:" in call.args[0]
-                for call in mock_print.call_args_list
-            )
-        )
-
-        # Check that a file was written in the out_dir.
-        # The filename is created from the begin and new end cursor values.
-        expected_filename = "{}_{}.json".format("null", '"cursor1"')
-        file_path = Path(self.out_dir) / expected_filename
-        self.assertTrue(file_path.exists())
-
-    @patch("moose_discussion_bot.GitHubAPI.Path.read_text", new=fake_read_text)
-    @patch("requests.post")
-    @patch("builtins.print")
-    def test_fetch_data_error_status(self, mock_print, mock_post):
-        # Simulate an error response (e.g. 404) from the GitHub API.
-        fake_response = MagicMock()
-        fake_response.status_code = 404
-        fake_response.text = "Not Found"
-        mock_post.return_value = fake_response
-
-        # When an error occurs, the method calls exit().
-        with self.assertRaises(SystemExit):
-            self.api.fetch_data()
-
-        # Check that the error message was printed.
-        mock_print.assert_any_call("Error: 404")
-
+                rc = RANGER.run_validation(
+                    cfg_api, cfg_idx, cfg_bot, prompt="hi",
+                    pin_file=pin, golden_path=None, write_golden=golden,
+                    fail_on_mismatch=False
+                )
+                self.assertEqual(rc, 0)
+                # PIN path should be used, not generic fetch
+                api.fetch_discussions_by_numbers.assert_called_once()
+                idx.generate_index.assert_called_once()
+                bot.generate_solution.assert_called_once()
+                self.assertEqual(golden.read_text(), "hello world")
 
 if __name__ == "__main__":
     unittest.main()

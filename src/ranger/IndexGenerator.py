@@ -1,3 +1,17 @@
+# -----------------------------------------------------------------------------
+# This file is part of RANGER
+#
+# A Python‑based auto‑response bot to monitor and generate relevant responses
+# for new discussions in the GitHub MOOSE repository.
+#
+# Licensed under the MIT License; see LICENSE for details:
+#     https://spdx.org/licenses/MIT.html
+#
+# Copyright (c) 2025 Battelle Energy Alliance, LLC.
+# All Rights Reserved.
+# -----------------------------------------------------------------------------
+
+
 import json
 import argparse
 from pathlib import Path
@@ -58,7 +72,9 @@ class IndexGenerator:
                     title = post["node"]["title"]
                     url = post["node"]["url"]
                     content = self.get_post_content(post["node"])
-                return [Document(text=content, metadata={"title": title, "url": url})]
+                    md = {"title": title, "url": url}
+                    md.update(post["node"].get("metadata", {}))
+                return [Document(text=content, metadata=md)]
 
     def load_model(self) -> HuggingFaceEmbedding:
         if self.load_local:
@@ -115,31 +131,4 @@ class IndexGenerator:
         print("Successfully generated the index database from documentation!")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Choose embedding model and load method.")
-    parser.add_argument('--load_local', action='store_true', help="Load embedding model locally.")
-    parser.add_argument('--show_progress', action='store_true', help="Show embedding progress.")
-    # The transformer model needed to be downloaded locally due to INL block huggingface online mode. While running on Github workflow, it can successfully pull the model from Huggingface website
-    parser.add_argument('--model_path', type=str, default=Path('../../../../../../LLM/pretrained_models/'), help="Path to the local model.")
-    parser.add_argument('--model_name', type=str, default="all-MiniLM-L12-v2", help="Model name for SentenceTransformer.")
-    parser.add_argument('--rawdata', type=str, default="response", help="Path to store the index database.")
-    parser.add_argument('--database', type=str, default="database", help="Path to store the index database.")
-    parser.add_argument('--dry_run', action='store_true', help="Perform a dry run without generating the index.")
 
-    args = parser.parse_args()
-
-    index_generator = IndexGenerator(
-        load_local=args.load_local,
-        model_path=args.model_path,
-        model_name=args.model_name,
-        show_progress=args.show_progress,
-        rawdata=args.rawdata,
-        database=args.database,
-        dry_run=args.dry_run
-    )
-
-    index_generator.generate_index()
-
-
-if __name__ == "__main__":
-    main()

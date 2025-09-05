@@ -1,0 +1,213 @@
+{
+  "discussions": {
+    "edges": [
+      {
+        "node": {
+          "number": 25716,
+          "title": "PorousFlowRelativePermeabilityConst for single phase flow",
+          "url": "https://github.com/idaholab/moose/discussions/25716",
+          "bodyText": "Problem\nI'm running single phase Porous Flow simulations and hoping to speed them up.\nI thought I wouldn't need relative permeability in the single phase case, as phase disappearance shouldn't be a problem, and so tried a constant relative permeability of 1. This worked fine for a small 2D test and did actually reduce the run time, but as soon as I tried it on a more complex geometry, it would only get through one or two nonlinear iterations before failing to converge (Linear solve did not converge due to DIVERGED_NANORINF iterations 0 -> Nonlinear solve did not converge due to DIVERGED_LINEAR_SOLVE iterations 1).\nAs a compromise I returned to the Corey version, and bumped n down to 2 (and even 1) as suggested in the page on nonlinear convergence. This also failed to converge and only works with a minimum value of n = 3. I also (briefly) tried using FLAC, as it was faster than Corey on the simpler case, however that too failed on the more complex case.\nWhat is likely to be causing this to happen, and is there a way I can get around it?\nBackground\nI'm actually simulating a fluid being injected into a completely dry porous medium, which isn't something directly supported by the Porous Flow module. I've written a custom \"capillary pressure\" user object, which calculates saturation on a curve between $S\\approx0$ at $P=0$ and $S\\approx1$ at $P=2P_f$ (where $P_f$ is some nominal pressure at the flow front).\nThis approach is working pretty well, and I've validated it against some analytical cases, however at the mesh resolutions I require (based on convergence studies with my material properties) the run times are far too long.\nHence I'm trying to simplify any aspects of Porous Flow not applicable to my case, relative permeability appearing to be a low hanging fruit. Incidentally if there are any other suggestions for simplifications/optimisations I could make, I'd love to hear them!",
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "bodyText": "Hello\nPlease try these general instructions for solving convergence issues.\nInitializing better & picking direct solvers is likely going to help\nhttps://mooseframework.inl.gov/moose/application_usage/failed_solves.html\nGuillaume",
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "bodyText": "Thanks for the link - I had followed some of the advice on that page already, this time I tried using FDP as suggested and it did indeed converge, apparently indicating the Jacobian needs to be \"fixed\".\nTo be honest I'm not sure why using a simpler relative permeability formulation would break the Jacobian, and even less sure how I'd go about fixing it, but I will do some more research and have a go. Absolute worst case I can use the slow (n = 3) version.\nI don't think I can initialise any better, as my only variable (P) is set to a global IC of 0 which is the physical reality. I have also been running with the direct lu and mumps which hasn't helped."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "ok so if the Jacobian isnt great, did you try PJFNK instead of Newton?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "I'm pretty sure that the derivatives for the constant relative permeability are correct 😄. I suspect that when you use a non-constant relative permeability with the exponent ramped up, that the curve gets flatter, relatively perm gets smaller and the flow slows down significantly, making it easier to solve.\nYou have your own capillary pressure - we do use the derivative of that in the Jacobian. Did you get them correct? And are you using the the PorousFlow1P material to compute saturations?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Thanks both for the input - PJFNK also has the same problem with constant/low order relative permeability unfortunately.\nOkay that makes sense. I am using PorousFlow1PhaseP to compute saturation, and I'm pretty sure I've got the derivatives correct (checked on Wolfram and Desmos):\neffectiveSaturation -> 1 / (1 + std::exp((pf - pc) / _epsilon))\ndEffectiveSaturation -> (std::exp((pf - pc) / _epsilon)) / (_epsilon * std::pow(std::exp((pf - pc) / _epsilon) + 1, 2))\nd2EffectiveSaturation -> (std::exp((2 * pf + pc) / _epsilon) - std::exp((pf + 2 * pc) / _epsilon)) / (std::pow(_epsilon, 2) * std::pow(std::exp(pf / _epsilon) + std::exp(pc / _epsilon), 3))\nWhere pc is the pressure*, and pf is the nominal flow front pressure I mentioned above.\nI should note that I've set capillaryPressureCurve and its derivatives to return 0 as I'll never use this object in a porepressure-saturation formulation.\n* I'm a little confused by this - afaik pc is supposed to denote capillary pressure, however in PorousFlow1PhaseP only the porepressure seems to be passed in to the saturation calcs (I had thought $P_c=-P$ in the 1 phase case). I don't think it helps that I'm working in absolute pressure and so negative pressure doesn't make much sense. Regardless, using the positive pressure value to calculate saturation has worked for me so far."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "From this discussion it seems the runtime easy wins I had hoped for might not be so straightforward - thanks again for the help though."
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "number": 29949,
+          "title": "Model does not calculate the expected porepressure gradient",
+          "url": "https://github.com/idaholab/moose/discussions/29949",
+          "bodyText": "Hello everyone,\nI would like to simulate a hydro-mechanical groundwater model investigating on land subsidence due to groundwater abstraction. In a first step, I want to build a steady state model without abstracting any water. My model contains 5 layers (3 aquifers and 2 aquitards, find more information below). Since the upper aquifer is not confined, I use the PorousFlowUnsaturated model. I would like to get groundwater flow from my inflow boundary condition (DirichletBC on left side) to my outflow boundary condition (DirichletBC on right side). However, no matter how I adjust the boundary conditions, either I don’t get a flow between inflow and outflow or the model does not converge. I already tried to set the boundary conditions as Dirichlet BCs and as PorousFlowPiecewiseLinearSink boundary conditions as quasi Dirichlet BCs, but nothing worked out.\nMy model contains 5 layers. From top to bottom:\n\nOGWL: partially unsaturated;  on the left side is set a higher hydraulic head then on the right side\nOZH: aquitard; no flow is defined\nMGWL: confined aquifer; a hydraulic head is set only on the left side; a no flow is defined on the right side\nUZH: aquitard; no flow is defined\nUGWL: confined aquifer; a hydraulic head is set only on the left side; a no flow is defined on the right side\n\nThe boundary conditions are defined as depth-dependent (z-direction) functions of porepressures using an if-condition to set the hydraulic head at the left and right BC. The solver is a transient solver modelling steadystate conditions.\nEspecially for the OGWL I expect a gradient and different porepressure values at the boundaries left and right. Above the hydraulic heads set for OGWL I expect the porepressure values to be zero, but instead they are negative. My model does not converge. I get really high positive linear and non linear residuals. When I model the OGWL to be completely dry, the model converges easily. So somehow the modelling of the partially unsaturated layer seems not to work.\nIn order to avoid complex effects and accelerate test runs, I built up a smaller hydraulic test model with the same setup and set boundary conditions. This model is converging. Unfortunately:\n\nThe porepressure values on the left and right boundary are the exact same value. I receive an unrealistic porepressure distribution.\nThe flow velocity in x-direction shows a groundwater flow from the center of the model to the left and right boundaries, instead of a flow from the left to the right boundary\nThe porepressure values above water table are still negative. To solve this problem I added at the top of the model a porepressure = 0 boundary condition, but then a vertical gradient with positive porepressure values is calculated. That's also unexpected cause there should be no water at all, so the porepressure values should be zero.\n\nI attached my mesh and input file for my test model. small-model.zip\nAny ideas how to get a correct porepressure gradient are very welcomed and highly appreciated.\nThanks in advance!",
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "bodyText": "Hello\nI recommend building the input file step by step, this is a little complicated.\n\nlinear and non-linear residuals are getting negative\n\nthey are getting small and close to 0 if converging. Not negative\n\nThe porepressure values on the left and right boundary are the exact same value.\n\nthis looks like a problem with the setup\n\nThe porepressure values above water table are still negative. To solve this problem I turned on the top boundary condition (which sets the top surface of the model to zero porepressure), but then a vertical gradient with positive porepressure values is calculated. That's also unexpected cause there should be no water at all, so the porepressure values should be zero.\n\nan alternative to explore might be setting a Bound on the porepressure.\nhttps://mooseframework.inl.gov/source/bounds/ConstantBounds.html\nOR not solving for porepressure above the water table using a block restriction of the variable",
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "bodyText": "Hi\nThanks for Answering! Yes you're right about\n\nthey are getting small and close to 0 if converging. Not negative.\n\nI meant the exponents of my residuals are getting negative, so they are near zero.\nAnd I already tried to build up the input file step by step, but I still have no clue what's wrong.\nThanks for the idea to set a Bound on porepressure! I will try this."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nI tried to set a Bound on porepressure but either a second variable is needed or MOOSE doesn't find the ConstantBounds \"Feature\". Do I have to install it seperately?"
+                        }
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "node": {
+                  "bodyText": "Hi,\nSince you are running SS, I assume you want to saturate every layer except the top one. Use high conductivity for all layers to avoid convergence issues caused by low permeability. After reaching SS, adjust the value to the real one. Also, try setting your pp at the bottom of the model. If you want flow from left to right, set pp at the bottom nodes of your boundary.\nIf you need a thunder pressure distribution over depth, set pp at the bottom nodes of each layer. If your mesh is too complex to extract those nodes, you can use a more advanced mesher like LaGriT, which allows for these types of adjustments.",
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nThanks for Answering!\n\nIf you want flow from left to right, set pp at the bottom nodes of your boundary.\n\nBut when I do it that way, I don't get the OGWL partially unsaturated. Or should I set it additionally?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nIm not sure if I understand the question. If you set, for example, 8m head at the bottom of your boundary and your model is 10m depth you will have 2m of unsaturated zone. Makes sense?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nahh, yes, now I understand. Thank you!"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\ndo you have coincidentally an idea how I could get physical curves in Gmsh, that are not only saved as geometrical entities? Cause I can only set at this curves a porepressure, when MOOSE recognizes them. And for this, the physical curves in Gmsh needs to be saved as mesh entities. I also wanted to try it with LaGriT but I don't understand how to download it.\nIf not, it is no problem. I just thought maybe you have worked with Gmsh earlier."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nYes, libmesh wont recognize every entity of gmsh. What I would try is to code a python script which looks for the entities in your .msh file and extract the nodes you are interested with some kind of condition (e.g. node value == datum). Then you can set the BC  in moose manually or with a script.\n  [nodes]\n    input = my_mesh\n    type = ExtraNodesetGenerator\n    new_boundary = my_nodes\n    coord = '0 0 0; 0 0 1' # extracted nodes here\n  []\n\nWith lagrit is a bit easier, but also not fully automated."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Hi,\nthank you for your help! I managed to extract the nodes with python, but I have problems to add a new boundary in MOOSE.\nMy Code is:\n\nBut I get the error: Task add_mesh_generator is not registered to build MooseMesh derived objects\nAnd when I try it with [Sets] and boundary_set, I get the errors:\nparameter 'Sets/boundary_set/type' supplied multiple times\nparameter 'Sets/boundary_set/boundary' supplied multiple times\nDo you have an idea, how to circumvent or solve these errors?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "You need to create a FileMeshGenerator not a FileMesh"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "And delete this Actions block and nest the two ExtraNodesetGfenerator under the Mesh block"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Thank youu! Now it's calculating :D"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "node": {
+          "number": 19356,
+          "title": "Shallow Water Equations and Moose Vector Variables",
+          "url": "https://github.com/idaholab/moose/discussions/19356",
+          "bodyText": "I am attempting to model the shallow water equations (SWE) with Moose (I'm a PhD student at Boise State University). I've used Moose for a variety of other geophysics, but the SWE are slightly more complicated. I mention that to say that I'm familiar with Moose, having gone through most of the tutorials.\nHere's my problem setup. I have the strong form that I use to generate the weak form of the equations. The weak form takes the following form (using inner product notation):\n(dqdt, \\psi) + <F(q) * n, \\psi> - (F(q), \\nabla \\psi) - (b + s, \\psi) = 0\n\\psi is the test function.\nq is the variable vector: [h, hu, hv].\nF(q) is the flux tensor: [ [hu, hv], [hu^2 + (1/2)gh^2, huv], [huv, hv^2 + (1/2)gh^2] ].\nh is water height.\nu and v are velocities.\nb and s are bathymetry and (friction) source terms.\nThese would be my questions:\nHow do I work with vector valued variables in Moose? What classes can I work with/ derive from?\nWhat about for vectors like q where the entries aren't necessarily physically related (like components of a velocity field)?\nWould I be able to use some of the tensor functionality to do this? I have briefly looked over it.\nI will continue to pour over tutorials and documentation, but any guidance would be appreciated.\nAnd finally, I read somewhere that a SWE module is in the works. Any word on progress there?\nMany thanks!",
+          "comments": {
+            "edges": [
+              {
+                "node": {
+                  "bodyText": "Hello\nFirst, since you only have 3 components and the equation seems to be writable in a vector-formulation, vector is the right choice and should give you better performance over implementing 3 scalar equations.\nI m a little concerned that having h and hu hv, which could be of different orders of magnitude since they have a different unit / physical meaning, will lead to convergence/scaling issues. You won't be able to scale the equations separately if you lump them in a vector\nI m not sure if we have documentation specially for implementing vector equations. If you find it please let me know. The process is mostly the same, you create a vector variable, then vector kernels to implement your equation etc. There is a VectorKernel base class you can inherit from for your kernels.\nIf you have a tensor anisotropic diffusivity for example, you will be able to use the tensor utilities (in utils/) for that.\nWe support the lagrange variables as vector variables. There are vector versions of kernels, bcs, auxkernels etc.\nAn example of a vector BC:\nhttps://mooseframework.inl.gov/source/bcs/VectorDirichletBC.html\nvector kernel:\nhttps://mooseframework.inl.gov/moose/source/kernels/VectorDiffusion.html\nAuxKernel has an example of a vector aux in the text:\nhttps://mooseframework.inl.gov/syntax/AuxKernels/\nWhere did you read about the SWE? It d be easier to tag the person who was talking about it here\nGuillaume",
+                  "replies": {
+                    "edges": [
+                      {
+                        "node": {
+                          "bodyText": "Yes I would only ever use a vector variable if the governing equation can logically be written in vector form like the momentum equation in Navier-Stokes. Speaking of which, the AD version of finite element incompressible Navier-Stokes in the navier_stokes module is probably one of the better places to look if you're curious about using vector variables."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Our shallow water equation modeling with finite elements never really got off the ground. For modeling of hyperbolic-character equations we're going more and more towards our finite volume implementation."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Thanks for the resources on the vector variables and kernels. I'll dive into those objects to see what I can get done. All of the tutorials work with scalar variables and kernels, so thanks for pointing me towards the vector stuff. I hadn't considered the different orders of magnitude in h and u/v; I will keep that in mind moving forward.\nI saw in one of the tutorial presentations that SWE was a work in progress. I don't know who was working on it (or if that is still the case).\nI did see that Moose supports FV modeling, but I haven't looked into it much. I'll have to do that. That's how we normally solve the SWE anyways.\nRegardless, thanks for the direction! If I get any good results/progress, or if I have any further questions, I'll post them here."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Yeah, I implemented a shallow water model years ago, but I didn't know what I was doing and It had horrible artifacts with kilometer waves after some time :-D. I suppose the formulation was not stable with regular Galerkin FEM. 🤷‍♂️"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Here is the tidal model (it was done just for fun!)\n\n  \n    \n    \n\n    globe.mp4"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "@aeslaughter had also worked on SWE"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Resurrecting an old thread here, but I'm very close to have a DG based shallow water module ready for a pull request..."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "I'm stoked to here about this. What project is this for?"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Related to shallow water equations, we have HDG Navier-Stokes now. You can see a newsletter entry about it at https://mooseframework.inl.gov/newsletter/2025/2025_06.html. I would really like a non-hybridized DG implementation of Navier-Stokes as well"
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "I'm stoked to here about this. What project is this for?\n\nIts... for the AI pilot program. The module is made using Codex as a trial for how far I can get running on ignorance and a few million API tokens...\nAnd it turns out: pretty far.\nI need to clean up some idiosyncrasies in the code, HLLC is just 1D right now, but HLL(E) looks  pretty good so far."
+                        }
+                      },
+                      {
+                        "node": {
+                          "bodyText": "Have you looked at the HLLC implementation in FV? https://mooseframework.inl.gov/source/fvkernels/CNSFVHLLCBase.html is probably the best doc page"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

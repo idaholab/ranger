@@ -1,0 +1,114 @@
+name: CI - Validation
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "RANGER.py"
+      - ".github/workflows/validation.yml"
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: "Run end-to-end validation (requires network + GITHUB_TOKEN)"
+        default: "false"
+        required: false
+      prompt:
+        description: "Prompt for validation e2e run"
+        default: "Summarize key issues"
+        required: false
+      pin_lines:
+        description: "Pinned discussions, newline-separated (e.g., owner/repo#123)"
+        default: ""
+        required: false
+
+jobs:
+  # Offline validation tests (mocked via unit tests)
+  validation-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          python -m pip install pytest
+
+      - name: Run only validation-focused tests
+        env:
+          PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/src"
+        run: |
+          # Run tests that exercise run_validation wiring (by name or keyword)
+          if ls tests/test_* 1> /dev/null 2>&1; then
+            pytest -q -k "validation or golden"
+          else
+            echo "No tests/ directory present; skipping unit validation tests."
+          fi
+
+  # Optional end-to-end validation using RANGER.py validation
+  validation-e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_e2e == 'true' }}
+    runs-on: ubuntu-latest
+    needs: validation-unit
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+
+      - name: Install runtime deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f pyproject.toml ] || [ -f setup.py ]; then
+            python -m pip install -e .
+          fi
+          if [ -f requirements.txt ]; then
+            python -m pip install -r requirements.txt
+          fi
+          # You might need extra packages for embedding/indexing here
+
+      - name: Prepare validation workspace
+        run: |
+          mkdir -p .ci/validation/raw .ci/validation_db
+          if [ -n "${{ github.event.inputs.pin_lines }}" ]; then
+            printf "%s" "${{ github.event.inputs.pin_lines }}" > pinned.txt
+          else
+            # If no pins provided, bail to avoid hitting the network unpredictably
+            echo "::error::Provide 'pin_lines' input with discussion refs for e2e run."
+            exit 1
+          fi
+
+      - name: Run RANGER validation (end-to-end)
+        env:
+          PYTHONPATH: "${{ github.workspace }}:${{ github.workspace }}/src"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python RANGER.py --config config.yaml validation             --pin-file pinned.txt             --val-out-dir .ci/validation/raw             --val-db .ci/validation_db             --prompt "${{ github.event.inputs.prompt }}"             --write-golden .ci/validation/golden.txt             --compare normalize
+
+      - name: Upload validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-artifacts
+          path: |
+            .ci/validation/**/* 
+            .ci/validation_db/**
+            .ci/validation/raw/**

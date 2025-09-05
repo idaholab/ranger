@@ -1,8 +1,6 @@
 # RANGER
 
 [![GitHub license](https://img.shields.io/github/license/MengnanLi91/moose-discussion-bot)](https://github.com/MengnanLi91/moose-discussion-bot/blob/main/LICENSE)
-[![GitHub contributors](https://img.shields.io/github/contributors/MengnanLi91/moose-discussion-bot)](https://github.com/MengnanLi91/moose-discussion-bot/graphs/contributors)
-
 
 
 This repository contains a Python-based auto-response bot that leverages the GitHub API and the open-source LlamaIndex package to automatically generate responses to discussions on GitHub. The bot monitors GitHub MOOSE repository discussions and provides the most relevant posts when a new discussion is initiated by users. We call it R.A.N.G.E.R. – "Responsive Assistant for Navigating and Guiding Engineering with Rigor"
@@ -38,7 +36,6 @@ This script embeds the relevant discussion information into a vector database us
 
 **Prerequisites:**
 - Transformer model (default: all-MiniLM-L6-v2)
-- JSON format discussion data (`\rawdata`)
 
 ### GitHubBot.py
 This script loads the vector database, generates the most relevant posts according to the title of a new post, and posts the result as a reply.
@@ -54,7 +51,7 @@ This script loads the vector database, generates the most relevant posts accordi
 **Note:** It is recommended to use the same transformer model for vector database embedding and retrieval for best performance.
 
 ## Submodule
-- `all-MiniLM-L6-v2` is a sentence-transformer model used to embed content into a vector index. It maps sentences and paragraphs to a 384-dimensional dense vector space for tasks like clustering or semantic search.
+- `all-MiniLM-L12-v2` is a sentence-transformer model used to embed content into a vector index. It maps sentences and paragraphs to a 384-dimensional dense vector space for tasks like clustering or semantic search.
 
 ## Installation
 To install and set up the `moose-discussion-bot`, follow these steps:
@@ -83,15 +80,27 @@ Separate unit tests are developed for each class in the repository using `unitte
 
 1. `test_GitHubAPI.py`: Contains unit tests for `GitHubAPI.py`.
 2. `test_IndexGenerator.py`: Contains unit tests for `IndexGenerator.py`.
-3. `test_GitHubBot.py`: Contains unit tests for `GitHubBot.py`. The `testdatabase` in the repository is needed to complete the `test_load_database` unit test.
+3. `test_GitHubBot.py`: Contains unit tests for `GitHubBot.py`.
 
 To run the tests:
 ```bash
 PYTHONPATH=src/ pytest tests/
 ```
 
-## Contact
-If you have any questions or suggestions, feel free to contact @MengnanLi91.
+## Validation Mode
+
+Use the `validation` subcommand to run a small, reproducible, **offline** check of the pipeline:
+
+1. Read a pin file (e.g., `pinned.txt`) that lists discussions to fetch (`owner/repo#123` or full discussion URLs).
+2. Fetch those discussions into a raw folder (`--val-out-dir`).
+3. Build a fresh vector database (`--val-db`).
+4. Answer a one-off `--prompt` using the offline index.
+5. Optionally write and/or compare a golden result (`--write-golden`, `--golden`).
+
+**Example**
+```bash
+python RANGER.py --config config.yaml validation   --pin-file pinned.txt   --val-out-dir ./validation/raw   --val-db ./validation_db   --prompt "Summarize key issues"   --write-golden golden.txt  --fail-on-mismatch
+```
 
 ## References
 1. [MOOSE GitHub Mining](https://github.com/hugary1995/moose-gh-mining)
