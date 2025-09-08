@@ -57,10 +57,9 @@ import argparse
 import sys
 from dataclasses import dataclass, asdict, field, replace
 from pathlib import Path
-from typing import Any, Dict, Optional, Iterable, Tuple
-import io
+from typing import Any, Dict, Optional
 import difflib
-import re as _re
+import os
 
 try:
     import yaml
@@ -195,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--min-credit", dest="min_credit", type=int, help="Minimum credit to continue making API requests.")
     pa.add_argument("--out-dir", dest="out_dir", type=str, help="Directory to save response files.")
     pa.add_argument("--dry-run", dest="dry_run", action="store_true", help="Dry run mode.")
+    pa.add_argument("--debug", dest="debug", action="store_true", help="Enable debug logging.")
 
     # index
     pi = subs.add_parser("index", help="Generate a vector DB from raw GitHub JSON data.")
@@ -205,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
     pi.add_argument("--rawdata", dest="rawdata", type=str, help="Input data folder path.")
     pi.add_argument("--database", dest="database", type=str, help="Output index database path.")
     pi.add_argument("--dry-run", dest="dry_run", action="store_true", help="Dry run mode.")
+    pi.add_argument("--debug", dest="debug", action="store_true", help="Enable debug logging.")
 
     # bot
     pb = subs.add_parser("bot", help="Run the bot against a vector DB.")
@@ -215,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     pb.add_argument("--threshold", dest="threshold", type=float, help="Relevance of suggestion, less than 1.0.")
     pb.add_argument("--dry-run", dest="dry_run", action="store_true", help="Dry run mode.")
     pb.add_argument("--load-local", dest="load_local", action="store_true", help="Load a local model path.")
+    pb.add_argument("--debug", dest="debug", action="store_true", help="Enable debug logging.")
 
     # validation
     pv = subs.add_parser("validation", help="End-to-end validation: fetch 5 discussions, build a temp vector DB, run the bot.")
@@ -229,6 +231,7 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--golden", dest="golden_path", type=Path, default="golden.txt", help="Path to an existing golden file to compare against.")
     pv.add_argument("--write-golden", dest="write_golden", type=Path, help="Write the produced output to this golden file (overwrites).")
     pv.add_argument("--fail-on-mismatch", dest="fail_on_mismatch", action="store_true", help="Exit non-zero if comparison fails.")
+    pv.add_argument("--debug", dest="debug", action="store_true", help="Enable debug logging.")
 
     return p
 
@@ -387,6 +390,9 @@ def run_validation(cfg_api: GitHubAPIConfig, cfg_idx: IndexGeneratorConfig, cfg_
 def main(argv: Optional[list[str]] = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, "debug", False):
+        os.environ["DEBUG"] = "1"
 
     # Load YAML (if provided)
     cfg_from_yaml = AppConfig.from_yaml(args.config)

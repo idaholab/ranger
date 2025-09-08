@@ -58,11 +58,10 @@ To install and set up the `moose-discussion-bot`, follow these steps:
 
 1. Install [Miniforge](https://github.com/conda-forge/miniforge)
 2. Create your environment:
-
-```bash
-conda create -n RANGER python pip
-conda activate RANGER
-```
+    ```bash
+    conda create -n RANGER python pip
+    conda activate RANGER
+    ```
 3. Clone the repository:
     ```bash
     git clone https://github.com/idaholab/moose-discussion-bot.git

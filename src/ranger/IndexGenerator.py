@@ -12,11 +12,13 @@
 # -----------------------------------------------------------------------------
 
 
+import logging
+from . import logger as logutil
 import json
 import argparse
 from pathlib import Path
 import os
-from typing import List, Optional, Union
+from typing import Optional, List, Optional
 from llama_index.core import SimpleDirectoryReader, Document
 from llama_index.core.readers.base import BaseReader
 from llama_index.core.node_parser import SemanticSplitterNodeParser
@@ -29,7 +31,13 @@ from sentence_transformers import SentenceTransformer
 
 
 class IndexGenerator:
-    def __init__(self, load_local: bool, model_path: str, model_name: str, show_progress: bool, rawdata: str, database: str, dry_run: bool):
+    def __init__(self, load_local: bool, model_path: str, model_name: str, show_progress: bool, rawdata: str, database: str, dry_run: bool, logger: Optional[logging.Logger] = None, debug: bool = False):
+
+        self.log = logger if (logger is not None) else logutil.get_logger("ranger.index")
+        try:
+            self.log.debug("Initialized ranger.index")
+        except Exception:
+            pass
         self.load_local = load_local
         self.model_path = model_path
         self.model_name = model_name
@@ -79,10 +87,10 @@ class IndexGenerator:
     def load_model(self) -> HuggingFaceEmbedding:
         if self.load_local:
             model_path_full = os.path.join(self.model_path, self.model_name)
-            print(f"Loading local model from {model_path_full}")
+            self.log.debug(f"Loading local model from {model_path_full}")
             return HuggingFaceEmbedding(model_name=model_path_full)
         else:
-            print(f"Attempting to download model '{self.model_name}' from Huggingface...")
+            self.log.debug(f"Attempting to download model '{self.model_name}' from Huggingface...")
             return HuggingFaceEmbedding(model_name = f'sentence-transformers/{self.model_name}')
 
 
@@ -91,7 +99,7 @@ class IndexGenerator:
             input_dir=self.rawdata_dir, file_extractor={".json": self.MyFileReader(self.get_post_content)}
         )
         documents = reader.load_data()
-        print(f"Loaded {len(documents)} docs")
+        self.log.info(f"Loaded {len(documents)} docs")
         return documents
 
     def create_index(self, documents: List[Document]) -> VectorStoreIndex:
@@ -101,7 +109,7 @@ class IndexGenerator:
             breakpoint_percentile_threshold=95
         )
 
-        print("Generate Llama Index nodes from documentation.")
+        self.log.info("Generate Llama Index nodes from documentation.")
         nodes = splitter.get_nodes_from_documents(documents, show_progress=self.show_progress)
 
         storage_context = StorageContext.from_defaults(
@@ -112,7 +120,7 @@ class IndexGenerator:
 
         storage_context.docstore.add_documents(nodes)
 
-        print("Generate embeddings.")
+        self.log.info("Generate embeddings.")
         index = VectorStoreIndex(nodes, storage_context=storage_context, show_progress=self.show_progress)
         return index
 
@@ -121,14 +129,11 @@ class IndexGenerator:
 
     def generate_index(self):
         if self.dry_run:
-            print("Dry run: Skipping actual index generation.")
+            self.log.info("Dry run: Skipping actual index generation.")
             return
 
         documents = self.read_documents()
         index = self.create_index(documents)
-        print(f"Save index to: {self.database}")
+        self.log.info(f"Save index to: {self.database}")
         self.save_index(index)
-        print("Successfully generated the index database from documentation!")
-
-
-
+        self.log.info("Successfully generated the index database from documentation!")
