@@ -11,6 +11,8 @@
 # All Rights Reserved.
 # -----------------------------------------------------------------------------
 
+import logging
+from . import logger as logutil
 import argparse
 from pathlib import Path
 import requests
@@ -21,12 +23,12 @@ import certifi
 from typing import Optional, Dict, Any
 
 class GitHubAPI:
-    def __init__(self, end_point: str, num_discussion: int, num_comment: int, num_reply: int, min_credit: int, out_dir: str, dry_run: bool) -> None:
+    def __init__(self, end_point: str, num_discussion: int, num_comment: int, num_reply: int, min_credit: int, out_dir: str, dry_run: bool, logger: Optional[logging.Logger] = None, debug: bool = False) -> None:
         """
         Initialize the GitHubAPI class with endpoint, query parameters, output directory, and dry run mode.
 
         Parameters:
-        - end_point (str): The GitHub GraphQL API endpoint.
+        - end_point (str, logger: Optional[logging.Logger] = None, debug: bool = False): The GitHub GraphQL API endpoint.
         - num_discussion (int): Number of discussions to retrieve.
         - num_comment (int): Number of comments per discussion to retrieve.
         - num_reply (int): Number of replies per comment to retrieve.
@@ -51,21 +53,11 @@ class GitHubAPI:
         self.headers: dict = {"Authorization": f"bearer {self.GITHUB_TOKEN}"}
         self.out_dir.mkdir(exist_ok=True)
 
-    def log(self, begin_cursor: str, end_cursor: str, remaining: int, has_next_page: bool) -> None:
-        """
-        Log the details of the current API request.
-
-        Parameters:
-        - begin_cursor (str): The cursor position before the current request.
-        - end_cursor (str): The cursor position after the current request.
-        - remaining (int): Remaining API request credits.
-        - has_next_page (bool): Whether there are more pages to fetch.
-        """
-        print("            From: {}".format(begin_cursor))
-        print("              To: {}".format(end_cursor))
-        print("Remaining credit: {}".format(remaining))
-        print("        Has more: {}".format(has_next_page))
-        print("-" * 79)
+        self.log = logger if (logger is not None) else logutil.get_logger("ranger.githubapi")
+        try:
+            self.log.debug("Initialized ranger.githubapi")
+        except Exception:
+            pass
 
     def fetch_data(self) -> None:
         """
@@ -79,15 +71,15 @@ class GitHubAPI:
                 self.num_reply,
             )
             if self.dry_run:
-                print("Dry run: would execute query with cursor {}".format(self.end_cursor))
+                self.log.info("Dry run: would execute query with cursor {}".format(self.end_cursor))
                 break
 
             response: requests.Response = requests.post(self.end_point, headers=self.headers, json={"query": query}, verify=certifi.where())
             if response.status_code == self.STATUS_SUCCESS:
                 result: dict = response.json()
                 if "data" not in result:
-                    print("Error: 'data' key not found in the response.")
-                    print(result)
+                    self.log.error("Error: 'data' key not found in the response.")
+                    self.log.info(result)
                     exit()
 
                 begin_cursor: str = self.end_cursor
@@ -106,12 +98,12 @@ class GitHubAPI:
                 with out_file.open("w") as file:
                     json.dump(repository, file, indent=2)
             else:
-                print("Error: {}".format(response.status_code))
-                print(response.text)
+                self.log.error("Error: {}".format(response.status_code))
+                self.log.info(response.text)
                 exit()
 
         if not self.has_next_page:
-            print("All discussions have been fetched.")
+            self.log.info("All discussions have been fetched.")
 
     def _attach_discussion_category_metadata(self, repository_payload: Dict[str, Any]) -> None:
         """
@@ -131,7 +123,7 @@ class GitHubAPI:
                 node["metadata"] = meta
         except Exception as e:
             # non-fatal; we still want to write raw payload
-            print(f"Warning: unable to attach DiscussionCategory metadata: {e}")
+            self.log.info(f"Warning: unable to attach DiscussionCategory metadata: {e}")
 
     def _post_graphql(self, query: str, variables: dict) -> dict:
         """Send a GraphQL POST request to GitHub and return the parsed JSON.
@@ -143,7 +135,7 @@ class GitHubAPI:
             - self.dry_run (bool): if True, do not make the request
         """
         if getattr(self, "dry_run", False):
-            print(f"[DRY RUN] Would POST GraphQL with variables={variables}")
+            self.log.info(f"[DRY RUN] Would POST GraphQL with variables={variables}")
             return {}
         response = requests.post(
             self.end_point,
@@ -237,9 +229,9 @@ class GitHubAPI:
         out_path = dest_dir / f"pinned_{owner}_{repo}_{numbers_part}.json"
 
         if getattr(self, "dry_run", False):
-            print(f"[DRY RUN] Would write pinned page to: {out_path}")
+            self.log.info(f"[DRY RUN] Would write pinned page to: {out_path}")
             return out_path
 
         out_path.write_text(json.dumps(page, ensure_ascii=False, indent=2))
-        print(f"Wrote pinned discussions page → {out_path}")
+        self.log.info(f"Wrote pinned discussions page → {out_path}")
         return out_path
