@@ -87,7 +87,7 @@ Separate unit tests are developed for each class in the repository using `unitte
 
 To run the tests:
 ```bash
-PYTHONPATH=src/ pytest tests/
+pytest
 ```
 
 ## Validation Mode

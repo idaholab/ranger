@@ -111,39 +111,6 @@ class GitHubBot:
 
         return "\n".join(result)
 
-
-    def _deduplicate_nodes(self, nodes: List[Any]) -> List[Any]:
-        """
-        Deduplicate by (metadata['url'], metadata['title']).
-        Keeps the item with the highest .score for each pair.
-        """
-        def canon(s: str) -> str:
-            # normalize whitespace + case; trim trailing slash/hash in URLs
-            return " ".join((s or "").split()).strip().lower()
-
-        def canon_url(u: str) -> str:
-            u = (u or "").strip()
-            # drop trailing "/" and fragment-only hashes to collapse trivial variants
-            while u.endswith("/"):
-                u = u[:-1]
-            if "#" in u:
-                u = u.split("#", 1)[0]
-            return canon(u)
-
-        best: Dict[Tuple[str, str], Any] = {}
-        for nws in nodes or []:
-            node = getattr(nws, "node", nws)
-            meta = getattr(node, "metadata", {}) or {}
-            key = (canon_url(meta.get("url", "")), canon(meta.get("title", "")))
-
-            score = getattr(nws, "score", 0) or 0
-            prev = best.get(key)
-            prev_score = (getattr(prev, "score", 0) or 0) if prev is not None else None
-            if prev is None or score > prev_score:
-                best[key] = nws
-
-        return sorted(best.values(), key=lambda n: getattr(n, "score", 0) or 0, reverse=True)
-
     def query_response(self) -> None:
 
         if self.index is None:
@@ -188,6 +155,8 @@ class GitHubBot:
         }
         }
         '''
+        if not self._ensure_owner_repo():
+            return
 
         variables = {
             'owner': self.repo_owner,
@@ -217,8 +186,16 @@ class GitHubBot:
         response = requests.post(self.end_point, json={'query': query, 'variables': variables}, headers=headers, verify=certifi.where())
 
         if response.status_code == 200:
-            data = response.json()
-            discussions = data['data']['repository']['discussions']['nodes']
+            payload = self._parse_graphql(response)
+            if not payload:
+                return
+
+            repo_obj = (payload.get('data') or {}).get('repository') or {}
+            discussions = self._extract_discussion_nodes(repo_obj.get('discussions'))
+
+            if not discussions:
+                self.log.info("No discussions returned for %s/%s.", self.repo_owner, self.repo)
+                return
 
             for discussion in discussions:
                 title = discussion['title']
@@ -257,3 +234,136 @@ class GitHubBot:
             self.log.debug(response.text)
 
 
+    def _deduplicate_nodes(self, nodes: List[Any]) -> List[Any]:
+        """
+        Deduplicate by (metadata['url'], metadata['title']).
+        Keeps the item with the highest .score for each pair.
+        """
+        def canon(s: str) -> str:
+            # normalize whitespace + case; trim trailing slash/hash in URLs
+            return " ".join((s or "").split()).strip().lower()
+
+        def canon_url(u: str) -> str:
+            u = (u or "").strip()
+            # drop trailing "/" and fragment-only hashes to collapse trivial variants
+            while u.endswith("/"):
+                u = u[:-1]
+            if "#" in u:
+                u = u.split("#", 1)[0]
+            return canon(u)
+
+        best: Dict[Tuple[str, str], Any] = {}
+        for nws in nodes or []:
+            node = getattr(nws, "node", nws)
+            meta = getattr(node, "metadata", {}) or {}
+            key = (canon_url(meta.get("url", "")), canon(meta.get("title", "")))
+
+            score = getattr(nws, "score", 0) or 0
+            prev = best.get(key)
+            prev_score = (getattr(prev, "score", 0) or 0) if prev is not None else None
+            if prev is None or score > prev_score:
+                best[key] = nws
+
+        return sorted(best.values(), key=lambda n: getattr(n, "score", 0) or 0, reverse=True)
+
+    # -------------------------------
+    # Helpers: env → owner/repo, safe GraphQL parse, nodes extractor
+    # -------------------------------
+    def _ensure_owner_repo(self) -> bool:
+        """
+        Ensure self.repo_owner and self.repo are populated correctly.
+        Accepts either:
+        - GITHUB_REPOSITORY = "owner/repo"
+        - GITHUB_OWNER + GITHUB_REPO
+        - GITHUB_REPO = "repo" (owner from GITHUB_OWNER/GITHUB_REPOSITORY_OWNER)
+        Returns True if both are set; logs an error and returns False otherwise.
+        """
+        # Derive from env if missing
+        if not getattr(self, "repo_owner", None) or not getattr(self, "repo", None):
+            repo_env = os.getenv("GITHUB_REPOSITORY") or os.getenv("GITHUB_REPO") or ""
+            owner_env = os.getenv("GITHUB_OWNER") or os.getenv("GITHUB_REPOSITORY_OWNER")
+            if "/" in (repo_env or ""):
+                try:
+                    owner, repo = repo_env.split("/", 1)
+                    self.repo_owner = self.repo_owner or owner
+                    self.repo = self.repo or repo
+                except ValueError:
+                    pass
+            else:
+                if repo_env and not getattr(self, "repo", None):
+                    self.repo = repo_env
+                if owner_env and not getattr(self, "repo_owner", None):
+                    self.repo_owner = owner_env
+
+        if not self.github_token:
+            try:
+                self.log.error("GITHUB_TOKEN is missing.");
+            except Exception: pass
+            return False
+
+        if not self.repo_owner or not self.repo:
+            try:
+                self.log.error("Repository not set (owner=%r repo=%r). Set GITHUB_REPOSITORY or GITHUB_OWNER/GITHUB_REPO.", self.repo_owner, self.repo);
+            except Exception:
+                pass
+            return False
+
+        # Sanity: if repo accidentally includes a slash, split it
+        if "/" in str(self.repo):
+            try:
+                self.log.warning("Repo name contains '/': %r. Splitting to owner/repo.", self.repo);
+            except Exception:
+                pass
+            parts = str(self.repo).split("/", 1)
+            self.repo_owner, self.repo = parts[0], parts[1]
+
+        return True
+
+
+    def _parse_graphql(self, response) -> Optional[Dict[str, Any]]:
+        """Return parsed JSON payload or None; logs errors and never raises."""
+        if response.status_code != 200:
+            try:
+                self.log.error("GraphQL request failed (%s): %s", response.status_code, response.text[:500]);
+            except Exception: pass
+            return None
+        try:
+            payload = response.json()
+        except Exception:
+            try:
+                self.log.error("Response not JSON: %r", getattr(response, "text", "")[:500]);
+            except Exception: pass
+            return None
+
+        if not isinstance(payload, dict):
+            try:
+                self.log.error("Unexpected payload type: %s", type(payload).__name__);
+            except Exception: pass
+            return None
+        if payload.get("errors"):
+            try:
+                self.log.error("GraphQL errors: %s", payload["errors"]);
+            except Exception: pass
+            return None
+        if not payload.get("data"):
+            try:
+                self.log.error("No 'data' in GraphQL response.");
+            except Exception: pass
+            return None
+
+        return payload
+
+
+    def _extract_discussion_nodes(self, discussions_obj: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Support both 'nodes' and 'edges{node}' shapes."""
+        if not discussions_obj:
+            return []
+        nodes = discussions_obj.get("nodes")
+        if nodes is not None:
+            return nodes or []
+        edges = discussions_obj.get("edges") or []
+        out: List[Dict[str, Any]] = []
+        for e in edges:
+            if isinstance(e, dict) and isinstance(e.get("node"), dict):
+                out.append(e["node"])
+        return out
