@@ -197,6 +197,23 @@ class GitHubBot:
 
         headers = {"Authorization": f"bearer {self.github_token}"}
 
+        if (not self.repo_owner or not self.repo) and os.getenv("GITHUB_REPO"):
+            try:
+                owner, repo = os.getenv("GITHUB_REPO").split("/", 1)
+                self.repo_owner = self.repo_owner or owner
+                self.repo = self.repo or repo
+            except ValueError:
+                pass
+
+        if not self.github_token:
+            self.log.error("GITHUB_TOKEN is missing.")
+            return
+        if not self.repo_owner or not self.repo:
+            self.log.error("Repository not set (owner=%r repo=%r).", self.repo_owner, self.repo)
+            return
+
+        self.log.debug("POST %s variables=%s", self.end_point, variables)
+
         response = requests.post(self.end_point, json={'query': query, 'variables': variables}, headers=headers, verify=certifi.where())
 
         if response.status_code == 200:
@@ -213,7 +230,7 @@ class GitHubBot:
 
                 concise_solution = self.generate_solution(title, self.top_n, self.index, self.threshold)
                 if not concise_solution:
-                    print(f"[skip] No similar results above threshold ({self.threshold}) for: {title!r}")
+                    self.log.info(f"[skip] No similar results above threshold ({self.threshold}) for: {title!r}")
                     continue
                 response_body = (
                     f"Hey, @{author},\n\n"
