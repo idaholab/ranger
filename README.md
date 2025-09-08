@@ -56,19 +56,26 @@ This script loads the vector database, generates the most relevant posts accordi
 ## Installation
 To install and set up the `moose-discussion-bot`, follow these steps:
 
-1. Clone the repository:
+1. Install [Miniforge](https://github.com/conda-forge/miniforge)
+2. Create your environment:
+
+```bash
+conda create -n RANGER python pip
+conda activate RANGER
+```
+3. Clone the repository:
     ```bash
     git clone https://github.com/idaholab/moose-discussion-bot.git
     ```
-2. Navigate to the repository directory:
+4. Navigate to the repository directory:
     ```bash
     cd moose-discussion-bot
     ```
-3. Install the required dependencies:
+5. Install the required dependencies:
     ```bash
     pip install -r requirements.txt
     ```
-4. Configure the bot by creating a `.env` file with the necessary environment variables:
+6. Configure the bot by creating a `.env` file with the necessary environment variables:
     ```plaintext
     GITHUB_TOKEN=your_github_token
     REPO_OWNER=your_repo_owner
@@ -99,7 +106,7 @@ Use the `validation` subcommand to run a small, reproducible, **offline** check 
 
 **Example**
 ```bash
-python RANGER.py --config config.yaml validation   --pin-file pinned.txt   --val-out-dir ./validation/raw   --val-db ./validation_db   --prompt "Summarize key issues"   --write-golden golden.txt  --fail-on-mismatch
+python RANGER.py --config config.yaml validation
 ```
 
 ## References
