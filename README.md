@@ -43,7 +43,7 @@ This script loads the vector database, generates the most relevant posts accordi
 
 **Prerequisites:**
 - Transformer model (default: all-MiniLM-L6-v2)
-- Vector database (`\db_dir`)
+- Vector database (`/db_dir`)
 
 **Note:** It is recommended to use the same transformer model for vector database embedding and retrieval for best performance.
 
